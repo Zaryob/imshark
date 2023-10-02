@@ -1,5 +1,5 @@
-#ifndef PCAP_PACKET_HEADER_H
-#define PCAP_PACKET_HEADER_H
+#pragma once
+
 #include <cstdint>
 
 struct PcapPacketHeader {
@@ -9,4 +9,3 @@ struct PcapPacketHeader {
     uint32_t orig_len;
 };
 
-#endif // PCAP_PACKET_HEADER_H

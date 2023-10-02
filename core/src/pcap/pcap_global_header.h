@@ -1,5 +1,5 @@
-#ifndef PCAP_GLOBAL_HEADER_H
-#define PCAP_GLOBAL_HEADER_H
+#pragma once
+
 #include <cstdint>
 
 struct PcapGlobalHeader {
@@ -11,5 +11,3 @@ struct PcapGlobalHeader {
     uint32_t snaplen;
     uint32_t network;
 };
-
-#endif // PCAP_GLOBAL_HEADER_H
