@@ -50,4 +50,5 @@ struct ARPHeader {
     uint8_t target_hw_addr[6];
     uint8_t target_protocol_addr[4];
 };
+
 #endif // ETHERNET_HEADER_H
