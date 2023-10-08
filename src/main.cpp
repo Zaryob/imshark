@@ -15,28 +15,11 @@
 #include <pcapng/block_header.h>
 #include <pcapng/interface_description_block.h>
 #include <pcapng/section_header_block.h>
+#include <pcapng/simple_packet_block.h>
+#include <pcapng/enhanced_packet_block.h>
+
 #include <arpa/inet.h>
 
-#define BT_SHB 0x0A0D0D0A  // Section Header Block
-#define BT_SPB 0x00000003  // Simple Packet Block
-
-
-struct PcapNGPacketBlock {
-    uint32_t blockType;             // Block Type = 0x00000006
-    uint32_t blockTotalLength;      // Block Total Length
-    uint32_t interfaceID;           // Interface ID
-    uint32_t timestampUpper;        // Timestamp Upper (high 32 bits)
-    uint32_t timestampLower;        // Timestamp Lower (low 32 bits)
-    uint32_t capturedPacketLength;  // Captured Packet Length
-    uint32_t originalPacketLength;  // Original Packet Length
-
-};
-
-
-struct SimplePacketBlock : public PcapNGPacketBlock {
-    uint32_t originalPacketLength; // The original length of the packet
-    std::vector<uint8_t> packetData; // The actual captured packet data
-};
 
 struct PacketInfo {
     int number;
@@ -220,34 +203,50 @@ void processPcapFile(const std::string& filepath, std::vector<char>& buffer, std
     file.close();
 }
 
-void processSectionHeaderBlock(std::ifstream& file, uint32_t blockTotalLength) {
-    SectionHeaderBlock section;
+void processSectionHeaderBlock(std::ifstream& file, BlockHeader head) {
+    SectionHeaderBlock section(head);
     // Read SHB fields
-    file.read(reinterpret_cast<char*>(&section), sizeof(section));
+    //file.read(reinterpret_cast<char*>(&section), sizeof(section));
 
+    section.deserializeSectionFields(file);
     std::cout << "Section Header Block:" << std::endl;
     std::cout << "Magic Number: " << std::hex << section.magicNumber << std::dec << std::endl;
     std::cout << "Version: " << section.versionMajor << "." << section.versionMinor << std::endl;
     std::cout << "Section Length: " << section.sectionLength << std::endl;
 
     // Skip any options and the footer (optional to handle if needed)
-    uint32_t remainingBytes = blockTotalLength - sizeof(section) - sizeof(uint32_t);
-    file.seekg(remainingBytes, std::ios::cur);
+    //uint32_t remainingBytes = blockTotalLength - sizeof(section) - sizeof(uint32_t);
+    //file.seekg(remainingBytes, std::ios::cur);
+    // Verify block length trailer to match header
+    if (section.blockTotalLength != section.blockTotalLengthRedundant) {
+        std::cerr<< "Mismatched block length at end of block. Expected: " <<section.blockTotalLength <<", Got: "<< section.blockTotalLengthRedundant<< std::endl;
+        file.close();
+        return;
+    }
+
 }
 
-void processPacketBlock(std::ifstream& file, PcapNGPacketBlock& section, PacketInfo& pack, uint32_t& tsTimeOffset, uint32_t& usTimeOffset) {
+void processPacketBlock(std::ifstream& file, EnhancedPacketBlock& section, PacketInfo& pack, uint32_t& tsTimeOffset, uint32_t& usTimeOffset) {
+    section.deserialize(file);
+    section.deserializeEnhancedFields(file);
     std::cout<<"Process Packet Block"<<std::endl;
-    std::cout<<"Tell:"<<file.tellg()<<std::endl;
-    file.read(reinterpret_cast<char*>(&section), sizeof(section));
-    std::cout << "PacketBlock: "<< std::endl;
+    //std::cout<<"Tell:"<<file.tellg()<<std::endl;
+    //file.read(reinterpret_cast<char*>(&section), sizeof(section));
+    //std::cout << "PacketBlock: "<< std::endl;
     std::cout << "Block Type: " << std::hex << section.blockType << std::dec << std::endl;
     std::cout << "Block Total Length: " << section.blockTotalLength << std::endl;
     std::cout << "Interface ID: " << section.interfaceID << std::endl;
 
+    if (section.blockTotalLength != section.blockTotalLengthRedundant) {
+        std::cerr<< "Mismatched block length at end of block. Expected: " <<section.blockTotalLength <<", Got: "<< section.blockTotalLengthRedundant<< std::endl;
+        file.close();
+        return;
+    }
+
     if(section.blockType != 0x00000006){
         std::cout << "Invalid Packet Block Type: " << std::hex << section.blockType << std::dec << std::endl;
         std::cout<<"Tell:"<<file.tellg()<<std::endl;
-        file.seekg(-1 * sizeof(section), std::ios::cur);
+        //file.seekg(-1 * sizeof(section), std::ios::cur);
         //int offset = section.blockTotalLength - sizeof(section) - sizeof(uint32_t);
         std::cout<<"Offset: "<<sizeof(section)<<std::endl;
         std::cout<<"Tell:"<<file.tellg()<<std::endl;
@@ -280,14 +279,14 @@ void processPacketBlock(std::ifstream& file, PcapNGPacketBlock& section, PacketI
     pack.time = (seconds + 10e-7* (milliseconds) ) - (tsTimeOffset + 10e-7 * (usTimeOffset));
     std::cout<<"Time: "<<pack.time<<std::endl;
 
-    std::vector<char> packetData(section.capturedPacketLength);
-    file.read(packetData.data(), section.capturedPacketLength);
-    EthernetHeader* ethHeader = reinterpret_cast<EthernetHeader*>(packetData.data());
+    //std::vector<char> packetData(section.capturedPacketLength);
+    //file.read(packetData.data(), section.capturedPacketLength);
+    EthernetHeader* ethHeader = reinterpret_cast<EthernetHeader*>(section.packetData.data());
     std::cout<<"EthHeader: "<<std::hex<<ethHeader->type<<std::dec<<std::endl<<"Ethernet Packet: Dest MAC: "<<getMACAddressString(ethHeader->dest_mac)<<std::endl;
     if (ntohs(ethHeader->type) == 0x0800) {
         // IP packet
 
-        IPHeader* ipHeader = reinterpret_cast<IPHeader*>(packetData.data() + sizeof(EthernetHeader));
+        IPHeader* ipHeader = reinterpret_cast<IPHeader*>(section.packetData.data() + sizeof(EthernetHeader));
         struct in_addr dest_addr;
         dest_addr.s_addr = ipHeader->daddr;
         struct in_addr src_addr;
@@ -302,17 +301,17 @@ void processPacketBlock(std::ifstream& file, PcapNGPacketBlock& section, PacketI
             case 6: {
                 // TCP
 
-                TCPHeader* tcpHeader = reinterpret_cast<TCPHeader*>(packetData.data() + sizeof(EthernetHeader) + (ipHeader->ihl * 4));
+                TCPHeader* tcpHeader = reinterpret_cast<TCPHeader*>(section.packetData.data() + sizeof(EthernetHeader) + (ipHeader->ihl * 4));
                 std::cout << "TCP Packet: Src Port: " << source
                 <<", Dest Port: " << destination << std:: endl;
-                pack.length = section.capturedPacketLength;
+                pack.length = section.capturedLength;
                 pack.protocol="TCP";
                 pack.info = std::to_string(ntohs(tcpHeader->src_port)) + " -> " + std::to_string(ntohs(tcpHeader->dest_port));
 
             } break;
             case 17: {
                 // UDP
-                UDPHeader* udpHeader = reinterpret_cast<UDPHeader*>(packetData.data() + sizeof(EthernetHeader) + (ipHeader->ihl * 4));
+                UDPHeader* udpHeader = reinterpret_cast<UDPHeader*>(section.packetData.data() + sizeof(EthernetHeader) + (ipHeader->ihl * 4));
                 std::cout << "UDP Packet: Src Port: " << source
                 << " Dest Port: " <<  destination << std:: endl;
                 auto s = ntohs(udpHeader->len) - sizeof(uint32_t) * 2 ;
@@ -330,65 +329,46 @@ void processPacketBlock(std::ifstream& file, PcapNGPacketBlock& section, PacketI
     }
     else if (ntohs(ethHeader->type) == 0x0806) {
         // ARP packet
-        ARPHeader* arpHeader = reinterpret_cast<ARPHeader*>(packetData. data() + sizeof(EthernetHeader));
+        ARPHeader* arpHeader = reinterpret_cast<ARPHeader*>(section.packetData. data() + sizeof(EthernetHeader));
         std::cout << "ARP Packet: Opcode " << ntohs(arpHeader->opcode) << std::endl;
         pack.protocol="ARP";
         pack.destination=getMACAddressString(arpHeader->target_hw_addr);
         pack.source = getMACAddressString(arpHeader->sender_hw_addr);
-        pack.length = section.capturedPacketLength;
+        pack.length = section.capturedLength;
     }
     std::cout<< "Process Packet Block complate"<<std::endl;
-    file.seekg(-1 * sizeof(section) - section.originalPacketLength, std::ios::cur);
+    //file.seekg(-1 * sizeof(section) - section.originalLength, std::ios::cur);
 
 }
-void processInterfaceDescriptionBlock(std::ifstream& file, InterfaceDescriptionBlock& section) {
+
+void processInterfaceDescriptionBlock(std::ifstream& file, InterfaceDescriptionBlock& idb) {
     // Read the fixed-length fields of the Interface Description Block
-    file.read(reinterpret_cast<char*>(&section), sizeof(section));
+    //file.read(reinterpret_cast<char*>(&section), sizeof(section));
 
     std::cout << "Interface Description Block: " << std::endl;
-    std::cout << "Block Type: " << std::hex << section.blockType << std::dec << std::endl;
-    std::cout << "Block Total Length: " << section.blockTotalLength << std::endl;
-    std::cout << "Link Type: " << section.linkType << std::endl;
-    std::cout << "Snap Length: " << section.snaplen << std::endl;
+    std::cout << "Block Type: " << std::hex << idb.blockType << std::dec << std::endl;
+    std::cout << "Block Total Length: " << idb.blockTotalLength << std::endl;
+    std::cout << "Link Type: " << idb.linkType << std::endl;
+    std::cout << "Snap Length: " << idb.snapLen << std::endl;
+    std::cout << "TL Red Length: " << idb.blockTotalLengthRedundant << std::endl;
+    if (idb.blockTotalLength != idb.blockTotalLengthRedundant) {
+        std::cerr<< "Mismatched block length at end of block. Expected: " <<idb.blockTotalLength <<", Got: "<< idb.blockTotalLengthRedundant<< std::endl;
+        file.close();
+        return;
+    }
 
-    // The rest of the block may contain options, such as timestamp resolution
-    uint32_t remainingBytes = section.blockTotalLength - sizeof(InterfaceDescriptionBlock)- sizeof(uint32_t);
-
-    // You can read optional fields here, if needed. For now, skip them.
-    file.seekg(remainingBytes, std::ios::cur);
 }
 
 
-void processSimplePacketBlock(std::ifstream& file, uint32_t blockTotalLength) {
-    SimplePacketBlock spb;
-    spb.blockTotalLength = blockTotalLength;
+void processSimplePacketBlock(std::ifstream& file, BlockHeader head) {
+    SimplePacketBlock spb(head);
 
-    // Read original packet length
-    file.read(reinterpret_cast<char*>(&spb.originalPacketLength), sizeof(spb.originalPacketLength));
+    spb.deserializePacketFields(file);
 
-    std::cout << "Simple Packet Block:" << std::endl;
-    std::cout << "Original Packet Length: " << spb.originalPacketLength << std::endl;
-
-    // Calculate the packet data length (block length - fixed fields)
-    uint32_t packetDataLength = blockTotalLength - sizeof(PcapNGPacketBlock) - sizeof(spb.originalPacketLength) - sizeof(uint32_t);
-
-    // Resize packet data vector and read packet data
-    spb.packetData.resize(packetDataLength);
-    file.read(reinterpret_cast<char*>(spb.packetData.data()), packetDataLength);
-
-    // Print packet data (as hex, optional)
-    std::cout << "Packet Data: ";
-    for (uint8_t byte : spb.packetData) {
-        std::cout << std::hex << static_cast<int>(byte) << " ";
-    }
-    std::cout << std::dec << std::endl;
-
-    // Skip the trailing blockTotalLength (already accounted for)
-    uint32_t trailingLength;
-    file.read(reinterpret_cast<char*>(&trailingLength), sizeof(trailingLength));
-
-    if (trailingLength != blockTotalLength) {
-        std::cerr << "Error: Mismatching block lengths!" << std::endl;
+    if (spb.blockTotalLength != spb.blockTotalLengthRedundant) {
+        std::cerr<< "Mismatched block length at end of block. Expected: " <<spb.blockTotalLength <<", Got: "<< spb.blockTotalLengthRedundant<< std::endl;
+        file.close();
+        return;
     }
 }
 
@@ -400,19 +380,20 @@ void processPcapngFile(const std::string& filepath, std::vector<PacketInfo>& pac
     }
 
     BlockHeader header;
-    file.read(reinterpret_cast<char*>(&header), sizeof(BlockHeader));
+    header.deserialize(file);
+
     //std:: cout << "Header Hex: ";
     //printAsHex(reinterpret_cast<char*>(Sheader), sizeof(header));
     //std:: cout < std:: endl;
     // Debugging: Output the expected block length for verification
-    file.seekg(-1 * sizeof(BlockHeader), std::ios::cur);
+    //file.seekg(-1 * sizeof(BlockHeader), std::ios::cur);
     std::cout<< "Block Length: "<< header.blockTotalLength << std::endl;
     switch (header.blockType) {
         case BT_SHB: // BT_SHB
-        processSectionHeaderBlock(file, header.blockTotalLength);
+        processSectionHeaderBlock(file, header);
         break;
         case BT_SPB:
-        processSimplePacketBlock(file, header.blockTotalLength);
+        processSimplePacketBlock(file, header);
         break;
         // Add cases for other block types...
         default:
@@ -421,47 +402,23 @@ void processPcapngFile(const std::string& filepath, std::vector<PacketInfo>& pac
         file.seekg(header.blockTotalLength - sizeof(BlockHeader), std::ios::cur);
         break;
     }
-    // Verify block length trailer to match header
-    uint32_t blockLenghtTrailer;
-    file.read(reinterpret_cast<char*>(&blockLenghtTrailer), sizeof(blockLenghtTrailer));
-    if (blockLenghtTrailer != header.blockTotalLength) {
-        std::cerr<< "Mismatched block length at end of block. Expected: " <<header.blockTotalLength <<", Got: "<< blockLenghtTrailer<< std::endl;
-        file.close();
-        return;
-    }
 
     InterfaceDescriptionBlock section;
+    section.deserialize(file);
+    section.deserializeInterfaceFields(file);
+
     processInterfaceDescriptionBlock(file, section);
-    // Verify block length trailer to match header
-    uint32_t interfaceLenghtTrailer;
-    file.read(reinterpret_cast<char*>(&interfaceLenghtTrailer), sizeof(interfaceLenghtTrailer));
-    if (interfaceLenghtTrailer != section.blockTotalLength) {
-        std:: cerr << "Mismatched interface length at end of block. Expected: " <<header.blockTotalLength << ", Got: "<< blockLenghtTrailer << std::endl;
-        file.close ();
-        return;
-    }
+
     uint32_t packetNumber = 0;
     uint32_t tsTimeOffset=0;
     uint32_t usTimeOffset=0;
 
     while (file.peek() != EOF) {
-        PcapNGPacketBlock pb;
+        EnhancedPacketBlock pb;
         PacketInfo pack(++packetNumber);
 
         processPacketBlock(file, pb, pack, tsTimeOffset, usTimeOffset);
 
-        //size_t read = sizeof(pb);
-        //size_t remaining = pb.blockTotalLength - read - sizeof(uint32_t) - pb.capturedPacketLength;
-        file.seekg(pb.blockTotalLength-sizeof(uint32_t), std::ios::cur);
-        uint32_t packetLenghtTrailer;
-        file.read(reinterpret_cast<char*>(&packetLenghtTrailer), sizeof(packetLenghtTrailer));
-
-        if (packetLenghtTrailer != pb.blockTotalLength) {
-            std::cout<<"Packet Block Length Mismatch: Expected: "<< pb.blockTotalLength << ", Got: "<< packetLenghtTrailer << std::endl;
-            file.close();
-
-            exit(0);
-        }
         packets.emplace_back(pack);
     }
     std::cout<<"File processed successfully"<<std::endl;
@@ -496,11 +453,16 @@ int main() {
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 150");
 
-    //std::string filepath = "/Users/zaryob/Downloads/pcapgui/udp.pcap";  // Example file path
-    std::string filepath = "/Users/zaryob/Downloads/pcapgui/iperf3-udp.pcapng";  // Example file path
+    std::string filepath = "/home/suleymanpoyraz/Downloads/nn.pcapng";  // Example file path
+    //std::string filepath = "/Users/zaryob/Downloads/pcapgui/iperf3-udp.pcapng";  // Example file path
     std::vector<char> buffer;
     std::vector<PacketInfo> packets;
 
+    std::cout<<"Sizeof Vector"<<sizeof(std::vector<char>)<<std::endl<<
+               "Sizeof BlockHeader "<<sizeof(BlockHeader)<<std::endl<<
+               "Sizeof Interface Description Block "<<sizeof(InterfaceDescriptionBlock)<<std::endl<<
+               "Sizeof Simple Packet Block "<<sizeof(SimplePacketBlock)<<std::endl<<
+               "Sizeof Section Header Block "<<sizeof(SectionHeaderBlock)<<std::endl;
     if (isPcapng(filepath)) {
         processPcapngFile(filepath, packets);
     } else {
