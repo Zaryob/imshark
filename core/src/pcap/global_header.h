@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-struct PcapGlobalHeader {
+struct GlobalHeader {
     uint32_t magic_number;
     uint16_t version_major;
     uint16_t version_minor;

@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-struct PcapPacketHeader {
+struct PacketHeader {
     uint32_t ts_sec;
     uint32_t ts_usec;
     uint32_t incl_len;
