@@ -76,12 +76,23 @@ struct ICMPHeader {
     uint16_t sequence;   // Sequence number (for Echo Request/Reply)
 };
 
-struct RouteInfo {
-    std::string destination;
-    std::string gateway;
-    std::string interface;
-    RouteInfo(const std::string& dst, const std::string& gw, const std::string& iface)
-        : destination(dst), gateway(gw), interface(iface) {}
+struct DHCPHeader {
+    uint8_t op;               // Message op code / message type
+    uint8_t htype;            // Hardware address type
+    uint8_t hlen;             // Hardware address length
+    uint8_t hops;             // Hops
+    uint32_t xid;             // Transaction ID
+    uint16_t secs;            // Seconds elapsed since client started
+    uint16_t flags;           // Flags
+    uint32_t ciaddr;          // Client IP address
+    uint32_t yiaddr;          // 'Your' (client) IP address
+    uint32_t siaddr;          // Next server IP address
+    uint32_t giaddr;          // Relay agent IP address
+    uint8_t chaddr[16];       // Client hardware address
+    uint8_t sname[64];        // Server host name
+    uint8_t file[128];        // Boot file name
+    uint8_t options[];        // Optional parameters
 };
+
 
 #endif // ETHERNET_HEADER_H
