@@ -4,6 +4,8 @@
 #include <iomanip>
 #include <sstream>
 #include <iostream>
+#include <unordered_map>
+
 
 #include <GLFW/glfw3.h>
 #include <imgui_impl_glfw.h>
@@ -38,6 +40,250 @@ struct PacketInfo {
                const std::string& proto, uint32_t len, const std::string& inf)
         : number(num), time(t), source(src), destination(dest), protocol(proto), length(len), info(inf) {}
 };
+
+
+
+struct ConnectionID {
+    std::string srcIP;
+    std::string dstIP;
+    uint16_t srcPort;
+    uint16_t dstPort;
+
+    // Define equality and hash functions for unordered_map
+    bool operator==(const ConnectionID &other) const {
+        return (srcIP == other.srcIP && dstIP == other.dstIP && srcPort == other.srcPort && dstPort == other.dstPort);
+    }
+};
+
+// Custom hash function for ConnectionID
+namespace std {
+    template <>
+    struct hash<ConnectionID> {
+        std::size_t operator()(const ConnectionID &cid) const {
+            return hash<std::string>()(cid.srcIP) ^ hash<uint16_t>()(cid.srcPort) + hash<std::string>()(cid.dstIP) ^ hash<uint16_t>()(cid.dstPort);
+        }
+    };
+}
+
+
+struct ConnectionState {
+    uint32_t clientInitialSeq; // Client's initial sequence number (from SYN)
+    uint32_t serverInitialSeq; // Server's initial sequence number (from SYN-ACK)
+    bool isClientSeqInitialized = false; // Client sequence initialization flag
+    bool isServerSeqInitialized = false; // Server sequence initialization flag
+};
+
+
+using connectionStateMap=std::unordered_map<size_t, ConnectionState>;
+
+
+void trackTCPConnections(int64_t& relativeSeq, int64_t& relativeAck, const std::string& srcIP, const std::string& dstIP, const TCPHeader& tcpHeader, connectionStateMap& connectionTable) {
+    uint16_t srcPort = ntohs(tcpHeader.src_port);
+    uint16_t dstPort = ntohs(tcpHeader.dest_port);
+
+    // Create a connection ID based on the IPs and ports (this could be either direction)
+    ConnectionID connectionID = {srcIP, dstIP, srcPort, dstPort};
+    ConnectionID reverseConnectionID = {dstIP, srcIP, dstPort, srcPort};  // Reverse for server-to-client direction
+
+    size_t connectionHash = std::hash<ConnectionID>{}(connectionID);
+    size_t reverseConnectionHash = std::hash<ConnectionID>{}(reverseConnectionID);
+
+    // std::cout<<connectionHash<<":"<<reverseConnectionHash<<std::endl;
+    // Initialize sequence and acknowledgment numbers
+    uint32_t seqNum = ntohl(tcpHeader.seq_num);
+    uint32_t ackNum = ntohl(tcpHeader.ack_num);
+
+    // If no SYN packet was seen, treat the first packet as the start of the session
+    if (connectionTable.find(connectionHash) == connectionTable.end() && connectionTable.find(reverseConnectionHash) == connectionTable.end()) {
+        // This is the first packet seen for this connection, initialize state
+        connectionTable[connectionHash] = ConnectionState();
+        connectionTable[connectionHash].clientInitialSeq = seqNum;
+        connectionTable[connectionHash].isClientSeqInitialized = true;
+        // std::cout << "First observed packet for connection: Client ISN = " << seqNum << std::endl;
+    }
+
+    // Check for SYN packet (initialization)
+    if (tcpHeader.flags & TCP_SYN && !(tcpHeader.flags & TCP_ACK)) {  // SYN, but not ACK
+        // Client initiates the connection (SYN packet)
+        if (connectionTable.find(connectionHash) != connectionTable.end()) {
+            connectionTable[connectionHash].clientInitialSeq = seqNum;
+            connectionTable[connectionHash].isClientSeqInitialized = true;
+            // std::cout << "New connection: Client ISN = " << seqNum << std::endl;
+            relativeSeq=0;
+            relativeAck=-1;
+        }
+    } else if (tcpHeader.flags & TCP_SYN && tcpHeader.flags & TCP_ACK) {  // SYN-ACK
+        // Server responds (SYN-ACK packet)
+        if (connectionTable.find(reverseConnectionHash) != connectionTable.end()) {
+            connectionTable[reverseConnectionHash].serverInitialSeq = seqNum;
+            connectionTable[reverseConnectionHash].isServerSeqInitialized = true;
+            // std::cout << "Server ISN = " << seqNum << std::endl;
+            relativeSeq=0;
+            relativeAck=1;
+        }
+    }
+
+    // Handle regular packets and calculate relative sequence and acknowledgment numbers
+    if (!(tcpHeader.flags & TCP_SYN)) {  // Not SYN, regular packets
+        if (connectionTable.find(connectionHash) != connectionTable.end()) {
+            // Client to Server packet
+            ConnectionState& state = connectionTable[connectionHash];
+            if (!state.isClientSeqInitialized) {
+                state.clientInitialSeq = seqNum;  // Treat this as the first observed sequence number if SYN wasn't seen
+                state.isClientSeqInitialized = true;
+                // std::cout << "Initializing client sequence number from first observed packet." << std::endl;
+            }
+            relativeAck = ackNum - state.serverInitialSeq;
+            relativeSeq = seqNum - state.clientInitialSeq;
+            // std::cout << "Client->Server: Relative Seq = " << relativeSeq << ", Relative Ack = " << relativeAck << std::endl;
+        } else if (connectionTable.find(reverseConnectionHash) != connectionTable.end()) {
+            // Server to Client packet
+            ConnectionState& state = connectionTable[reverseConnectionHash];
+            if (!state.isServerSeqInitialized) {
+                state.serverInitialSeq = seqNum;  // Treat this as the first observed sequence number if SYN-ACK wasn't seen
+                state.isServerSeqInitialized = true;
+                // std::cout << "Initializing server sequence number from first observed packet." << std::endl;
+            }
+            relativeSeq = seqNum - state.serverInitialSeq;
+            relativeAck = ackNum - state.clientInitialSeq;
+            // std::cout << "Server->Client: Relative Seq = " << relativeSeq << ", Relative Ack = " << relativeAck << std::endl;
+        }
+    }
+}
+
+std::string parseDomainName(const char* data, size_t& offset, size_t length) {
+    std::string domain;
+    while (offset < length) {
+        uint8_t labelLength = data[offset++];
+        if (labelLength == 0) break; // End of domain name
+        if (!domain.empty()) domain += ".";
+        domain += std::string(data + offset, labelLength);
+        offset += labelLength;
+    }
+    return domain;
+}
+
+void parseDNSQuestion(const char* data, size_t& offset, size_t length, std::ostringstream& oss) {
+    std::string domainName = parseDomainName(data, offset, length);
+    uint16_t qType = ntohs(*(uint16_t*)(data + offset));
+    offset += 2;
+    uint16_t qClass = ntohs(*(uint16_t*)(data + offset));
+    offset += 2;
+
+    std::string qTypeStr = (qType == 1) ? "A" : (qType == 28) ? "AAAA" : std::to_string(qType);
+    oss << " " << qTypeStr << " " << domainName;
+}
+
+void parseDNSAnswer(const char* data, size_t& offset, size_t length, std::ostringstream& oss) {
+    // Parse the domain name
+    std::string domainName = parseDomainName(data, offset, length);
+
+    uint16_t type = ntohs(*(uint16_t*)(data + offset));
+    offset += 2;
+    uint16_t classCode = ntohs(*(uint16_t*)(data + offset));
+    offset += 2;
+    uint32_t ttl = ntohl(*(uint32_t*)(data + offset));
+    offset += 4;
+    uint16_t dataLength = ntohs(*(uint16_t*)(data + offset));
+    offset += 2;
+
+    oss << " " << domainName;
+
+    // Check the type of the record
+    if (type == 1 && dataLength == 4) {  // A record (IPv4)
+        uint32_t ipAddr = *(uint32_t*)(data + offset);
+        struct in_addr ip;
+        ip.s_addr = ipAddr;
+        oss << " A " << inet_ntoa(ip);
+    } else if (type == 28 && dataLength == 16) {  // AAAA record (IPv6)
+        char ipv6Addr[INET6_ADDRSTRLEN];
+        inet_ntop(AF_INET6, data + offset, ipv6Addr, INET6_ADDRSTRLEN);
+        oss << " AAAA " << ipv6Addr;
+    } else if (type == 6) {  // SOA record
+        // SOA is a bit more complicated; it contains multiple fields (mname, rname, serial, refresh, retry, expire, minimum)
+        oss << " SOA";  // You could parse the SOA fields here as needed
+    }
+
+    offset += dataLength;
+}
+
+void parseDNSPacket(const char* data, size_t length, PacketInfo& packetInfo) {
+    if (length < sizeof(DNSHeader)) {
+        std::cerr << "Invalid DNS packet" << std::endl;
+        return;
+    }
+
+    DNSHeader* dnsHeader = (DNSHeader*)data;
+    uint16_t transactionID = ntohs(dnsHeader->transactionID);
+    uint16_t flags = ntohs(dnsHeader->flags);
+    uint16_t questions = ntohs(dnsHeader->questions);
+    uint16_t answerRRs = ntohs(dnsHeader->answerRRs);
+    uint16_t authorityRRs = ntohs(dnsHeader->authorityRRs);
+    uint16_t additionalRRs = ntohs(dnsHeader->additionalRRs);
+
+    std::ostringstream oss;
+
+    if (flags & 0x8000) {
+        // This is a response
+        oss << "Standard query response 0x" << std::hex << transactionID << std::dec;
+    } else {
+        // This is a query
+        oss << "Standard query 0x" << std::hex << transactionID << std::dec;
+    }
+
+    size_t offset = sizeof(DNSHeader);
+
+    // Parse the DNS questions
+    for (int i = 0; i < questions; ++i) {
+        parseDNSQuestion(data, offset, length, oss);
+    }
+
+    // Parse the DNS answers (if it's a response)
+    for (int i = 0; i < answerRRs; ++i) {
+        parseDNSAnswer(data, offset, length, oss);
+    }
+
+    /*oss << "DNS [Transaction ID: " << transactionID
+        << ", Flags: 0x" << std::hex << flags << std::dec
+        << ", Questions: " << questions
+        << ", Answer RRs: " << answerRRs
+        << ", Authority RRs: " << authorityRRs
+        << ", Additional RRs: " << additionalRRs << "]";
+    */
+    packetInfo.info = oss.str();
+}
+
+void parseICMP(const char* data, size_t length, PacketInfo& packetInfo) {
+    if (length < sizeof(ICMPHeader)) {
+        std::cerr << "Invalid ICMP packet" << std::endl;
+        return;
+    }
+
+    ICMPHeader* icmpHeader = (ICMPHeader*)data;
+    std::ostringstream oss;
+
+    switch (icmpHeader->type) {
+        case 8: // Echo Request (Ping)
+            oss << "ICMP Echo Request, Identifier=" << ntohs(icmpHeader->identifier)
+                << ", Sequence=" << ntohs(icmpHeader->sequence);
+        break;
+        case 0: // Echo Reply
+            oss << "ICMP Echo Reply, Identifier=" << ntohs(icmpHeader->identifier)
+                << ", Sequence=" << ntohs(icmpHeader->sequence);
+        break;
+        case 3: // Destination Unreachable
+            oss << "ICMP Destination Unreachable, Code=" << (int)icmpHeader->code;
+        break;
+        case 11: // Time Exceeded
+            oss << "ICMP Time Exceeded, Code=" << (int)icmpHeader->code;
+        break;
+        default:
+            oss << "ICMP Type=" << (int)icmpHeader->type << ", Code=" << (int)icmpHeader->code;
+        break;
+    }
+
+    packetInfo.info = oss.str();
+}
 
 
 void displayPackets(const std::vector<PacketInfo>& packets) {
@@ -118,19 +364,32 @@ std::string getMACAddressString(const uint8_t sender_hw_addr[6]) {
 // Function to parse and print TCP flags
 std::string getTCPFlags(const TCPHeader& tcpHeader) {
     std::string flags;
-    if (tcpHeader.flags & TCP_FIN) flags += "FIN ";
-    if (tcpHeader.flags & TCP_SYN) flags += "SYN ";
-    if (tcpHeader.flags & TCP_RST) flags += "RST ";
-    if (tcpHeader.flags & TCP_PSH) flags += "PSH ";
-    if (tcpHeader.flags & TCP_ACK) flags += "ACK ";
-    if (tcpHeader.flags & TCP_URG) flags += "URG ";
+    if (tcpHeader.flags & TCP_FIN) flags += "FIN";
+    if (tcpHeader.flags & TCP_SYN) flags = flags + (flags.empty() ? "" : ", ") + "SYN";
+    if (tcpHeader.flags & TCP_RST) flags = flags + (flags.empty() ? "" : ", ") +  "RST";
+    if (tcpHeader.flags & TCP_PSH) flags = flags + (flags.empty() ? "" : ", ") +  "PSH";
+    if (tcpHeader.flags & TCP_ACK) flags = flags + (flags.empty() ? "" : ", ") +  "ACK";
+    if (tcpHeader.flags & TCP_URG) flags = flags + (flags.empty() ? "" : ", ") +  "URG";
     return flags;
 }
 
-void processPacket(PacketInfo& pack, std::vector<char>& packetData) {
+void parseARP(ARPHeader arp_header, PacketInfo& packetInfo) {
+    std::ostringstream oss;
+    oss << "ARP ";
+    if (ntohs(arp_header.opcode) == 1) {
+        oss << "Request: Who has " << inet_ntoa(*(struct in_addr*)&arp_header.target_hw_addr)
+            << "? Tell " << inet_ntoa(*(struct in_addr*)&arp_header.sender_hw_addr);
+    } else if (ntohs(arp_header.opcode) == 2) {
+        oss << "Reply: " << inet_ntoa(*(struct in_addr*)&arp_header.sender_hw_addr)
+            << " is at " << getMACAddressString(arp_header.sender_hw_addr);
+    }
+    packetInfo.info = oss.str();
+}
+
+void processPacket(PacketInfo& pack, std::vector<char>& packetData, connectionStateMap& connectionMap) {
     EthernetHeader* ethHeader = reinterpret_cast<EthernetHeader*>(packetData.data());
-    std::cout << "EthHeader: " << std::hex << ethHeader->type << std::dec
-              << " Ethernet Packet: Dest MAC: " << getMACAddressString(ethHeader->dest_mac) << std::endl;
+    // std::cout << "EthHeader: " << std::hex << ethHeader->type << std::dec
+    //          << " Ethernet Packet: Dest MAC: " << getMACAddressString(ethHeader->dest_mac) << std::endl;
 
     if (ntohs(ethHeader->type) == 0x0800) { // IP packet
         IPHeader* ipHeader = reinterpret_cast<IPHeader*>(packetData.data() + sizeof(EthernetHeader));
@@ -139,7 +398,6 @@ void processPacket(PacketInfo& pack, std::vector<char>& packetData) {
         dest_addr.s_addr = ipHeader->daddr;
         struct in_addr src_addr;
         src_addr.s_addr = ipHeader->saddr;
-
         std::string destination(inet_ntoa(dest_addr));
         std::string source(inet_ntoa(src_addr));
 
@@ -147,53 +405,65 @@ void processPacket(PacketInfo& pack, std::vector<char>& packetData) {
         pack.source = source;
 
         switch (ipHeader->protocol) {
+            case 1: { // ICMP
+                ICMPHeader* icmpHeader = reinterpret_cast<ICMPHeader*>(packetData.data() + sizeof(EthernetHeader) + (ipHeader->ihl * 4));
+                pack.protocol = "ICMP";
+                parseICMP(reinterpret_cast<char*>(icmpHeader), ntohs(ipHeader->tot_length) - (ipHeader->ihl * 4), pack);
+            } break;
             case 6: { // TCP
                 TCPHeader* tcpHeader = reinterpret_cast<TCPHeader*>(packetData.data() + sizeof(EthernetHeader) + (ipHeader->ihl * 4));
-                std::cout << "TCP Packet: Src Port: " << ntohs(tcpHeader->src_port)
-                          << ", Dest Port: " << ntohs(tcpHeader->dest_port) << ", Size: "<<ntohs(ipHeader->tot_length)<<", Ihl: "<<(ipHeader->ihl * 4)<< ", DataOffset: "<<(tcpHeader->data_offset*4)<<std::endl;
+                // std::cout << "TCP Packet: Src Port: " << ntohs(tcpHeader->src_port)
+                //          << ", Dest Port: " << ntohs(tcpHeader->dest_port) << ", Size: "<<ntohs(ipHeader->tot_length)<<", Ihl: "<<(ipHeader->ihl * 4)<< ", DataOffset: "<<(tcpHeader->data_offset*4)<<std::endl;
                 pack.length = ntohs(ipHeader->tot_length) - (ipHeader->ihl * 4);
                 pack.protocol = "TCP";
                 std::string flags = getTCPFlags(*tcpHeader);
 
-                uint32_t seq= ntohl(tcpHeader->seq_num);
-                uint32_t ack= ntohl(tcpHeader->ack_num);
+                int64_t seq, ack;
+                trackTCPConnections(seq, ack, source, destination, *tcpHeader, connectionMap);
+
+                //uint32_t seq= ntohl(tcpHeader->seq_num);
+                //uint32_t ack= ntohl(tcpHeader->ack_num);
+
                 uint16_t window= ntohs(tcpHeader->window);
                 pack.info = std::to_string(ntohs(tcpHeader->src_port)) + " -> " + std::to_string(ntohs(tcpHeader->dest_port)) + " [" + flags + "] " +
-                    (seq > 0 ? ("Seq=" + std::to_string(seq) ): "" ) +
-                    (ack > 0 ? ("Ack=" + std::to_string(ack) ): "" ) +
-                    (window > 0 ? ("Win=" + std::to_string(window) ): "" )
+                    (seq >= 0 ? (" Seq=" + std::to_string(seq) ): "" ) +
+                    (ack >= 0 ? (" Ack=" + std::to_string(ack) ): "" ) +
+                    (window > 0 ? (" Win=" + std::to_string(window) ): "" )
            ;
             } break;
 
             case 17: { // UDP
                 UDPHeader* udpHeader = reinterpret_cast<UDPHeader*>(packetData.data() + sizeof(EthernetHeader) + (ipHeader->ihl * 4));
-                std::cout << "UDP Packet: Src Port: " << ntohs(udpHeader->src_port)
-                          << ", Dest Port: " << ntohs(udpHeader->dest_port) << std::endl;
 
-                pack.protocol = "UDP";
-                pack.info = std::to_string(ntohs(udpHeader->src_port)) + " -> " + std::to_string(ntohs(udpHeader->dest_port));
+                uint16_t srcPort = ntohs(udpHeader->src_port);
+                uint16_t dstPort = ntohs(udpHeader->dest_port);
+
+                if (srcPort == 53 || dstPort == 53) {
+                    pack.protocol = "DNS";
+                    parseDNSPacket(packetData.data() + sizeof(EthernetHeader) + (ipHeader->ihl * 4) + sizeof(UDPHeader), ntohs(udpHeader->len) - sizeof(UDPHeader), pack);
+                } else {
+                    pack.protocol = "UDP";
+                    pack.info = std::to_string(srcPort) + " -> " + std::to_string(dstPort) + " Len=" + std::to_string(ntohs(udpHeader->len) - sizeof(UDPHeader));
+                }
                 pack.length = ntohs(udpHeader->len);
             } break;
 
             default:
-                std::cout << "Other IP Protocol: " << static_cast<int>(ipHeader->protocol) << std::endl;
+                // std::cout << "Other IP Protocol: " << static_cast<int>(ipHeader->protocol) << std::endl;
                 pack.protocol = "Other";
         }
     } else if (ntohs(ethHeader->type) == 0x0806) { // ARP packet
         ARPHeader* arpHeader = reinterpret_cast<ARPHeader*>(packetData.data() + sizeof(EthernetHeader));
-        std::cout << "ARP Packet: Opcode " << ntohs(arpHeader->opcode) << std::endl;
-
-
+        // std::cout << "ARP Packet: Opcode " << ntohs(arpHeader->opcode) << std::endl;
         pack.protocol = "ARP";
-        pack.destination = getMACAddressString(arpHeader->target_hw_addr);
-        pack.source = getMACAddressString(arpHeader->sender_hw_addr);
         pack.length = sizeof(ARPHeader);
+        parseARP(*arpHeader, pack);
     }
 }
 
 /// PCAP FILE PROCESSING
 
-void processPcapFile(const std::string& filepath, std::vector<PacketInfo>& packets) {
+void processPcapFile(const std::string& filepath, std::vector<PacketInfo>& packets,connectionStateMap& connectionMap) {
     std::ifstream file(filepath, std::ios::binary);
     GlobalHeader gHeader;
     file.read(reinterpret_cast<char*>(&gHeader), sizeof(GlobalHeader));
@@ -216,9 +486,8 @@ void processPcapFile(const std::string& filepath, std::vector<PacketInfo>& packe
 
         PacketInfo pack(++packetNumber);
         pack.time = (pHeader.ts_sec) + 10e-7 * (pHeader.ts_usec) - (tsTimeOffset + 10e-7 * (usTimeOffset));
-
         // Process the packet data using the shared packet processor
-        processPacket(pack, packetData);
+        processPacket(pack, packetData, connectionMap);
 
         packets.emplace_back(pack);
     }
@@ -231,10 +500,10 @@ void processPcapFile(const std::string& filepath, std::vector<PacketInfo>& packe
 
 void processSectionHeaderBlock(std::ifstream& file, SectionHeaderBlock section) {
 
-    std::cout << "Section Header Block:" << std::endl;
-    std::cout << "Magic Number: " << std::hex << section.magicNumber << std::dec << std::endl;
-    std::cout << "Version: " << section.versionMajor << "." << section.versionMinor << std::endl;
-    std::cout << "Section Length: " << section.sectionLength << std::endl;
+    // std::cout << "Section Header Block:" << std::endl;
+    // std::cout << "Magic Number: " << std::hex << section.magicNumber << std::dec << std::endl;
+    // std::cout << "Version: " << section.versionMajor << "." << section.versionMinor << std::endl;
+    // std::cout << "Section Length: " << section.sectionLength << std::endl;
 
     // Skip any options and the footer (optional to handle if needed)
     //uint32_t remainingBytes = blockTotalLength - sizeof(section) - sizeof(uint32_t);
@@ -248,8 +517,8 @@ void processSectionHeaderBlock(std::ifstream& file, SectionHeaderBlock section) 
 
 }
 
-void processEnhancedPacketBlock(EnhancedPacketBlock& section, PacketInfo& pack, uint32_t& tsTimeOffset, uint32_t& usTimeOffset) {
-    std::cout << "Process Packet Block" << std::endl;
+void processEnhancedPacketBlock(EnhancedPacketBlock& section, PacketInfo& pack, uint32_t& tsTimeOffset, uint32_t& usTimeOffset, connectionStateMap& connectionMap) {
+    // std::cout << "Process Packet Block" << std::endl;
 
     // Check for mismatched block length
     if (section.blockTotalLength != section.blockTotalLengthRedundant) {
@@ -269,19 +538,19 @@ void processEnhancedPacketBlock(EnhancedPacketBlock& section, PacketInfo& pack, 
     pack.time = (seconds + 10e-7 * (milliseconds)) - (tsTimeOffset + 10e-7 * (usTimeOffset));
 
     // Process the packet data using the shared packet processor
-    processPacket(pack, section.packetData);
+    processPacket(pack, section.packetData, connectionMap);
 }
 
 void processInterfaceDescriptionBlock(std::ifstream& file, InterfaceDescriptionBlock& idb) {
     // Read the fixed-length fields of the Interface Description Block
     //file.read(reinterpret_cast<char*>(&section), sizeof(section));
 
-    std::cout << "Interface Description Block: " << std::endl;
-    std::cout << "Block Type: " << std::hex << idb.blockType << std::dec << std::endl;
-    std::cout << "Block Total Length: " << idb.blockTotalLength << std::endl;
-    std::cout << "Link Type: " << idb.linkType << std::endl;
-    std::cout << "Snap Length: " << idb.snapLen << std::endl;
-    std::cout << "TL Red Length: " << idb.blockTotalLengthRedundant << std::endl;
+    // std::cout << "Interface Description Block: " << std::endl;
+    // std::cout << "Block Type: " << std::hex << idb.blockType << std::dec << std::endl;
+    // std::cout << "Block Total Length: " << idb.blockTotalLength << std::endl;
+    // std::cout << "Link Type: " << idb.linkType << std::endl;
+    // std::cout << "Snap Length: " << idb.snapLen << std::endl;
+    // std::cout << "TL Red Length: " << idb.blockTotalLengthRedundant << std::endl;
     if (idb.blockTotalLength != idb.blockTotalLengthRedundant) {
         std::cerr<< "Mismatched block length at end of block. Expected: " <<idb.blockTotalLength <<", Got: "<< idb.blockTotalLengthRedundant<< std::endl;
         file.close();
@@ -308,21 +577,21 @@ void printStatistics(InterfaceStatisticsBlock isb) {
         return;
     }
     uint64_t fullTimestamp = ((uint64_t)isb.timestampHigh << 32) | isb.timestampLow;
-    std::cout << "Interface ID: " << isb.interfaceID << std::endl;
-    std::cout << "Timestamp: " << fullTimestamp << " (high: " << isb.timestampHigh << ", low: " << isb.timestampLow << ")" << std::endl;
-    std::cout << "Options Size: " << isb.options.size() << " bytes" << std::endl;
+    // std::cout << "Interface ID: " << isb.interfaceID << std::endl;
+    // std::cout << "Timestamp: " << fullTimestamp << " (high: " << isb.timestampHigh << ", low: " << isb.timestampLow << ")" << std::endl;
+    // std::cout << "Options Size: " << isb.options.size() << " bytes" << std::endl;
 
     // Additional parsing of options could be done here (if required).
 }
 
 // Function to print the name resolution records
 void printNameResolutionRecords(NameResolutionBlock nrb) {
-    std::cout << "Name Resolution Records:" << std::endl;
+    // std::cout << "Name Resolution Records:" << std::endl;
     for (const auto& record : nrb.records) {
-        std::cout << "Address: " << record.address << ", Resolved Name: " << record.resolvedName << std::endl;
+        // std::cout << "Address: " << record.address << ", Resolved Name: " << record.resolvedName << std::endl;
     }
 }
-void processPcapngFile(const std::string& filepath, std::vector<PacketInfo>& packets) {
+void processPcapngFile(const std::string& filepath, std::vector<PacketInfo>& packets, connectionStateMap& connectionMap) {
     std::ifstream file(filepath, std::ios::binary);
     if (!file.is_open()) {
         std::cerr<< "Failed to open file: " << filepath << std:: endl;
@@ -337,8 +606,8 @@ void processPcapngFile(const std::string& filepath, std::vector<PacketInfo>& pac
     while (file.peek() != EOF) {
         BlockHeader header;
         header.deserialize(file);
-        std::cout<< "Block Type: "<<std::setfill('0') << std::setw(8) << std::hex << header.blockTotalLength << std::dec<< std::endl;
-        std::cout<< "Block Length: "<< header.blockTotalLength << std::endl;
+        // std::cout << "Block Type: "<<std::setfill('0') << std::setw(8) << std::hex << header.blockTotalLength << std::dec<< std::endl;
+        // std::cout << "Block Length: "<< header.blockTotalLength << std::endl;
         switch (header.blockType) {
             case BT_SHB: // BT_SHB
             {
@@ -351,6 +620,7 @@ void processPcapngFile(const std::string& filepath, std::vector<PacketInfo>& pac
             case BT_IDB:
             {
                 InterfaceDescriptionBlock idb(header);
+                std::cout<<"Link Type: "<<idb.linkType<<std::endl;
                 idb.deserializeInterfaceFields(file);
                 processInterfaceDescriptionBlock(file, idb);
             }
@@ -362,7 +632,6 @@ void processPcapngFile(const std::string& filepath, std::vector<PacketInfo>& pac
                 spb.deserializePacketFields(file);
 
                 PacketInfo pack(++packetNumber);
-
                 processSimplePacketBlock(spb, pack, tsTimeOffset, usTimeOffset);
                 packets.emplace_back(pack);
             }
@@ -381,8 +650,7 @@ void processPcapngFile(const std::string& filepath, std::vector<PacketInfo>& pac
                 EnhancedPacketBlock pb(header);
                 pb.deserializeEnhancedFields(file);
                 PacketInfo pack(++packetNumber);
-
-                processEnhancedPacketBlock(pb, pack, tsTimeOffset, usTimeOffset);
+                processEnhancedPacketBlock(pb, pack, tsTimeOffset, usTimeOffset, connectionMap);
 
                 packets.emplace_back(pack);
             }
@@ -398,14 +666,14 @@ void processPcapngFile(const std::string& filepath, std::vector<PacketInfo>& pac
             break;
             // Add cases for other block types...
             default:
-                std::cout << "Unhandled block type:" << std::hex << header.blockType << std::dec <<std::endl;
+                // std::cout << "Unhandled block type:" << std::hex << header.blockType << std::dec <<std::endl;
                 // Skip unknown block
                 file.seekg(header.blockTotalLength - sizeof(BlockHeader), std::ios::cur);
             break;
         }
     }
 
-    std::cout<<"File processed successfully"<<std::endl;
+    // std::cout <<"File processed successfully"<<std::endl;
     file.close();
     return;
 }
@@ -437,20 +705,23 @@ int main() {
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 150");
 
-    //std::string filepath = "/home/suleymanpoyraz/Downloads/nn.pcapng";  // Example file path
-    std::string filepath = "/Users/zaryob/Downloads/pcapgui/iperf3-udp.pcapng";  // Example file path
+    std::string filepath = "/home/suleymanpoyraz/Downloads/nn.pcapng";  // Example file path
+    //std::string filepath = "/Users/zaryob/Downloads/netlink-nflog.pcap";  // Example file path
+    //std::string filepath = "/Users/zaryob/Downloads/pcapgui/iperf3-udp.pcapng";  // Example file path
     std::vector<char> buffer;
     std::vector<PacketInfo> packets;
+    connectionStateMap connectionTable;
 
-    std::cout<<"Sizeof Vector"<<sizeof(std::vector<char>)<<std::endl<<
-               "Sizeof BlockHeader "<<sizeof(BlockHeader)<<std::endl<<
-               "Sizeof Interface Description Block "<<sizeof(InterfaceDescriptionBlock)<<std::endl<<
-               "Sizeof Simple Packet Block "<<sizeof(SimplePacketBlock)<<std::endl<<
-               "Sizeof Section Header Block "<<sizeof(SectionHeaderBlock)<<std::endl;
+    // std::cout <<"Sizeof Vector"<<sizeof(std::vector<char>)<<std::endl<<
+    //           "Sizeof BlockHeader "<<sizeof(BlockHeader)<<std::endl<<
+    //           "Sizeof Interface Description Block "<<sizeof(InterfaceDescriptionBlock)<<std::endl<<
+    //           "Sizeof Simple Packet Block "<<sizeof(SimplePacketBlock)<<std::endl<<
+    //           "Sizeof Section Header Block "<<sizeof(SectionHeaderBlock)<<std::endl;
+
     if (isPcapng(filepath)) {
-        processPcapngFile(filepath, packets);
+        processPcapngFile(filepath, packets, connectionTable);
     } else {
-        processPcapFile(filepath, packets);
+        processPcapFile(filepath, packets, connectionTable);
     }
 
     while (!glfwWindowShouldClose(window)) {
