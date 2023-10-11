@@ -11,10 +11,53 @@
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 
+
+#include <pcap/global_header.h>
+#include <pcap/packet_header.h>
+
+#include <pcapng/block_header.h>
+#include <pcapng/interface_description_block.h>
+#include <pcapng/section_header_block.h>
+#include <pcapng/simple_packet_block.h>
+#include <pcapng/enhanced_packet_block.h>
+#include <pcapng/interface_statistics_block.h>
+#include <pcapng/name_resolution_block.h>
+
 #include <core.h>
 
+int selectedPacket = -1; // Index of the selected packet
+
+std::string toHexString(const std::vector<char>& data, size_t offset, size_t length) {
+    std::ostringstream hexStream, charStream;
+    std::string finalDisplay;
+    size_t end = offset + length;
+    int bytesPerLine = 16;
+
+    for (size_t i = 0; i < data.size(); ++i) {
+            unsigned char byte = data[i];
+            hexStream << std::hex << std::setfill('0') << std::setw(2) << static_cast<int>(byte) << " ";
+            charStream << (std::isprint(byte) ? static_cast<char>(byte) : '.');
+
+            if ((i + 1) % bytesPerLine == 0 || i == data.size() - 1) {
+                // Align the last line by filling spaces if it's shorter than the rest
+                if (i == data.size() - 1 && (i + 1) % bytesPerLine != 0) {
+                    int remainingBytes = bytesPerLine - (i + 1) % bytesPerLine;
+                    for (int j = 0; j < remainingBytes; ++j) {
+                        hexStream << "   "; // Fill with spaces for missing hex bytes
+                    }
+                }
+
+                finalDisplay += hexStream.str() + "     " + charStream.str() + "\n";
+                hexStream.str("");
+                charStream.str("");
+            }
+        }
+
+    return finalDisplay;
+}
 
 void displayPackets(const std::vector<PacketInfo>& packets) {
+
     if (ImGui::BeginChild("Packet List")) {
         if (ImGui::BeginTable("Packets", 7, ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable | ImGuiTableFlags_Hideable)) {
             ImGui::TableSetupColumn("No.");
@@ -29,7 +72,10 @@ void displayPackets(const std::vector<PacketInfo>& packets) {
             for (const auto& packet : packets) {
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(0);
-                ImGui::Text("%d", packet.number);
+                //ImGui::Text("%d", packet.number);
+                if (ImGui::Selectable(std::to_string(packet.number).c_str(), selectedPacket == packet.number, ImGuiSelectableFlags_SpanAllColumns)) {
+                    selectedPacket = packet.number;
+                }
                 ImGui::TableSetColumnIndex(1);
                 ImGui::Text("%.6lf", packet.time);
                 ImGui::TableSetColumnIndex(2);
@@ -47,10 +93,27 @@ void displayPackets(const std::vector<PacketInfo>& packets) {
             ImGui::EndTable();
         }
         ImGui::EndChild();
+        // Packet data window
+        ImGui::Begin("Packet Data");
+        if (selectedPacket != -1) {
+            PacketInfo packet = packets.at(selectedPacket-1);
+            ImGui::Text("Packet Info: %s", packet.info.c_str());
+            ImGui::Separator();
+
+            if (!packet.rawData.empty()) {
+                ImGui::Text("Raw Data:");
+                std::string data_str = toHexString(packet.rawData, 0, packet.rawData.size());
+                ImGui::InputTextMultiline("##data", &data_str[0], data_str.size(), ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 16), ImGuiInputTextFlags_ReadOnly);
+            }
+        }
+        ImGui::End();
     }
+
+
 }
 
 void HexView(const char* title, const char* mem, size_t len,  std::vector<PacketInfo>& packets) {
+    /*
     #ifdef IMGUI_HAS_VIEWPORT
     ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(viewport->GetWorkPos());
@@ -61,9 +124,9 @@ void HexView(const char* title, const char* mem, size_t len,  std::vector<Packet
     ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
     #endif
     //ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
-
+    */
     bool show=true;
-    if (ImGui::Begin(title,&show,ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse)) {
+    if (ImGui::Begin(title )) {//,&show,ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse)) {
         /*for (size_t i = 0; i < len; i += 16) {
             ImGui::Text("%08X ", i);
             for (size_t j = 0; j < 16 && i + j < len; ++j) {
@@ -97,8 +160,8 @@ bool isPcapng(const std::string& filepath) {
 
 void processPcapFile(const std::string& filepath, std::vector<PacketInfo>& packets,connectionStateMap& connectionMap) {
     std::ifstream file(filepath, std::ios::binary);
-    GlobalHeader gHeader;
-    file.read(reinterpret_cast<char*>(&gHeader), sizeof(GlobalHeader));
+    pcap::GlobalHeader gHeader;
+    file.read(reinterpret_cast<char*>(&gHeader), sizeof(pcap::GlobalHeader));
 
     if (gHeader.magic_number != 0xa1b2c3d4) {
         std::cerr << "Incompatible PCAP file format" << std::endl;
@@ -110,8 +173,8 @@ void processPcapFile(const std::string& filepath, std::vector<PacketInfo>& packe
     int packetNumber = 0;
 
     while (file.peek() != EOF) {
-        PacketHeader pHeader = {0};
-        file.read(reinterpret_cast<char*>(&pHeader), sizeof(PacketHeader));
+        pcap::PacketHeader pHeader = {0};
+        file.read(reinterpret_cast<char*>(&pHeader), sizeof(pcap::PacketHeader));
 
         std::vector<char> packetData(pHeader.incl_len);
         file.read(packetData.data(), pHeader.incl_len);
@@ -119,6 +182,7 @@ void processPcapFile(const std::string& filepath, std::vector<PacketInfo>& packe
         PacketInfo pack(++packetNumber);
         pack.time = (pHeader.ts_sec) + 10e-7 * (pHeader.ts_usec) - (tsTimeOffset + 10e-7 * (usTimeOffset));
         // Process the packet data using the shared packet processor
+        pack.rawData = packetData;
         processPacket(pack, packetData, connectionMap);
 
         packets.emplace_back(pack);
@@ -130,7 +194,7 @@ void processPcapFile(const std::string& filepath, std::vector<PacketInfo>& packe
 /// PCAPNG FILE PROCESSING
 
 
-void processSectionHeaderBlock(std::ifstream& file, SectionHeaderBlock section) {
+void processSectionHeaderBlock(std::ifstream& file, pcapng::SectionHeaderBlock section) {
 
     // std::cout << "Section Header Block:" << std::endl;
     // std::cout << "Magic Number: " << std::hex << section.magicNumber << std::dec << std::endl;
@@ -141,25 +205,25 @@ void processSectionHeaderBlock(std::ifstream& file, SectionHeaderBlock section) 
     //uint32_t remainingBytes = blockTotalLength - sizeof(section) - sizeof(uint32_t);
     //file.seekg(remainingBytes, std::ios::cur);
     // Verify block length trailer to match header
-    if (section.blockTotalLength != section.blockTotalLengthRedundant) {
-        std::cerr<< "Mismatched block length at end of block. Expected: " <<section.blockTotalLength <<", Got: "<< section.blockTotalLengthRedundant<< std::endl;
+    if (section.block_total_length != section.block_total_length_redundant) {
+        std::cerr<< "Mismatched block length at end of block. Expected: " <<section.block_total_length <<", Got: "<< section.block_total_length_redundant<< std::endl;
         file.close();
         return;
     }
 
 }
 
-void processEnhancedPacketBlock(EnhancedPacketBlock& section, PacketInfo& pack, uint32_t& tsTimeOffset, uint32_t& usTimeOffset, connectionStateMap& connectionMap) {
+void processEnhancedPacketBlock(pcapng::EnhancedPacketBlock& section, PacketInfo& pack, uint32_t& tsTimeOffset, uint32_t& usTimeOffset, connectionStateMap& connectionMap) {
     // std::cout << "Process Packet Block" << std::endl;
 
     // Check for mismatched block length
-    if (section.blockTotalLength != section.blockTotalLengthRedundant) {
+    if (section.block_total_length != section.block_total_length_redundant) {
         std::cerr << "Mismatched block length at end of block" << std::endl;
         return;
     }
 
     double timestampResolution = 1.0 / 1000; // Default milliseconds
-    uint64_t fullTimestamp = ((uint64_t)section.timestampUpper << 32) | section.timestampLower;
+    uint64_t fullTimestamp = ((uint64_t)section.timestamp_upper << 32) | section.timestamp_lower;
     fullTimestamp *= timestampResolution;
     uint64_t seconds = fullTimestamp / 1'000'000;
     uint64_t milliseconds = fullTimestamp % 1'000'000;
@@ -168,12 +232,12 @@ void processEnhancedPacketBlock(EnhancedPacketBlock& section, PacketInfo& pack, 
     if (usTimeOffset == 0) usTimeOffset = milliseconds;
 
     pack.time = (seconds + 10e-7 * (milliseconds)) - (tsTimeOffset + 10e-7 * (usTimeOffset));
-
+    pack.rawData = section.packet_data;
     // Process the packet data using the shared packet processor
-    processPacket(pack, section.packetData, connectionMap);
+    processPacket(pack, section.packet_data, connectionMap);
 }
 
-void processInterfaceDescriptionBlock(std::ifstream& file, InterfaceDescriptionBlock& idb) {
+void processInterfaceDescriptionBlock(std::ifstream& file, pcapng::InterfaceDescriptionBlock& idb) {
     // Read the fixed-length fields of the Interface Description Block
     //file.read(reinterpret_cast<char*>(&section), sizeof(section));
 
@@ -183,8 +247,8 @@ void processInterfaceDescriptionBlock(std::ifstream& file, InterfaceDescriptionB
     // std::cout << "Link Type: " << idb.linkType << std::endl;
     // std::cout << "Snap Length: " << idb.snapLen << std::endl;
     // std::cout << "TL Red Length: " << idb.blockTotalLengthRedundant << std::endl;
-    if (idb.blockTotalLength != idb.blockTotalLengthRedundant) {
-        std::cerr<< "Mismatched block length at end of block. Expected: " <<idb.blockTotalLength <<", Got: "<< idb.blockTotalLengthRedundant<< std::endl;
+    if (idb.block_total_length != idb.block_total_length_redundant) {
+        std::cerr<< "Mismatched block length at end of block. Expected: " <<idb.block_total_length <<", Got: "<< idb.block_total_length_redundant<< std::endl;
         file.close();
         return;
     }
@@ -192,23 +256,23 @@ void processInterfaceDescriptionBlock(std::ifstream& file, InterfaceDescriptionB
 }
 
 
-void processSimplePacketBlock(SimplePacketBlock spb, PacketInfo& pack, uint32_t& tsTimeOffset, uint32_t& usTimeOffset) {
+void processSimplePacketBlock(pcapng::SimplePacketBlock spb, PacketInfo& pack, uint32_t& tsTimeOffset, uint32_t& usTimeOffset) {
 
-    if (spb.blockTotalLength != spb.blockTotalLengthRedundant) {
-        std::cerr<< "Mismatched block length at end of block. Expected: " <<spb.blockTotalLength <<", Got: "<< spb.blockTotalLengthRedundant<< std::endl;
+    if (spb.block_total_length != spb.block_total_length_redundant) {
+        std::cerr<< "Mismatched block length at end of block. Expected: " <<spb.block_total_length <<", Got: "<< spb.block_total_length_redundant<< std::endl;
         exit(0);
         return;
     }
 }
 
 // Function to print the statistics data
-void printStatistics(InterfaceStatisticsBlock isb) {
-    if (isb.blockTotalLength != isb.blockTotalLengthRedundant) {
-        std::cerr<< "Mismatched block length at end of block. Expected: " <<isb.blockTotalLength <<", Got: "<< isb.blockTotalLengthRedundant<< std::endl;
+void printStatistics(pcapng::InterfaceStatisticsBlock isb) {
+    if (isb.block_total_length != isb.block_total_length_redundant) {
+        std::cerr<< "Mismatched block length at end of block. Expected: " <<isb.block_total_length <<", Got: "<< isb.block_total_length_redundant<< std::endl;
         exit(0);
         return;
     }
-    uint64_t fullTimestamp = ((uint64_t)isb.timestampHigh << 32) | isb.timestampLow;
+    uint64_t fullTimestamp = ((uint64_t)isb.timestamp_high << 32) | isb.timestamp_low;
     // std::cout << "Interface ID: " << isb.interfaceID << std::endl;
     // std::cout << "Timestamp: " << fullTimestamp << " (high: " << isb.timestampHigh << ", low: " << isb.timestampLow << ")" << std::endl;
     // std::cout << "Options Size: " << isb.options.size() << " bytes" << std::endl;
@@ -217,7 +281,7 @@ void printStatistics(InterfaceStatisticsBlock isb) {
 }
 
 // Function to print the name resolution records
-void printNameResolutionRecords(NameResolutionBlock nrb) {
+void printNameResolutionRecords(pcapng::NameResolutionBlock nrb) {
     // std::cout << "Name Resolution Records:" << std::endl;
     for (const auto& record : nrb.records) {
         // std::cout << "Address: " << record.address << ", Resolved Name: " << record.resolvedName << std::endl;
@@ -236,29 +300,29 @@ void processPcapngFile(const std::string& filepath, std::vector<PacketInfo>& pac
     uint32_t usTimeOffset=0;
 
     while (file.peek() != EOF) {
-        BlockHeader header;
+        pcapng::BlockHeader header;
         header.deserialize(file);
         // std::cout << "Block Type: "<<std::setfill('0') << std::setw(8) << std::hex << header.blockTotalLength << std::dec<< std::endl;
         // std::cout << "Block Length: "<< header.blockTotalLength << std::endl;
-        switch (header.blockType) {
-            case BT_SHB: // BT_SHB
+        switch (header.block_type) {
+            case static_cast<uint32_t>(pcapng::BlockType::SHB):
             {
-                SectionHeaderBlock section(header);
+                pcapng::SectionHeaderBlock section(header);
                 // Read SHB fields
                 section.deserializeSectionFields(file);
                 processSectionHeaderBlock(file, section);
             }
             break;
-            case BT_IDB:
+            case static_cast<uint32_t>(pcapng::BlockType::IDB):
             {
-                InterfaceDescriptionBlock idb(header);
+                pcapng::InterfaceDescriptionBlock idb(header);
                 idb.deserializeInterfaceFields(file);
                 processInterfaceDescriptionBlock(file, idb);
             }
             break;
-            case BT_SPB:
+            case static_cast<uint32_t>(pcapng::BlockType::SPB):
             {
-                SimplePacketBlock spb(header);
+                pcapng::SimplePacketBlock spb(header);
 
                 spb.deserializePacketFields(file);
 
@@ -267,18 +331,18 @@ void processPcapngFile(const std::string& filepath, std::vector<PacketInfo>& pac
                 packets.emplace_back(pack);
             }
             break;
-            case BT_ISB:
+            case static_cast<uint32_t>(pcapng::BlockType::ISB):
             {
-                InterfaceStatisticsBlock isb(header);
+                pcapng::InterfaceStatisticsBlock isb(header);
                 isb.deserializeStatisticsFields(file);
 
                 // Process Interface Statistics Block
                 printStatistics(isb);
             }
             break;
-            case BT_EPB:
+            case static_cast<uint32_t>(pcapng::BlockType::EPB):
             {
-                EnhancedPacketBlock pb(header);
+                pcapng::EnhancedPacketBlock pb(header);
                 pb.deserializeEnhancedFields(file);
                 PacketInfo pack(++packetNumber);
                 processEnhancedPacketBlock(pb, pack, tsTimeOffset, usTimeOffset, connectionMap);
@@ -286,9 +350,9 @@ void processPcapngFile(const std::string& filepath, std::vector<PacketInfo>& pac
                 packets.emplace_back(pack);
             }
             break;
-            case BT_NRB:
+            case static_cast<uint32_t>(pcapng::BlockType::NRB):
             {
-                NameResolutionBlock nrb(header);
+                pcapng::NameResolutionBlock nrb(header);
                 nrb.deserializeNameResolutionFields(file);
 
                 // Process Name Resolution Block
@@ -299,7 +363,7 @@ void processPcapngFile(const std::string& filepath, std::vector<PacketInfo>& pac
             default:
                 // std::cout << "Unhandled block type:" << std::hex << header.blockType << std::dec <<std::endl;
                 // Skip unknown block
-                file.seekg(header.blockTotalLength - sizeof(BlockHeader), std::ios::cur);
+                file.seekg(header.block_total_length - sizeof(pcapng::BlockHeader), std::ios::cur);
             break;
         }
     }
@@ -343,9 +407,8 @@ int main() {
     //std::string filepath = "/Users/zaryob/Downloads/dhcp.pcap";  // Example file path
     //std::string filepath = "/Users/zaryob/Downloads/telnet-raw.pcap";  // Example file path
     //std::string filepath = "/Users/zaryob/Downloads/bgpsec.pcap";  // Example file path
-    //std::string filepath = "/Users/zaryob/Downloads/smtp.pcap";  // Example file path
-
-    std::string filepath =  "/home/suleymanpoyraz/Downloads/nn.pcapng";
+    std::string filepath = "/Users/zaryob/Downloads/smtp.pcap";  // Example file path
+    //std::string filepath =  "/home/suleymanpoyraz/Downloads/nn.pcapng";
     std::vector<char> buffer;
     std::vector<PacketInfo> packets;
     connectionStateMap connectionTable;
