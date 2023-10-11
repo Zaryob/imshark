@@ -51,7 +51,19 @@ void displayPackets(const std::vector<PacketInfo>& packets) {
 }
 
 void HexView(const char* title, const char* mem, size_t len,  std::vector<PacketInfo>& packets) {
-    if (ImGui::Begin(title)) {
+    #ifdef IMGUI_HAS_VIEWPORT
+    ImGuiViewport* viewport = ImGui::GetMainViewport();
+    ImGui::SetNextWindowPos(viewport->GetWorkPos());
+    ImGui::SetNextWindowSize(viewport->GetWorkSize());
+    ImGui::SetNextWindowViewport(viewport->ID);
+    #else
+    ImGui::SetNextWindowPos(ImVec2(0.0f, 0.0f));
+    ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
+    #endif
+    //ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+
+    bool show=true;
+    if (ImGui::Begin(title,&show,ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse)) {
         /*for (size_t i = 0; i < len; i += 16) {
             ImGui::Text("%08X ", i);
             for (size_t j = 0; j < 16 && i + j < len; ++j) {
@@ -67,6 +79,8 @@ void HexView(const char* title, const char* mem, size_t len,  std::vector<Packet
         displayPackets(packets);
     }
     ImGui::End();
+    //ImGui::PopStyleVar(2);
+
 }
 
 bool isPcapng(const std::string& filepath) {
