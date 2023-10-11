@@ -5,7 +5,7 @@
 #include <sstream>
 #include <iostream>
 #include <unordered_map>
-
+#include <filesystem>
 
 #include <GLFW/glfw3.h>
 #include <imgui_impl_glfw.h>
@@ -253,8 +253,8 @@ void parseDNSPacket(const char* data, size_t length, PacketInfo& packetInfo) {
     packetInfo.info = oss.str();
 }
 
-void parseICMP(const char* data, size_t length, PacketInfo& packetInfo) {
-    if (length < sizeof(ICMPHeader)) {
+void parseICMP(const char* data, PacketInfo& packetInfo) {
+    if (packetInfo.length < sizeof(ICMPHeader)) {
         std::cerr << "Invalid ICMP packet" << std::endl;
         return;
     }
@@ -377,11 +377,11 @@ void parseARP(ARPHeader arp_header, PacketInfo& packetInfo) {
     std::ostringstream oss;
     oss << "ARP ";
     if (ntohs(arp_header.opcode) == 1) {
-        oss << "Request: Who has " << inet_ntoa(*(struct in_addr*)&arp_header.target_hw_addr)
-            << "? Tell " << inet_ntoa(*(struct in_addr*)&arp_header.sender_hw_addr);
+        oss << "Request: Who has " << inet_ntoa(*(struct in_addr*)&arp_header.target_protocol_addr)
+            << "? Tell " << inet_ntoa(*(struct in_addr*)&arp_header.sender_protocol_addr);
     } else if (ntohs(arp_header.opcode) == 2) {
-        oss << "Reply: " << inet_ntoa(*(struct in_addr*)&arp_header.sender_hw_addr)
-            << " is at " << getMACAddressString(arp_header.sender_hw_addr);
+        oss << "Reply: " << inet_ntoa(*(struct in_addr*)&arp_header.target_protocol_addr)
+            << " is at " << getMACAddressString(arp_header.target_protocol_addr);
     }
     packetInfo.info = oss.str();
 }
@@ -456,6 +456,91 @@ void parseSMTP(const char* data, size_t length, PacketInfo& pack) {
     pack.info = oss.str();
 }
 
+void parseProtocolPacket(PacketInfo& pack, char* pack_data, uint8_t protocol, connectionStateMap& connectionMap){
+    switch (protocol) {
+        case 1: { // ICMP
+            ICMPHeader* icmpHeader = reinterpret_cast<ICMPHeader*>(pack_data);
+            pack.protocol = "ICMP";
+            parseICMP(reinterpret_cast<char*>(icmpHeader), pack);
+        } break;
+        case 6: { // TCP
+            TCPHeader* tcpHeader = reinterpret_cast<TCPHeader*>(pack_data);
+            // std::cout << "TCP Packet: Src Port: " << ntohs(tcpHeader->src_port)
+            //          << ", Dest Port: " << ntohs(tcpHeader->dest_port) << ", Size: "<<ntohs(ipHeader->tot_length)<<", Ihl: "<<(ipHeader->ihl * 4)<< ", DataOffset: "<<(tcpHeader->data_offset*4)<<std::endl;
+            uint8_t data_offset = (tcpHeader->data_offset >> 4) & 0x0F;  // Extract upper 4 bits
+
+            pack.length = pack.length - (data_offset * 4);
+            pack.protocol = "TCP";
+            std::string flags = getTCPFlags(*tcpHeader);
+
+            int64_t seq, ack;
+            trackTCPConnections(seq, ack, pack.source, pack.destination, *tcpHeader, connectionMap);
+
+            //uint32_t seq= ntohl(tcpHeader->seq_num);
+            //uint32_t ack= ntohl(tcpHeader->ack_num);
+
+            uint16_t window= ntohs(tcpHeader->window);
+            pack.info = std::to_string(ntohs(tcpHeader->src_port)) + " -> " + std::to_string(ntohs(tcpHeader->dest_port)) + " [" + flags + "] " +
+                (seq >= 0 ? (" Seq=" + std::to_string(seq) ): "" ) +
+                (ack >= 0 ? (" Ack=" + std::to_string(ack) ): "" ) +
+                (window > 0 ? (" Win=" + std::to_string(window) ): "" );
+
+            uint16_t src_port = ntohs(tcpHeader->src_port);
+            uint16_t dest_port = ntohs(tcpHeader->dest_port);
+            if (src_port == 23 || dest_port == 23) { // Telnet port detection
+                pack.protocol = "Telnet";
+                std::cout<<"Telnet"<<std::endl;
+                const char* telnetData = pack_data + (data_offset * 4);
+                parseTelnet(telnetData, pack.length, pack);
+            }
+            else if (src_port == 25 || dest_port == 25) {
+                pack.protocol = "SMTP";
+                const char* smtpData = pack_data + (data_offset * 4);
+                size_t smtpLength = pack.length;
+                parseSMTP(smtpData, smtpLength, pack);
+            }
+            else if (src_port == 179 || dest_port == 179) { // BGP port detection
+                pack.protocol = "BGP";
+                std::cout<<"BGP"<<std::endl;
+
+                const char* bgpData = pack_data + (data_offset * 4);
+                parseBGP(bgpData, pack.length, pack);
+            }
+        } break;
+
+        case 17: { // UDP
+            UDPHeader* udpHeader = reinterpret_cast<UDPHeader*>(pack_data);
+
+            uint16_t srcPort = ntohs(udpHeader->src_port);
+            uint16_t dstPort = ntohs(udpHeader->dest_port);
+
+
+            if (srcPort == 53 || dstPort == 53) {
+                pack.protocol = "DNS";
+                parseDNSPacket(pack_data + sizeof(UDPHeader), ntohs(udpHeader->len) - sizeof(UDPHeader), pack);
+            }
+            else if (srcPort == 67 || srcPort == 68 || dstPort == 67 || dstPort == 68) { // Detect DHCP over UDP
+                pack.protocol = "DHCP";
+                DHCPHeader* dhcpHeader = reinterpret_cast<DHCPHeader*>(pack_data + sizeof(UDPHeader));
+                parseDHCP(dhcpHeader, pack);
+            }
+            else if (srcPort == 161 || dstPort == 161 || srcPort == 162 || dstPort == 162) { // SNMP port detection
+                pack.protocol = "SNMP";
+                const char* snmpData = pack_data + sizeof(UDPHeader);
+                parseSNMP(snmpData, ntohs(udpHeader->len) - sizeof(UDPHeader), pack);
+            } else {
+                pack.protocol = "UDP";
+                pack.info = std::to_string(srcPort) + " -> " + std::to_string(dstPort) + " Len=" + std::to_string(ntohs(udpHeader->len) - sizeof(UDPHeader));
+            }
+            pack.length = ntohs(udpHeader->len);
+        } break;
+
+        default:
+            // std::cout << "Other IP Protocol: " << static_cast<int>(ipHeader->protocol) << std::endl;
+            pack.protocol = "Other";
+    }
+
+}
 void processPacket(PacketInfo& pack, std::vector<char>& packetData, connectionStateMap& connectionMap) {
     EthernetHeader* ethHeader = reinterpret_cast<EthernetHeader*>(packetData.data());
     // std::cout << "EthHeader: " << std::hex << ethHeader->type << std::dec
@@ -473,95 +558,51 @@ void processPacket(PacketInfo& pack, std::vector<char>& packetData, connectionSt
 
         pack.destination = destination;
         pack.source = source;
+        pack.length = ntohs(ipHeader->tot_length) - (ipHeader->ihl * 4);
+        char* pack_data = packetData.data() + sizeof(EthernetHeader) + (ipHeader->ihl * 4);
+        parseProtocolPacket(pack, pack_data, ipHeader->protocol, connectionMap);
 
-        switch (ipHeader->protocol) {
-            case 1: { // ICMP
-                ICMPHeader* icmpHeader = reinterpret_cast<ICMPHeader*>(packetData.data() + sizeof(EthernetHeader) + (ipHeader->ihl * 4));
-                pack.protocol = "ICMP";
-                parseICMP(reinterpret_cast<char*>(icmpHeader), ntohs(ipHeader->tot_length) - (ipHeader->ihl * 4), pack);
-            } break;
-            case 6: { // TCP
-                char* tcp_data = packetData.data() + sizeof(EthernetHeader) + (ipHeader->ihl * 4);
-                TCPHeader* tcpHeader = reinterpret_cast<TCPHeader*>(tcp_data);
-                // std::cout << "TCP Packet: Src Port: " << ntohs(tcpHeader->src_port)
-                //          << ", Dest Port: " << ntohs(tcpHeader->dest_port) << ", Size: "<<ntohs(ipHeader->tot_length)<<", Ihl: "<<(ipHeader->ihl * 4)<< ", DataOffset: "<<(tcpHeader->data_offset*4)<<std::endl;
-                uint8_t data_offset = (tcpHeader->data_offset >> 4) & 0x0F;  // Extract upper 4 bits
+    } else if (ntohs(ethHeader->type) == 0x86DD){ // IPv6 packet
+        IPv6Header* ipv6Header = reinterpret_cast<IPv6Header*>(packetData.data() + sizeof(EthernetHeader));
 
-                pack.length = ntohs(ipHeader->tot_length) - ((ipHeader->ihl * 4) + (data_offset * 4));
-                pack.protocol = "TCP";
-                std::string flags = getTCPFlags(*tcpHeader);
+        // Extract IPv6 addresses
+        char srcIP[INET6_ADDRSTRLEN];
+        char dstIP[INET6_ADDRSTRLEN];
+        inet_ntop(AF_INET6, &ipv6Header->srcAddr, srcIP, INET6_ADDRSTRLEN);
+        inet_ntop(AF_INET6, &ipv6Header->dstAddr, dstIP, INET6_ADDRSTRLEN);
 
-                int64_t seq, ack;
-                trackTCPConnections(seq, ack, source, destination, *tcpHeader, connectionMap);
+        pack.source = std::string(srcIP);
+        pack.destination = std::string(dstIP);
+        //std::cout<< "Source: "<<pack.source<<"  Destionation: "<<pack.destination<<std::endl;
+        pack.protocol = "IPv6";
 
-                //uint32_t seq= ntohl(tcpHeader->seq_num);
-                //uint32_t ack= ntohl(tcpHeader->ack_num);
+        // Parse version, traffic class, and flow label
 
-                uint16_t window= ntohs(tcpHeader->window);
-                pack.info = std::to_string(ntohs(tcpHeader->src_port)) + " -> " + std::to_string(ntohs(tcpHeader->dest_port)) + " [" + flags + "] " +
-                    (seq >= 0 ? (" Seq=" + std::to_string(seq) ): "" ) +
-                    (ack >= 0 ? (" Ack=" + std::to_string(ack) ): "" ) +
-                    (window > 0 ? (" Win=" + std::to_string(window) ): "" );
+        // Format the extracted information into the packet info
+        std::ostringstream infoStream;
+        infoStream << "IPv6 Version: " << (int)ipv6Header->version
+                   << ", Traffic Class: " << (int)ipv6Header->trafficClass
+                   << ", Flow Label: " << ipv6Header->flowLabel
+                   << ", Hop Limit: " << (int)ipv6Header->hopLimit;
+        pack.info = infoStream.str();
 
-                uint16_t src_port = ntohs(tcpHeader->src_port);
-                uint16_t dest_port = ntohs(tcpHeader->dest_port);
-                if (src_port == 23 || dest_port == 23) { // Telnet port detection
-                    pack.protocol = "Telnet";
-                    std::cout<<"Telnet"<<std::endl;
-                    const char* telnetData = tcp_data + (data_offset * 4);
-                    parseTelnet(telnetData, pack.length, pack);
-                }
-                else if (src_port == 25 || dest_port == 25) {
-                    pack.protocol = "SMTP";
-                    const char* smtpData = tcp_data + (data_offset * 4);
-                    size_t smtpLength = pack.length;
-                    parseSMTP(smtpData, smtpLength, pack);
-                }
-                else if (src_port == 179 || dest_port == 179) { // BGP port detection
-                    pack.protocol = "BGP";
-                    std::cout<<"BGP"<<std::endl;
+        pack.length = ntohs(ipv6Header->payloadLength); // No need to subtract the header size
 
-                    const char* bgpData = tcp_data + (data_offset * 4);
-                    parseBGP(bgpData, pack.length, pack);
-                }
-            } break;
+        // Handle the next header (protocol) and parse further based on the protocol type
+        char* pack_data = packetData.data() + sizeof(EthernetHeader) + sizeof(IPv6Header);
 
-            case 17: { // UDP
-                char* udp_data = packetData.data() + sizeof(EthernetHeader) + (ipHeader->ihl * 4);
-                UDPHeader* udpHeader = reinterpret_cast<UDPHeader*>(udp_data);
+        parseProtocolPacket(pack, pack_data, ipv6Header->nextHeader, connectionMap);
 
-                uint16_t srcPort = ntohs(udpHeader->src_port);
-                uint16_t dstPort = ntohs(udpHeader->dest_port);
-
-
-                if (srcPort == 53 || dstPort == 53) {
-                    pack.protocol = "DNS";
-                    parseDNSPacket(udp_data + sizeof(UDPHeader), ntohs(udpHeader->len) - sizeof(UDPHeader), pack);
-                } else if (srcPort == 67 || srcPort == 68 || dstPort == 67 || dstPort == 68) { // Detect DHCP over UDP
-                    pack.protocol = "DHCP";
-                    DHCPHeader* dhcpHeader = reinterpret_cast<DHCPHeader*>(udp_data + sizeof(UDPHeader));
-                    parseDHCP(dhcpHeader, pack);
-                }
-                if (srcPort == 161 || dstPort == 161 || srcPort == 162 || dstPort == 162) { // SNMP port detection
-                    pack.protocol = "SNMP";
-                    const char* snmpData = udp_data + sizeof(UDPHeader);
-                    parseSNMP(snmpData, ntohs(udpHeader->len) - sizeof(UDPHeader), pack);
-                } else {
-                    pack.protocol = "UDP";
-                    pack.info = std::to_string(srcPort) + " -> " + std::to_string(dstPort) + " Len=" + std::to_string(ntohs(udpHeader->len) - sizeof(UDPHeader));
-                }
-                pack.length = ntohs(udpHeader->len);
-            } break;
-
-            default:
-                // std::cout << "Other IP Protocol: " << static_cast<int>(ipHeader->protocol) << std::endl;
-                pack.protocol = "Other";
-        }
     } else if (ntohs(ethHeader->type) == 0x0806) { // ARP packet
         ARPHeader* arpHeader = reinterpret_cast<ARPHeader*>(packetData.data() + sizeof(EthernetHeader));
         // std::cout << "ARP Packet: Opcode " << ntohs(arpHeader->opcode) << std::endl;
         pack.protocol = "ARP";
         pack.length = sizeof(ARPHeader);
+        pack.destination = getMACAddressString(arpHeader->target_hw_addr);
+        pack.source = getMACAddressString(arpHeader->sender_hw_addr);
+        if(pack.destination == "00:00:00:00:00:00"){
+            pack.destination = "Broadcast";
+        }
         parseARP(*arpHeader, pack);
     }
 }
@@ -816,8 +857,9 @@ int main() {
     //std::string filepath = "/Users/zaryob/Downloads/dhcp.pcap";  // Example file path
     //std::string filepath = "/Users/zaryob/Downloads/telnet-raw.pcap";  // Example file path
     //std::string filepath = "/Users/zaryob/Downloads/bgpsec.pcap";  // Example file path
-    std::string filepath = "/Users/zaryob/Downloads/smtp.pcap";  // Example file path
+    //std::string filepath = "/Users/zaryob/Downloads/smtp.pcap";  // Example file path
 
+    std::string filepath =  "/home/suleymanpoyraz/Downloads/nn.pcapng";
     std::vector<char> buffer;
     std::vector<PacketInfo> packets;
     connectionStateMap connectionTable;

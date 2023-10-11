@@ -20,6 +20,23 @@ struct IPHeader {
     uint32_t daddr;
 };
 
+struct ipv6_addr {
+    unsigned char s6_addr[16]; // 128-bit IPv6 address (16 bytes)
+};
+
+#pragma pack(1)
+struct IPv6Header {
+    uint32_t version: 4;
+    uint32_t trafficClass: 8;
+    uint32_t flowLabel: 20;
+    uint16_t payloadLength;  // 16-bit payload length
+    uint8_t nextHeader;      // 8-bit next header (protocol)
+    uint8_t hopLimit;        // 8-bit hop limit
+    struct ipv6_addr srcAddr; // Source IPv6 address (16 bytes)
+    struct ipv6_addr dstAddr; // Destination IPv6 address (16 bytes)
+};
+#pragma pack(reset)
+
 struct UDPHeader {
     uint16_t src_port;
     uint16_t dest_port;
