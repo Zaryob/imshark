@@ -12,7 +12,8 @@ namespace network {
         uint8_t tos;                // Type of service
         uint16_t tot_length;        // Total length
         uint16_t id;                // Identification
-        uint16_t frag_off;          // Fragment offset field
+        uint8_t flags;              // Flags
+        uint8_t frag_off;          // Fragment offset field
         uint8_t ttl;                // Time to live
         uint8_t protocol;           // Protocol
         uint16_t check;             // Header checksum

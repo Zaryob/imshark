@@ -24,8 +24,10 @@
 #include <pcapng/name_resolution_block.h>
 
 #include <core.h>
+#include <arpa/inet.h>
 
 int selectedPacket = -1; // Index of the selected packet
+int oldSelectedPacket = -1; // Index of the selected packet
 
 std::string toHexString(const std::vector<char>& data, size_t offset, size_t length) {
     std::ostringstream hexStream, charStream;
@@ -55,6 +57,100 @@ std::string toHexString(const std::vector<char>& data, size_t offset, size_t len
 
     return finalDisplay;
 }
+
+
+// Function to process the l2 header
+void processL2(const PacketInfo& packet) {
+    std::visit([](auto&& header) {
+        using T = std::decay_t<decltype(header)>;
+        if constexpr (std::is_same_v<T, network::EthernetHeader>) {
+            ImGui::TextUnformatted(("Destination MAC: " + getMACAddressString(header.dest_mac)).c_str());
+            ImGui::TextUnformatted(("Source MAC: " + getMACAddressString(header.src_mac)).c_str());
+            ImGui::TextUnformatted(("Type: " + std::to_string(header.type)).c_str());
+        }
+    }, packet.l2_header);
+}
+
+// Function to process the l3 header
+void processL3(const PacketInfo& packet) {
+    std::visit([](auto&& header) {
+        using T = std::decay_t<decltype(header)>;
+        if constexpr (std::is_same_v<T, network::ARPHeader>) {
+            ImGui::TextUnformatted("ARP Header");
+        } else if constexpr (std::is_same_v<T, network::IPHeader>) {
+            ImGui::TextUnformatted(("Version: " + std::to_string(header.version)).c_str());
+            ImGui::TextUnformatted(("IHL: " + std::to_string(header.ihl)).c_str());
+            ImGui::TextUnformatted(("Total Length: " + std::to_string(header.tot_length)).c_str());
+            ImGui::TextUnformatted(("Identification: " + std::to_string(header.id)).c_str());
+            ImGui::TextUnformatted(("Flags: " + std::to_string(header.flags)).c_str());
+            ImGui::TextUnformatted(("Fragment Offset: " + std::to_string(header.frag_off)).c_str());
+            ImGui::TextUnformatted(("TTL: " + std::to_string(header.ttl)).c_str());
+            ImGui::TextUnformatted(("Protocol: " + std::to_string(header.protocol)).c_str());
+            ImGui::TextUnformatted(("Header Checksum: " + std::to_string(header.check)).c_str());
+
+            struct in_addr dest_addr;
+            dest_addr.s_addr = header.dst_addr;
+            struct in_addr src_addr;
+            src_addr.s_addr = header.src_addr;
+            ImGui::TextUnformatted(("Source IP: " + std::string(inet_ntoa(src_addr))).c_str());
+            ImGui::TextUnformatted(("Destination IP: " + std::string(inet_ntoa(dest_addr))).c_str());
+
+        } else if constexpr (std::is_same_v<T, network::IPv6Header>) {
+            ImGui::TextUnformatted("Version: 6");
+            ImGui::TextUnformatted(("Traffic Class: " + std::to_string(header.traffic_class)).c_str());
+            ImGui::TextUnformatted(("Flow Label: " + std::to_string(header.flow_label)).c_str());
+            ImGui::TextUnformatted(("Payload Length: " + std::to_string(header.payload_len)).c_str());
+            ImGui::TextUnformatted(("Next Header: " + std::to_string(header.next_header)).c_str());
+            ImGui::TextUnformatted(("Hop Limit: " + std::to_string(header.hop_limit)).c_str());
+            //char srcIP[INET6_ADDRSTRLEN];
+            //char dstIP[INET6_ADDRSTRLEN];
+            //inet_ntop(AF_INET6, header.src_addr, srcIP, INET6_ADDRSTRLEN);
+            //inet_ntop(AF_INET6, header.dst_addr, dstIP, INET6_ADDRSTRLEN);
+            //ImGui::TextUnformatted(("Source IP: " + std::string(srcIP)).c_str());
+            //ImGui::TextUnformatted(("Destination IP: " + std::string(dstIP)).c_str());
+        }
+    }, packet.l3_header);
+}
+
+// Function to process the l4 header
+void processL4(const PacketInfo& packet) {
+    std::visit([](auto&& header) {
+        using T = std::decay_t<decltype(header)>;
+        if constexpr (std::is_same_v<T, network::ICMPHeader>) {
+            ImGui::TextUnformatted("ICMP Header");
+        } else if constexpr (std::is_same_v<T, network::TCPHeader>) {
+
+            ImGui::TextUnformatted("TCP Header");
+            ImGui::TextUnformatted(("Source Port: " + std::to_string(header.src_port)).c_str());
+            ImGui::TextUnformatted(("Destination Port: " + std::to_string(header.dest_port)).c_str());
+            ImGui::TextUnformatted(("Sequence Number: " + std::to_string(header.seq_num)).c_str());
+            ImGui::TextUnformatted(("Acknowledgement Number: " + std::to_string(header.ack_num)).c_str());
+            ImGui::TextUnformatted(("Data Offset: " + std::to_string(header.data_offset)).c_str());
+            ImGui::TextUnformatted(("Flags: " + std::to_string(header.flags)).c_str());
+            ImGui::TextUnformatted(("Window Size: " + std::to_string(header.window)).c_str());
+            ImGui::TextUnformatted(("Checksum: " + std::to_string(header.checksum)).c_str());
+            ImGui::TextUnformatted(("Urgent Pointer: " + std::to_string(header.urgent_pointer)).c_str());
+        } else if constexpr (std::is_same_v<T, network::UDPHeader>) {
+            ImGui::TextUnformatted(("Source Port: " + std::to_string(header.src_port)).c_str());
+            ImGui::TextUnformatted(("Destination Port: " + std::to_string(header.dest_port)).c_str());
+            ImGui::TextUnformatted(("Length: " + std::to_string(header.len)).c_str());
+            ImGui::TextUnformatted(("Checksum: " + std::to_string(header.checksum)).c_str());
+        }
+    }, packet.l4_header);
+}
+
+// Function to process the l7 header
+void processL7(const PacketInfo& packet) {
+    std::visit([](auto&& header) {
+        using T = std::decay_t<decltype(header)>;
+        if constexpr (std::is_same_v<T, network::DHCPHeader>) {
+            ImGui::TextUnformatted("DHCP Header");
+        } else if constexpr (std::is_same_v<T, network::DNSHeader>) {
+            ImGui::TextUnformatted("DNS Header");
+        }
+    }, packet.l7_header);
+}
+
 
 void displayPackets(const std::vector<PacketInfo>& packets) {
 
@@ -94,19 +190,52 @@ void displayPackets(const std::vector<PacketInfo>& packets) {
         }
         ImGui::EndChild();
         // Packet data window
-        ImGui::Begin("Packet Data");
-        if (selectedPacket != -1) {
+        if (selectedPacket != -1 ) {
+
+            ImGui::Begin("Packet Details");
             PacketInfo packet = packets.at(selectedPacket-1);
             ImGui::Text("Packet Info: %s", packet.info.c_str());
             ImGui::Separator();
 
-            if (!packet.rawData.empty()) {
+
+            // Frame Details
+            if (ImGui::TreeNode("Frame Details")) {
+                std::string frameInfo = "Frame Number: " + std::to_string(packet.number) + "\n";
+                ImGui::TextUnformatted(frameInfo.c_str());
+                //ImGui::TextUnformatted(packet.frameInfo.c_str());
+                ImGui::TreePop();
+            }
+
+            // Data Link Layer Details
+            if (ImGui::TreeNode("Data Link Layer")) {
+                processL2(packet);
+
+                //ImGui::TextUnformatted(packet.linkLayerInfo.c_str());
+                ImGui::TreePop();
+            }
+
+            // Network Layer Details
+            if (ImGui::TreeNode("Network Layer")) {
+                processL3(packet);
+                //ImGui::TextUnformatted(packet.networkLayerInfo.c_str());
+                ImGui::TreePop();
+            }
+
+            // Transport Layer Details
+            if (ImGui::TreeNode("Transport Layer")) {
+                processL4(packet);
+                //ImGui::TextUnformatted(packet.transportLayerInfo.c_str());
+                ImGui::TreePop();
+            }
+            if (!packet.raw_data.empty()) {
                 ImGui::Text("Raw Data:");
-                std::string data_str = toHexString(packet.rawData, 0, packet.rawData.size());
+                std::string data_str = toHexString(packet.raw_data, 0, packet.raw_data.size());
                 ImGui::InputTextMultiline("##data", &data_str[0], data_str.size(), ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 16), ImGuiInputTextFlags_ReadOnly);
             }
+            ImGui::End();
+
         }
-        ImGui::End();
+
     }
 
 
@@ -182,7 +311,7 @@ void processPcapFile(const std::string& filepath, std::vector<PacketInfo>& packe
         PacketInfo pack(++packetNumber);
         pack.time = (pHeader.ts_sec) + 10e-7 * (pHeader.ts_usec) - (tsTimeOffset + 10e-7 * (usTimeOffset));
         // Process the packet data using the shared packet processor
-        pack.rawData = packetData;
+        pack.raw_data = packetData;
         processPacket(pack, packetData, connectionMap);
 
         packets.emplace_back(pack);
@@ -232,7 +361,7 @@ void processEnhancedPacketBlock(pcapng::EnhancedPacketBlock& section, PacketInfo
     if (usTimeOffset == 0) usTimeOffset = milliseconds;
 
     pack.time = (seconds + 10e-7 * (milliseconds)) - (tsTimeOffset + 10e-7 * (usTimeOffset));
-    pack.rawData = section.packet_data;
+    pack.raw_data = section.packet_data;
     // Process the packet data using the shared packet processor
     processPacket(pack, section.packet_data, connectionMap);
 }
@@ -437,7 +566,7 @@ int main() {
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
-        HexView("PCAP File Hex Viewer", buffer.data(), buffer.size(),packets);
+        HexView("PCAP File Viewer", buffer.data(), buffer.size(),packets);
 
         ImGui::Render();
         int display_w, display_h;
