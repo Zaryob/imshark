@@ -24,7 +24,10 @@
 #include <pcapng/name_resolution_block.h>
 
 #include <core.h>
+#include <map>
 #include <arpa/inet.h>
+
+std::map<std::string, std::vector<std::string>> packetState;
 
 int selectedPacket = -1; // Index of the selected packet
 int oldSelectedPacket = -1; // Index of the selected packet
@@ -61,80 +64,77 @@ std::string toHexString(const std::vector<char>& data, size_t offset, size_t len
 
 // Function to process the l2 header
 void processL2(const PacketInfo& packet) {
+    packetState["L2"] = {};
+
     std::visit([](auto&& header) {
         using T = std::decay_t<decltype(header)>;
         if constexpr (std::is_same_v<T, network::EthernetHeader>) {
-            ImGui::TextUnformatted(("Destination MAC: " + getMACAddressString(header.dest_mac)).c_str());
-            ImGui::TextUnformatted(("Source MAC: " + getMACAddressString(header.src_mac)).c_str());
-            ImGui::TextUnformatted(("Type: " + std::to_string(header.type)).c_str());
+            packetState["L2"] = {"Destination MAC: " + getMACAddressString(header.dest_mac),
+                                  "Source MAC: " + getMACAddressString(header.src_mac),
+                                  "Type: " + std::to_string(header.type)};
         }
     }, packet.l2_header);
 }
 
 // Function to process the l3 header
 void processL3(const PacketInfo& packet) {
+    packetState["L3"] = {};
     std::visit([](auto&& header) {
         using T = std::decay_t<decltype(header)>;
         if constexpr (std::is_same_v<T, network::ARPHeader>) {
-            ImGui::TextUnformatted("ARP Header");
+            packetState["L3"] = {"ARP Packet"};
         } else if constexpr (std::is_same_v<T, network::IPHeader>) {
-            ImGui::TextUnformatted(("Version: " + std::to_string(header.version)).c_str());
-            ImGui::TextUnformatted(("IHL: " + std::to_string(header.ihl)).c_str());
-            ImGui::TextUnformatted(("Total Length: " + std::to_string(header.tot_length)).c_str());
-            ImGui::TextUnformatted(("Identification: " + std::to_string(header.id)).c_str());
-            ImGui::TextUnformatted(("Flags: " + std::to_string(header.flags)).c_str());
-            ImGui::TextUnformatted(("Fragment Offset: " + std::to_string(header.frag_off)).c_str());
-            ImGui::TextUnformatted(("TTL: " + std::to_string(header.ttl)).c_str());
-            ImGui::TextUnformatted(("Protocol: " + std::to_string(header.protocol)).c_str());
-            ImGui::TextUnformatted(("Header Checksum: " + std::to_string(header.check)).c_str());
-
             struct in_addr dest_addr;
             dest_addr.s_addr = header.dst_addr;
             struct in_addr src_addr;
             src_addr.s_addr = header.src_addr;
-            ImGui::TextUnformatted(("Source IP: " + std::string(inet_ntoa(src_addr))).c_str());
-            ImGui::TextUnformatted(("Destination IP: " + std::string(inet_ntoa(dest_addr))).c_str());
+            packetState["L3"] = {"Version: " + std::to_string(header.version),
+                                 "IHL: " + std::to_string(header.ihl),
+                                 "Total Length: " + std::to_string(header.tot_length),
+                                 "Identification: " + std::to_string(header.id),
+                                 "Flags: " + std::to_string(header.flags),
+                                 "Fragment Offset: " + std::to_string(header.frag_off),
+                                 "TTL: " + std::to_string(header.ttl),
+                                 "Protocol: " + std::to_string(header.protocol),
+                                 "Header Checksum: " + std::to_string(header.check),
+                                 "Source IP: " + std::string(inet_ntoa(src_addr)),
+                                 "Destination IP: " + std::string(inet_ntoa(dest_addr))};
 
         } else if constexpr (std::is_same_v<T, network::IPv6Header>) {
-            ImGui::TextUnformatted("Version: 6");
-            ImGui::TextUnformatted(("Traffic Class: " + std::to_string(header.traffic_class)).c_str());
-            ImGui::TextUnformatted(("Flow Label: " + std::to_string(header.flow_label)).c_str());
-            ImGui::TextUnformatted(("Payload Length: " + std::to_string(header.payload_len)).c_str());
-            ImGui::TextUnformatted(("Next Header: " + std::to_string(header.next_header)).c_str());
-            ImGui::TextUnformatted(("Hop Limit: " + std::to_string(header.hop_limit)).c_str());
-            //char srcIP[INET6_ADDRSTRLEN];
-            //char dstIP[INET6_ADDRSTRLEN];
-            //inet_ntop(AF_INET6, header.src_addr, srcIP, INET6_ADDRSTRLEN);
-            //inet_ntop(AF_INET6, header.dst_addr, dstIP, INET6_ADDRSTRLEN);
-            //ImGui::TextUnformatted(("Source IP: " + std::string(srcIP)).c_str());
-            //ImGui::TextUnformatted(("Destination IP: " + std::string(dstIP)).c_str());
+            packetState["L3"] = {"Version: " + std::to_string(header.version),
+                                 "Traffic Class: " + std::to_string(header.traffic_class),
+                                 "Flow Label: " + std::to_string(header.flow_label),
+                                 "Payload Length: " + std::to_string(header.payload_len),
+                                 "Next Header: " + std::to_string(header.next_header),
+                                 "Hop Limit: " + std::to_string(header.hop_limit)};
         }
     }, packet.l3_header);
 }
 
 // Function to process the l4 header
 void processL4(const PacketInfo& packet) {
+    packetState["L4"] = {};
     std::visit([](auto&& header) {
         using T = std::decay_t<decltype(header)>;
         if constexpr (std::is_same_v<T, network::ICMPHeader>) {
-            ImGui::TextUnformatted("ICMP Header");
+            packetState["L4"] = {"ICMP Header"};
         } else if constexpr (std::is_same_v<T, network::TCPHeader>) {
 
-            ImGui::TextUnformatted("TCP Header");
-            ImGui::TextUnformatted(("Source Port: " + std::to_string(header.src_port)).c_str());
-            ImGui::TextUnformatted(("Destination Port: " + std::to_string(header.dest_port)).c_str());
-            ImGui::TextUnformatted(("Sequence Number: " + std::to_string(header.seq_num)).c_str());
-            ImGui::TextUnformatted(("Acknowledgement Number: " + std::to_string(header.ack_num)).c_str());
-            ImGui::TextUnformatted(("Data Offset: " + std::to_string(header.data_offset)).c_str());
-            ImGui::TextUnformatted(("Flags: " + std::to_string(header.flags)).c_str());
-            ImGui::TextUnformatted(("Window Size: " + std::to_string(header.window)).c_str());
-            ImGui::TextUnformatted(("Checksum: " + std::to_string(header.checksum)).c_str());
-            ImGui::TextUnformatted(("Urgent Pointer: " + std::to_string(header.urgent_pointer)).c_str());
+            packetState["L4"] = { "TCP Header",
+                                    "Source Port: " + std::to_string(header.src_port),
+                                    "Destination Port: " + std::to_string(header.dest_port),
+                                    "Sequence Number: " + std::to_string(header.seq_num),
+                                    "Acknowledgement Number: " + std::to_string(header.ack_num),
+                                    "Data Offset: " + std::to_string(header.data_offset),
+                                    "Flags: " + std::to_string(header.flags),
+                                    "Window Size: " + std::to_string(header.window),
+                                    "Checksum: " + std::to_string(header.checksum),
+                                    "Urgent Pointer: " + std::to_string(header.urgent_pointer)};
         } else if constexpr (std::is_same_v<T, network::UDPHeader>) {
-            ImGui::TextUnformatted(("Source Port: " + std::to_string(header.src_port)).c_str());
-            ImGui::TextUnformatted(("Destination Port: " + std::to_string(header.dest_port)).c_str());
-            ImGui::TextUnformatted(("Length: " + std::to_string(header.len)).c_str());
-            ImGui::TextUnformatted(("Checksum: " + std::to_string(header.checksum)).c_str());
+            packetState["L4"] = {"Source Port: " + std::to_string(header.src_port),
+                                "Destination Port: " + std::to_string(header.dest_port),
+                                "Length: " + std::to_string(header.len),
+                                "Checksum: " + std::to_string(header.checksum)};
         }
     }, packet.l4_header);
 }
@@ -151,10 +151,22 @@ void processL7(const PacketInfo& packet) {
     }, packet.l7_header);
 }
 
+static float splitter_size = 5.0f;
+static float top_height = 300.0f;  // Adjust this value as needed to set the initial height of the packet list
 
 void displayPackets(const std::vector<PacketInfo>& packets) {
 
-    if (ImGui::BeginChild("Packet List")) {
+    // Get Window Size
+    ImVec2 windowSize = ImGui::GetWindowSize();
+
+    if(selectedPacket != -1) {
+        top_height = windowSize.y / 2;
+    }
+    else {
+        top_height = windowSize.y;
+    }
+    // Top window: Packet list
+    ImGui::BeginChild("Packet List", ImVec2(0, top_height), true, ImGuiWindowFlags_AlwaysUseWindowPadding);
         if (ImGui::BeginTable("Packets", 7, ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable | ImGuiTableFlags_Hideable)) {
             ImGui::TableSetupColumn("No.");
             ImGui::TableSetupColumn("Time");
@@ -189,10 +201,27 @@ void displayPackets(const std::vector<PacketInfo>& packets) {
             ImGui::EndTable();
         }
         ImGui::EndChild();
-        // Packet data window
-        if (selectedPacket != -1 ) {
 
-            ImGui::Begin("Packet Details");
+        // Packet data window
+        if(selectedPacket != -1 && selectedPacket != oldSelectedPacket) {
+            oldSelectedPacket = selectedPacket;
+            packetState.clear();
+            PacketInfo packet = packets.at(selectedPacket-1);
+            processL2(packet);
+            processL3(packet);
+            processL4(packet);
+        }
+
+        if (selectedPacket != -1 ) {
+            // Handle splitter resizing
+            if (ImGui::IsItemActive()) {
+                top_height -= ImGui::GetIO().MouseDelta.y;
+            }
+
+            // Bottom window: Packet details
+            ImGui::BeginChild("Packet Details", ImVec2(0, windowSize.y- top_height), true, ImGuiWindowFlags_AlwaysUseWindowPadding);
+
+            //if(ImGui::Begin("Packet Details")){
             PacketInfo packet = packets.at(selectedPacket-1);
             ImGui::Text("Packet Info: %s", packet.info.c_str());
             ImGui::Separator();
@@ -208,22 +237,27 @@ void displayPackets(const std::vector<PacketInfo>& packets) {
 
             // Data Link Layer Details
             if (ImGui::TreeNode("Data Link Layer")) {
-                processL2(packet);
-
+                for (const auto& value : packetState["L2"]) {
+                    ImGui::TextUnformatted(value.c_str());
+                }
                 //ImGui::TextUnformatted(packet.linkLayerInfo.c_str());
                 ImGui::TreePop();
             }
 
             // Network Layer Details
             if (ImGui::TreeNode("Network Layer")) {
-                processL3(packet);
+                for (const auto& value : packetState["L3"]) {
+                    ImGui::TextUnformatted(value.c_str());
+                }
                 //ImGui::TextUnformatted(packet.networkLayerInfo.c_str());
                 ImGui::TreePop();
             }
 
             // Transport Layer Details
             if (ImGui::TreeNode("Transport Layer")) {
-                processL4(packet);
+                for (const auto& value : packetState["L4"]) {
+                    ImGui::TextUnformatted(value.c_str());
+                }
                 //ImGui::TextUnformatted(packet.transportLayerInfo.c_str());
                 ImGui::TreePop();
             }
@@ -232,17 +266,15 @@ void displayPackets(const std::vector<PacketInfo>& packets) {
                 std::string data_str = toHexString(packet.raw_data, 0, packet.raw_data.size());
                 ImGui::InputTextMultiline("##data", &data_str[0], data_str.size(), ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 16), ImGuiInputTextFlags_ReadOnly);
             }
-            ImGui::End();
-
-        }
-
+            
+            ImGui::EndChild();
     }
 
 
 }
 
 void HexView(const char* title, const char* mem, size_t len,  std::vector<PacketInfo>& packets) {
-    /*
+
     #ifdef IMGUI_HAS_VIEWPORT
     ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(viewport->GetWorkPos());
@@ -253,21 +285,9 @@ void HexView(const char* title, const char* mem, size_t len,  std::vector<Packet
     ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
     #endif
     //ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
-    */
+
     bool show=true;
-    if (ImGui::Begin(title )) {//,&show,ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse)) {
-        /*for (size_t i = 0; i < len; i += 16) {
-            ImGui::Text("%08X ", i);
-            for (size_t j = 0; j < 16 && i + j < len; ++j) {
-                ImGui::SameLine();
-                ImGui::Text("%02X ", (unsigned char)mem[i + j]);
-            }
-            ImGui::SameLine(400);
-            for (size_t j = 0; j < 16 && i + j < len; ++j) {
-                char c = isprint((unsigned char)mem[i + j]) ? mem[i + j] : '.';
-                ImGui::Text("%c", c);
-            }
-        }*/
+    if (ImGui::Begin(title)) {//,&show,ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse)) {
         displayPackets(packets);
     }
     ImGui::End();
@@ -330,9 +350,6 @@ void processSectionHeaderBlock(std::ifstream& file, pcapng::SectionHeaderBlock s
     // std::cout << "Version: " << section.versionMajor << "." << section.versionMinor << std::endl;
     // std::cout << "Section Length: " << section.sectionLength << std::endl;
 
-    // Skip any options and the footer (optional to handle if needed)
-    //uint32_t remainingBytes = blockTotalLength - sizeof(section) - sizeof(uint32_t);
-    //file.seekg(remainingBytes, std::ios::cur);
     // Verify block length trailer to match header
     if (section.block_total_length != section.block_total_length_redundant) {
         std::cerr<< "Mismatched block length at end of block. Expected: " <<section.block_total_length <<", Got: "<< section.block_total_length_redundant<< std::endl;
@@ -367,8 +384,6 @@ void processEnhancedPacketBlock(pcapng::EnhancedPacketBlock& section, PacketInfo
 }
 
 void processInterfaceDescriptionBlock(std::ifstream& file, pcapng::InterfaceDescriptionBlock& idb) {
-    // Read the fixed-length fields of the Interface Description Block
-    //file.read(reinterpret_cast<char*>(&section), sizeof(section));
 
     // std::cout << "Interface Description Block: " << std::endl;
     // std::cout << "Block Type: " << std::hex << idb.blockType << std::dec << std::endl;
