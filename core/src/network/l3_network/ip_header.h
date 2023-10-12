@@ -8,12 +8,12 @@
 
 namespace network {
     struct IPHeader {
-        uint8_t ihl:4, version:4;  // IP version and header length
+        uint8_t ihl:4, version:4;   // IP version and header length
         uint8_t tos;                // Type of service
         uint16_t tot_length;        // Total length
         uint16_t id;                // Identification
         uint8_t flags;              // Flags
-        uint8_t frag_off;          // Fragment offset field
+        uint8_t frag_off;           // Fragment offset field
         uint8_t ttl;                // Time to live
         uint8_t protocol;           // Protocol
         uint16_t check;             // Header checksum
