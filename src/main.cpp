@@ -144,8 +144,21 @@ void processL4(const packet::PacketInfo &packet) {
     }, packet.l4_header);
 }
 
+// Function to process the l7 header
+void processL7(const packet::PacketInfo &packet) {
+    std::visit([](auto &&header) {
+        using T = std::decay_t<decltype(header)>;
+        if constexpr (std::is_same_v<T, network::DHCPHeader>) {
+            ImGui::TextUnformatted("DHCP Header");
+        } else if constexpr (std::is_same_v<T, network::DNSHeader>) {
+            ImGui::TextUnformatted("DNS Header");
+        }
+    }, packet.l7_header);
+}
 
-int selected_byte = -1; // Global or static variable to track the selected byte
+int selected_byte_start = -1; // Track the start of the selection range
+int selected_byte_end = -1;   // Track the end of the selection range
+bool is_selecting = false;    // Track whether the user is selecting a range
 
 void RenderHexEditor(std::vector<char> memory_buffer)
 {
@@ -156,12 +169,33 @@ void RenderHexEditor(std::vector<char> memory_buffer)
     // Create two separate regions for Hex and ASCII
     ImGui::BeginChild("HexArea", ImVec2(ImGui::GetContentRegionAvail().x * 0.7f, ImGui::GetContentRegionAvail().y), true);
 
+    // Display column numbers for the hex section
+    bool b;
+
+    ImGui::Selectable("Address : ", &b, ImGuiSelectableFlags_Disabled, ImVec2(70, 20)); // Empty space to align column numbers with the hex values
+    ImGui::SameLine();
+
+    for (int col = 0; col < bytes_per_row; ++col)
+    {
+        char hex_str[3]; // Two characters for hex and one for null-terminator
+        snprintf(hex_str, sizeof(hex_str), "%02X", col);
+
+        ImGui::Selectable(hex_str, &b, ImGuiSelectableFlags_Disabled, ImVec2(20, 20));
+
+        ImGui::SameLine();
+    }
+    ImGui::NewLine();
     // Loop over rows for hex values
     for (int row = 0; row < (int(memory_buffer.size()) + bytes_per_row - 1) / bytes_per_row; ++row)
     {
         // Draw address offset
-        ImGui::Text("%08X: ", row * bytes_per_row);
+        char addr_str[10]; // Two characters for hex and one for null-terminator
+        snprintf(addr_str, sizeof(addr_str), "%08X: ", row * bytes_per_row);
+        ImGui::Selectable(addr_str, &b, ImGuiSelectableFlags_Disabled, ImVec2(70, 20));
+
         ImGui::SameLine();
+
+        //std::cout<<"S:"<<selected_byte_start<<" E:"<<selected_byte_end<<std::endl;
 
         // Draw hex values for each row
         for (int col = 0; col < bytes_per_row; ++col)
@@ -176,10 +210,14 @@ void RenderHexEditor(std::vector<char> memory_buffer)
                 char hex_str[3]; // Two characters for hex and one for null-terminator
                 snprintf(hex_str, sizeof(hex_str), "%02X", byte);
 
-                // Highlight if this byte is selected
-                bool is_selected = (index == selected_byte);
+                //  std::cout << "Byte: " << byte << " Hex: " << hex_str << " sel_start " <<selected_byte_start<<" sel_end "<<selected_byte_end<<  std::endl;
 
-                // Style the selected byte
+                // Determine if this byte is within the selected range
+                bool is_selected = (selected_byte_start != -1 && selected_byte_end != -1 &&
+                                    ((index >= selected_byte_start && index <= selected_byte_end) ||
+                                    (index >= selected_byte_end && index <= selected_byte_start)));
+
+                // Highlight selected bytes
                 if (is_selected)
                 {
                     ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f)); // Text color for selected byte
@@ -187,16 +225,35 @@ void RenderHexEditor(std::vector<char> memory_buffer)
                     ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.7f, 1.0f, 1.0f)); // Hover color for selected byte
                 }
 
+                // Make the hex value selectable
                 if (ImGui::Selectable(hex_str, is_selected, ImGuiSelectableFlags_None, ImVec2(20, 20)))
                 {
-                    selected_byte = index; // Update selected byte
+                    selected_byte_start = index; // Set start of selection
+                    // Optional: Handle byte selection actions, like copying to clipboard
                     ImGui::SetClipboardText(hex_str); // Copy hex value to clipboard
                 }
 
                 if (is_selected)
                 {
-                    ImGui::PopStyleColor(3); // Restore the original style
+                    ImGui::PopStyleColor(3); // Restore original style
                 }
+
+                // Handle mouse events
+                if (ImGui::IsItemHovered() && ImGui::IsMouseDown(ImGuiMouseButton_Left) && !is_selecting) // Mouse click to start selection
+                {
+                    selected_byte_end = index;   // End starts at the same place initially
+                    is_selecting = true;
+                }
+
+                if (ImGui::IsItemHovered() && ImGui::IsMouseDown(ImGuiMouseButton_Left) && is_selecting) // Mouse is being dragged
+                {
+                    selected_byte_end = index; // Update the end of the selection range
+                }
+                else if (ImGui::IsMouseReleased(ImGuiMouseButton_Left) && is_selecting) // Mouse button released
+                {
+                    is_selecting = false; // Stop selecting after release
+                }
+
 
                 ImGui::PopID(); // Restore ID
 
@@ -216,9 +273,16 @@ void RenderHexEditor(std::vector<char> memory_buffer)
     ImGui::SameLine();
     ImGui::BeginChild("ASCIIArea", ImVec2(ImGui::GetContentRegionAvail().x, ImGui::GetContentRegionAvail().y), true);
 
+    // Display column numbers for the ASCII section
+    ImGui::Selectable( "ASCII", &b, ImGuiSelectableFlags_Disabled|ImGuiSelectableFlags_Highlight, ImVec2(205, 20)); // Empty space to align column numbers with the hex values
+
     // Loop over rows for ASCII characters
     for (int row = 0; row < (int(memory_buffer.size()) + bytes_per_row - 1) / bytes_per_row; ++row)
     {
+        // Draw address offset
+        ImGui::Text("%08X: ", row * bytes_per_row);
+        ImGui::SameLine();
+
         for (int col = 0; col < bytes_per_row; ++col)
         {
             int index = row * bytes_per_row + col;
@@ -228,7 +292,10 @@ void RenderHexEditor(std::vector<char> memory_buffer)
                 char c = memory_buffer[index];
                 std::string ascii_str(1, (c >= 32 && c <= 126) ? c : '.');
 
-                bool is_selected = (index == selected_byte);
+                // Highlight ASCII part if the byte is within the selected range
+                bool is_selected = (selected_byte_start != -1 && selected_byte_end != -1 &&
+                                    ((index >= selected_byte_start && index <= selected_byte_end) ||
+                                    (index >= selected_byte_end && index <= selected_byte_start)));
 
                 if (is_selected)
                 {
@@ -239,17 +306,16 @@ void RenderHexEditor(std::vector<char> memory_buffer)
 
                 if (ImGui::Selectable(ascii_str.c_str(), is_selected, ImGuiSelectableFlags_None, ImVec2(10, 20)))
                 {
-                    selected_byte = index; // Update selected byte
                     ImGui::SetClipboardText(ascii_str.c_str()); // Copy ASCII character to clipboard
                 }
 
                 if (is_selected)
                 {
-                    ImGui::PopStyleColor(3); // Restore the original style
+                    ImGui::PopStyleColor(3); // Restore original style
                 }
 
                 if (col < bytes_per_row - 1)
-                    ImGui::SameLine(0, 3.0f); // Adjust the spacing between ASCII characters
+                    ImGui::SameLine(0, 3.0f); // Adjust spacing between ASCII characters
             }
             else
             {
@@ -263,17 +329,6 @@ void RenderHexEditor(std::vector<char> memory_buffer)
     ImGui::EndChild(); // End Hex Editor window
 }
 
-// Function to process the l7 header
-void processL7(const packet::PacketInfo &packet) {
-    std::visit([](auto &&header) {
-        using T = std::decay_t<decltype(header)>;
-        if constexpr (std::is_same_v<T, network::DHCPHeader>) {
-            ImGui::TextUnformatted("DHCP Header");
-        } else if constexpr (std::is_same_v<T, network::DNSHeader>) {
-            ImGui::TextUnformatted("DNS Header");
-        }
-    }, packet.l7_header);
-}
 
 static float splitter_size = 5.0f;
 static float top_height = 300.0f; // Adjust this value as needed to set the initial height of the packet list
@@ -481,12 +536,12 @@ int main() {
 
     //std::string filepath = "/Users/zaryob/Downloads/udp.pcap";  // Example file path
     //std::string filepath = "/Users/zaryob/Downloads/netlink-nflog.pcap";  // Example file path
-    //std::string filepath = "/Users/zaryob/Downloads/iperf3-udp.pcapng";  // Example file path
+    std::string filepath = "/Users/zaryob/Downloads/iperf3-udp.pcapng";  // Example file path
     //std::string filepath = "/Users/zaryob/Downloads/ipv4frags.pcap";  // Example file path
     //std::string filepath = "/Users/zaryob/Downloads/dhcp.pcap";  // Example file path
     //std::string filepath = "/Users/zaryob/Downloads/telnet-raw.pcap";  // Example file path
     //std::string filepath = "/Users/zaryob/Downloads/bgpsec.pcap";  // Example file path
-    std::string filepath = "/Users/zaryob/Downloads/smtp.pcap"; // Example file path
+    //std::string filepath = "/Users/zaryob/Downloads/smtp.pcap"; // Example file path
     //std::string filepath =  "/home/suleymanpoyraz/Downloads/nn.pcapng";
     std::vector<char> buffer;
     std::vector<packet::PacketInfo> packets;
