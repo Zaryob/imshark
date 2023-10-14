@@ -12,8 +12,8 @@
 #include <imgui_impl_opengl3.h>
 
 
-
 #include <core.h>
+#include <imgui_internal.h>
 #include <map>
 #include <arpa/inet.h>
 
@@ -22,7 +22,7 @@
 
 #include <network/utils.h>
 
-std::map<std::string, std::vector<std::string> > packetState;
+std::map<std::string, std::pair<std::vector<std::string>, std::vector<std::pair<int, int> > > > packetState;
 
 int selectedPacket = -1; // Index of the selected packet
 int oldSelectedPacket = -1; // Index of the selected packet
@@ -67,9 +67,12 @@ void processL2(const packet::PacketInfo &packet) {
         using T = std::decay_t<decltype(header)>;
         if constexpr (std::is_same_v<T, network::EthernetHeader>) {
             packetState["L2"] = {
-                "Destination MAC: " + network::getMACAddressString(header.dest_mac),
-                "Source MAC: " +  network::getMACAddressString(header.src_mac),
-                "Type: " + std::to_string(header.type)
+                {
+                    "Destination MAC: " + network::getMACAddressString(header.dest_mac),
+                    "Source MAC: " + network::getMACAddressString(header.src_mac),
+                    "Type: " + std::to_string(header.type)
+                },
+                {{0, 5}, {6, 11}, {12, 13}}
             };
         }
     }, packet.l2_header);
@@ -81,33 +84,42 @@ void processL3(const packet::PacketInfo &packet) {
     std::visit([](auto &&header) {
         using T = std::decay_t<decltype(header)>;
         if constexpr (std::is_same_v<T, network::ARPHeader>) {
-            packetState["L3"] = {"ARP Packet"};
+            packetState["L3"] = {{"ARP Packet"}, {{0, 27}}};
         } else if constexpr (std::is_same_v<T, network::IPHeader>) {
             struct in_addr dest_addr;
             dest_addr.s_addr = header.dst_addr;
             struct in_addr src_addr;
             src_addr.s_addr = header.src_addr;
             packetState["L3"] = {
-                "Version: " + std::to_string(header.version),
-                "IHL: " + std::to_string(header.ihl),
-                "Total Length: " + std::to_string(header.tot_length),
-                "Identification: " + std::to_string(header.id),
-                "Flags: " + std::to_string(header.flags),
-                "Fragment Offset: " + std::to_string(header.frag_off),
-                "TTL: " + std::to_string(header.ttl),
-                "Protocol: " + std::to_string(header.protocol),
-                "Header Checksum: " + std::to_string(header.check),
-                "Source IP: " + std::string(inet_ntoa(src_addr)),
-                "Destination IP: " + std::string(inet_ntoa(dest_addr))
+                {
+                    "Version: " + std::to_string(header.version),
+                    "IHL: " + std::to_string(header.ihl),
+                    "Type of Service: " + std::to_string(header.tos),
+                    "Total Length: " + std::to_string(header.tot_length),
+                    "Identification: " + std::to_string(header.id),
+                    "Flags: " + std::to_string(header.flags),
+                    "Fragment Offset: " + std::to_string(header.frag_off),
+                    "TTL: " + std::to_string(header.ttl),
+                    "Protocol: " + std::to_string(header.protocol),
+                    "Header Checksum: " + std::to_string(header.check),
+                    "Source IP: " + std::string(inet_ntoa(src_addr)),
+                    "Destination IP: " + std::string(inet_ntoa(dest_addr))
+                },
+                {{0, 0}, {0, 0}, {1, 1}, {2, 3}, {4, 5}, {6, 6}, {7, 7}, {8, 8}, {9, 9}, {10, 11}, {12, 15}, {16, 19}}
             };
         } else if constexpr (std::is_same_v<T, network::IPv6Header>) {
             packetState["L3"] = {
-                "Version: " + std::to_string(header.version),
-                "Traffic Class: " + std::to_string(header.traffic_class),
-                "Flow Label: " + std::to_string(header.flow_label),
-                "Payload Length: " + std::to_string(header.payload_len),
-                "Next Header: " + std::to_string(header.next_header),
-                "Hop Limit: " + std::to_string(header.hop_limit)
+                {
+                    "Version: " + std::to_string(header.version),
+                    "Traffic Class: " + std::to_string(header.traffic_class),
+                    "Flow Label: " + std::to_string(header.flow_label),
+                    "Payload Length: " + std::to_string(header.payload_len),
+                    "Next Header: " + std::to_string(header.next_header),
+                    "Hop Limit: " + std::to_string(header.hop_limit),
+                    "Source IP: " + network::getIPv6AddressString(header.src_addr),
+                    "Destination IP: " + network::getIPv6AddressString(header.dst_addr)
+                },
+                {{0, 3}, {0, 3}, {0, 3}, {4, 5}, {6, 6}, {7, 7}, {8, 23}, {24, 39}}
             };
         }
     }, packet.l3_header);
@@ -119,26 +131,31 @@ void processL4(const packet::PacketInfo &packet) {
     std::visit([](auto &&header) {
         using T = std::decay_t<decltype(header)>;
         if constexpr (std::is_same_v<T, network::ICMPHeader>) {
-            packetState["L4"] = {"ICMP Header"};
+            packetState["L4"] = {{"ICMP Header"}, {{0, 7}}};
         } else if constexpr (std::is_same_v<T, network::TCPHeader>) {
             packetState["L4"] = {
-                "TCP Header",
-                "Source Port: " + std::to_string(header.src_port),
-                "Destination Port: " + std::to_string(header.dest_port),
-                "Sequence Number: " + std::to_string(header.seq_num),
-                "Acknowledgement Number: " + std::to_string(header.ack_num),
-                "Data Offset: " + std::to_string(header.data_offset),
-                "Flags: " + std::to_string(header.flags),
-                "Window Size: " + std::to_string(header.window),
-                "Checksum: " + std::to_string(header.checksum),
-                "Urgent Pointer: " + std::to_string(header.urgent_pointer)
+                {
+                    "Source Port: " + std::to_string(header.src_port),
+                    "Destination Port: " + std::to_string(header.dest_port),
+                    "Sequence Number: " + std::to_string(header.seq_num),
+                    "Acknowledgement Number: " + std::to_string(header.ack_num),
+                    "Data Offset: " + std::to_string(header.data_offset),
+                    "Flags: " + std::to_string(header.flags),
+                    "Window Size: " + std::to_string(header.window),
+                    "Checksum: " + std::to_string(header.checksum),
+                    "Urgent Pointer: " + std::to_string(header.urgent_pointer)
+                },
+                {{0, 1}, {2, 3}, {4, 7}, {8, 11}, {12, 12}, {13, 13}, {14, 15}, {16, 17}, {18, 19}}
             };
         } else if constexpr (std::is_same_v<T, network::UDPHeader>) {
             packetState["L4"] = {
-                "Source Port: " + std::to_string(header.src_port),
-                "Destination Port: " + std::to_string(header.dest_port),
-                "Length: " + std::to_string(header.len),
-                "Checksum: " + std::to_string(header.checksum)
+                {
+                    "Source Port: " + std::to_string(header.src_port),
+                    "Destination Port: " + std::to_string(header.dest_port),
+                    "Length: " + std::to_string(header.len),
+                    "Checksum: " + std::to_string(header.checksum)
+                },
+                {{0, 1}, {2, 3}, {4, 5}, {6, 7}}
             };
         }
     }, packet.l4_header);
@@ -157,26 +174,28 @@ void processL7(const packet::PacketInfo &packet) {
 }
 
 int selected_byte_start = -1; // Track the start of the selection range
-int selected_byte_end = -1;   // Track the end of the selection range
-bool is_selecting = false;    // Track whether the user is selecting a range
+int selected_byte_end = -1; // Track the end of the selection range
+//bool is_selecting = false; // Track whether the user is selecting a range
 
-void RenderHexEditor(std::vector<char> memory_buffer)
-{
+int selected_byte = -1;
+
+void RenderHexEditor(std::vector<char> memory_buffer) {
     ImGui::BeginChild("Hex Editor");
 
     const int bytes_per_row = 16; // Number of bytes per row
 
     // Create two separate regions for Hex and ASCII
-    ImGui::BeginChild("HexArea", ImVec2(ImGui::GetContentRegionAvail().x * 0.7f, ImGui::GetContentRegionAvail().y), true);
+    ImGui::BeginChild("HexArea", ImVec2(ImGui::GetContentRegionAvail().x * 0.7f, ImGui::GetContentRegionAvail().y),
+                      true);
 
     // Display column numbers for the hex section
     bool b;
 
-    ImGui::Selectable("Address : ", &b, ImGuiSelectableFlags_Disabled, ImVec2(70, 20)); // Empty space to align column numbers with the hex values
+    ImGui::Selectable("Address : ", &b, ImGuiSelectableFlags_Disabled, ImVec2(70, 20));
+    // Empty space to align column numbers with the hex values
     ImGui::SameLine();
 
-    for (int col = 0; col < bytes_per_row; ++col)
-    {
+    for (int col = 0; col < bytes_per_row; ++col) {
         char hex_str[3]; // Two characters for hex and one for null-terminator
         snprintf(hex_str, sizeof(hex_str), "%02X", col);
 
@@ -185,9 +204,9 @@ void RenderHexEditor(std::vector<char> memory_buffer)
         ImGui::SameLine();
     }
     ImGui::NewLine();
+
     // Loop over rows for hex values
-    for (int row = 0; row < (int(memory_buffer.size()) + bytes_per_row - 1) / bytes_per_row; ++row)
-    {
+    for (int row = 0; row < (int(memory_buffer.size()) + bytes_per_row - 1) / bytes_per_row; ++row) {
         // Draw address offset
         char addr_str[10]; // Two characters for hex and one for null-terminator
         snprintf(addr_str, sizeof(addr_str), "%08X: ", row * bytes_per_row);
@@ -198,11 +217,9 @@ void RenderHexEditor(std::vector<char> memory_buffer)
         //std::cout<<"S:"<<selected_byte_start<<" E:"<<selected_byte_end<<std::endl;
 
         // Draw hex values for each row
-        for (int col = 0; col < bytes_per_row; ++col)
-        {
+        for (int col = 0; col < bytes_per_row; ++col) {
             int index = row * bytes_per_row + col;
-            if (index < memory_buffer.size())
-            {
+            if (index < memory_buffer.size()) {
                 ImGui::PushID(index); // Ensure unique ID for each byte
 
                 // Get the byte value and format it as hex
@@ -215,53 +232,52 @@ void RenderHexEditor(std::vector<char> memory_buffer)
                 // Determine if this byte is within the selected range
                 bool is_selected = (selected_byte_start != -1 && selected_byte_end != -1 &&
                                     ((index >= selected_byte_start && index <= selected_byte_end) ||
-                                    (index >= selected_byte_end && index <= selected_byte_start)));
+                                     (index >= selected_byte_end && index <= selected_byte_start)));
 
                 // Highlight selected bytes
-                if (is_selected)
-                {
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f)); // Text color for selected byte
-                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.9f, 1.0f)); // Background color for selected byte
-                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.7f, 1.0f, 1.0f)); // Hover color for selected byte
+                if (is_selected) {
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+                    // Text color for selected byte
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.9f, 1.0f));
+                    // Background color for selected byte
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.7f, 1.0f, 1.0f));
+                    // Hover color for selected byte
                 }
 
                 // Make the hex value selectable
-                if (ImGui::Selectable(hex_str, is_selected, ImGuiSelectableFlags_None, ImVec2(20, 20)))
-                {
-                    selected_byte_start = index; // Set start of selection
+                if (ImGui::Selectable(hex_str, is_selected, ImGuiSelectableFlags_None, ImVec2(20, 20))) {
+                    selected_byte = index; // Set start of selection
                     // Optional: Handle byte selection actions, like copying to clipboard
                     ImGui::SetClipboardText(hex_str); // Copy hex value to clipboard
                 }
 
-                if (is_selected)
-                {
+                if (is_selected) {
                     ImGui::PopStyleColor(3); // Restore original style
                 }
 
                 // Handle mouse events
-                if (ImGui::IsItemHovered() && ImGui::IsMouseDown(ImGuiMouseButton_Left) && !is_selecting) // Mouse click to start selection
-                {
-                    selected_byte_end = index;   // End starts at the same place initially
-                    is_selecting = true;
-                }
+                //if (ImGui::IsItemHovered() && ImGui::IsMouseDown(ImGuiMouseButton_Left) && !is_selecting)
+                // Mouse click to start selection
+                //{
+                //    selected_byte_end = index; // End starts at the same place initially
+                //    is_selecting = true;
+                //}
 
-                if (ImGui::IsItemHovered() && ImGui::IsMouseDown(ImGuiMouseButton_Left) && is_selecting) // Mouse is being dragged
-                {
-                    selected_byte_end = index; // Update the end of the selection range
-                }
-                else if (ImGui::IsMouseReleased(ImGuiMouseButton_Left) && is_selecting) // Mouse button released
-                {
-                    is_selecting = false; // Stop selecting after release
-                }
+                //if (ImGui::IsItemHovered() && ImGui::IsMouseDown(ImGuiMouseButton_Left) && is_selecting)
+                // Mouse is being dragged
+                //{
+                //    selected_byte_end = index; // Update the end of the selection range
+                //} else if (ImGui::IsMouseReleased(ImGuiMouseButton_Left) && is_selecting) // Mouse button released
+                //{
+                //    is_selecting = false; // Stop selecting after release
+                //}
 
 
                 ImGui::PopID(); // Restore ID
 
                 if (col < bytes_per_row - 1)
                     ImGui::SameLine(); // Keep hex values in the same row
-            }
-            else
-            {
+            } else {
                 ImGui::Text("   "); // Empty space for unused bytes
             }
         }
@@ -274,20 +290,18 @@ void RenderHexEditor(std::vector<char> memory_buffer)
     ImGui::BeginChild("ASCIIArea", ImVec2(ImGui::GetContentRegionAvail().x, ImGui::GetContentRegionAvail().y), true);
 
     // Display column numbers for the ASCII section
-    ImGui::Selectable( "ASCII", &b, ImGuiSelectableFlags_Disabled|ImGuiSelectableFlags_Highlight, ImVec2(205, 20)); // Empty space to align column numbers with the hex values
+    ImGui::Selectable("ASCII", &b, ImGuiSelectableFlags_Disabled | ImGuiSelectableFlags_Highlight, ImVec2(205, 20));
+    // Empty space to align column numbers with the hex values
 
     // Loop over rows for ASCII characters
-    for (int row = 0; row < (int(memory_buffer.size()) + bytes_per_row - 1) / bytes_per_row; ++row)
-    {
+    for (int row = 0; row < (int(memory_buffer.size()) + bytes_per_row - 1) / bytes_per_row; ++row) {
         // Draw address offset
         ImGui::Text("%08X: ", row * bytes_per_row);
         ImGui::SameLine();
 
-        for (int col = 0; col < bytes_per_row; ++col)
-        {
+        for (int col = 0; col < bytes_per_row; ++col) {
             int index = row * bytes_per_row + col;
-            if (index < memory_buffer.size())
-            {
+            if (index < memory_buffer.size()) {
                 // Convert byte to printable ASCII (or dot for non-printable)
                 char c = memory_buffer[index];
                 std::string ascii_str(1, (c >= 32 && c <= 126) ? c : '.');
@@ -295,30 +309,29 @@ void RenderHexEditor(std::vector<char> memory_buffer)
                 // Highlight ASCII part if the byte is within the selected range
                 bool is_selected = (selected_byte_start != -1 && selected_byte_end != -1 &&
                                     ((index >= selected_byte_start && index <= selected_byte_end) ||
-                                    (index >= selected_byte_end && index <= selected_byte_start)));
+                                     (index >= selected_byte_end && index <= selected_byte_start)));
 
-                if (is_selected)
-                {
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f)); // Text color for selected byte
-                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.9f, 1.0f)); // Background color for selected byte
-                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.7f, 1.0f, 1.0f)); // Hover color for selected byte
+                if (is_selected) {
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f));
+                    // Text color for selected byte
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.9f, 1.0f));
+                    // Background color for selected byte
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.7f, 1.0f, 1.0f));
+                    // Hover color for selected byte
                 }
 
-                if (ImGui::Selectable(ascii_str.c_str(), is_selected, ImGuiSelectableFlags_None, ImVec2(10, 20)))
-                {
+                if (ImGui::Selectable(ascii_str.c_str(), is_selected, ImGuiSelectableFlags_None, ImVec2(10, 20))) {
+                    selected_byte = index; // Set start of selection
                     ImGui::SetClipboardText(ascii_str.c_str()); // Copy ASCII character to clipboard
                 }
 
-                if (is_selected)
-                {
+                if (is_selected) {
                     ImGui::PopStyleColor(3); // Restore original style
                 }
 
                 if (col < bytes_per_row - 1)
                     ImGui::SameLine(0, 3.0f); // Adjust spacing between ASCII characters
-            }
-            else
-            {
+            } else {
                 ImGui::Text(" "); // Empty space for unused bytes
             }
         }
@@ -329,19 +342,17 @@ void RenderHexEditor(std::vector<char> memory_buffer)
     ImGui::EndChild(); // End Hex Editor window
 }
 
-
-static float splitter_size = 5.0f;
+static float splitter_size = 20.0f; // Height of the splitter bar
 static float top_height = 300.0f; // Adjust this value as needed to set the initial height of the packet list
 
 void displayPackets(const std::vector<packet::PacketInfo> &packets) {
     // Get Available Window Size
     ImVec2 windowSize = ImGui::GetContentRegionAvail();
 
-    if (selectedPacket != -1) {
-        top_height = windowSize.y / 2;
-    } else {
+    if (selectedPacket == -1) {
         top_height = windowSize.y;
     }
+
     // Top window: Packet list
     ImGui::BeginChild("Packet List", ImVec2(0, top_height), true, ImGuiWindowFlags_AlwaysUseWindowPadding);
     if (ImGui::BeginTable("Packets", 7,
@@ -381,6 +392,19 @@ void displayPackets(const std::vector<packet::PacketInfo> &packets) {
     }
     ImGui::EndChild();
 
+
+    if (selectedPacket != -1) {
+        // Handle the splitter interaction between "Packet List" and "Packet Details"
+        //ImGui::Separator(); // Optional visual separator for the splitter bar
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() - splitter_size);  // Position the splitter bar correctly
+        ImGui::InvisibleButton("##splitter", ImVec2(-1, 2*splitter_size));  // Create an invisible button for the splitter bar
+        if (ImGui::IsItemActive()) {
+            top_height += ImGui::GetIO().MouseDelta.y;  // Adjust the height of the top window when dragging
+        }
+
+        // Constrain the top_height to prevent it from being too small or too large
+        top_height = ImClamp(top_height, 100.0f, windowSize.y - 100.0f);
+    }
     // Packet data window
     if (selectedPacket != -1 && selectedPacket != oldSelectedPacket) {
         oldSelectedPacket = selectedPacket;
@@ -389,17 +413,16 @@ void displayPackets(const std::vector<packet::PacketInfo> &packets) {
         processL2(packet);
         processL3(packet);
         processL4(packet);
+        selected_byte = -1;
+        selected_byte_start = -1;
+        selected_byte_end = -1;
     }
 
     if (selectedPacket != -1) {
-        // Handle splitter resizing
-        if (ImGui::IsItemActive()) {
-            top_height -= ImGui::GetIO().MouseDelta.y;
-        }
 
-        // Bottom window: Packet details
-        ImGui::BeginChild("Packet Details", ImVec2(0, windowSize.y - top_height - 10), true,
-                          ImGuiWindowFlags_AlwaysUseWindowPadding);
+        // Second child window: "Packet Details"
+        ImGui::BeginChild("Packet Details", ImVec2(0, windowSize.y - top_height - splitter_size), true, ImGuiWindowFlags_AlwaysUseWindowPadding);
+        // Render packet details here
 
         //if(ImGui::Begin("Packet Details")){
         packet::PacketInfo packet = packets.at(selectedPacket - 1);
@@ -415,31 +438,136 @@ void displayPackets(const std::vector<packet::PacketInfo> &packets) {
             ImGui::TreePop();
         }
 
+        int data_link_i = 0;
         // Data Link Layer Details
-        if (ImGui::TreeNode("Data Link Layer")) {
-            for (const auto &value: packetState["L2"]) {
-                ImGui::TextUnformatted(value.c_str());
+        bool isHoveredDLL = ImGui::TreeNode("Data Link Layer");
+
+        for (int i = 0; i < packetState["L2"].first.size(); i++) {
+            std::string value = packetState["L2"].first[i];
+            bool raise_text= false;
+            if (selected_byte != -1 &&
+                selected_byte >= packetState["L2"].second[i].first &&
+                selected_byte <= packetState["L2"].second[i].second) {
+                raise_text=true;
+                selected_byte_start = packetState["L2"].second[i].first;
+                selected_byte_end = packetState["L2"].second[i].second;
+
             }
+            else if(packetState["L2"].second[i].first == selected_byte_start){
+                raise_text=true;
+            }
+            data_link_i = packetState["L2"].second[i].second;
+
+
+            if (isHoveredDLL) {
+                if(raise_text) {
+                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0,255,0,255));
+                    ImGui::TextUnformatted(" -> ");
+                    ImGui::SameLine();
+                }
+                ImGui::TextUnformatted(value.c_str());
+                if(raise_text) {
+                    ImGui::PopStyleColor();
+                }
+                if (ImGui::IsItemHovered()) {
+                    if (ImGui::IsMouseDown(0)) {
+                        selected_byte = -1;
+                        selected_byte_start = packetState["L2"].second[i].first;
+                        selected_byte_end = packetState["L2"].second[i].second;
+                    }
+                }
+            }
+        }
+        if (isHoveredDLL) {
             //ImGui::TextUnformatted(packet.linkLayerInfo.c_str());
             ImGui::TreePop();
         }
 
+        int network_i = 0;
+
         // Network Layer Details
-        if (ImGui::TreeNode("Network Layer")) {
-            for (const auto &value: packetState["L3"]) {
-                ImGui::TextUnformatted(value.c_str());
+        bool isHoveredNL = ImGui::TreeNode("Network Layer");
+        for (int i = 0; i < packetState["L3"].first.size(); i++) {
+            std::string value = packetState["L3"].first[i];
+            network_i = packetState["L3"].second[i].second;
+            bool raise_text= false;
+            if (selected_byte != -1 &&
+                selected_byte >= data_link_i + 1 + packetState["L3"].second[i].first &&
+                selected_byte <= data_link_i + 1 + packetState["L3"].second[i].second) {
+                raise_text=true;
+                selected_byte_start = packetState["L3"].second[i].first + 1 + data_link_i;
+                selected_byte_end = packetState["L3"].second[i].second + 1 + data_link_i;
+            } else if (packetState["L3"].second[i].first + 1 + data_link_i == selected_byte_start){
+                raise_text=true;
             }
-            //ImGui::TextUnformatted(packet.networkLayerInfo.c_str());
+            if (isHoveredNL) {
+                if(raise_text) {
+                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0,255,0,255));
+                    ImGui::TextUnformatted(" -> ");
+                    ImGui::SameLine();
+                }
+                ImGui::TextUnformatted(value.c_str());
+                if(raise_text) {
+                    ImGui::PopStyleColor();
+                }
+                if (ImGui::IsItemHovered()) {
+                    if (ImGui::IsMouseDown(0)) {
+                        selected_byte = -1;
+                        selected_byte_start = packetState["L3"].second[i].first + 1 + data_link_i;
+                        selected_byte_end = packetState["L3"].second[i].second + 1 + data_link_i;
+                    }
+                }
+            }
+        }
+
+        if (isHoveredNL) {
+            //ImGui::TextUnformatted(packet.linkLayerInfo.c_str());
             ImGui::TreePop();
         }
 
         // Transport Layer Details
-        if (ImGui::TreeNode("Transport Layer")) {
-            for (const auto &value: packetState["L4"]) {
-                ImGui::TextUnformatted(value.c_str());
+        int transport_i = 0;
+        bool isHoveredTL = ImGui::TreeNode("Transport Layer");
+        for (int i = 0; i < packetState["L4"].first.size(); i++) {
+            std::string value = packetState["L4"].first[i];
+            transport_i = packetState["L4"].second[i].second;
+            bool raise_text= false;
+            if (selected_byte != -1 &&
+                selected_byte >= data_link_i + network_i + 2 + packetState["L4"].second[i].first &&
+                selected_byte <= data_link_i + network_i + 2 + packetState["L4"].second[i].second) {
+                raise_text=true;
+                selected_byte_start = packetState["L4"].second[i].first + network_i + 2 + data_link_i;
+                selected_byte_end = packetState["L4"].second[i].second + network_i + 2 + data_link_i;
+            } else if(packetState["L4"].second[i].first + 2 + data_link_i + network_i == selected_byte_start){
+                raise_text=true;
             }
+            if (isHoveredTL) {
+                if(raise_text) {
+                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32(0,255,0,255));
+                    ImGui::TextUnformatted(" -> ");
+                    ImGui::SameLine();
+                }
+                ImGui::TextUnformatted(value.c_str());
+                if(raise_text) {
+                    ImGui::PopStyleColor();
+                }
+                if (ImGui::IsItemHovered()) {
+                    if (ImGui::IsMouseDown(0)) {
+                        selected_byte = -1;
+                        selected_byte_start = packetState["L4"].second[i].first + 2 + data_link_i + network_i;
+                        selected_byte_end = packetState["L4"].second[i].second + 2 + data_link_i + network_i;
+                    }
+                }
+            }
+        }
+        if (isHoveredTL) {
             //ImGui::TextUnformatted(packet.transportLayerInfo.c_str());
             ImGui::TreePop();
+        }
+
+        if(selected_byte!=1 && selected_byte > selected_byte_end){
+            selected_byte_start =  transport_i + data_link_i + network_i + 3;
+            selected_byte_end = packet.raw_data.size()-1;
         }
 
         if (!packet.raw_data.empty()) {
@@ -534,9 +662,9 @@ int main() {
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 150");
 
-    //std::string filepath = "/Users/zaryob/Downloads/udp.pcap";  // Example file path
+    std::string filepath = "/Users/zaryob/Downloads/udp.pcap"; // Example file path
     //std::string filepath = "/Users/zaryob/Downloads/netlink-nflog.pcap";  // Example file path
-    std::string filepath = "/Users/zaryob/Downloads/iperf3-udp.pcapng";  // Example file path
+    //std::string filepath = "/Users/zaryob/Downloads/iperf3-udp.pcapng";  // Example file path
     //std::string filepath = "/Users/zaryob/Downloads/ipv4frags.pcap";  // Example file path
     //std::string filepath = "/Users/zaryob/Downloads/dhcp.pcap";  // Example file path
     //std::string filepath = "/Users/zaryob/Downloads/telnet-raw.pcap";  // Example file path
@@ -591,5 +719,3 @@ int main() {
 
     return 0;
 }
-
-
