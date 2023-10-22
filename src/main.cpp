@@ -21,6 +21,9 @@
 #include <packet/packet_info.h>
 
 #include <network/utils.h>
+#include <set>
+
+#include <thirdparty/ImGuiFileDialog.h>
 
 std::map<std::string, std::pair<std::vector<std::string>, std::vector<std::pair<int, int> > > > packetState;
 
@@ -596,7 +599,7 @@ void displayPackets(const std::vector<packet::PacketInfo> &packets) {
     }
 }
 
-void HexView(const char *title, const char *mem, size_t len, std::vector<packet::PacketInfo> &packets) {
+void HexView(const char *title, std::vector<packet::PacketInfo> &packets) {
 #ifdef IMGUI_HAS_VIEWPORT
     ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(viewport->GetWorkPos());
@@ -608,8 +611,19 @@ void HexView(const char *title, const char *mem, size_t len, std::vector<packet:
 #endif
     //ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
 
-    bool show = true;
-    if (ImGui::Begin(title)) {
+    // Get the size of the menu bar to offset the window below it
+    ImVec2 window_pos = ImVec2(0, ImGui::GetFrameHeight()); // Position below the menu bar
+    ImVec2 window_size = ImGui::GetIO().DisplaySize;
+
+    // Adjust window size to avoid overlapping the menu bar
+    window_size.y -= ImGui::GetFrameHeight();
+
+    // Begin a new window, positioned below the menu bar
+    ImGui::SetNextWindowPos(window_pos);
+    ImGui::SetNextWindowSize(window_size);
+
+
+    if (ImGui::Begin(title, nullptr, ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse )) {
         //,&show,ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoCollapse)) {
         displayPackets(packets);
     }
@@ -627,14 +641,66 @@ bool isPcapng(const std::string &filepath) {
     return false;
 }
 
-#include <set>
 
 // Global state to store selected hex values
 std::set<size_t> selectedIndices;
 
+// Function to display the file open dialog
+void ShowFileOpenDialog(std::vector<packet::PacketInfo>& packets)
+{
+    // If the user selects the Open option, open the file dialog
+    if (ImGui::BeginMainMenuBar())
+    {
+        if (ImGui::BeginMenu("File"))
+        {
+            if (ImGui::MenuItem("Open"))
+            {
+                // Trigger the file dialog when "Open" is clicked
+                ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", "Choose File", ".pcapng,.pcap," );
+            }
+            if (ImGui::MenuItem("Close File"))
+            {
+                // Trigger the file dialog when "Close File" is clicked
+                packets.clear();
+            }
+            if (ImGui::MenuItem("Exit"))
+            {
+                // Close the application when "Exit" is clicked
+                exit(0);
+            }
+
+            ImGui::EndMenu();
+        }
+        ImGui::EndMainMenuBar();
+    }
+
+    // Handle the file dialog
+    if (ImGuiFileDialog::Instance()->Display("ChooseFileDlgKey"))
+    {
+        // If a file is selected, process the file path
+        if (ImGuiFileDialog::Instance()->IsOk())
+        {
+            core::FileProcessor fileProcessor;
+
+            std::string filePath = ImGuiFileDialog::Instance()->GetFilePathName();
+
+            if (std::filesystem::is_regular_file(filePath)) {
+                packets.clear();
+                if (isPcapng(filePath)) {
+                    fileProcessor.processPcapngFile(filePath, packets);
+                } else {
+                    fileProcessor.processPcapFile(filePath, packets);
+                }
+            } else {
+                std::cerr << "Invalid file path: " << filePath << std::endl;
+            }
+        }
+        // Close the file dialog after use
+        ImGuiFileDialog::Instance()->Close();
+    }
+}
 
 int main() {
-    core::FileProcessor fileProcessor;
     if (!glfwInit()) {
         std::cerr << "Failed to initialize GLFW" << std::endl;
         return -1;
@@ -662,33 +728,8 @@ int main() {
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 150");
 
-    std::string filepath = "/Users/zaryob/Downloads/udp.pcap"; // Example file path
-    //std::string filepath = "/Users/zaryob/Downloads/netlink-nflog.pcap";  // Example file path
-    //std::string filepath = "/Users/zaryob/Downloads/iperf3-udp.pcapng";  // Example file path
-    //std::string filepath = "/Users/zaryob/Downloads/ipv4frags.pcap";  // Example file path
-    //std::string filepath = "/Users/zaryob/Downloads/dhcp.pcap";  // Example file path
-    //std::string filepath = "/Users/zaryob/Downloads/telnet-raw.pcap";  // Example file path
-    //std::string filepath = "/Users/zaryob/Downloads/bgpsec.pcap";  // Example file path
-    //std::string filepath = "/Users/zaryob/Downloads/smtp.pcap"; // Example file path
-    //std::string filepath =  "/home/suleymanpoyraz/Downloads/nn.pcapng";
-    std::vector<char> buffer;
     std::vector<packet::PacketInfo> packets;
 
-    // std::cout <<"Sizeof Vector"<<sizeof(std::vector<char>)<<std::endl<<
-    //           "Sizeof BlockHeader "<<sizeof(BlockHeader)<<std::endl<<
-    //           "Sizeof Interface Description Block "<<sizeof(InterfaceDescriptionBlock)<<std::endl<<
-    //           "Sizeof Simple Packet Block "<<sizeof(SimplePacketBlock)<<std::endl<<
-    //           "Sizeof Section Header Block "<<sizeof(SectionHeaderBlock)<<std::endl;
-
-    if (std::filesystem::is_regular_file(filepath)) {
-        if (isPcapng(filepath)) {
-            fileProcessor.processPcapngFile(filepath, packets);
-        } else {
-            fileProcessor.processPcapFile(filepath, packets);
-        }
-    } else {
-        std::cerr << "Invalid file path: " << filepath << std::endl;
-    }
 
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
@@ -697,8 +738,8 @@ int main() {
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
-        HexView("PCAP File Viewer", buffer.data(), buffer.size(), packets);
-
+        ShowFileOpenDialog(packets);
+        HexView("PCAP File Viewer", packets);
 
         ImGui::Render();
         int display_w, display_h;

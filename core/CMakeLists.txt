@@ -6,12 +6,13 @@ file(GLOB_RECURSE SRC "src/*.cpp" "src/*.c")
 
 # Configure backend sources
 file(GLOB_RECURSE BACKEND_SRC "backends/glfw/imgui/*.cpp" "backends/glfw/imgui/*.c")
+file(GLOB_RECURSE THIRDPARTY_SRC "src/thirdparty/*.cpp" "src/thirdparty/*.c")
 
 # Configure imgui sources
 file(GLOB_RECURSE IMGUI_SRC "src/imgui/*.cpp" "src/imgui/*.c")
 
 # Add code to dyn lib
-add_library(imshark_core SHARED ${SRC} ${BACKEND_SRC} ${IMGUI_SRC})
+add_library(imshark_core SHARED ${SRC} ${BACKEND_SRC} ${IMGUI_SRC} ${THIRDPARTY_SRC})
 
 # Set compiler options
 target_compile_options(imshark_core PRIVATE ${imsharkGUI_COMPILER_FLAGS})
@@ -22,6 +23,7 @@ target_compile_definitions(imshark_core PUBLIC INSTALL_PREFIX="${CMAKE_INSTALL_P
 # Include core headers
 target_include_directories(imshark_core PUBLIC "src/")
 target_include_directories(imshark_core PUBLIC "src/imgui")
+target_include_directories(imshark_core PUBLIC "src/thirdparty")
 target_include_directories(imshark_core PUBLIC "backends/glfw/imgui")
 
 find_package(OpenGL REQUIRED)
