@@ -10,27 +10,16 @@
 #include <imgui_impl_opengl3.h>
 
 #include <ip/ethernet_header.h>
-#include <pcap/pcap_global_header.h>
-#include <pcap/pcap_packet_header.h>
-#include <pcap/pcapng_block_header.h>
-
+#include <pcap/global_header.h>
+#include <pcap/packet_header.h>
+#include <pcapng/block_header.h>
+#include <pcapng/interface_description_block.h>
+#include <pcapng/section_header_block.h>
 #include <arpa/inet.h>
 
 #define BT_SHB 0x0A0D0D0A  // Section Header Block
 #define BT_SPB 0x00000003  // Simple Packet Block
 
-
-
-
-struct InterfaceDescriptionBlock {
-    uint32_t blockType;          // Block Type, should be 0x00000001 for IDB
-    uint32_t blockTotalLength;   // Total block length (including the header and trailer)
-    uint16_t linkType;           // Data link type (Ethernet, etc.)
-    uint16_t reserved;           // Reserved, must be zero
-    uint32_t snaplen;            // Maximum length of captured packets, in octets
-    // Optional fields (omitted for simplicity)
-    // You could add options like timestamp resolution, etc.
-};
 
 struct PcapNGPacketBlock {
     uint32_t blockType;             // Block Type = 0x00000006
@@ -43,14 +32,6 @@ struct PcapNGPacketBlock {
 
 };
 
-struct SectionHeaderBlock {
-    uint32_t blockType;          // Should be 0x0A0D0D0A for SHB
-    uint32_t blockTotalLength;   // Total length of the block
-    uint32_t magicNumber;        // Magic number (0x1A2B3C4D)
-    uint16_t versionMajor;       // Major version number
-    uint16_t versionMinor;       // Minor version number
-    int64_t sectionLength;       // Length of the section (can be -1 for unknown)
-} section;
 
 struct SimplePacketBlock : public PcapNGPacketBlock {
     uint32_t originalPacketLength; // The original length of the packet
@@ -150,8 +131,8 @@ std::string getMACAddressString(const uint8_t sender_hw_addr[6]) {
 
 void processPcapFile(const std::string& filepath, std::vector<char>& buffer, std::vector<PacketInfo>& packets) {
     std::ifstream file(filepath, std::ios::binary);
-    PcapGlobalHeader gHeader;
-    file.read(reinterpret_cast<char*>(&gHeader), sizeof(PcapGlobalHeader));
+    GlobalHeader gHeader;
+    file.read(reinterpret_cast<char*>(&gHeader), sizeof(GlobalHeader));
 
     static int packetNumber = 0;
 
@@ -164,8 +145,8 @@ void processPcapFile(const std::string& filepath, std::vector<char>& buffer, std
     uint32_t usTimeOffset=0;
 
     while (file.peek() != EOF) {
-        PcapPacketHeader pHeader = {0};
-        file.read(reinterpret_cast<char*>(&pHeader), sizeof(PcapPacketHeader));
+        PacketHeader pHeader = {0};
+        file.read(reinterpret_cast<char*>(&pHeader), sizeof(PacketHeader));
 
         std::vector<char> packetData(pHeader.incl_len);
         file.read(packetData.data(), pHeader.incl_len);
@@ -240,7 +221,7 @@ void processPcapFile(const std::string& filepath, std::vector<char>& buffer, std
 }
 
 void processSectionHeaderBlock(std::ifstream& file, uint32_t blockTotalLength) {
-
+    SectionHeaderBlock section;
     // Read SHB fields
     file.read(reinterpret_cast<char*>(&section), sizeof(section));
 
@@ -418,13 +399,13 @@ void processPcapngFile(const std::string& filepath, std::vector<PacketInfo>& pac
         return;
     }
 
-    PcapNGBlockHeader header;
-    file.read(reinterpret_cast<char*>(&header), sizeof(PcapNGBlockHeader));
+    BlockHeader header;
+    file.read(reinterpret_cast<char*>(&header), sizeof(BlockHeader));
     //std:: cout << "Header Hex: ";
     //printAsHex(reinterpret_cast<char*>(Sheader), sizeof(header));
     //std:: cout < std:: endl;
     // Debugging: Output the expected block length for verification
-    file.seekg(-1 * sizeof(PcapNGBlockHeader), std::ios::cur);
+    file.seekg(-1 * sizeof(BlockHeader), std::ios::cur);
     std::cout<< "Block Length: "<< header.blockTotalLength << std::endl;
     switch (header.blockType) {
         case BT_SHB: // BT_SHB
@@ -437,7 +418,7 @@ void processPcapngFile(const std::string& filepath, std::vector<PacketInfo>& pac
         default:
         std::cout << "Unhandled block type:" << std::hex << header.blockType << std::dec <<std::endl;
         // Skip unknown block
-        file.seekg(header.blockTotalLength - sizeof(PcapNGBlockHeader), std::ios::cur);
+        file.seekg(header.blockTotalLength - sizeof(BlockHeader), std::ios::cur);
         break;
     }
     // Verify block length trailer to match header
