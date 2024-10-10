@@ -30,6 +30,7 @@ struct EnhancedPacketBlock : public BlockHeader {
 
         // Calculate the remaining bytes for packetData
         size_t dataLength = blockTotalLength - (sizeof(uint32_t) * 7 + sizeof(uint32_t)); // 7 uint32_t fields
+        // std::cout<<dataLength<<std::endl;
         packetData.resize(dataLength);
         stream.read(packetData.data(), dataLength);
 

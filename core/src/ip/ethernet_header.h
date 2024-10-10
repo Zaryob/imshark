@@ -59,4 +59,29 @@ struct ARPHeader {
     uint8_t target_protocol_addr[4];
 };
 
+struct DNSHeader {
+    uint16_t transactionID;    // Identification number
+    uint16_t flags;            // Flags
+    uint16_t questions;        // Number of questions
+    uint16_t answerRRs;        // Number of answer resource records
+    uint16_t authorityRRs;     // Number of authority resource records
+    uint16_t additionalRRs;    // Number of additional resource records
+};
+
+struct ICMPHeader {
+    uint8_t type;        // ICMP message type
+    uint8_t code;        // ICMP message code
+    uint16_t checksum;   // ICMP checksum
+    uint16_t identifier; // Identifier (for Echo Request/Reply)
+    uint16_t sequence;   // Sequence number (for Echo Request/Reply)
+};
+
+struct RouteInfo {
+    std::string destination;
+    std::string gateway;
+    std::string interface;
+    RouteInfo(const std::string& dst, const std::string& gw, const std::string& iface)
+        : destination(dst), gateway(gw), interface(iface) {}
+};
+
 #endif // ETHERNET_HEADER_H
