@@ -386,6 +386,76 @@ void parseARP(ARPHeader arp_header, PacketInfo& packetInfo) {
     packetInfo.info = oss.str();
 }
 
+void parseDHCP(const DHCPHeader* dhcpHeader, PacketInfo& pack) {
+    // Extract DHCP fields and format them for display
+    std::ostringstream oss;
+
+    // Message type: 1 = BOOTREQUEST, 2 = BOOTREPLY
+    oss << "DHCP ";
+    if (dhcpHeader->op == 1) {
+        oss << "Request";
+    } else if (dhcpHeader->op == 2) {
+        oss << "Reply";
+    }
+
+    oss << ", XID: 0x" << std::hex << ntohl(dhcpHeader->xid) << std::dec;
+    oss << ", Client IP: " << inet_ntoa(*(struct in_addr*)&dhcpHeader->ciaddr);
+    oss << ", Your IP: " << inet_ntoa(*(struct in_addr*)&dhcpHeader->yiaddr);
+    oss << ", Server IP: " << inet_ntoa(*(struct in_addr*)&dhcpHeader->siaddr);
+    oss << ", Gateway IP: " << inet_ntoa(*(struct in_addr*)&dhcpHeader->giaddr);
+
+    // Format hardware address
+    oss << ", Client MAC: ";
+    for (int i = 0; i < 6; ++i) {
+        oss << std::hex << std::setw(2) << std::setfill('0') << (int)dhcpHeader->chaddr[i];
+        if (i != 5) oss << ":";
+    }
+
+    pack.info = oss.str();
+}
+void parseSNMP(const char* data, size_t length, PacketInfo& pack) {
+    // SNMP is encoded in ASN.1/BER (Binary Encoded Rules), which is complex to fully decode.
+    // We can just extract basic information for now.
+
+    std::ostringstream oss;
+    oss << "SNMP message (length: " << length << ")";
+
+    pack.info = oss.str();
+}
+
+void parseTelnet(const char* data, size_t length, PacketInfo& pack) {
+    std::string telnetData(data, length);
+    std::ostringstream oss;
+    oss << "[ Telnet data: " << telnetData.substr(0, 50) << "... ]"; // Show a snippet of the Telnet data.
+
+    pack.info += oss.str();
+}
+
+void parseBGP(const char* data, size_t length, PacketInfo& pack) {
+    // Basic BGP message parsing, BGP messages can be OPEN, UPDATE, NOTIFICATION, KEEPALIVE.
+    std::ostringstream oss;
+    uint8_t messageType = data[18];  // BGP message type is at the 19th byte of the BGP message.
+
+    oss << " [ BGP: ";
+    switch (messageType) {
+        case 1: oss << "OPEN"; break;
+        case 2: oss << "UPDATE"; break;
+        case 3: oss << "NOTIFICATION"; break;
+        case 4: oss << "KEEPALIVE"; break;
+        default: oss << "Unknown";
+    }
+    oss << " ]";
+    pack.info += oss.str();
+}
+
+void parseSMTP(const char* data, size_t length, PacketInfo& pack) {
+    std::string smtpData(data, length);
+    std::ostringstream oss;
+    oss << "SMTP data: " << smtpData.substr(0, 50) << "..."; // Show the first part of the SMTP command/data.
+
+    pack.info = oss.str();
+}
+
 void processPacket(PacketInfo& pack, std::vector<char>& packetData, connectionStateMap& connectionMap) {
     EthernetHeader* ethHeader = reinterpret_cast<EthernetHeader*>(packetData.data());
     // std::cout << "EthHeader: " << std::hex << ethHeader->type << std::dec
@@ -411,10 +481,13 @@ void processPacket(PacketInfo& pack, std::vector<char>& packetData, connectionSt
                 parseICMP(reinterpret_cast<char*>(icmpHeader), ntohs(ipHeader->tot_length) - (ipHeader->ihl * 4), pack);
             } break;
             case 6: { // TCP
-                TCPHeader* tcpHeader = reinterpret_cast<TCPHeader*>(packetData.data() + sizeof(EthernetHeader) + (ipHeader->ihl * 4));
+                char* tcp_data = packetData.data() + sizeof(EthernetHeader) + (ipHeader->ihl * 4);
+                TCPHeader* tcpHeader = reinterpret_cast<TCPHeader*>(tcp_data);
                 // std::cout << "TCP Packet: Src Port: " << ntohs(tcpHeader->src_port)
                 //          << ", Dest Port: " << ntohs(tcpHeader->dest_port) << ", Size: "<<ntohs(ipHeader->tot_length)<<", Ihl: "<<(ipHeader->ihl * 4)<< ", DataOffset: "<<(tcpHeader->data_offset*4)<<std::endl;
-                pack.length = ntohs(ipHeader->tot_length) - (ipHeader->ihl * 4);
+                uint8_t data_offset = (tcpHeader->data_offset >> 4) & 0x0F;  // Extract upper 4 bits
+
+                pack.length = ntohs(ipHeader->tot_length) - ((ipHeader->ihl * 4) + (data_offset * 4));
                 pack.protocol = "TCP";
                 std::string flags = getTCPFlags(*tcpHeader);
 
@@ -428,19 +501,51 @@ void processPacket(PacketInfo& pack, std::vector<char>& packetData, connectionSt
                 pack.info = std::to_string(ntohs(tcpHeader->src_port)) + " -> " + std::to_string(ntohs(tcpHeader->dest_port)) + " [" + flags + "] " +
                     (seq >= 0 ? (" Seq=" + std::to_string(seq) ): "" ) +
                     (ack >= 0 ? (" Ack=" + std::to_string(ack) ): "" ) +
-                    (window > 0 ? (" Win=" + std::to_string(window) ): "" )
-           ;
+                    (window > 0 ? (" Win=" + std::to_string(window) ): "" );
+
+                uint16_t src_port = ntohs(tcpHeader->src_port);
+                uint16_t dest_port = ntohs(tcpHeader->dest_port);
+                if (src_port == 23 || dest_port == 23) { // Telnet port detection
+                    pack.protocol = "Telnet";
+                    std::cout<<"Telnet"<<std::endl;
+                    const char* telnetData = tcp_data + (data_offset * 4);
+                    parseTelnet(telnetData, pack.length, pack);
+                }
+                else if (src_port == 25 || dest_port == 25) {
+                    pack.protocol = "SMTP";
+                    const char* smtpData = tcp_data + (data_offset * 4);
+                    size_t smtpLength = pack.length;
+                    parseSMTP(smtpData, smtpLength, pack);
+                }
+                else if (src_port == 179 || dest_port == 179) { // BGP port detection
+                    pack.protocol = "BGP";
+                    std::cout<<"BGP"<<std::endl;
+
+                    const char* bgpData = tcp_data + (data_offset * 4);
+                    parseBGP(bgpData, pack.length, pack);
+                }
             } break;
 
             case 17: { // UDP
-                UDPHeader* udpHeader = reinterpret_cast<UDPHeader*>(packetData.data() + sizeof(EthernetHeader) + (ipHeader->ihl * 4));
+                char* udp_data = packetData.data() + sizeof(EthernetHeader) + (ipHeader->ihl * 4);
+                UDPHeader* udpHeader = reinterpret_cast<UDPHeader*>(udp_data);
 
                 uint16_t srcPort = ntohs(udpHeader->src_port);
                 uint16_t dstPort = ntohs(udpHeader->dest_port);
 
+
                 if (srcPort == 53 || dstPort == 53) {
                     pack.protocol = "DNS";
-                    parseDNSPacket(packetData.data() + sizeof(EthernetHeader) + (ipHeader->ihl * 4) + sizeof(UDPHeader), ntohs(udpHeader->len) - sizeof(UDPHeader), pack);
+                    parseDNSPacket(udp_data + sizeof(UDPHeader), ntohs(udpHeader->len) - sizeof(UDPHeader), pack);
+                } else if (srcPort == 67 || srcPort == 68 || dstPort == 67 || dstPort == 68) { // Detect DHCP over UDP
+                    pack.protocol = "DHCP";
+                    DHCPHeader* dhcpHeader = reinterpret_cast<DHCPHeader*>(udp_data + sizeof(UDPHeader));
+                    parseDHCP(dhcpHeader, pack);
+                }
+                if (srcPort == 161 || dstPort == 161 || srcPort == 162 || dstPort == 162) { // SNMP port detection
+                    pack.protocol = "SNMP";
+                    const char* snmpData = udp_data + sizeof(UDPHeader);
+                    parseSNMP(snmpData, ntohs(udpHeader->len) - sizeof(UDPHeader), pack);
                 } else {
                     pack.protocol = "UDP";
                     pack.info = std::to_string(srcPort) + " -> " + std::to_string(dstPort) + " Len=" + std::to_string(ntohs(udpHeader->len) - sizeof(UDPHeader));
@@ -620,7 +725,6 @@ void processPcapngFile(const std::string& filepath, std::vector<PacketInfo>& pac
             case BT_IDB:
             {
                 InterfaceDescriptionBlock idb(header);
-                std::cout<<"Link Type: "<<idb.linkType<<std::endl;
                 idb.deserializeInterfaceFields(file);
                 processInterfaceDescriptionBlock(file, idb);
             }
@@ -705,9 +809,15 @@ int main() {
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 150");
 
-    std::string filepath = "/home/suleymanpoyraz/Downloads/nn.pcapng";  // Example file path
+    //std::string filepath = "/Users/zaryob/Downloads/udp.pcap";  // Example file path
     //std::string filepath = "/Users/zaryob/Downloads/netlink-nflog.pcap";  // Example file path
-    //std::string filepath = "/Users/zaryob/Downloads/pcapgui/iperf3-udp.pcapng";  // Example file path
+    //std::string filepath = "/Users/zaryob/Downloads/iperf3-udp.pcapng";  // Example file path
+    //std::string filepath = "/Users/zaryob/Downloads/ipv4frags.pcap";  // Example file path
+    //std::string filepath = "/Users/zaryob/Downloads/dhcp.pcap";  // Example file path
+    //std::string filepath = "/Users/zaryob/Downloads/telnet-raw.pcap";  // Example file path
+    //std::string filepath = "/Users/zaryob/Downloads/bgpsec.pcap";  // Example file path
+    std::string filepath = "/Users/zaryob/Downloads/smtp.pcap";  // Example file path
+
     std::vector<char> buffer;
     std::vector<PacketInfo> packets;
     connectionStateMap connectionTable;
@@ -718,10 +828,15 @@ int main() {
     //           "Sizeof Simple Packet Block "<<sizeof(SimplePacketBlock)<<std::endl<<
     //           "Sizeof Section Header Block "<<sizeof(SectionHeaderBlock)<<std::endl;
 
-    if (isPcapng(filepath)) {
-        processPcapngFile(filepath, packets, connectionTable);
-    } else {
-        processPcapFile(filepath, packets, connectionTable);
+    if(std::filesystem::is_regular_file(filepath))
+    {
+        if (isPcapng(filepath)) {
+            processPcapngFile(filepath, packets, connectionTable);
+        } else {
+            processPcapFile(filepath, packets, connectionTable);
+        }
+    }else {
+        std::cerr << "Invalid file path: " << filepath << std::endl;
     }
 
     while (!glfwWindowShouldClose(window)) {
