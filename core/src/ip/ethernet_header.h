@@ -24,7 +24,7 @@ struct ipv6_addr {
     unsigned char s6_addr[16]; // 128-bit IPv6 address (16 bytes)
 };
 
-#pragma pack(1)
+#pragma pack(push, 1)
 struct IPv6Header {
     uint32_t version: 4;
     uint32_t trafficClass: 8;
@@ -35,7 +35,7 @@ struct IPv6Header {
     struct ipv6_addr srcAddr; // Source IPv6 address (16 bytes)
     struct ipv6_addr dstAddr; // Destination IPv6 address (16 bytes)
 };
-#pragma pack(reset)
+#pragma pack(pop)
 
 struct UDPHeader {
     uint16_t src_port;
