@@ -3,35 +3,26 @@
 #include <cstdint>
 #include <string>
 
-#include <ip/ethernet_header.h>
-#include <pcap/global_header.h>
-#include <pcap/packet_header.h>
+// Layer 2: Data link header
+#include <network/l2_data_link/ethernet_header.h>
 
-#include <pcapng/block_header.h>
-#include <pcapng/interface_description_block.h>
-#include <pcapng/section_header_block.h>
-#include <pcapng/simple_packet_block.h>
-#include <pcapng/enhanced_packet_block.h>
-#include <pcapng/interface_statistics_block.h>
-#include <pcapng/name_resolution_block.h>
+// Layer 3: Network header
+#include <network/l3_network/arp_header.h>
+#include <network/l3_network/ip6_header.h>
+#include <network/l3_network/ip_header.h>
+
+// Layer 4: Transport header
+#include <network/l4_transport/tcp_header.h>
+#include <network/l4_transport/udp_header.h>
+#include <network/l4_transport/icmp_header.h>
+
+// Layer 7: Application headers
+#include <network/l7_application/dhcp_header.h>
+#include <network/l7_application/dns_header.h>
+
+#include <packet_info.h>
 
 #include <arpa/inet.h>
-
-struct PacketInfo {
-    int number;
-    double time;
-    std::string source;
-    std::string destination;
-    std::string protocol;
-    uint32_t length;
-    std::string info;
-    PacketInfo(int num) : number(num){}
-
-    PacketInfo(int num, double t, const std::string& src, const std::string& dest,
-               const std::string& proto, uint32_t len, const std::string& inf)
-        : number(num), time(t), source(src), destination(dest), protocol(proto), length(len), info(inf) {}
-};
-
 
 
 struct ConnectionID {
@@ -68,7 +59,7 @@ struct ConnectionState {
 using connectionStateMap=std::unordered_map<size_t, ConnectionState>;
 
 
-void trackTCPConnections(int64_t& relativeSeq, int64_t& relativeAck, const std::string& srcIP, const std::string& dstIP, const TCPHeader& tcpHeader, connectionStateMap& connectionTable) {
+void trackTCPConnections(int64_t& relativeSeq, int64_t& relativeAck, const std::string& srcIP, const std::string& dstIP, const network::TCPHeader& tcpHeader, connectionStateMap& connectionTable) {
     uint16_t srcPort = ntohs(tcpHeader.src_port);
     uint16_t dstPort = ntohs(tcpHeader.dest_port);
 
@@ -94,7 +85,7 @@ void trackTCPConnections(int64_t& relativeSeq, int64_t& relativeAck, const std::
     }
 
     // Check for SYN packet (initialization)
-    if (tcpHeader.flags & TCP_SYN && !(tcpHeader.flags & TCP_ACK)) {  // SYN, but not ACK
+    if (tcpHeader.flags & network::TCPFlags::SYN && !(tcpHeader.flags & network::TCPFlags::ACK)) {  // SYN, but not ACK
         // Client initiates the connection (SYN packet)
         if (connectionTable.find(connectionHash) != connectionTable.end()) {
             connectionTable[connectionHash].clientInitialSeq = seqNum;
@@ -103,7 +94,7 @@ void trackTCPConnections(int64_t& relativeSeq, int64_t& relativeAck, const std::
             relativeSeq=0;
             relativeAck=-1;
         }
-    } else if (tcpHeader.flags & TCP_SYN && tcpHeader.flags & TCP_ACK) {  // SYN-ACK
+    } else if (tcpHeader.flags & network::TCPFlags::SYN && tcpHeader.flags & network::TCPFlags::ACK) {  // SYN-ACK
         // Server responds (SYN-ACK packet)
         if (connectionTable.find(reverseConnectionHash) != connectionTable.end()) {
             connectionTable[reverseConnectionHash].serverInitialSeq = seqNum;
@@ -115,7 +106,7 @@ void trackTCPConnections(int64_t& relativeSeq, int64_t& relativeAck, const std::
     }
 
     // Handle regular packets and calculate relative sequence and acknowledgment numbers
-    if (!(tcpHeader.flags & TCP_SYN)) {  // Not SYN, regular packets
+    if (!(tcpHeader.flags & network::TCPFlags::SYN)) {  // Not SYN, regular packets
         if (connectionTable.find(connectionHash) != connectionTable.end()) {
             // Client to Server packet
             ConnectionState& state = connectionTable[connectionHash];
@@ -199,18 +190,18 @@ void parseDNSAnswer(const char* data, size_t& offset, size_t length, std::ostrin
 }
 
 void parseDNSPacket(const char* data, size_t length, PacketInfo& packetInfo) {
-    if (length < sizeof(DNSHeader)) {
+    if (length < sizeof(network::DNSHeader)) {
         std::cerr << "Invalid DNS packet" << std::endl;
         return;
     }
 
-    DNSHeader* dnsHeader = (DNSHeader*)data;
-    uint16_t transactionID = ntohs(dnsHeader->transactionID);
+    network::DNSHeader* dnsHeader = (network::DNSHeader*)data;
+    uint16_t transactionID = ntohs(dnsHeader->transaction_id);
     uint16_t flags = ntohs(dnsHeader->flags);
     uint16_t questions = ntohs(dnsHeader->questions);
-    uint16_t answerRRs = ntohs(dnsHeader->answerRRs);
-    uint16_t authorityRRs = ntohs(dnsHeader->authorityRRs);
-    uint16_t additionalRRs = ntohs(dnsHeader->additionalRRs);
+    uint16_t answerRRs = ntohs(dnsHeader->answer_rrs);
+    uint16_t authorityRRs = ntohs(dnsHeader->authority_rrs);
+    uint16_t additionalRRs = ntohs(dnsHeader->additional_rrs);
 
     std::ostringstream oss;
 
@@ -222,7 +213,7 @@ void parseDNSPacket(const char* data, size_t length, PacketInfo& packetInfo) {
         oss << "Standard query 0x" << std::hex << transactionID << std::dec;
     }
 
-    size_t offset = sizeof(DNSHeader);
+    size_t offset = sizeof(network::DNSHeader);
 
     // Parse the DNS questions
     for (int i = 0; i < questions; ++i) {
@@ -245,12 +236,12 @@ void parseDNSPacket(const char* data, size_t length, PacketInfo& packetInfo) {
 }
 
 void parseICMP(const char* data, PacketInfo& packetInfo) {
-    if (packetInfo.length < sizeof(ICMPHeader)) {
+    if (packetInfo.length < sizeof(network::ICMPHeader)) {
         std::cerr << "Invalid ICMP packet" << std::endl;
         return;
     }
 
-    ICMPHeader* icmpHeader = (ICMPHeader*)data;
+    network::ICMPHeader* icmpHeader = (network::ICMPHeader*)data;
     std::ostringstream oss;
 
     switch (icmpHeader->type) {
@@ -288,18 +279,18 @@ std::string getMACAddressString(const uint8_t sender_hw_addr[6]) {
 
 }
 // Function to parse and print TCP flags
-std::string getTCPFlags(const TCPHeader& tcpHeader) {
+std::string getTCPFlags(const network::TCPHeader& tcpHeader) {
     std::string flags;
-    if (tcpHeader.flags & TCP_FIN) flags += "FIN";
-    if (tcpHeader.flags & TCP_SYN) flags = flags + (flags.empty() ? "" : ", ") + "SYN";
-    if (tcpHeader.flags & TCP_RST) flags = flags + (flags.empty() ? "" : ", ") +  "RST";
-    if (tcpHeader.flags & TCP_PSH) flags = flags + (flags.empty() ? "" : ", ") +  "PSH";
-    if (tcpHeader.flags & TCP_ACK) flags = flags + (flags.empty() ? "" : ", ") +  "ACK";
-    if (tcpHeader.flags & TCP_URG) flags = flags + (flags.empty() ? "" : ", ") +  "URG";
+    if (tcpHeader.flags & network::TCPFlags::FIN) flags += "FIN";
+    if (tcpHeader.flags & network::TCPFlags::SYN) flags = flags + (flags.empty() ? "" : ", ") + "SYN";
+    if (tcpHeader.flags & network::TCPFlags::RST) flags = flags + (flags.empty() ? "" : ", ") +  "RST";
+    if (tcpHeader.flags & network::TCPFlags::PSH) flags = flags + (flags.empty() ? "" : ", ") +  "PSH";
+    if (tcpHeader.flags & network::TCPFlags::ACK) flags = flags + (flags.empty() ? "" : ", ") +  "ACK";
+    if (tcpHeader.flags & network::TCPFlags::URG) flags = flags + (flags.empty() ? "" : ", ") +  "URG";
     return flags;
 }
 
-void parseARP(ARPHeader arp_header, PacketInfo& packetInfo) {
+void parseARP(network::ARPHeader arp_header, PacketInfo& packetInfo) {
     std::ostringstream oss;
     oss << "ARP ";
     switch (ntohs(arp_header.opcode)) {
@@ -320,7 +311,7 @@ void parseARP(ARPHeader arp_header, PacketInfo& packetInfo) {
     packetInfo.info = oss.str();
 }
 
-void parseDHCP(const DHCPHeader* dhcpHeader, PacketInfo& pack) {
+void parseDHCP(const network::DHCPHeader* dhcpHeader, PacketInfo& pack) {
     // Extract DHCP fields and format them for display
     std::ostringstream oss;
 
@@ -333,15 +324,15 @@ void parseDHCP(const DHCPHeader* dhcpHeader, PacketInfo& pack) {
     }
 
     oss << ", XID: 0x" << std::hex << ntohl(dhcpHeader->xid) << std::dec;
-    oss << ", Client IP: " << inet_ntoa(*(struct in_addr*)&dhcpHeader->ciaddr);
-    oss << ", Your IP: " << inet_ntoa(*(struct in_addr*)&dhcpHeader->yiaddr);
-    oss << ", Server IP: " << inet_ntoa(*(struct in_addr*)&dhcpHeader->siaddr);
-    oss << ", Gateway IP: " << inet_ntoa(*(struct in_addr*)&dhcpHeader->giaddr);
+    oss << ", Client IP: " << inet_ntoa(*(struct in_addr*)&dhcpHeader->cip_addr);
+    oss << ", Your IP: " << inet_ntoa(*(struct in_addr*)&dhcpHeader->yip_addr);
+    oss << ", Server IP: " << inet_ntoa(*(struct in_addr*)&dhcpHeader->sip_addr);
+    oss << ", Gateway IP: " << inet_ntoa(*(struct in_addr*)&dhcpHeader->gip_addr);
 
     // Format hardware address
     oss << ", Client MAC: ";
     for (int i = 0; i < 6; ++i) {
-        oss << std::hex << std::setw(2) << std::setfill('0') << (int)dhcpHeader->chaddr[i];
+        oss << std::hex << std::setw(2) << std::setfill('0') << (int)dhcpHeader->ch_addr[i];
         if (i != 5) oss << ":";
     }
 
@@ -393,12 +384,12 @@ void parseSMTP(const char* data, size_t length, PacketInfo& pack) {
 void parseProtocolPacket(PacketInfo& pack, char* pack_data, uint8_t protocol, connectionStateMap& connectionMap){
     switch (protocol) {
         case 1: { // ICMP
-            ICMPHeader* icmpHeader = reinterpret_cast<ICMPHeader*>(pack_data);
+            network::ICMPHeader* icmpHeader = reinterpret_cast<network::ICMPHeader*>(pack_data);
             pack.protocol = "ICMP";
             parseICMP(reinterpret_cast<char*>(icmpHeader), pack);
         } break;
         case 6: { // TCP
-            TCPHeader* tcpHeader = reinterpret_cast<TCPHeader*>(pack_data);
+            network::TCPHeader* tcpHeader = reinterpret_cast<network::TCPHeader*>(pack_data);
             // std::cout << "TCP Packet: Src Port: " << ntohs(tcpHeader->src_port)
             //          << ", Dest Port: " << ntohs(tcpHeader->dest_port) << ", Size: "<<ntohs(ipHeader->tot_length)<<", Ihl: "<<(ipHeader->ihl * 4)<< ", DataOffset: "<<(tcpHeader->data_offset*4)<<std::endl;
             uint8_t data_offset = (tcpHeader->data_offset >> 4) & 0x0F;  // Extract upper 4 bits
@@ -443,7 +434,7 @@ void parseProtocolPacket(PacketInfo& pack, char* pack_data, uint8_t protocol, co
         } break;
 
         case 17: { // UDP
-            UDPHeader* udpHeader = reinterpret_cast<UDPHeader*>(pack_data);
+            network::UDPHeader* udpHeader = reinterpret_cast<network::UDPHeader*>(pack_data);
 
             uint16_t srcPort = ntohs(udpHeader->src_port);
             uint16_t dstPort = ntohs(udpHeader->dest_port);
@@ -451,25 +442,25 @@ void parseProtocolPacket(PacketInfo& pack, char* pack_data, uint8_t protocol, co
 
             if (srcPort == 53 || dstPort == 53) {
                 pack.protocol = "DNS";
-                parseDNSPacket(pack_data + sizeof(UDPHeader), ntohs(udpHeader->len) - sizeof(UDPHeader), pack);
+                parseDNSPacket(pack_data + sizeof(network::UDPHeader), ntohs(udpHeader->len) - sizeof(network::UDPHeader), pack);
             }
             else if (srcPort == 67 || srcPort == 68 || dstPort == 67 || dstPort == 68) { // Detect DHCP over UDP
                 pack.protocol = "DHCP";
-                DHCPHeader* dhcpHeader = reinterpret_cast<DHCPHeader*>(pack_data + sizeof(UDPHeader));
+                network::DHCPHeader* dhcpHeader = reinterpret_cast<network::DHCPHeader*>(pack_data + sizeof(network::UDPHeader));
                 parseDHCP(dhcpHeader, pack);
             }
             else if (srcPort == 161 || dstPort == 161 || srcPort == 162 || dstPort == 162) { // SNMP port detection
                 pack.protocol = "SNMP";
-                const char* snmpData = pack_data + sizeof(UDPHeader);
-                parseSNMP(snmpData, ntohs(udpHeader->len) - sizeof(UDPHeader), pack);
+                const char* snmpData = pack_data + sizeof(network::UDPHeader);
+                parseSNMP(snmpData, ntohs(udpHeader->len) - sizeof(network::UDPHeader), pack);
             } else {
                 pack.protocol = "UDP";
-                pack.info = std::to_string(srcPort) + " -> " + std::to_string(dstPort) + " Len=" + std::to_string(ntohs(udpHeader->len) - sizeof(UDPHeader));
+                pack.info = std::to_string(srcPort) + " -> " + std::to_string(dstPort) + " Len=" + std::to_string(ntohs(udpHeader->len) - sizeof(network::UDPHeader));
             }
             pack.length = ntohs(udpHeader->len);
         } break;
         case 58: { // ICMPv6
-            ICMPHeader* icmpHeader = reinterpret_cast<ICMPHeader*>(pack_data);
+            network::ICMPHeader* icmpHeader = reinterpret_cast<network::ICMPHeader*>(pack_data);
             pack.protocol = "ICMPv6";
             parseICMP(reinterpret_cast<char*>(icmpHeader), pack);
         } break;
@@ -481,34 +472,34 @@ void parseProtocolPacket(PacketInfo& pack, char* pack_data, uint8_t protocol, co
 }
 
 void processPacket(PacketInfo& pack, std::vector<char>& packetData, connectionStateMap& connectionMap) {
-    EthernetHeader* ethHeader = reinterpret_cast<EthernetHeader*>(packetData.data());
+    network::EthernetHeader* ethHeader = reinterpret_cast<network::EthernetHeader*>(packetData.data());
     // std::cout << "EthHeader: " << std::hex << ethHeader->type << std::dec
     //          << " Ethernet Packet: Dest MAC: " << getMACAddressString(ethHeader->dest_mac) << std::endl;
 
     if (ntohs(ethHeader->type) == 0x0800) { // IP packet
-        IPHeader* ipHeader = reinterpret_cast<IPHeader*>(packetData.data() + sizeof(EthernetHeader));
+        network::IPHeader* ipHeader = reinterpret_cast<network::IPHeader*>(packetData.data() + sizeof(network::EthernetHeader));
 
         struct in_addr dest_addr;
-        dest_addr.s_addr = ipHeader->daddr;
+        dest_addr.s_addr = ipHeader->dst_addr;
         struct in_addr src_addr;
-        src_addr.s_addr = ipHeader->saddr;
+        src_addr.s_addr = ipHeader->src_addr;
         std::string destination(inet_ntoa(dest_addr));
         std::string source(inet_ntoa(src_addr));
 
         pack.destination = destination;
         pack.source = source;
         pack.length = ntohs(ipHeader->tot_length) - (ipHeader->ihl * 4);
-        char* pack_data = packetData.data() + sizeof(EthernetHeader) + (ipHeader->ihl * 4);
+        char* pack_data = packetData.data() + sizeof(network::EthernetHeader) + (ipHeader->ihl * 4);
         parseProtocolPacket(pack, pack_data, ipHeader->protocol, connectionMap);
 
     } else if (ntohs(ethHeader->type) == 0x86DD){ // IPv6 packet
-        IPv6Header* ipv6Header = reinterpret_cast<IPv6Header*>(packetData.data() + sizeof(EthernetHeader));
+        network::IPv6Header* ipv6Header = reinterpret_cast<network::IPv6Header*>(packetData.data() + sizeof(network::EthernetHeader));
 
         // Extract IPv6 addresses
         char srcIP[INET6_ADDRSTRLEN];
         char dstIP[INET6_ADDRSTRLEN];
-        inet_ntop(AF_INET6, &ipv6Header->srcAddr, srcIP, INET6_ADDRSTRLEN);
-        inet_ntop(AF_INET6, &ipv6Header->dstAddr, dstIP, INET6_ADDRSTRLEN);
+        inet_ntop(AF_INET6, &ipv6Header->src_addr, srcIP, INET6_ADDRSTRLEN);
+        inet_ntop(AF_INET6, &ipv6Header->dst_addr, dstIP, INET6_ADDRSTRLEN);
 
         pack.source = std::string(srcIP);
         pack.destination = std::string(dstIP);
@@ -520,23 +511,23 @@ void processPacket(PacketInfo& pack, std::vector<char>& packetData, connectionSt
         // Format the extracted information into the packet info
         std::ostringstream infoStream;
         infoStream << "IPv6 Version: " << (int)ipv6Header->version
-                   << ", Traffic Class: " << (int)ipv6Header->trafficClass
-                   << ", Flow Label: " << ipv6Header->flowLabel
-                   << ", Hop Limit: " << (int)ipv6Header->hopLimit;
+                   << ", Traffic Class: " << (int)ipv6Header->traffic_class
+                   << ", Flow Label: " << ipv6Header->flow_label
+                   << ", Hop Limit: " << (int)ipv6Header->hop_limit;
         pack.info = infoStream.str();
 
-        pack.length = ntohs(ipv6Header->payloadLength); // No need to subtract the header size
+        pack.length = ntohs(ipv6Header->payload_len); // No need to subtract the header size
 
         // Handle the next header (protocol) and parse further based on the protocol type
-        char* pack_data = packetData.data() + sizeof(EthernetHeader) + sizeof(IPv6Header);
+        char* pack_data = packetData.data() + sizeof(network::EthernetHeader) + sizeof(network::IPv6Header);
 
-        parseProtocolPacket(pack, pack_data, ipv6Header->nextHeader, connectionMap);
+        parseProtocolPacket(pack, pack_data, ipv6Header->next_header, connectionMap);
 
     } else if (ntohs(ethHeader->type) == 0x0806) { // ARP packet
-        ARPHeader* arpHeader = reinterpret_cast<ARPHeader*>(packetData.data() + sizeof(EthernetHeader));
+        network::ARPHeader* arpHeader = reinterpret_cast<network::ARPHeader*>(packetData.data() + sizeof(network::EthernetHeader));
         // std::cout << "ARP Packet: Opcode " << ntohs(arpHeader->opcode) << std::endl;
         pack.protocol = "ARP";
-        pack.length = sizeof(ARPHeader);
+        pack.length = sizeof(network::ARPHeader);
         pack.destination = getMACAddressString(arpHeader->target_hw_addr);
         pack.source = getMACAddressString(arpHeader->sender_hw_addr);
         if(pack.destination == "00:00:00:00:00:00"){
@@ -545,9 +536,9 @@ void processPacket(PacketInfo& pack, std::vector<char>& packetData, connectionSt
         parseARP(*arpHeader, pack);
     }
     else if (ntohs(ethHeader->type) == 0x8035) { // RARP packet
-        ARPHeader* rarpHeader = reinterpret_cast<ARPHeader*>(packetData.data() + sizeof(EthernetHeader));
+        network::ARPHeader* rarpHeader = reinterpret_cast<network::ARPHeader*>(packetData.data() + sizeof(network::EthernetHeader));
         pack.protocol = "RARP";
-        pack.length = sizeof(ARPHeader);
+        pack.length = sizeof(network::ARPHeader);
         pack.destination = getMACAddressString(rarpHeader->target_hw_addr);
         pack.source = getMACAddressString(rarpHeader->sender_hw_addr);
         if (pack.destination == pack.source) {
