@@ -11,6 +11,6 @@ namespace network {
         uint16_t src_port;  // Source port
         uint16_t dest_port; // Destination port
         uint16_t len;       // Length
-        uint16_t check;     // Checksum
+        uint16_t checksum;     // Checksum
     };
 } // namespace network

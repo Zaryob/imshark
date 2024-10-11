@@ -385,11 +385,13 @@ void parseProtocolPacket(PacketInfo& pack, char* pack_data, uint8_t protocol, co
     switch (protocol) {
         case 1: { // ICMP
             network::ICMPHeader* icmpHeader = reinterpret_cast<network::ICMPHeader*>(pack_data);
+            pack.l4_header = *icmpHeader;
             pack.protocol = "ICMP";
             parseICMP(reinterpret_cast<char*>(icmpHeader), pack);
         } break;
         case 6: { // TCP
             network::TCPHeader* tcpHeader = reinterpret_cast<network::TCPHeader*>(pack_data);
+            pack.l4_header = *tcpHeader;
             // std::cout << "TCP Packet: Src Port: " << ntohs(tcpHeader->src_port)
             //          << ", Dest Port: " << ntohs(tcpHeader->dest_port) << ", Size: "<<ntohs(ipHeader->tot_length)<<", Ihl: "<<(ipHeader->ihl * 4)<< ", DataOffset: "<<(tcpHeader->data_offset*4)<<std::endl;
             uint8_t data_offset = (tcpHeader->data_offset >> 4) & 0x0F;  // Extract upper 4 bits
@@ -432,9 +434,9 @@ void parseProtocolPacket(PacketInfo& pack, char* pack_data, uint8_t protocol, co
                 parseBGP(bgpData, pack.length, pack);
             }
         } break;
-
         case 17: { // UDP
             network::UDPHeader* udpHeader = reinterpret_cast<network::UDPHeader*>(pack_data);
+            pack.l4_header = *udpHeader;
 
             uint16_t srcPort = ntohs(udpHeader->src_port);
             uint16_t dstPort = ntohs(udpHeader->dest_port);
@@ -447,6 +449,7 @@ void parseProtocolPacket(PacketInfo& pack, char* pack_data, uint8_t protocol, co
             else if (srcPort == 67 || srcPort == 68 || dstPort == 67 || dstPort == 68) { // Detect DHCP over UDP
                 pack.protocol = "DHCP";
                 network::DHCPHeader* dhcpHeader = reinterpret_cast<network::DHCPHeader*>(pack_data + sizeof(network::UDPHeader));
+                pack.l7_header = *dhcpHeader;
                 parseDHCP(dhcpHeader, pack);
             }
             else if (srcPort == 161 || dstPort == 161 || srcPort == 162 || dstPort == 162) { // SNMP port detection
@@ -461,6 +464,7 @@ void parseProtocolPacket(PacketInfo& pack, char* pack_data, uint8_t protocol, co
         } break;
         case 58: { // ICMPv6
             network::ICMPHeader* icmpHeader = reinterpret_cast<network::ICMPHeader*>(pack_data);
+            pack.l4_header = *icmpHeader;
             pack.protocol = "ICMPv6";
             parseICMP(reinterpret_cast<char*>(icmpHeader), pack);
         } break;
@@ -475,9 +479,10 @@ void processPacket(PacketInfo& pack, std::vector<char>& packetData, connectionSt
     network::EthernetHeader* ethHeader = reinterpret_cast<network::EthernetHeader*>(packetData.data());
     // std::cout << "EthHeader: " << std::hex << ethHeader->type << std::dec
     //          << " Ethernet Packet: Dest MAC: " << getMACAddressString(ethHeader->dest_mac) << std::endl;
-
+    pack.l2_header = *ethHeader;
     if (ntohs(ethHeader->type) == 0x0800) { // IP packet
         network::IPHeader* ipHeader = reinterpret_cast<network::IPHeader*>(packetData.data() + sizeof(network::EthernetHeader));
+        pack.l3_header = *ipHeader;
 
         struct in_addr dest_addr;
         dest_addr.s_addr = ipHeader->dst_addr;
@@ -494,7 +499,7 @@ void processPacket(PacketInfo& pack, std::vector<char>& packetData, connectionSt
 
     } else if (ntohs(ethHeader->type) == 0x86DD){ // IPv6 packet
         network::IPv6Header* ipv6Header = reinterpret_cast<network::IPv6Header*>(packetData.data() + sizeof(network::EthernetHeader));
-
+        pack.l3_header = *ipv6Header;
         // Extract IPv6 addresses
         char srcIP[INET6_ADDRSTRLEN];
         char dstIP[INET6_ADDRSTRLEN];
@@ -526,6 +531,7 @@ void processPacket(PacketInfo& pack, std::vector<char>& packetData, connectionSt
     } else if (ntohs(ethHeader->type) == 0x0806) { // ARP packet
         network::ARPHeader* arpHeader = reinterpret_cast<network::ARPHeader*>(packetData.data() + sizeof(network::EthernetHeader));
         // std::cout << "ARP Packet: Opcode " << ntohs(arpHeader->opcode) << std::endl;
+        pack.l3_header = *arpHeader;
         pack.protocol = "ARP";
         pack.length = sizeof(network::ARPHeader);
         pack.destination = getMACAddressString(arpHeader->target_hw_addr);
@@ -537,6 +543,7 @@ void processPacket(PacketInfo& pack, std::vector<char>& packetData, connectionSt
     }
     else if (ntohs(ethHeader->type) == 0x8035) { // RARP packet
         network::ARPHeader* rarpHeader = reinterpret_cast<network::ARPHeader*>(packetData.data() + sizeof(network::EthernetHeader));
+        pack.l3_header = *rarpHeader;
         pack.protocol = "RARP";
         pack.length = sizeof(network::ARPHeader);
         pack.destination = getMACAddressString(rarpHeader->target_hw_addr);

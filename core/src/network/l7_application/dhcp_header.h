@@ -22,6 +22,5 @@ namespace network {
         uint8_t ch_addr[16];       // Client hardware address
         uint8_t srv_hname[64];        // Server host name
         uint8_t file[128];        // Boot file name
-        uint8_t options[];        // Optional parameters
     };
 } // namespace network

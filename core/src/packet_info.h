@@ -17,7 +17,20 @@ struct PacketInfo {
     std::string protocol;
     uint32_t length;
     std::string info;
-    std::vector<char> rawData;
+
+    std::variant<network::EthernetHeader> l2_header;
+    std::variant<network::ARPHeader,
+                 network::IPv6Header,
+                 network::IPHeader> l3_header;
+
+    std::variant<network::ICMPHeader,
+                 network::TCPHeader,
+                 network::UDPHeader> l4_header;
+
+    std::variant<network::DHCPHeader,
+                 network::DNSHeader> l7_header;  // Extend with all possible types you might need
+
+    std::vector<char> raw_data;
     PacketInfo(int num) : number(num){}
 
     PacketInfo(int num, double t, const std::string& src, const std::string& dest,
