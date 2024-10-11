@@ -376,12 +376,20 @@ std::string getTCPFlags(const TCPHeader& tcpHeader) {
 void parseARP(ARPHeader arp_header, PacketInfo& packetInfo) {
     std::ostringstream oss;
     oss << "ARP ";
-    if (ntohs(arp_header.opcode) == 1) {
-        oss << "Request: Who has " << inet_ntoa(*(struct in_addr*)&arp_header.target_protocol_addr)
-            << "? Tell " << inet_ntoa(*(struct in_addr*)&arp_header.sender_protocol_addr);
-    } else if (ntohs(arp_header.opcode) == 2) {
-        oss << "Reply: " << inet_ntoa(*(struct in_addr*)&arp_header.target_protocol_addr)
-            << " is at " << getMACAddressString(arp_header.target_protocol_addr);
+    switch (ntohs(arp_header.opcode)) {
+        case 1:
+            oss << "Request: Who has " << inet_ntoa(*(struct in_addr*)&arp_header.target_protocol_addr)
+                << "? Tell " << inet_ntoa(*(struct in_addr*)&arp_header.sender_protocol_addr);
+            break;
+        case 2:
+            oss << "Reply: " << inet_ntoa(*(struct in_addr*)&arp_header.sender_protocol_addr)
+                << " is at " << getMACAddressString(arp_header.sender_hw_addr);
+            break;
+        case 3:
+            oss << "Announce: My IP is associated with MAC " << getMACAddressString(arp_header.sender_hw_addr);
+            break;
+        default:
+            oss << "Unknown operation";
     }
     packetInfo.info = oss.str();
 }
@@ -534,13 +542,18 @@ void parseProtocolPacket(PacketInfo& pack, char* pack_data, uint8_t protocol, co
             }
             pack.length = ntohs(udpHeader->len);
         } break;
-
+        case 58: { // ICMPv6
+            ICMPHeader* icmpHeader = reinterpret_cast<ICMPHeader*>(pack_data);
+            pack.protocol = "ICMPv6";
+            parseICMP(reinterpret_cast<char*>(icmpHeader), pack);
+        } break;
         default:
             // std::cout << "Other IP Protocol: " << static_cast<int>(ipHeader->protocol) << std::endl;
             pack.protocol = "Other";
     }
 
 }
+
 void processPacket(PacketInfo& pack, std::vector<char>& packetData, connectionStateMap& connectionMap) {
     EthernetHeader* ethHeader = reinterpret_cast<EthernetHeader*>(packetData.data());
     // std::cout << "EthHeader: " << std::hex << ethHeader->type << std::dec
@@ -604,6 +617,22 @@ void processPacket(PacketInfo& pack, std::vector<char>& packetData, connectionSt
             pack.destination = "Broadcast";
         }
         parseARP(*arpHeader, pack);
+    }
+    else if (ntohs(ethHeader->type) == 0x8035) { // RARP packet
+        ARPHeader* rarpHeader = reinterpret_cast<ARPHeader*>(packetData.data() + sizeof(EthernetHeader));
+        pack.protocol = "RARP";
+        pack.length = sizeof(ARPHeader);
+        pack.destination = getMACAddressString(rarpHeader->target_hw_addr);
+        pack.source = getMACAddressString(rarpHeader->sender_hw_addr);
+        if (pack.destination == pack.source) {
+            pack.destination = "Broadcast";
+        }
+
+        // Since RARP is typically used to request an IP from a known MAC address,
+        // the function could be enhanced to handle such requests or to log them
+        // depending on what `parseARP` or an equivalent `parseRARP` function does.
+        // Here, for simplicity, we can just reuse the ARP parsing logic if it fits:
+        parseARP(*rarpHeader, pack);
     }
 }
 
