@@ -22,7 +22,6 @@
 
 #include <network/utils.h>
 
-
 std::map<std::string, std::vector<std::string> > packetState;
 
 int selectedPacket = -1; // Index of the selected packet
@@ -143,6 +142,125 @@ void processL4(const packet::PacketInfo &packet) {
             };
         }
     }, packet.l4_header);
+}
+
+
+int selected_byte = -1; // Global or static variable to track the selected byte
+
+void RenderHexEditor(std::vector<char> memory_buffer)
+{
+    ImGui::BeginChild("Hex Editor");
+
+    const int bytes_per_row = 16; // Number of bytes per row
+
+    // Create two separate regions for Hex and ASCII
+    ImGui::BeginChild("HexArea", ImVec2(ImGui::GetContentRegionAvail().x * 0.7f, ImGui::GetContentRegionAvail().y), true);
+
+    // Loop over rows for hex values
+    for (int row = 0; row < (int(memory_buffer.size()) + bytes_per_row - 1) / bytes_per_row; ++row)
+    {
+        // Draw address offset
+        ImGui::Text("%08X: ", row * bytes_per_row);
+        ImGui::SameLine();
+
+        // Draw hex values for each row
+        for (int col = 0; col < bytes_per_row; ++col)
+        {
+            int index = row * bytes_per_row + col;
+            if (index < memory_buffer.size())
+            {
+                ImGui::PushID(index); // Ensure unique ID for each byte
+
+                // Get the byte value and format it as hex
+                unsigned char byte = memory_buffer[index];
+                char hex_str[3]; // Two characters for hex and one for null-terminator
+                snprintf(hex_str, sizeof(hex_str), "%02X", byte);
+
+                // Highlight if this byte is selected
+                bool is_selected = (index == selected_byte);
+
+                // Style the selected byte
+                if (is_selected)
+                {
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f)); // Text color for selected byte
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.9f, 1.0f)); // Background color for selected byte
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.7f, 1.0f, 1.0f)); // Hover color for selected byte
+                }
+
+                if (ImGui::Selectable(hex_str, is_selected, ImGuiSelectableFlags_None, ImVec2(20, 20)))
+                {
+                    selected_byte = index; // Update selected byte
+                    ImGui::SetClipboardText(hex_str); // Copy hex value to clipboard
+                }
+
+                if (is_selected)
+                {
+                    ImGui::PopStyleColor(3); // Restore the original style
+                }
+
+                ImGui::PopID(); // Restore ID
+
+                if (col < bytes_per_row - 1)
+                    ImGui::SameLine(); // Keep hex values in the same row
+            }
+            else
+            {
+                ImGui::Text("   "); // Empty space for unused bytes
+            }
+        }
+    }
+
+    ImGui::EndChild(); // End Hex area
+
+    // ASCII Area
+    ImGui::SameLine();
+    ImGui::BeginChild("ASCIIArea", ImVec2(ImGui::GetContentRegionAvail().x, ImGui::GetContentRegionAvail().y), true);
+
+    // Loop over rows for ASCII characters
+    for (int row = 0; row < (int(memory_buffer.size()) + bytes_per_row - 1) / bytes_per_row; ++row)
+    {
+        for (int col = 0; col < bytes_per_row; ++col)
+        {
+            int index = row * bytes_per_row + col;
+            if (index < memory_buffer.size())
+            {
+                // Convert byte to printable ASCII (or dot for non-printable)
+                char c = memory_buffer[index];
+                std::string ascii_str(1, (c >= 32 && c <= 126) ? c : '.');
+
+                bool is_selected = (index == selected_byte);
+
+                if (is_selected)
+                {
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 1.0f, 1.0f, 1.0f)); // Text color for selected byte
+                    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.2f, 0.6f, 0.9f, 1.0f)); // Background color for selected byte
+                    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.3f, 0.7f, 1.0f, 1.0f)); // Hover color for selected byte
+                }
+
+                if (ImGui::Selectable(ascii_str.c_str(), is_selected, ImGuiSelectableFlags_None, ImVec2(10, 20)))
+                {
+                    selected_byte = index; // Update selected byte
+                    ImGui::SetClipboardText(ascii_str.c_str()); // Copy ASCII character to clipboard
+                }
+
+                if (is_selected)
+                {
+                    ImGui::PopStyleColor(3); // Restore the original style
+                }
+
+                if (col < bytes_per_row - 1)
+                    ImGui::SameLine(0, 3.0f); // Adjust the spacing between ASCII characters
+            }
+            else
+            {
+                ImGui::Text(" "); // Empty space for unused bytes
+            }
+        }
+    }
+
+    ImGui::EndChild(); // End ASCII area
+
+    ImGui::EndChild(); // End Hex Editor window
 }
 
 // Function to process the l7 header
@@ -270,6 +388,8 @@ void displayPackets(const std::vector<packet::PacketInfo> &packets) {
         }
 
         if (!packet.raw_data.empty()) {
+            RenderHexEditor(packet.raw_data);
+            /*
             // Convert raw data to hex and text format
             std::string hexStr, textStr;
             std::tie(hexStr, textStr) = toHexString(packet.raw_data, 0, packet.raw_data.size());
@@ -287,6 +407,7 @@ void displayPackets(const std::vector<packet::PacketInfo> &packets) {
             ImGui::InputTextMultiline("##text_data", &textStr[0], textStr.size(),
                                       ImVec2(-FLT_MIN, ImGui::GetTextLineHeight() * 16), ImGuiInputTextFlags_ReadOnly);
             ImGui::EndChild();
+            */
         }
         ImGui::EndChild();
     }
@@ -322,6 +443,12 @@ bool isPcapng(const std::string &filepath) {
     }
     return false;
 }
+
+#include <set>
+
+// Global state to store selected hex values
+std::set<size_t> selectedIndices;
+
 
 int main() {
     core::FileProcessor fileProcessor;
@@ -388,6 +515,7 @@ int main() {
         ImGui::NewFrame();
 
         HexView("PCAP File Viewer", buffer.data(), buffer.size(), packets);
+
 
         ImGui::Render();
         int display_w, display_h;
