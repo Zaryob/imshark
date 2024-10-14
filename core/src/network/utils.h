@@ -29,4 +29,13 @@ namespace network {
         }
         return domain;
     }
+
+    std::string getIPv6AddressString(const ipv6_addr addr) {
+        // Extract IPv6 addresses
+        char srcIP[INET6_ADDRSTRLEN];
+        inet_ntop(AF_INET6, &addr, srcIP, INET6_ADDRSTRLEN);
+
+        return std::string(srcIP);
+
+    }
 } // namespace network
