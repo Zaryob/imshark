@@ -645,6 +645,9 @@ bool isPcapng(const std::string &filepath) {
 // Global state to store selected hex values
 std::set<size_t> selectedIndices;
 
+// Last problem reported while loading a capture (empty when the last load was clean)
+std::string loadMessage;
+
 // Function to display the file open dialog
 void ShowFileOpenDialog(std::vector<packet::PacketInfo>& packets)
 {
@@ -686,13 +689,14 @@ void ShowFileOpenDialog(std::vector<packet::PacketInfo>& packets)
 
             if (std::filesystem::is_regular_file(filePath)) {
                 packets.clear();
-                if (isPcapng(filePath)) {
-                    fileProcessor.processPcapngFile(filePath, packets);
-                } else {
-                    fileProcessor.processPcapFile(filePath, packets);
-                }
+                const bool ok = isPcapng(filePath)
+                                    ? fileProcessor.processPcapngFile(filePath, packets, loadMessage)
+                                    : fileProcessor.processPcapFile(filePath, packets, loadMessage);
+                if (!ok) packets.clear();
+                if (!loadMessage.empty()) std::cerr << filePath << ": " << loadMessage << std::endl;
             } else {
-                std::cerr << "Invalid file path: " << filePath << std::endl;
+                loadMessage = "Invalid file path: " + filePath;
+                std::cerr << loadMessage << std::endl;
             }
         }
         // Close the file dialog after use
