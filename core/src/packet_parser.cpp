@@ -235,6 +235,32 @@ void packet::PacketParser::parseSMTP(const char *data, size_t length) {
     pack.info = "SMTP data: " + smtpData + (length > 50 ? "..." : "");
 }
 
+std::string packet::PacketParser::describeTCPOptions(const char *p, size_t len) {
+    std::string out;
+    size_t i = 0;
+    while (i < len) {
+        const uint8_t kind = static_cast<uint8_t>(p[i]);
+        if (kind == 0) break;                  // end of option list
+        if (kind == 1) { ++i; continue; }      // NOP padding
+        if (i + 1 >= len) break;
+        const size_t optLen = static_cast<uint8_t>(p[i + 1]);
+        if (optLen < 2 || optLen > len - i) break; // malformed option, stop decoding
+        switch (kind) {
+            case 2: if (optLen == 4) out += " MSS=" + std::to_string(be16(p + i + 2)); break;
+            case 3: if (optLen == 3) out += " WS=" + std::to_string(static_cast<uint8_t>(p[i + 2])); break;
+            case 4: out += " SACK_PERM"; break;
+            case 5: out += " SACK"; break;
+            case 8:
+                if (optLen == 10)
+                    out += " TSval=" + std::to_string(be32(p + i + 2)) + " TSecr=" + std::to_string(be32(p + i + 6));
+                break;
+            default: break;
+        }
+        i += optLen;
+    }
+    return out;
+}
+
 // `length` is the number of bytes actually available at pack_data (captured, clamped to the IP payload).
 void packet::PacketParser::parseProtocolPacket(const char *pack_data, size_t length, uint8_t protocol) {
     switch (protocol) {
@@ -279,7 +305,8 @@ void packet::PacketParser::parseProtocolPacket(const char *pack_data, size_t len
             pack.info = std::to_string(src_port) + " -> " + std::to_string(dest_port) + " [" + flags + "] " +
                         (seq >= 0 ? (" Seq=" + std::to_string(seq)) : "") +
                         (ack >= 0 ? (" Ack=" + std::to_string(ack)) : "") +
-                        (window > 0 ? (" Win=" + std::to_string(window)) : "");
+                        (window > 0 ? (" Win=" + std::to_string(window)) : "") +
+                        describeTCPOptions(pack_data + sizeof(network::TCPHeader), headerLen - sizeof(network::TCPHeader));
 
             if (src_port == 23 || dest_port == 23) {
                 pack.protocol = "Telnet";
@@ -458,16 +485,30 @@ void packet::PacketParser::parsePacket(packet::PacketInfo &packet, std::vector<c
         pack.protocol = "IPv6";
 
         std::ostringstream infoStream;
-        infoStream << "IPv6 Version: " << (int) ipv6Header.version
-                   << ", Traffic Class: " << (int) ipv6Header.traffic_class
-                   << ", Flow Label: " << ipv6Header.flow_label
+        infoStream << "IPv6 Version: " << (int) ipv6Header.version()
+                   << ", Traffic Class: " << (int) ipv6Header.trafficClass()
+                   << ", Flow Label: " << ipv6Header.flowLabel()
                    << ", Hop Limit: " << (int) ipv6Header.hop_limit;
         pack.info = infoStream.str();
 
         pack.length = ntohs(ipv6Header.payload_len); // payload only, no need to subtract the header size
-        const size_t l4Offset = l3Offset + sizeof(network::IPv6Header);
-        const size_t avail = std::min<size_t>(pack.length, len - l4Offset);
-        parseProtocolPacket(base + l4Offset, avail, ipv6Header.next_header);
+        size_t l4Offset = l3Offset + sizeof(network::IPv6Header);
+        size_t avail = std::min<size_t>(pack.length, len - l4Offset);
+        uint8_t nextHeader = ipv6Header.next_header;
+
+        // Skip extension headers (hop-by-hop, routing, fragment, destination options, AH)
+        while (nextHeader == 0 || nextHeader == 43 || nextHeader == 44 || nextHeader == 51 || nextHeader == 60) {
+            if (avail < 8) { markMalformed("IPv6 extension header truncated"); packet = pack; return; }
+            const uint8_t following = static_cast<uint8_t>(base[l4Offset]);
+            const size_t extLen = nextHeader == 44 ? 8
+                                  : nextHeader == 51 ? (static_cast<size_t>(static_cast<uint8_t>(base[l4Offset + 1])) + 2) * 4
+                                  : (static_cast<size_t>(static_cast<uint8_t>(base[l4Offset + 1])) + 1) * 8;
+            if (extLen > avail) { markMalformed("IPv6 extension header truncated"); packet = pack; return; }
+            l4Offset += extLen;
+            avail -= extLen;
+            nextHeader = following;
+        }
+        parseProtocolPacket(base + l4Offset, avail, nextHeader);
     } else if (etherType == 0x0806 || etherType == 0x8035) { // ARP / RARP
         network::ARPHeader arpHeader;
         if (!readStruct(base, len, l3Offset, arpHeader)) {

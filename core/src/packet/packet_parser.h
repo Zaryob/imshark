@@ -47,6 +47,8 @@ namespace packet {
         void parseSMTP(const char* data, size_t length);
         void parseProtocolPacket(const char* pack_data, size_t length, uint8_t protocol);
         void markMalformed(const std::string& reason);
+        // Renders TCP options (MSS, WS, SACK, TS, ...) as " MSS=1460 WS=7 ..."
+        static std::string describeTCPOptions(const char* options, size_t length);
     private:
         // Function to parse and print TCP flags
         std::string getTCPFlags(const network::TCPHeader& tcpHeader) {
@@ -57,6 +59,8 @@ namespace packet {
             if (tcpHeader.flags & network::TCPFlags::PSH) flags = flags + (flags.empty() ? "" : ", ") +  "PSH";
             if (tcpHeader.flags & network::TCPFlags::ACK) flags = flags + (flags.empty() ? "" : ", ") +  "ACK";
             if (tcpHeader.flags & network::TCPFlags::URG) flags = flags + (flags.empty() ? "" : ", ") +  "URG";
+            if (tcpHeader.flags & network::TCPFlags::ECE) flags = flags + (flags.empty() ? "" : ", ") +  "ECE";
+            if (tcpHeader.flags & network::TCPFlags::CWR) flags = flags + (flags.empty() ? "" : ", ") +  "CWR";
             return flags;
         }
 
