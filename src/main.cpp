@@ -618,6 +618,8 @@ void displayPackets(const std::vector<packet::PacketInfo> &packets) {
     }
 }
 
+float StatusBarHeight();
+
 void HexView(const char *title, std::vector<packet::PacketInfo> &packets) {
 #ifdef IMGUI_HAS_VIEWPORT
     ImGuiViewport* viewport = ImGui::GetMainViewport();
@@ -635,7 +637,7 @@ void HexView(const char *title, std::vector<packet::PacketInfo> &packets) {
     ImVec2 window_size = ImGui::GetIO().DisplaySize;
 
     // Adjust window size to avoid overlapping the menu bar
-    window_size.y -= ImGui::GetFrameHeight();
+    window_size.y -= ImGui::GetFrameHeight() + StatusBarHeight();
 
     // Begin a new window, positioned below the menu bar
     ImGui::SetNextWindowPos(window_pos);
@@ -666,6 +668,18 @@ std::set<size_t> selectedIndices;
 
 // Last problem reported while loading a capture (empty when the last load was clean)
 std::string loadMessage;
+bool loadFailed = false;      // true if the last load produced no usable capture
+bool openLoadError = false;   // request to show the error popup on the next frame
+std::string currentFile;      // path of the capture that is currently shown
+
+void resetSelection() {
+    selectedPacket = -1;
+    oldSelectedPacket = -1;
+    selected_byte = -1;
+    selected_byte_start = -1;
+    selected_byte_end = -1;
+    packetState.clear();
+}
 
 // Function to display the file open dialog
 void ShowFileOpenDialog(std::vector<packet::PacketInfo>& packets)
@@ -682,8 +696,11 @@ void ShowFileOpenDialog(std::vector<packet::PacketInfo>& packets)
             }
             if (ImGui::MenuItem("Close File"))
             {
-                // Trigger the file dialog when "Close File" is clicked
                 packets.clear();
+                currentFile.clear();
+                loadMessage.clear();
+                loadFailed = false;
+                resetSelection();
             }
             if (ImGui::MenuItem("Exit"))
             {
@@ -706,21 +723,69 @@ void ShowFileOpenDialog(std::vector<packet::PacketInfo>& packets)
 
             std::string filePath = ImGuiFileDialog::Instance()->GetFilePathName();
 
+            packets.clear();
+            resetSelection();
+            currentFile.clear();
+            loadMessage.clear();
             if (std::filesystem::is_regular_file(filePath)) {
-                packets.clear();
                 const bool ok = isPcapng(filePath)
                                     ? fileProcessor.processPcapngFile(filePath, packets, loadMessage)
                                     : fileProcessor.processPcapFile(filePath, packets, loadMessage);
-                if (!ok) packets.clear();
-                if (!loadMessage.empty()) std::cerr << filePath << ": " << loadMessage << std::endl;
+                loadFailed = !ok;
+                if (ok) currentFile = filePath;
+                else packets.clear();
             } else {
-                loadMessage = "Invalid file path: " + filePath;
-                std::cerr << loadMessage << std::endl;
+                loadFailed = true;
+                loadMessage = "Not a regular file: " + filePath;
+            }
+            if (!loadMessage.empty()) {
+                std::cerr << filePath << ": " << loadMessage << std::endl;
+                openLoadError = true;
             }
         }
         // Close the file dialog after use
         ImGuiFileDialog::Instance()->Close();
     }
+}
+
+// Modal popup with the problem found while loading a capture
+void ShowLoadErrorPopup() {
+    if (openLoadError) {
+        ImGui::OpenPopup("Load problem");
+        openLoadError = false;
+    }
+    if (ImGui::BeginPopupModal("Load problem", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::TextWrapped("%s", loadFailed ? "The file could not be opened." : "The file was opened with a warning.");
+        ImGui::Separator();
+        ImGui::TextWrapped("%s", loadMessage.c_str());
+        ImGui::Spacing();
+        if (ImGui::Button("OK", ImVec2(120, 0))) ImGui::CloseCurrentPopup();
+        ImGui::EndPopup();
+    }
+}
+
+// Height of the status bar at the bottom of the window
+float StatusBarHeight() { return ImGui::GetFrameHeight() + 2 * ImGui::GetStyle().WindowPadding.y; }
+
+void ShowStatusBar(const std::vector<packet::PacketInfo> &packets) {
+    const ImVec2 display = ImGui::GetIO().DisplaySize;
+    ImGui::SetNextWindowPos(ImVec2(0, display.y - StatusBarHeight()));
+    ImGui::SetNextWindowSize(ImVec2(display.x, StatusBarHeight()));
+    const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
+                                   ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus;
+    if (ImGui::Begin("##status", nullptr, flags)) {
+        if (currentFile.empty()) {
+            ImGui::TextUnformatted("No file loaded. Use File > Open.");
+        } else {
+            ImGui::Text("%s  |  %zu packets", currentFile.c_str(), packets.size());
+        }
+        if (!loadMessage.empty()) {
+            ImGui::SameLine();
+            ImGui::TextColored(loadFailed ? ImVec4(1.0f, 0.4f, 0.4f, 1.0f) : ImVec4(1.0f, 0.8f, 0.3f, 1.0f),
+                               "  |  %s", loadMessage.c_str());
+        }
+    }
+    ImGui::End();
 }
 
 int main() {
@@ -733,7 +798,7 @@ int main() {
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE); // 3.2+ only
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 
-    GLFWwindow *window = glfwCreateWindow(1280, 720, "PCAP Hex Viewer", nullptr, nullptr);
+    GLFWwindow *window = glfwCreateWindow(1280, 720, "ImShark", nullptr, nullptr);
     if (window == nullptr) {
         glfwTerminate();
         std::cerr << "Failed to create GLFW window" << std::endl;
@@ -763,6 +828,8 @@ int main() {
 
         ShowFileOpenDialog(packets);
         HexView("PCAP File Viewer", packets);
+        ShowStatusBar(packets);
+        ShowLoadErrorPopup();
 
         ImGui::Render();
         int display_w, display_h;
