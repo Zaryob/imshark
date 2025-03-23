@@ -4,3 +4,5 @@ cmake-build-*/
 CMakeLists.txt.user
 
 build/
+build-*/
+vcpkg_installed/

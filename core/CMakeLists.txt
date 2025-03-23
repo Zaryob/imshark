@@ -29,12 +29,18 @@ target_include_directories(imshark_core PUBLIC "backends/glfw/imgui")
 find_package(OpenGL REQUIRED)
 target_link_libraries(imshark_core PUBLIC OpenGL::GL)
 
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(GLFW3 REQUIRED glfw3)
-target_include_directories(imshark_core PUBLIC ${GLFW3_INCLUDE_DIRS})
-target_link_directories(imshark_core PUBLIC ${GLFW3_LIBRARY_DIRS})
-target_link_libraries(imshark_core PUBLIC ${GLFW3_LIBRARIES})
-
+# GLFW: prefer the CMake package config (vcpkg, Homebrew, most distros), fall back to pkg-config.
+find_package(glfw3 CONFIG QUIET)
+if(TARGET glfw)
+    message(STATUS "Using GLFW from CMake package config")
+    target_link_libraries(imshark_core PUBLIC glfw)
+else()
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(GLFW3 REQUIRED glfw3)
+    target_include_directories(imshark_core PUBLIC ${GLFW3_INCLUDE_DIRS})
+    target_link_directories(imshark_core PUBLIC ${GLFW3_LIBRARY_DIRS})
+    target_link_libraries(imshark_core PUBLIC ${GLFW3_LIBRARIES})
+endif()
 
 # Install directives
 install(TARGETS imshark_core DESTINATION lib)

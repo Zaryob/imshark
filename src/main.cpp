@@ -681,6 +681,31 @@ void resetSelection() {
     packetState.clear();
 }
 
+// Loads a capture file into `packets`, updating the status/error state shown by the UI.
+void loadCapture(const std::string &filePath, std::vector<packet::PacketInfo> &packets) {
+    core::FileProcessor fileProcessor;
+
+    packets.clear();
+    resetSelection();
+    currentFile.clear();
+    loadMessage.clear();
+    if (std::filesystem::is_regular_file(filePath)) {
+        const bool ok = isPcapng(filePath)
+                            ? fileProcessor.processPcapngFile(filePath, packets, loadMessage)
+                            : fileProcessor.processPcapFile(filePath, packets, loadMessage);
+        loadFailed = !ok;
+        if (ok) currentFile = filePath;
+        else packets.clear();
+    } else {
+        loadFailed = true;
+        loadMessage = "Not a regular file: " + filePath;
+    }
+    if (!loadMessage.empty()) {
+        std::cerr << filePath << ": " << loadMessage << std::endl;
+        openLoadError = true;
+    }
+}
+
 // Function to display the file open dialog
 void ShowFileOpenDialog(std::vector<packet::PacketInfo>& packets)
 {
@@ -719,29 +744,7 @@ void ShowFileOpenDialog(std::vector<packet::PacketInfo>& packets)
         // If a file is selected, process the file path
         if (ImGuiFileDialog::Instance()->IsOk())
         {
-            core::FileProcessor fileProcessor;
-
-            std::string filePath = ImGuiFileDialog::Instance()->GetFilePathName();
-
-            packets.clear();
-            resetSelection();
-            currentFile.clear();
-            loadMessage.clear();
-            if (std::filesystem::is_regular_file(filePath)) {
-                const bool ok = isPcapng(filePath)
-                                    ? fileProcessor.processPcapngFile(filePath, packets, loadMessage)
-                                    : fileProcessor.processPcapFile(filePath, packets, loadMessage);
-                loadFailed = !ok;
-                if (ok) currentFile = filePath;
-                else packets.clear();
-            } else {
-                loadFailed = true;
-                loadMessage = "Not a regular file: " + filePath;
-            }
-            if (!loadMessage.empty()) {
-                std::cerr << filePath << ": " << loadMessage << std::endl;
-                openLoadError = true;
-            }
+            loadCapture(ImGuiFileDialog::Instance()->GetFilePathName(), packets);
         }
         // Close the file dialog after use
         ImGuiFileDialog::Instance()->Close();
@@ -788,7 +791,7 @@ void ShowStatusBar(const std::vector<packet::PacketInfo> &packets) {
     ImGui::End();
 }
 
-int main() {
+int main(int argc, char **argv) {
     if (!glfwInit()) {
         std::cerr << "Failed to initialize GLFW" << std::endl;
         return -1;
@@ -817,6 +820,7 @@ int main() {
     ImGui_ImplOpenGL3_Init("#version 150");
 
     std::vector<packet::PacketInfo> packets;
+    if (argc > 1) loadCapture(argv[1], packets); // imshark <capture file>
 
 
     while (!glfwWindowShouldClose(window)) {
