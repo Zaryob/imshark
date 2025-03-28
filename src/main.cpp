@@ -1,4 +1,4 @@
-#include <imgui/imgui.h>
+#include <imgui.h>
 #include <vector>
 #include <fstream>
 #include <iomanip>
@@ -23,7 +23,7 @@
 #include <network/utils.h>
 #include <set>
 
-#include <thirdparty/ImGuiFileDialog.h>
+#include <ImGuiFileDialog.h>
 
 std::map<std::string, std::pair<std::vector<std::string>, std::vector<std::pair<int, int> > > > packetState;
 

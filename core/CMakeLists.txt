@@ -1,46 +1,16 @@
-cmake_minimum_required(VERSION 3.13)
-project(imshark_core)
+# imshark_core: capture file readers, protocol parsing and the packet model.
+# Deliberately free of any UI / OpenGL / GLFW dependency so it can be tested and reused on its own.
+add_library(imshark_core STATIC
+    src/core.cpp
+    src/packet_parser.cpp
+    src/tcp_connection.cpp
+)
+set_target_properties(imshark_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
-# Main code
-file(GLOB_RECURSE SRC "src/*.cpp" "src/*.c")
+target_include_directories(imshark_core PUBLIC src)
 
-# Configure backend sources
-file(GLOB_RECURSE BACKEND_SRC "backends/glfw/imgui/*.cpp" "backends/glfw/imgui/*.c")
-file(GLOB_RECURSE THIRDPARTY_SRC "src/thirdparty/*.cpp" "src/thirdparty/*.c")
-
-# Configure imgui sources
-file(GLOB_RECURSE IMGUI_SRC "src/imgui/*.cpp" "src/imgui/*.c")
-
-# Add code to dyn lib
-add_library(imshark_core SHARED ${SRC} ${BACKEND_SRC} ${IMGUI_SRC} ${THIRDPARTY_SRC})
-
-# Set compiler options
-target_compile_options(imshark_core PRIVATE ${imsharkGUI_COMPILER_FLAGS})
-
-# Set the install prefix
-target_compile_definitions(imshark_core PUBLIC INSTALL_PREFIX="${CMAKE_INSTALL_PREFIX}")
-
-# Include core headers
-target_include_directories(imshark_core PUBLIC "src/")
-target_include_directories(imshark_core PUBLIC "src/imgui")
-target_include_directories(imshark_core PUBLIC "src/thirdparty")
-target_include_directories(imshark_core PUBLIC "backends/glfw/imgui")
-
-find_package(OpenGL REQUIRED)
-target_link_libraries(imshark_core PUBLIC OpenGL::GL)
-
-# GLFW: prefer the CMake package config (vcpkg, Homebrew, most distros), fall back to pkg-config.
-find_package(glfw3 CONFIG QUIET)
-if(TARGET glfw)
-    message(STATUS "Using GLFW from CMake package config")
-    target_link_libraries(imshark_core PUBLIC glfw)
+if(MSVC)
+    target_compile_options(imshark_core PRIVATE /W4)
 else()
-    find_package(PkgConfig REQUIRED)
-    pkg_check_modules(GLFW3 REQUIRED glfw3)
-    target_include_directories(imshark_core PUBLIC ${GLFW3_INCLUDE_DIRS})
-    target_link_directories(imshark_core PUBLIC ${GLFW3_LIBRARY_DIRS})
-    target_link_libraries(imshark_core PUBLIC ${GLFW3_LIBRARIES})
+    target_compile_options(imshark_core PRIVATE -Wall -Wextra)
 endif()
-
-# Install directives
-install(TARGETS imshark_core DESTINATION lib)
