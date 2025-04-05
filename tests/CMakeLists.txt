@@ -1,6 +1,10 @@
 find_package(GTest CONFIG QUIET)
 if(NOT GTest_FOUND)
-    find_package(GTest REQUIRED) # FindGTest module as a fallback
+    find_package(GTest QUIET) # FindGTest module as a fallback
+endif()
+if(NOT GTest_FOUND)
+    message(WARNING "GoogleTest not found - unit tests are skipped (configure with -DIMSHARK_BUILD_TESTS=OFF to silence)")
+    return()
 endif()
 
 add_executable(imshark_tests

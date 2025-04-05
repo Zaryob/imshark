@@ -6,5 +6,16 @@
   "license": "GPL-3.0-only",
   "dependencies": [
     "glfw3"
-  ]
+  ],
+  "default-features": [
+    "tests"
+  ],
+  "features": {
+    "tests": {
+      "description": "Build the unit tests",
+      "dependencies": [
+        "gtest"
+      ]
+    }
+  }
 }
