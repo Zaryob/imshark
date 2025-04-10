@@ -25,6 +25,22 @@
 
 
 namespace packet {
+    /// One node of the protocol tree shown in the packet details pane: a label plus the byte range
+    /// of the frame (`raw_data`) it was decoded from. `length == 0` means "no bytes" (derived values).
+    struct Field {
+        std::string text;
+        uint32_t offset = 0;
+        uint32_t length = 0;
+        std::vector<Field> children;
+
+        Field &add(std::string label, size_t off = 0, size_t len = 0) {
+            children.push_back(Field{std::move(label), static_cast<uint32_t>(off), static_cast<uint32_t>(len), {}});
+            return children.back();
+        }
+
+        bool contains(size_t byte) const { return byte >= offset && byte < size_t(offset) + length; }
+    };
+
     struct PacketInfo {
         int number;
         double time;
@@ -54,6 +70,10 @@ namespace packet {
                      network::DNSHeader> l7_header;  // Extend with all possible types you might need
 
         std::vector<char> raw_data;
+
+        /// Decoded protocol layers, outermost first (Frame, Ethernet, IP, TCP, ...). Offsets are absolute
+        /// positions in `raw_data`.
+        std::vector<Field> fields;
 
         PacketInfo() = default;
         PacketInfo(int num) : number(num){}

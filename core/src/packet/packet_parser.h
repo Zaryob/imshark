@@ -29,6 +29,7 @@
 namespace packet {
     class PacketParser {
         PacketInfo pack;
+        const char* frame_ = nullptr; // start of the frame being parsed, used to compute absolute byte offsets
     public:
         void parsePacket(packet::PacketInfo& pack, std::vector<char>& packetData);
         network::TCPConnection connection;
@@ -47,6 +48,8 @@ namespace packet {
         void parseSMTP(const char* data, size_t length);
         void parseProtocolPacket(const char* pack_data, size_t length, uint8_t protocol);
         void markMalformed(const std::string& reason);
+        void addDataLayer(const std::string& name, const char* payload, size_t length);
+        size_t offsetOf(const char* p) const { return static_cast<size_t>(p - frame_); }
         // Renders TCP options (MSS, WS, SACK, TS, ...) as " MSS=1460 WS=7 ..."
         static std::string describeTCPOptions(const char* options, size_t length);
     private:
