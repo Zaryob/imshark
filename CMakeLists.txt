@@ -17,8 +17,19 @@ if(IMSHARK_SANITIZE)
     add_link_options(-fsanitize=address,undefined)
 endif()
 
+# The UI (everything except window/GL setup) is a library so it can be smoke-tested without a window.
+add_library(imshark_ui STATIC
+    src/ui/chrome.cpp
+    src/ui/details.cpp
+    src/ui/loader.cpp
+    src/ui/main_window.cpp
+    src/ui/packet_list.cpp
+)
+target_include_directories(imshark_ui PUBLIC src)
+target_link_libraries(imshark_ui PUBLIC imshark_core imshark_imgui)
+
 add_executable(imshark src/main.cpp)
-target_link_libraries(imshark PRIVATE imshark_core imshark_imgui)
+target_link_libraries(imshark PRIVATE imshark_ui)
 if(APPLE)
     target_compile_definitions(imshark PRIVATE GL_SILENCE_DEPRECATION)
 endif()
