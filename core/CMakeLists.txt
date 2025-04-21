@@ -4,6 +4,15 @@ add_library(imshark_core STATIC
     src/core.cpp
     src/packet_parser.cpp
     src/tcp_connection.cpp
+    src/dissect/registry.cpp
+    src/dissect/ip.cpp
+    src/dissect/arp.cpp
+    src/dissect/icmp.cpp
+    src/dissect/tcp.cpp
+    src/dissect/udp.cpp
+    src/dissect/dns.cpp
+    src/dissect/dhcp.cpp
+    src/dissect/simple.cpp
 )
 set_target_properties(imshark_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 

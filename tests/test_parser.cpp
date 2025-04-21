@@ -214,3 +214,38 @@ TEST(FieldTree, FieldsStayInsideFrameForTruncatedAndRandomInput) {
         for (const auto &l: p.fields) expectWithinFrame(l, data.size());
     }
 }
+
+// ---- dissector registry ---------------------------------------------------------------------------
+
+TEST(Registry, CustomDissectorsAreUsedForPortsAndEtherTypes) {
+    dissect::Registry registry = dissect::Registry::builtin(); // start from the built-ins and extend
+    registry.registerUdpPort(9999, [](dissect::Context &ctx, const char *data, size_t length) {
+        ctx.pack.protocol = "MYPROTO";
+        ctx.pack.info = "payload=" + std::string(data, length);
+        ctx.addLayer("My Protocol", ctx.offsetOf(data), length);
+    });
+    registry.registerEtherType(0x88B5, [](dissect::Context &ctx, const char *data, size_t length) {
+        ctx.pack.protocol = "LOCAL";
+        ctx.pack.info = std::to_string(length) + " bytes";
+        ctx.addLayer("Local Experimental", ctx.offsetOf(data), length);
+    });
+
+    packet::PacketParser parser(registry);
+    std::vector<char> udp = hex("001122334455 aabbccddeeff 0800 4500001f00000000401100000a0000010a000002 c350 270f 000b 0000 686921");
+    packet::PacketInfo a(1);
+    parser.parsePacket(a, udp);
+    EXPECT_EQ(a.protocol, "MYPROTO");
+    EXPECT_EQ(a.info, "payload=hi!");
+    EXPECT_EQ(a.fields.back().text, "My Protocol");
+    EXPECT_EQ(a.fields.back().offset, 14u + 20u + 8u);
+
+    std::vector<char> local = hex("001122334455 aabbccddeeff 88b5 deadbeef");
+    packet::PacketInfo b(2);
+    parser.parsePacket(b, local);
+    EXPECT_EQ(b.protocol, "LOCAL");
+    EXPECT_EQ(b.info, "4 bytes");
+
+    // The built-in registry is unaffected
+    EXPECT_EQ(parse(udp).protocol, "UDP");
+    EXPECT_EQ(parse(local).protocol, "Ethernet");
+}
