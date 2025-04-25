@@ -9,7 +9,7 @@
 
 namespace {
     bool isPcapng(const std::string &filepath) {
-        std::ifstream file(filepath, std::ios::binary);
+        std::ifstream file(core::pathFromUtf8(filepath), std::ios::binary);
         uint32_t magic = 0;
         return file.read(reinterpret_cast<char *>(&magic), sizeof(magic)) && magic == 0x0A0D0D0A;
     }
@@ -24,7 +24,7 @@ void ui::loadCapture(AppState &state, const std::string &path) {
     state.loadMessage.clear();
     state.loadFailed = false;
 
-    if (std::filesystem::is_regular_file(path)) {
+    if (std::filesystem::is_regular_file(core::pathFromUtf8(path))) {
         const bool ok = isPcapng(path) ? processor.processPcapngFile(path, state.packets, state.loadMessage)
                                        : processor.processPcapFile(path, state.packets, state.loadMessage);
         state.loadFailed = !ok;

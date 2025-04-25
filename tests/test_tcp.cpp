@@ -1,16 +1,16 @@
 #include <gtest/gtest.h>
 
-#include <arpa/inet.h>
+#include <network/byteorder.h>
 
 #include <network/tcp_connection.h>
 
 namespace {
     network::TCPHeader segment(uint16_t sp, uint16_t dp, uint32_t seq, uint32_t ack, uint8_t flags) {
         network::TCPHeader h{};
-        h.src_port = htons(sp);
-        h.dest_port = htons(dp);
-        h.seq_num = htonl(seq);
-        h.ack_num = htonl(ack);
+        h.src_port = network::hton16(sp);
+        h.dest_port = network::hton16(dp);
+        h.seq_num = network::hton32(seq);
+        h.ack_num = network::hton32(ack);
         h.flags = flags;
         return h;
     }

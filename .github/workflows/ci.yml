@@ -12,7 +12,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
 
     steps:
       - uses: actions/checkout@v4
@@ -27,12 +27,29 @@ jobs:
         if: runner.os == 'macOS'
         run: brew install glfw googletest pkg-config
 
-      # Warnings-as-info for now; ASan + UBSan catch memory errors in the parser and readers.
+      # ASan + UBSan catch memory errors in the parser and readers.
       - name: Configure
+        if: runner.os != 'Windows'
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DIMSHARK_SANITIZE=ON
 
       - name: Build
+        if: runner.os != 'Windows'
         run: cmake --build build --parallel
 
       - name: Test
+        if: runner.os != 'Windows'
         run: ctest --test-dir build --output-on-failure
+
+      # Windows: MSVC with the dependencies (GLFW, GoogleTest) from the vcpkg manifest
+      - name: Configure (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: cmake -S . -B build "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+
+      - name: Build (Windows)
+        if: runner.os == 'Windows'
+        run: cmake --build build --config Release --parallel
+
+      - name: Test (Windows)
+        if: runner.os == 'Windows'
+        run: ctest --test-dir build -C Release --output-on-failure

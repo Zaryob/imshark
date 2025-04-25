@@ -6,7 +6,7 @@
 
 #include <cstdint>
 
-#include <arpa/inet.h>
+#include <network/byteorder.h>
 
 namespace network {
     struct IPHeader {
@@ -22,8 +22,8 @@ namespace network {
         uint32_t dst_addr;          // Destination IP addresses
 
         // The top 3 bits: 0x4 = reserved, 0x2 = Don't Fragment, 0x1 = More Fragments
-        uint8_t flags() const { return static_cast<uint8_t>(ntohs(flags_frag_off) >> 13); }
+        uint8_t flags() const { return static_cast<uint8_t>(network::ntoh16(flags_frag_off) >> 13); }
         // Fragment offset in 8-byte units
-        uint16_t fragmentOffset() const { return ntohs(flags_frag_off) & 0x1FFF; }
+        uint16_t fragmentOffset() const { return network::ntoh16(flags_frag_off) & 0x1FFF; }
     };
 } // namespace network

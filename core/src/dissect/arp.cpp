@@ -27,7 +27,7 @@ void dissect::dissectArp(Context &ctx, const char *data, size_t length, bool rev
 
     std::ostringstream oss;
     oss << "ARP ";
-    switch (ntohs(arp.opcode)) {
+    switch (network::ntoh16(arp.opcode)) {
         case 1:
             oss << "Request: Who has " << ip4(arp.target_protocol_addr) << "? Tell " << ip4(arp.sender_protocol_addr);
             break;
@@ -44,12 +44,12 @@ void dissect::dissectArp(Context &ctx, const char *data, size_t length, bool rev
     pack.info = oss.str();
 
     const size_t o = ctx.offsetOf(data);
-    const uint16_t opcode = ntohs(arp.opcode);
+    const uint16_t opcode = network::ntoh16(arp.opcode);
     Field &l = ctx.addLayer(std::string("Address Resolution Protocol (") +
                                 (opcode == 1 ? "request" : opcode == 2 ? "reply" : "other") + ")",
                             o, sizeof(network::ARPHeader));
-    l.add("Hardware type: " + std::to_string(ntohs(arp.hw_type)), o, 2);
-    l.add("Protocol type: " + hexString(ntohs(arp.protocol_type), 4), o + 2, 2);
+    l.add("Hardware type: " + std::to_string(network::ntoh16(arp.hw_type)), o, 2);
+    l.add("Protocol type: " + hexString(network::ntoh16(arp.protocol_type), 4), o + 2, 2);
     l.add("Hardware size: " + std::to_string(arp.hw_addr_len), o + 4, 1);
     l.add("Protocol size: " + std::to_string(arp.protocol_addr_len), o + 5, 1);
     l.add("Opcode: " + std::to_string(opcode), o + 6, 2);

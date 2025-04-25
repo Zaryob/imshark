@@ -6,7 +6,7 @@
 
 #include <cstdint>
 
-#include <arpa/inet.h>
+#include <network/byteorder.h>
 
 namespace network {
     struct ipv6_addr {
@@ -22,9 +22,9 @@ namespace network {
         struct ipv6_addr src_addr;   // Source IPv6 address (16 bytes)
         struct ipv6_addr dst_addr;   // Destination IPv6 address (16 bytes)
 
-        uint8_t version() const { return static_cast<uint8_t>(ntohl(ver_tc_flow) >> 28); }
-        uint8_t trafficClass() const { return static_cast<uint8_t>((ntohl(ver_tc_flow) >> 20) & 0xFF); }
-        uint32_t flowLabel() const { return ntohl(ver_tc_flow) & 0xFFFFF; }
+        uint8_t version() const { return static_cast<uint8_t>(network::ntoh32(ver_tc_flow) >> 28); }
+        uint8_t trafficClass() const { return static_cast<uint8_t>((network::ntoh32(ver_tc_flow) >> 20) & 0xFF); }
+        uint32_t flowLabel() const { return network::ntoh32(ver_tc_flow) & 0xFFFFF; }
     };
 #pragma pack(pop)
 

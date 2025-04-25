@@ -10,7 +10,7 @@
 #include <sstream>
 #include <string>
 
-#include <arpa/inet.h>
+#include <network/byteorder.h>
 
 #include <network/l3_network/ip6_header.h>
 
@@ -61,8 +61,6 @@ namespace network {
     }
 
     inline std::string getIPv6AddressString(const ipv6_addr &addr) {
-        char ip[INET6_ADDRSTRLEN];
-        inet_ntop(AF_INET6, &addr, ip, INET6_ADDRSTRLEN);
-        return std::string(ip);
+        return formatIPv6(&addr);
     }
 } // namespace network

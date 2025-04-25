@@ -82,7 +82,7 @@ void packet::PacketParser::parsePacket(packet::PacketInfo &pack, const std::vect
             }
             haveEthernet = true;
             pack.l2_header = ethHeader;
-            etherType = ntohs(ethHeader.type);
+            etherType = network::ntoh16(ethHeader.type);
             l3Offset = sizeof(network::EthernetHeader);
             const uint16_t outerType = etherType;
             // 802.1Q / 802.1ad (QinQ) tags: 2 bytes TCI + 2 bytes inner EtherType each
@@ -113,8 +113,8 @@ void packet::PacketParser::parsePacket(packet::PacketInfo &pack, const std::vect
             if (len < 4) { ctx.markMalformed("frame too short for loopback header"); return; }
             uint32_t af;
             std::memcpy(&af, base, sizeof(af));
-            if (pack.link_type == kLinkLoop) af = ntohl(af); // OpenBSD loop: always network order
-            else if (af > 0xFFFF) af = __builtin_bswap32(af); // NULL: written by a host of the other endianness
+            if (pack.link_type == kLinkLoop) af = network::ntoh32(af); // OpenBSD loop: always network order
+            else if (af > 0xFFFF) af = network::bswap32(af); // NULL: written by a host of the other endianness
             etherType = af == 2 ? 0x0800 : (af == 10 || af == 24 || af == 28 || af == 30) ? 0x86DD : 0;
             l3Offset = 4;
         } break;

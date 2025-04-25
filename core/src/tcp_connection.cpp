@@ -4,15 +4,15 @@
 #include <network/tcp_connection.h>
 #include <network/connection.h>
 
-#include <arpa/inet.h>
+#include <network/byteorder.h>
 
 void network::TCPConnection::trackTCPConnections(int64_t &relativeSeq, int64_t &relativeAck,
                                                  const std::string &srcIP, const std::string &dstIP,
                                                  const network::TCPHeader &tcpHeader) {
-    const Endpoint src{srcIP, ntohs(tcpHeader.src_port)};
-    const Endpoint dst{dstIP, ntohs(tcpHeader.dest_port)};
-    const uint32_t seqNum = ntohl(tcpHeader.seq_num);
-    const uint32_t ackNum = ntohl(tcpHeader.ack_num);
+    const Endpoint src{srcIP, network::ntoh16(tcpHeader.src_port)};
+    const Endpoint dst{dstIP, network::ntoh16(tcpHeader.dest_port)};
+    const uint32_t seqNum = network::ntoh32(tcpHeader.seq_num);
+    const uint32_t ackNum = network::ntoh32(tcpHeader.ack_num);
 
     const bool syn = tcpHeader.flags & network::TCPFlags::SYN;
     const bool ack = tcpHeader.flags & network::TCPFlags::ACK;
