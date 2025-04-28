@@ -78,10 +78,11 @@ imshark/
 │   └── ui/                 # `imshark_ui`: AppState, menü/durum çubuğu, paket listesi, ayrıntı ağacı, hex görünümü
 ├── core/src/               # `imshark_core` (UI bağımsız statik kütüphane)
 │   ├── core.{h,cpp}        #   FileProcessor: pcap / pcapng okuyucular
-│   ├── packet_parser.cpp   #   katman ayrıştırma, alan ağacı ve özetler
+│   ├── packet_parser.cpp   #   link katmanı, dissector'lara devretme
+│   ├── dissect/            #   dissector'lar (ip, arp, icmp, tcp, udp, dns, dhcp…) ve Registry
 │   ├── tcp_connection.cpp  #   TCP bağıl seq/ack takibi
 │   ├── packet/             #   PacketInfo, Field, PacketParser
-│   └── network/            #   l2/l3/l4/l7 başlık yapıları, yardımcılar
+│   └── network/            #   başlık yapıları, byteorder.h (taşınabilir ntoh/inet_ntop), yardımcılar
 ├── third_party/            # Dear ImGui 1.91.1 (+ GLFW/OpenGL3 backend), ImGuiFileDialog
 ├── tests/                  # GoogleTest testleri ve tests/data/sample.pcap
 ├── tools/make_sample_pcap.py

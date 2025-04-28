@@ -18,17 +18,17 @@ Hedef: hiçbir girdi dosyası uygulamayı çökertmesin, gösterilen veri doğru
 - [x] Hata ayıklama `std::cout` çıktılarının kaldırılması, göreli zaman düzeltmesi, pencere başlığı (#9, #16, #23) — **S**
 - [x] Hata/başarı durumunu gösteren durum çubuğu ve hata diyaloğu — **S**
 
-## v0.3 — Mimari ve test altyapısı
+## v0.3 — Mimari ve test altyapısı ✅ tamamlandı
 
 Hedef: çekirdek UI'dan bağımsız, test edilebilir; geliştirme güvenli ve hızlı.
 
 - [x] `imshark_core`'dan ImGui/GLFW/ImGuiFileDialog'u ayır; UI bağımsız **statik** `libimshark` (io + dissect + model) (#22) — **M**
-- [ ] Dissector arayüzü + kayıt defteri; port/EtherType tabanlı seçim. *(FieldTree — ad, ofset, uzunluk — ve UI'nın onu çizmesi tamamlandı; ayrıştırma hâlâ tek `PacketParser` sınıfında)* — **L**
+- [x] Dissector arayüzü + kayıt defteri (`dissect::Registry`: EtherType → IP protokolü → TCP/UDP portu); protokol başına tek dosya; özel registry ile genişletilebilir — **L**
 - [x] `main.cpp`'yi böl (`main.cpp` + `src/ui/`), global durumu `AppState`'e taşı, hex görünümü kopyalarını kaldır (#21) — **M**
 - [x] Test altyapısı (GoogleTest): birim testleri, bozuk/kırpık girdiler, mutasyon-fuzz, UI duman testleri. *(libFuzzer hedefi yapılmadı)* — **M**
 - [x] CI (GitHub Actions): macOS + Linux derleme, test, `-Wall -Wextra`, ASan/UBSan — **S**
 - [x] CMake: GLFW için vcpkg manifesti + presets, `file(GLOB)` yerine açık dosya listesi, `.clang-format` — **S**
-- [ ] Windows desteği (`arpa/inet.h` yerine taşınabilir byte-order yardımcıları, MSVC/MinGW CI) — **M**
+- [x] Windows desteği: çekirdekte POSIX/Winsock bağımlılığı yok, UTF-8 yollar, MSVC ayarları, CI işi. *(Windows'ta henüz çalıştırılıp doğrulanmadı)* — **M**
 
 ## v0.4 — Performans ve kullanılabilirlik
 
