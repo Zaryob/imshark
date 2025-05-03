@@ -13,7 +13,6 @@ void dissect::dissectIcmp(Context &ctx, const char *data, size_t length, bool v6
         ctx.markMalformed("ICMP message too short");
         return;
     }
-    pack.l4_header = icmp;
     pack.protocol = v6 ? "ICMPv6" : "ICMP";
 
     std::ostringstream oss;
@@ -36,6 +35,7 @@ void dissect::dissectIcmp(Context &ctx, const char *data, size_t length, bool v6
     }
     pack.info = oss.str();
 
+    if (!ctx.wantFields()) return;
     const size_t o = ctx.offsetOf(data);
     Field &l = ctx.addLayer(v6 ? "Internet Control Message Protocol v6" : "Internet Control Message Protocol", o, length);
     l.add("Type: " + std::to_string(icmp.type), o, 1);

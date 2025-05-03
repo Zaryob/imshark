@@ -4,6 +4,8 @@
 
 #include <imgui.h>
 
+#include <core.h>
+
 namespace {
     using packet::Field;
 
@@ -141,18 +143,35 @@ namespace {
     }
 } // namespace
 
+bool ui::ensureDetail(AppState &state) {
+    const packet::PacketInfo *summary = state.currentPacket();
+    if (!summary) return false;
+    if (state.detailIndex == state.selectedPacket) return state.detailOk;
+
+    state.detailIndex = state.selectedPacket;
+    state.selectedField = nullptr; // pointed into the previous detail
+    state.detailOk = core::buildPacketDetails(state.currentFile, *summary, state.detail);
+    if (!state.detailOk) state.detail = *summary; // keep the summary columns, no bytes/fields
+    return state.detailOk;
+}
+
 void ui::drawPacketDetails(AppState &state) {
-    const packet::PacketInfo *packet = state.currentPacket();
-    if (!packet) return;
+    if (!state.currentPacket()) return;
+    const bool ok = ensureDetail(state);
+    const packet::PacketInfo &packet = state.detail;
 
     const float available = ImGui::GetContentRegionAvail().y;
 
     ImGui::BeginChild("Packet Tree", ImVec2(0, available * 0.5f), true);
-    ImGui::TextWrapped("%s", packet->info.c_str());
+    ImGui::TextWrapped("%s", packet.info.c_str());
     ImGui::Separator();
-    for (const auto &layer: packet->fields) drawField(state, layer, true);
+    if (!ok) {
+        ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Could not read this packet from %s (moved or modified?)",
+                           state.currentFile.c_str());
+    }
+    for (const auto &layer: packet.fields) drawField(state, layer, true);
     ImGui::EndChild();
     state.revealSelectedField = false;
 
-    if (!packet->raw_data.empty()) drawHexView(state, *packet);
+    if (!packet.raw_data.empty()) drawHexView(state, packet);
 }

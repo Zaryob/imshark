@@ -7,21 +7,8 @@
 #include <cstdint>
 
 #include <string>
-#include <variant>
 #include <vector>
 
-#include <network/l2_data_link/ethernet_header.h>
-
-#include <network/l3_network/arp_header.h>
-#include <network/l3_network/ip6_header.h>
-#include <network/l3_network/ip_header.h>
-
-#include <network/l4_transport/tcp_header.h>
-#include <network/l4_transport/udp_header.h>
-#include <network/l4_transport/icmp_header.h>
-
-#include <network/l7_application/dhcp_header.h>
-#include <network/l7_application/dns_header.h>
 
 
 namespace packet {
@@ -41,13 +28,16 @@ namespace packet {
         bool contains(size_t byte) const { return byte >= offset && byte < size_t(offset) + length; }
     };
 
+    /// One captured packet. While a capture is loaded only the cheap summary is kept in memory (the
+    /// columns of the packet list); the raw bytes stay in the file and the field tree is rebuilt on
+    /// demand for the selected packet (see core::buildPacketDetails).
     struct PacketInfo {
-        int number;
-        double time;
+        int number = 0;
+        double time = 0;
         std::string source;
         std::string destination;
         std::string protocol;
-        uint32_t length;
+        uint32_t length = 0;
         std::string info;
 
         // Capture link type (LINKTYPE_* from the pcap/pcapng file); 1 = Ethernet.
@@ -57,29 +47,23 @@ namespace packet {
         // 802.1Q/802.1ad VLAN IDs found in the Ethernet header, outermost first.
         std::vector<uint16_t> vlan_ids;
 
-        std::variant<network::EthernetHeader> l2_header;
-        std::variant<network::ARPHeader,
-                     network::IPv6Header,
-                     network::IPHeader> l3_header;
+        // Relative TCP sequence/acknowledgment numbers, computed in capture order while loading
+        // (-1 = not applicable); needed again when the field tree is rebuilt for a single packet.
+        int64_t tcp_relative_seq = -1;
+        int64_t tcp_relative_ack = -1;
 
-        std::variant<network::ICMPHeader,
-                     network::TCPHeader,
-                     network::UDPHeader> l4_header;
+        // Where the captured frame lives in the capture file.
+        uint64_t file_offset = 0;
+        uint32_t captured_length = 0;
 
-        std::variant<network::DHCPHeader,
-                     network::DNSHeader> l7_header;  // Extend with all possible types you might need
-
+        /// The captured frame. Empty for packets of a loaded capture, filled when details are built.
         std::vector<char> raw_data;
 
         /// Decoded protocol layers, outermost first (Frame, Ethernet, IP, TCP, ...). Offsets are absolute
-        /// positions in `raw_data`.
+        /// positions in `raw_data`. Empty unless the packet was parsed in Full/Replay mode.
         std::vector<Field> fields;
 
         PacketInfo() = default;
-        PacketInfo(int num) : number(num){}
-
-        PacketInfo(int num, double t, const std::string& src, const std::string& dest,
-                   const std::string& proto, uint32_t len, const std::string& inf)
-            : number(num), time(t), source(src), destination(dest), protocol(proto), length(len), info(inf) {}
+        explicit PacketInfo(int num) : number(num) {}
     };
-} // namespace core
+} // namespace packet

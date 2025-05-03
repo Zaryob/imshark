@@ -15,6 +15,7 @@ void ui::drawMenuAndDialogs(AppState &state) {
                 ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", "Choose File", ".pcapng,.pcap,");
             }
             if (ImGui::MenuItem("Close File", nullptr, false, !state.currentFile.empty())) {
+                state.loadJob.reset();
                 state.packets.clear();
                 state.clearSelection();
                 state.currentFile.clear();
@@ -33,7 +34,7 @@ void ui::drawMenuAndDialogs(AppState &state) {
 
     if (ImGuiFileDialog::Instance()->Display("ChooseFileDlgKey")) {
         if (ImGuiFileDialog::Instance()->IsOk()) {
-            loadCapture(state, ImGuiFileDialog::Instance()->GetFilePathName());
+            startLoad(state, ImGuiFileDialog::Instance()->GetFilePathName());
         }
         ImGuiFileDialog::Instance()->Close();
     }
@@ -46,7 +47,9 @@ void ui::drawStatusBar(const AppState &state) {
     const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
                                    ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus;
     if (ImGui::Begin("##status", nullptr, flags)) {
-        if (state.currentFile.empty()) {
+        if (state.loading()) {
+            ImGui::Text("Loading %s ...", loadingPath(state).c_str());
+        } else if (state.currentFile.empty()) {
             ImGui::TextUnformatted("No file loaded. Use File > Open.");
         } else {
             ImGui::Text("%s  |  %zu packets", state.currentFile.c_str(), state.packets.size());

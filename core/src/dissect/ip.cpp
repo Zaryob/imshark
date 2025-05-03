@@ -17,7 +17,6 @@ void dissect::dissectIPv4(Context &ctx, const char *base, size_t len) {
         pack.protocol = "IPv4";
         return;
     }
-    pack.l3_header = ipHeader;
     pack.destination = ip4(ipHeader.dst_addr);
     pack.source = ip4(ipHeader.src_addr);
 
@@ -30,7 +29,7 @@ void dissect::dissectIPv4(Context &ctx, const char *base, size_t len) {
 
     const size_t o = ctx.offsetOf(base);
     const size_t totalLen = network::ntoh16(ipHeader.tot_length);
-    {
+    if (ctx.wantFields()) {
         Field &l = ctx.addLayer("Internet Protocol Version 4, Src: " + pack.source + ", Dst: " + pack.destination, o, ipHeaderLen);
         l.add("Version: " + std::to_string(ipHeader.version), o, 1);
         l.add("Header Length: " + std::to_string(ipHeaderLen) + " bytes (" + std::to_string(ipHeader.ihl) + ")", o, 1);
@@ -67,7 +66,6 @@ void dissect::dissectIPv6(Context &ctx, const char *base, size_t len) {
         pack.protocol = "IPv6";
         return;
     }
-    pack.l3_header = ipv6Header;
 
     pack.source = network::getIPv6AddressString(ipv6Header.src_addr);
     pack.destination = network::getIPv6AddressString(ipv6Header.dst_addr);
@@ -86,16 +84,19 @@ void dissect::dissectIPv6(Context &ctx, const char *base, size_t len) {
     uint8_t nextHeader = ipv6Header.next_header;
 
     const size_t o = ctx.offsetOf(base);
-    Field &l = ctx.addLayer("Internet Protocol Version 6, Src: " + pack.source + ", Dst: " + pack.destination, o,
-                            sizeof(network::IPv6Header));
-    l.add("Version: " + std::to_string(ipv6Header.version()), o, 1);
-    l.add("Traffic Class: " + hexString(ipv6Header.trafficClass(), 2), o, 2);
-    l.add("Flow Label: " + hexString(ipv6Header.flowLabel(), 5), o + 1, 3);
-    l.add("Payload Length: " + std::to_string(network::ntoh16(ipv6Header.payload_len)), o + 4, 2);
-    l.add("Next Header: " + std::to_string(ipv6Header.next_header), o + 6, 1);
-    l.add("Hop Limit: " + std::to_string(ipv6Header.hop_limit), o + 7, 1);
-    l.add("Source Address: " + pack.source, o + 8, 16);
-    l.add("Destination Address: " + pack.destination, o + 24, 16);
+    Field *l = nullptr; // the IPv6 layer of the field tree (null in summary mode)
+    if (ctx.wantFields()) {
+        l = &ctx.addLayer("Internet Protocol Version 6, Src: " + pack.source + ", Dst: " + pack.destination, o,
+                          sizeof(network::IPv6Header));
+        l->add("Version: " + std::to_string(ipv6Header.version()), o, 1);
+        l->add("Traffic Class: " + hexString(ipv6Header.trafficClass(), 2), o, 2);
+        l->add("Flow Label: " + hexString(ipv6Header.flowLabel(), 5), o + 1, 3);
+        l->add("Payload Length: " + std::to_string(network::ntoh16(ipv6Header.payload_len)), o + 4, 2);
+        l->add("Next Header: " + std::to_string(ipv6Header.next_header), o + 6, 1);
+        l->add("Hop Limit: " + std::to_string(ipv6Header.hop_limit), o + 7, 1);
+        l->add("Source Address: " + pack.source, o + 8, 16);
+        l->add("Destination Address: " + pack.destination, o + 24, 16);
+    }
 
     // Skip extension headers (hop-by-hop, routing, fragment, destination options, AH)
     while (nextHeader == 0 || nextHeader == 43 || nextHeader == 44 || nextHeader == 51 || nextHeader == 60) {
@@ -105,8 +106,10 @@ void dissect::dissectIPv6(Context &ctx, const char *base, size_t len) {
                               : nextHeader == 51 ? (static_cast<size_t>(static_cast<uint8_t>(base[next + 1])) + 2) * 4
                               : (static_cast<size_t>(static_cast<uint8_t>(base[next + 1])) + 1) * 8;
         if (extLen > avail) { ctx.markMalformed("IPv6 extension header truncated"); return; }
-        l.add("Extension Header (type " + std::to_string(nextHeader) + ", " + std::to_string(extLen) + " bytes)",
-              o + next, extLen);
+        if (l) {
+            l->add("Extension Header (type " + std::to_string(nextHeader) + ", " + std::to_string(extLen) + " bytes)",
+                   o + next, extLen);
+        }
         next += extLen;
         avail -= extLen;
         nextHeader = following;

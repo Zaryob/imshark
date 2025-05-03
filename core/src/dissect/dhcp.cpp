@@ -16,7 +16,6 @@ void dissect::dissectDhcp(Context &ctx, const char *data, size_t length) {
         ctx.markMalformed("DHCP message too short");
         return;
     }
-    pack.l7_header = dhcp;
 
     std::ostringstream oss;
     oss << "DHCP ";
@@ -35,6 +34,7 @@ void dissect::dissectDhcp(Context &ctx, const char *data, size_t length) {
     }
     pack.info = oss.str();
 
+    if (!ctx.wantFields()) return;
     const size_t p = ctx.offsetOf(data);
     Field &l = ctx.addLayer("Dynamic Host Configuration Protocol", p, length);
     l.add("Message type: " + std::string(dhcp.op == 1 ? "Boot Request (1)" : dhcp.op == 2 ? "Boot Reply (2)" : std::to_string(dhcp.op)), p, 1);

@@ -10,6 +10,7 @@
 #include <sstream>
 
 #include <dissect/util.h>
+#include <network/l2_data_link/ethernet_header.h>
 #include <network/utils.h>
 
 namespace {
@@ -49,7 +50,8 @@ namespace {
             kLinkRaw = 101, kLinkLoop = 108, kLinkLinuxSll = 113, kLinkLinuxSll2 = 276;
 } // namespace
 
-void packet::PacketParser::parsePacket(packet::PacketInfo &pack, const std::vector<char> &packetData) {
+void packet::PacketParser::parsePacket(packet::PacketInfo &pack, const std::vector<char> &packetData,
+                                       dissect::ParseMode mode) {
     pack.vlan_ids.clear();
     pack.fields.clear();
     pack.protocol.clear();
@@ -59,9 +61,9 @@ void packet::PacketParser::parsePacket(packet::PacketInfo &pack, const std::vect
     const char *base = packetData.data();
     const size_t len = packetData.size();
     pack.length = static_cast<uint32_t>(len);
-    dissect::Context ctx{pack, base, len, connection, *registry_};
+    dissect::Context ctx{pack, base, len, connection, *registry_, mode};
 
-    {
+    if (ctx.wantFields()) {
         Field &frame = ctx.addLayer("Frame " + std::to_string(pack.number) + ": " + std::to_string(len) + " bytes on wire", 0, len);
         frame.add("Frame Number: " + std::to_string(pack.number));
         frame.add("Frame Length: " + std::to_string(len) + " bytes", 0, len);
@@ -81,7 +83,6 @@ void packet::PacketParser::parsePacket(packet::PacketInfo &pack, const std::vect
                 return;
             }
             haveEthernet = true;
-            pack.l2_header = ethHeader;
             etherType = network::ntoh16(ethHeader.type);
             l3Offset = sizeof(network::EthernetHeader);
             const uint16_t outerType = etherType;
@@ -98,14 +99,16 @@ void packet::PacketParser::parsePacket(packet::PacketInfo &pack, const std::vect
                 l3Offset += 4;
             }
 
-            Field &eth = ctx.addLayer("Ethernet II, Src: " + network::getMACAddressString(ethHeader.src_mac) +
-                                          ", Dst: " + network::getMACAddressString(ethHeader.dest_mac),
-                                      0, l3Offset);
-            eth.add("Destination: " + network::getMACAddressString(ethHeader.dest_mac), 0, 6);
-            eth.add("Source: " + network::getMACAddressString(ethHeader.src_mac), 6, 6);
-            eth.add("Type: " + etherTypeName(outerType) + " (" + hexString(outerType, 4) + ")", 12, 2);
-            for (size_t i = 0; i < pack.vlan_ids.size(); ++i) {
-                eth.add("802.1Q Virtual LAN, ID: " + std::to_string(pack.vlan_ids[i]), 14 + 4 * i, 4);
+            if (ctx.wantFields()) {
+                Field &eth = ctx.addLayer("Ethernet II, Src: " + network::getMACAddressString(ethHeader.src_mac) +
+                                              ", Dst: " + network::getMACAddressString(ethHeader.dest_mac),
+                                          0, l3Offset);
+                eth.add("Destination: " + network::getMACAddressString(ethHeader.dest_mac), 0, 6);
+                eth.add("Source: " + network::getMACAddressString(ethHeader.src_mac), 6, 6);
+                eth.add("Type: " + etherTypeName(outerType) + " (" + hexString(outerType, 4) + ")", 12, 2);
+                for (size_t i = 0; i < pack.vlan_ids.size(); ++i) {
+                    eth.add("802.1Q Virtual LAN, ID: " + std::to_string(pack.vlan_ids[i]), 14 + 4 * i, 4);
+                }
             }
         } break;
         case kLinkNull:
@@ -142,7 +145,7 @@ void packet::PacketParser::parsePacket(packet::PacketInfo &pack, const std::vect
             return;
     }
     pack.l2_size = static_cast<uint16_t>(l3Offset);
-    if (!haveEthernet && l3Offset > 0) ctx.addLayer(linkTypeName(pack.link_type) + " link header", 0, l3Offset);
+    if (ctx.wantFields() && !haveEthernet && l3Offset > 0) ctx.addLayer(linkTypeName(pack.link_type) + " link header", 0, l3Offset);
 
     if (const dissect::Dissector *network = registry_->findEtherType(etherType)) {
         (*network)(ctx, base + l3Offset, len - l3Offset);
@@ -158,5 +161,5 @@ void packet::PacketParser::parsePacket(packet::PacketInfo &pack, const std::vect
     std::ostringstream oss;
     oss << "EtherType 0x" << std::hex << std::setw(4) << std::setfill('0') << etherType;
     pack.info = oss.str();
-    if (len > l3Offset) ctx.addLayer("Data (" + std::to_string(len - l3Offset) + " bytes)", l3Offset, len - l3Offset);
+    if (ctx.wantFields() && len > l3Offset) ctx.addLayer("Data (" + std::to_string(len - l3Offset) + " bytes)", l3Offset, len - l3Offset);
 }

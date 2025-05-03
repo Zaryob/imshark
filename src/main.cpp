@@ -35,7 +35,7 @@ int main(int argc, char **argv) {
     ImGui_ImplOpenGL3_Init("#version 150");
 
     ui::AppState state;
-    if (argc > 1) ui::loadCapture(state, argv[1]); // imshark <capture file>
+    if (argc > 1) ui::startLoad(state, argv[1]); // imshark <capture file>
 
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
@@ -44,10 +44,12 @@ int main(int argc, char **argv) {
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
+        ui::pollLoad(state);
         ui::drawMenuAndDialogs(state);
         ui::drawMainWindow(state);
         ui::drawStatusBar(state);
         ui::drawLoadErrorPopup(state);
+        ui::drawLoadProgressPopup(state);
 
         ImGui::Render();
         int display_w, display_h;

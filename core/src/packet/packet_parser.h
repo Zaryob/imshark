@@ -18,9 +18,11 @@ namespace packet {
         explicit PacketParser(const dissect::Registry &registry = dissect::Registry::builtin())
             : registry_(&registry) {}
 
-        /// Fills `packet` (protocol, addresses, info, field tree...) from `packetData`. `packet.link_type`
-        /// and `packet.number` must be set; nothing is read outside `packetData`.
-        void parsePacket(PacketInfo &packet, const std::vector<char> &packetData);
+        /// Fills `packet` (protocol, addresses, info and, unless `mode` is Summary, the field tree) from
+        /// `packetData`. `packet.link_type` and `packet.number` must be set; nothing is read outside
+        /// `packetData`. See dissect::ParseMode.
+        void parsePacket(PacketInfo &packet, const std::vector<char> &packetData,
+                         dissect::ParseMode mode = dissect::ParseMode::Full);
 
         /// Per-capture TCP state; use one parser per capture so connections do not leak between files.
         network::TCPConnection connection;

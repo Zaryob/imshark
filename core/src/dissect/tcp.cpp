@@ -56,7 +56,6 @@ void dissect::dissectTcp(Context &ctx, const char *data, size_t length) {
         return;
     }
     const size_t headerLen = static_cast<size_t>((tcpHeader.data_offset >> 4) & 0x0F) * 4;
-    pack.l4_header = tcpHeader;
     pack.protocol = "TCP";
     if (headerLen < sizeof(network::TCPHeader) || headerLen > length) {
         ctx.markMalformed("invalid TCP data offset");
@@ -69,7 +68,14 @@ void dissect::dissectTcp(Context &ctx, const char *data, size_t length) {
     const size_t payloadLen = std::min<size_t>(pack.length, length - headerLen);
 
     int64_t seq = -1, ack = -1;
-    ctx.tcp.trackTCPConnections(seq, ack, pack.source, pack.destination, tcpHeader);
+    if (ctx.mode == ParseMode::Replay) {
+        seq = pack.tcp_relative_seq; // the connection table only exists while the capture is loaded
+        ack = pack.tcp_relative_ack;
+    } else {
+        ctx.tcp.trackTCPConnections(seq, ack, pack.source, pack.destination, tcpHeader);
+        pack.tcp_relative_seq = seq;
+        pack.tcp_relative_ack = ack;
+    }
 
     const uint16_t window = network::ntoh16(tcpHeader.window);
     const uint16_t srcPort = network::ntoh16(tcpHeader.src_port);
@@ -81,7 +87,7 @@ void dissect::dissectTcp(Context &ctx, const char *data, size_t length) {
                 (ack >= 0 ? (" Ack=" + std::to_string(ack)) : "") +
                 (window > 0 ? (" Win=" + std::to_string(window)) : "") + options;
 
-    {
+    if (ctx.wantFields()) {
         Field &l = ctx.addLayer("Transmission Control Protocol, Src Port: " + std::to_string(srcPort) + ", Dst Port: " +
                                     std::to_string(dstPort) + (seq >= 0 ? ", Seq: " + std::to_string(seq) : "") +
                                     ", Len: " + std::to_string(payloadLen),

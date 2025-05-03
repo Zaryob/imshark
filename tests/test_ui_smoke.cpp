@@ -2,6 +2,9 @@
 // unbalanced Begin/End, Push/Pop and similar mistakes; the checks below cover the selection logic.
 #include <gtest/gtest.h>
 
+#include <chrono>
+#include <thread>
+
 #include <imgui.h>
 
 #include <ui/ui.h>
@@ -25,10 +28,12 @@ namespace {
         void frame(ui::AppState &state) {
             ImGui::GetIO().DeltaTime = 1.0f / 60.0f;
             ImGui::NewFrame();
+            ui::pollLoad(state);
             ui::drawMenuAndDialogs(state);
             ui::drawMainWindow(state);
             ui::drawStatusBar(state);
             ui::drawLoadErrorPopup(state);
+            ui::drawLoadProgressPopup(state);
             ImGui::Render();
         }
 
@@ -73,7 +78,10 @@ TEST_F(UiSmoke, SelectingAFieldHighlightsItsBytes) {
     state.selectedPacket = 6; // TCP SYN with options
     frames(state);
 
-    const auto &packet = state.packets[6];
+    ASSERT_TRUE(state.detailOk);
+    EXPECT_EQ(state.detailIndex, 6);
+    EXPECT_TRUE(state.packets[6].fields.empty()) << "the list keeps summaries only";
+    const auto &packet = state.detail;
     // Find the "Source Port" field of the TCP layer
     const packet::Field *tcp = nullptr;
     for (const auto &l: packet.fields) {
@@ -102,4 +110,40 @@ TEST_F(UiSmoke, CloseAndReloadResetsSelection) {
     EXPECT_EQ(state.selectedField, nullptr);
     EXPECT_FALSE(state.hasSelection());
     frames(state);
+}
+
+TEST_F(UiSmoke, BackgroundLoadPublishesWhenFinishedAndKeepsOldCaptureOnFailure) {
+    ui::AppState state;
+    ui::startLoad(state, IMSHARK_TEST_DATA_DIR "/sample.pcap");
+    EXPECT_TRUE(state.loading());
+    for (int i = 0; i < 2000 && state.loading(); ++i) {
+        frame(state); // pollLoad + progress popup run every frame
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_FALSE(state.loading());
+    EXPECT_EQ(state.packets.size(), 16u);
+    EXPECT_FALSE(state.loadFailed);
+
+    state.selectedPacket = 2;
+    ui::loadCapture(state, "/no/such/file.pcap"); // fails, the open capture must stay
+    EXPECT_TRUE(state.loadFailed);
+    EXPECT_EQ(state.packets.size(), 16u);
+    EXPECT_EQ(state.selectedPacket, 2);
+    EXPECT_EQ(state.currentFile, IMSHARK_TEST_DATA_DIR "/sample.pcap");
+}
+
+TEST_F(UiSmoke, CancelledLoadIsNotAnError) {
+    ui::AppState state;
+    ui::startLoad(state, IMSHARK_TEST_DATA_DIR "/sample.pcap");
+    ui::cancelLoad(state);
+    while (state.loading()) {
+        ui::pollLoad(state);
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    // Depending on timing the tiny sample file may finish before the cancel is noticed; both are fine,
+    // but a cancel must never raise the error popup.
+    if (state.loadFailed) {
+        EXPECT_EQ(state.loadMessage, "Cancelled");
+        EXPECT_FALSE(state.openLoadError);
+    }
 }
