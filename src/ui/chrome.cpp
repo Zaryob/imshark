@@ -1,10 +1,34 @@
 #include "ui.h"
 
 #include <cstdlib>
+#include <filesystem>
 
 #include <imgui.h>
 
 #include <ImGuiFileDialog.h>
+
+void ui::applyTheme(bool dark) {
+    if (dark) ImGui::StyleColorsDark();
+    else ImGui::StyleColorsLight();
+}
+
+void ui::initSettings(AppState &state, const std::string &path) {
+    state.settingsPath = path;
+    state.settings = path.empty() ? Settings() : loadSettings(path);
+    state.listHeight = state.settings.listHeight;
+    state.settingsDirty = false;
+}
+
+void ui::saveSettingsIfDirty(AppState &state) {
+    if (state.settingsPath.empty()) return;
+    if (state.settings.listHeight != state.listHeight) {
+        state.settings.listHeight = state.listHeight;
+        state.settingsDirty = true;
+    }
+    if (!state.settingsDirty) return;
+    saveSettings(state.settings, state.settingsPath);
+    state.settingsDirty = false;
+}
 
 float ui::statusBarHeight() { return ImGui::GetFrameHeight() + 2 * ImGui::GetStyle().WindowPadding.y; }
 
@@ -14,7 +38,23 @@ void ui::drawMenuAndDialogs(AppState &state) {
             if (ImGui::MenuItem("Open...", "Ctrl+O")) {
                 ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", "Choose File", ".pcapng,.pcap,");
             }
-            if (ImGui::MenuItem("Close File", nullptr, false, !state.currentFile.empty())) {
+            if (ImGui::BeginMenu("Open Recent", !state.settings.recentFiles.empty())) {
+                std::string chosen;
+                for (const auto &recent: state.settings.recentFiles) {
+                    const std::string name = std::filesystem::path(recent).filename().string();
+                    if (ImGui::MenuItem(name.c_str())) chosen = recent;
+                    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", recent.c_str());
+                }
+                ImGui::Separator();
+                if (ImGui::MenuItem("Clear Recent")) {
+                    state.settings.recentFiles.clear();
+                    state.settingsDirty = true;
+                }
+                ImGui::EndMenu();
+                if (!chosen.empty()) startLoad(state, chosen);
+            }
+            ImGui::Separator();
+            if (ImGui::MenuItem("Close File", "Ctrl+W", false, !state.currentFile.empty())) {
                 state.loadJob.reset();
                 state.packets.clear();
                 state.order.clear();
@@ -26,7 +66,30 @@ void ui::drawMenuAndDialogs(AppState &state) {
             if (ImGui::MenuItem("Exit")) std::exit(0);
             ImGui::EndMenu();
         }
+        if (ImGui::BeginMenu("View")) {
+            if (ImGui::MenuItem("Dark Theme", nullptr, state.settings.darkTheme)) {
+                state.settings.darkTheme = true;
+                state.settingsDirty = true;
+                applyTheme(true);
+            }
+            if (ImGui::MenuItem("Light Theme", nullptr, !state.settings.darkTheme)) {
+                state.settings.darkTheme = false;
+                state.settingsDirty = true;
+                applyTheme(false);
+            }
+            ImGui::EndMenu();
+        }
         ImGui::EndMainMenuBar();
+    }
+
+    if (ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_W, false) && !state.currentFile.empty()) {
+        state.loadJob.reset();
+        state.packets.clear();
+        state.order.clear();
+        state.clearSelection();
+        state.currentFile.clear();
+        state.loadMessage.clear();
+        state.loadFailed = false;
     }
 
     if (ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_O, false)) {

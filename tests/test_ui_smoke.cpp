@@ -5,6 +5,8 @@
 #include <chrono>
 #include <thread>
 
+#include <filesystem>
+
 #include <imgui.h>
 
 #include <ui/ui.h>
@@ -192,4 +194,33 @@ TEST_F(UiSmoke, KeyboardNavigationMovesTheSelection) {
     EXPECT_EQ(state.selectedPacket, 0);
     press(ImGuiKey_PageDown);
     EXPECT_EQ(state.selectedPacket, 15);
+}
+
+TEST_F(UiSmoke, SuccessfulLoadsAreRememberedAndPersisted) {
+    const auto path = (std::filesystem::temp_directory_path() / "imshark_smoke_settings/settings.ini").string();
+    std::filesystem::remove_all(std::filesystem::path(path).parent_path());
+    {
+        ui::AppState state;
+        ui::initSettings(state, path);
+        load(state);
+        EXPECT_TRUE(state.settingsDirty);
+        state.listHeight = 333.0f;
+        frames(state);
+        ui::saveSettingsIfDirty(state);
+        EXPECT_FALSE(state.settingsDirty);
+    }
+    ui::AppState again;
+    ui::initSettings(again, path);
+    ASSERT_EQ(again.settings.recentFiles.size(), 1u);
+    EXPECT_EQ(again.settings.recentFiles[0], IMSHARK_TEST_DATA_DIR "/sample.pcap");
+    EXPECT_FLOAT_EQ(again.listHeight, 333.0f);
+    std::filesystem::remove_all(std::filesystem::path(path).parent_path());
+}
+
+TEST_F(UiSmoke, ThemesCanBeSwitched) {
+    ui::applyTheme(false);
+    ui::AppState state;
+    frames(state);
+    ui::applyTheme(true);
+    frames(state);
 }

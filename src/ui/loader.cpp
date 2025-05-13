@@ -53,11 +53,22 @@ namespace {
     }
 } // namespace
 
+namespace {
+    // Absolute UTF-8 path: the file is reopened later for the details pane and remembered as a recent file.
+    std::string absoluteUtf8(const std::string &path) {
+        std::error_code ec;
+        const auto abs = std::filesystem::absolute(core::pathFromUtf8(path), ec);
+        if (ec) return path;
+        const auto u8 = abs.u8string();
+        return std::string(u8.begin(), u8.end());
+    }
+} // namespace
+
 void ui::startLoad(AppState &state, const std::string &path) {
     state.loadJob.reset(); // cancels and joins a load that is still running
 
     auto job = std::make_shared<LoadJob>();
-    job->path = path;
+    job->path = absoluteUtf8(path);
     job->thread = std::thread([raw = job.get()] { runJob(*raw); });
     state.loadJob = std::move(job);
 }
@@ -82,6 +93,8 @@ void ui::pollLoad(AppState &state) {
         state.clearSelection();
         state.currentFile = job->path;
         state.loadFailed = false;
+        addRecentFile(state.settings, job->path);
+        state.settingsDirty = true;
     } else {
         // Keep whatever was shown before: a failed or cancelled load does not destroy the open capture.
         state.loadFailed = true;
