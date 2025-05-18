@@ -6,6 +6,8 @@
 
 #include <imgui.h>
 
+#include "clipboard.h"
+
 namespace {
     template<typename T>
     int compare(const T &a, const T &b) { return a < b ? -1 : (b < a ? 1 : 0); }
@@ -111,6 +113,13 @@ void ui::drawPacketList(AppState &state, float height) {
                 const bool selected = state.selectedPacket == i;
                 if (ImGui::Selectable(std::to_string(packet.number).c_str(), selected, ImGuiSelectableFlags_SpanAllColumns)) {
                     state.selectPacket(i);
+                }
+                if (ImGui::BeginPopupContextItem()) {
+                    if (ImGui::MenuItem("Copy Row")) ImGui::SetClipboardText(ui::summaryRow(packet).c_str());
+                    if (ImGui::MenuItem("Copy Source")) ImGui::SetClipboardText(packet.source.c_str());
+                    if (ImGui::MenuItem("Copy Destination")) ImGui::SetClipboardText(packet.destination.c_str());
+                    if (ImGui::MenuItem("Copy Info")) ImGui::SetClipboardText(packet.info.c_str());
+                    ImGui::EndPopup();
                 }
                 if (selected && state.scrollToSelection) {
                     ImGui::SetScrollHereY();

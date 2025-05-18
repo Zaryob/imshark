@@ -6,6 +6,8 @@
 
 #include <core.h>
 
+#include "clipboard.h"
+
 namespace {
     using packet::Field;
 
@@ -59,7 +61,17 @@ namespace {
 
         const bool open = ImGui::TreeNodeEx(static_cast<const void *>(&f), flags, "%s", f.text.c_str());
         if (state.revealSelectedField && state.selectedField == &f) ImGui::SetScrollHereY();
-        if (ImGui::IsItemClicked()) selectField(state, f);
+        if (ImGui::IsItemClicked(ImGuiMouseButton_Left) || ImGui::IsItemClicked(ImGuiMouseButton_Right)) selectField(state, f);
+        if (ImGui::BeginPopupContextItem()) {
+            const auto &raw = state.detail.raw_data;
+            if (ImGui::MenuItem("Copy")) ImGui::SetClipboardText(f.text.c_str());
+            if (ImGui::MenuItem("Copy Value")) ImGui::SetClipboardText(ui::fieldValue(f).c_str());
+            if (f.length > 0) {
+                if (ImGui::MenuItem("Copy Bytes as Hex")) ImGui::SetClipboardText(ui::bytesToHex(raw, f.offset, f.length).c_str());
+                if (ImGui::MenuItem("Copy Bytes as ASCII")) ImGui::SetClipboardText(ui::bytesToAscii(raw, f.offset, f.length).c_str());
+            }
+            ImGui::EndPopup();
+        }
 
         if (!leaf && open) {
             for (const auto &c: f.children) drawField(state, c, false);
@@ -139,6 +151,20 @@ namespace {
         }
 
         ImGui::PopStyleVar();
+
+        // Right click (or Ctrl+C while hovering) copies the highlighted bytes
+        const bool hasSel = state.hasSelection();
+        const size_t selLen = hasSel ? static_cast<size_t>(state.selectionEnd - state.selectionStart + 1) : 0;
+        const size_t selOff = hasSel ? static_cast<size_t>(state.selectionStart) : 0;
+        if (hasSel && ImGui::IsWindowHovered() && ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_C, false)) {
+            ImGui::SetClipboardText(ui::bytesToHex(data, selOff, selLen).c_str());
+        }
+        if (ImGui::BeginPopupContextWindow("hexcopy")) {
+            if (ImGui::MenuItem("Copy Selection as Hex", nullptr, false, hasSel)) ImGui::SetClipboardText(ui::bytesToHex(data, selOff, selLen).c_str());
+            if (ImGui::MenuItem("Copy Selection as ASCII", nullptr, false, hasSel)) ImGui::SetClipboardText(ui::bytesToAscii(data, selOff, selLen).c_str());
+            if (ImGui::MenuItem("Copy All as Hex Dump")) ImGui::SetClipboardText(ui::hexDump(data).c_str());
+            ImGui::EndPopup();
+        }
         ImGui::EndChild();
     }
 } // namespace
