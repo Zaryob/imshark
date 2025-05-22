@@ -14,7 +14,10 @@ ImShark, [Dear ImGui](https://github.com/ocornut/imgui) ile yazılmış, Wiresha
 - Genişletilebilir protokol ağacı (Frame, Ethernet/VLAN, IP, ARP, ICMP, TCP/UDP, DNS, DHCP…); bir alan seçilince hex/ASCII panelinde ilgili baytlar vurgulanır, hex'te bir bayta tıklayınca o bayta ait en özel alan ağaçta açılır
 - Link type desteği: Ethernet (802.1Q/QinQ), NULL/Loopback, Raw IP, Linux SLL/SLL2
 - Bozuk/kırpık dosya ve paketlerde çökmez: `[Malformed Packet]` işaretler, yükleme sorunlarını durum çubuğunda gösterir
-- Dosya açma penceresi (ImGuiFileDialog)
+- Büyük dosyalar: arka planda yükleme (ilerleme çubuğu, iptal), paket başına ~0,5 KB bellek (500 bin paket ≈ 265 MB); ham bayt ve alan ağacı yalnızca seçilen paket için dosyadan okunur
+- Sütuna göre sıralama, klavyeyle gezinme (↑ ↓ PgUp PgDn Home End), kopyalama menüleri (alan, bayt hex/ASCII, hex dump, satır)
+- Son açılan dosyalar, sürükle-bırak ile açma, koyu/açık tema; ayarlar kullanıcı yapılandırma klasöründe saklanır
+- Dosya açma penceresi (ImGuiFileDialog), Ctrl+O / Ctrl+W
 
 ## Derleme
 
@@ -75,7 +78,7 @@ imshark/
 ├── CMakeLists.txt, CMakePresets.json, vcpkg.json
 ├── src/
 │   ├── main.cpp            # GLFW/OpenGL penceresi ve ana döngü
-│   └── ui/                 # `imshark_ui`: AppState, menü/durum çubuğu, paket listesi, ayrıntı ağacı, hex görünümü
+│   └── ui/                 # `imshark_ui`: AppState, yükleme işi, menü/durum çubuğu, paket listesi, ayrıntı ağacı, hex görünümü, ayarlar, kopyalama
 ├── core/src/               # `imshark_core` (UI bağımsız statik kütüphane)
 │   ├── core.{h,cpp}        #   FileProcessor: pcap / pcapng okuyucular
 │   ├── packet_parser.cpp   #   link katmanı, dissector'lara devretme
