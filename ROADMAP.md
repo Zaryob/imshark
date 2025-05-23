@@ -41,25 +41,38 @@ Hedef: yüz binlerce paketlik dosyalar akıcı açılsın.
 - [x] Klavye: Ctrl+O/Ctrl+W, ↑/↓/PgUp/PgDn/Home/End ile paket gezinme; koyu/açık tema. *(Ctrl+F arama v0.5'te)* — **S**
 - [x] Paket detay panelinde kopyala (hex, ASCII, alan değeri) — **S**
 
-## v0.5 — Analiz özellikleri
+## v0.5 — Filtreleme ve arama
 
-Hedef: ilk gerçek "Wireshark alternatifi" değeri.
+Hedef: büyük bir yakalamada aranan paketi hızla bulmak.
 
-- [ ] **Görüntüleme filtresi** (ör. `ip.addr == 10.0.0.1 && tcp.port == 443`): ifade ayrıştırıcı + alan kaydı — **L**
-- [ ] Arama (metin / hex / regex, paket listesi ve bayt içinde), zaman referansı işaretleme — **M**
-- [ ] Renklendirme kuralları (TCP RST, ICMP hata, DNS hata vb.) — **S**
-- [ ] Konuşmalar/uç noktalar tablosu ve temel istatistikler (protokol hiyerarşisi, paket/bayt sayıları) — **M**
-- [ ] **Follow TCP/UDP stream** ve TCP yeniden birleştirme (reassembly), yeniden iletim/dup-ACK işaretleme — **L**
+- [ ] IP adreslerini ayrıştırma (IPv4/IPv6, CIDR) ve özet bilgileri genişletme: portlar, IP protokolü, TCP bayrakları, TTL — **S**
+- [ ] **Görüntüleme filtresi dili** (`ip.addr == 10.0.0.0/8 && tcp.port in {80 443}`): lexer, ayrıştırıcı, alan kaydı, değerlendirici — **L**
+- [ ] Filtre çubuğu (geçerli/hatalı gösterimi, "Displayed X of Y") — **S**
+- [ ] Renklendirme kuralları (TCP RST, SYN, ICMP, DNS, ARP, hatalı paket…) — **S**
+- [ ] Paket bulma (Ctrl+F): metin ve görüntüleme filtresi, ileri/geri — **M**
+- [ ] Zaman görünümü (yakalama başlangıcına göre / önceki paketten beri / UTC) ve `frame.time_*` alanları — **S**
+
+## v0.6 — Akış analizi
+
+Hedef: paketlerden konuşmalara ve oturumlara çıkmak.
+
+- [ ] Yakalamayı sıralı baytlarla tarayan altyapı (arka plan işi, ilerleme, iptal) — **M**
+- [ ] Konuşmalar/uç noktalar tablosu ve protokol hiyerarşisi istatistikleri — **M**
+- [ ] TCP analizi: yeniden iletim, dup-ACK, sıra dışı, RST/FIN işaretleri — **M**
+- [ ] **Follow TCP/UDP stream** ve TCP yeniden birleştirme (reassembly) — **L**
 - [ ] IPv4 parçalanma birleştirme (#11) — **M**
-- [ ] Yeni dissector'lar: HTTP/1.x, TLS (handshake/SNI), DNS tam (CNAME/MX/TXT/PTR, sıkıştırma), DHCP seçenekleri, NTP, mDNS, ICMP tam, QUIC başlığı (#15) — **L**
-- [ ] Zaman görünümü seçenekleri (göreli / mutlak / önceki paketten beri) — **S**
+- [ ] Bayt/hex arama (tarama altyapısı üzerinden) — **S**
 
-## v0.6 — Dışa aktarım ve canlı yakalama
+## v0.7 — Protokoller ve dışa aktarım
 
+- [ ] Yeni dissector'lar: HTTP/1.x, TLS (handshake/SNI), DNS tam (CNAME/MX/TXT/PTR), DHCP seçenekleri, NTP, mDNS, ICMP tam (#15) — **L**
 - [ ] Seçili/filtreli paketleri pcap/pcapng olarak kaydet; CSV/JSON dışa aktarım — **M**
 - [ ] pcapng yorumları (comment option) ve IDB/ISB/NRB bilgilerini arayüzde gösterme — **S**
-- [ ] Canlı yakalama (libpcap/Npcap): arayüz seçimi, BPF yakalama filtresi, başlat/durdur — **L**
 - [ ] Sıkıştırılmış girdiler (`.pcap.gz`) — **S**
+
+## v0.8 — Canlı yakalama
+
+- [ ] Canlı yakalama (libpcap/Npcap): arayüz seçimi, BPF yakalama filtresi, başlat/durdur — **L**
 
 ## v1.0 — Yayın hazırlığı
 
