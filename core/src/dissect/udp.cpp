@@ -18,6 +18,8 @@ void dissect::dissectUdp(Context &ctx, const char *data, size_t length) {
 
     const uint16_t srcPort = network::ntoh16(udpHeader.src_port);
     const uint16_t dstPort = network::ntoh16(udpHeader.dest_port);
+    pack.src_port = srcPort;
+    pack.dst_port = dstPort;
     const size_t udpLen = network::ntoh16(udpHeader.len);
     pack.length = udpLen;
     if (udpLen < sizeof(network::UDPHeader)) {

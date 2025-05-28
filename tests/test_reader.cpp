@@ -123,6 +123,20 @@ TEST(PcapReader, ByteOrderAndPrecision) {
     EXPECT_NEAR(nano.packets[1].time, 1.5, 1e-9);
 }
 
+TEST(PcapReader, KeepsTheOriginalFrameLength) {
+    auto bytes = pcapFile(false, 0xa1b2c3d4, {{1, 0}});
+    bytes[24 + 12] = 100; // orig_len of the first record: 100 on the wire, 42 captured
+    auto r = load("o.pcap", bytes, false);
+    ASSERT_EQ(r.packets.size(), 1u);
+    EXPECT_EQ(r.packets[0].captured_length, 42u);
+    EXPECT_EQ(r.packets[0].frame_length, 100u);
+
+    auto ng = load("o.pcapng", pcapngFile(false, -1, {1}), true);
+    ASSERT_EQ(ng.packets.size(), 2u);
+    EXPECT_EQ(ng.packets[0].frame_length, kFrame.size()) << "EPB original length";
+    EXPECT_EQ(ng.packets[1].frame_length, kFrame.size()) << "SPB original length";
+}
+
 TEST(PcapReader, RecordsLinkType) {
     auto r = load("l.pcap", pcapFile(false, 0xa1b2c3d4, {{1, 0}}, 113), false);
     ASSERT_EQ(r.packets.size(), 1u);

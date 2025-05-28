@@ -55,6 +55,16 @@ namespace packet {
         // Where the captured frame lives in the capture file.
         uint64_t file_offset = 0;
         uint32_t captured_length = 0;
+        uint32_t frame_length = 0;   // length on the wire (>= captured_length when the capture was truncated)
+
+        // Compact protocol facts, filled while parsing; the display filter works on these.
+        uint16_t ether_type = 0;     // outermost payload type after the link layer / VLAN tags
+        uint8_t ip_version = 0;      // 4, 6 or 0 for non-IP frames
+        uint8_t ip_protocol = 0;     // IP protocol (IPv6: last next-header) of the transport layer; 0 = none
+        uint8_t ttl = 0;             // IPv4 TTL / IPv6 hop limit
+        uint8_t tcp_flags = 0;       // raw TCP flag byte
+        uint16_t src_port = 0;       // TCP/UDP ports (0 if not applicable)
+        uint16_t dst_port = 0;
 
         /// The captured frame. Empty for packets of a loaded capture, filled when details are built.
         std::vector<char> raw_data;

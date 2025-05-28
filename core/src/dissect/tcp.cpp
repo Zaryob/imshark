@@ -57,6 +57,10 @@ void dissect::dissectTcp(Context &ctx, const char *data, size_t length) {
     }
     const size_t headerLen = static_cast<size_t>((tcpHeader.data_offset >> 4) & 0x0F) * 4;
     pack.protocol = "TCP";
+    // recorded before any validation, so that even packets with a broken header can be filtered by port
+    pack.src_port = network::ntoh16(tcpHeader.src_port);
+    pack.dst_port = network::ntoh16(tcpHeader.dest_port);
+    pack.tcp_flags = tcpHeader.flags;
     if (headerLen < sizeof(network::TCPHeader) || headerLen > length) {
         ctx.markMalformed("invalid TCP data offset");
         return;
@@ -80,6 +84,7 @@ void dissect::dissectTcp(Context &ctx, const char *data, size_t length) {
     const uint16_t window = network::ntoh16(tcpHeader.window);
     const uint16_t srcPort = network::ntoh16(tcpHeader.src_port);
     const uint16_t dstPort = network::ntoh16(tcpHeader.dest_port);
+
     const std::string flagNames = tcpFlagNames(tcpHeader.flags);
     const std::string options = describeTcpOptions(data + sizeof(network::TCPHeader), headerLen - sizeof(network::TCPHeader));
     pack.info = std::to_string(srcPort) + " -> " + std::to_string(dstPort) + " [" + flagNames + "] " +

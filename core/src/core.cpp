@@ -94,12 +94,14 @@ namespace {
     // Keeps only the summary: the frame bytes stay in the file (file_offset/captured_length) and the field
     // tree is rebuilt on demand (see core::buildPacketDetails).
     void addPacket(packet::PacketParser &parser, std::vector<packet::PacketInfo> &packets,
-                   double time, uint32_t linkType, uint64_t fileOffset, const std::vector<char> &data) {
+                   double time, uint32_t linkType, uint64_t fileOffset, uint32_t originalLength,
+                   const std::vector<char> &data) {
         packet::PacketInfo pack(static_cast<int>(packets.size()) + 1);
         pack.time = time;
         pack.link_type = linkType;
         pack.file_offset = fileOffset;
         pack.captured_length = static_cast<uint32_t>(data.size());
+        pack.frame_length = originalLength;
         parser.parsePacket(pack, data, dissect::ParseMode::Summary);
         packets.emplace_back(std::move(pack));
     }
@@ -185,6 +187,7 @@ bool core::FileProcessor::processPcapFile(const std::string &filepath, std::vect
         const uint32_t tsSec = e.u32(ph);
         const uint32_t tsFrac = e.u32(ph + 4);
         const uint32_t inclLen = e.u32(ph + 8);
+        const uint32_t origLen = e.u32(ph + 12);
         if (inclLen > kMaxRecordSize || inclLen > remainingBytes(file, fileSize)) {
             message = "Truncated or corrupt packet " + std::to_string(packets.size() - firstPacket + 1);
             break;
@@ -198,7 +201,7 @@ bool core::FileProcessor::processPcapFile(const std::string &filepath, std::vect
 
         const uint64_t dataOffset = consumed + sizeof(ph);
         consumed = dataOffset + inclLen;
-        addPacket(parser, packets, timeBase.relative(tsSec, tsFrac, fractionsPerSecond), linkType, dataOffset, data);
+        addPacket(parser, packets, timeBase.relative(tsSec, tsFrac, fractionsPerSecond), linkType, dataOffset, origLen, data);
         if (reportProgress(control, consumed, packets.size() - firstPacket)) {
             message = "Cancelled";
             return false;
@@ -319,7 +322,7 @@ bool core::FileProcessor::processPcapngFile(const std::string &filepath, std::ve
 
                 // Only captured_length bytes are packet data; the rest is padding and options.
                 const char *data = reinterpret_cast<const char *>(body + 20);
-                addPacket(parser, packets, lastTime, linkType, blockStart + 8 + 20,
+                addPacket(parser, packets, lastTime, linkType, blockStart + 8 + 20, e.u32(body + 16),
                           std::vector<char>(data, data + capturedLength));
             } break;
             case kBlockSPB: {
@@ -332,7 +335,7 @@ bool core::FileProcessor::processPcapngFile(const std::string &filepath, std::ve
                 // SPBs carry no timestamp; reuse the previous packet's time.
                 const char *data = reinterpret_cast<const char *>(body + 4);
                 addPacket(parser, packets, lastTime, interfaces.empty() ? 1 : interfaces[0].linkType, blockStart + 8 + 4,
-                          std::vector<char>(data, data + captured));
+                          originalLength, std::vector<char>(data, data + captured));
             } break;
             default:
                 break; // NRB, ISB, custom and unknown blocks carry nothing we display
