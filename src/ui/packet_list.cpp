@@ -12,16 +12,18 @@ namespace {
     template<typename T>
     int compare(const T &a, const T &b) { return a < b ? -1 : (b < a ? 1 : 0); }
 
-    // Rebuilds the displayed order from the table's sort specs (natural capture order if there are none).
+    // Rebuilds the displayed order: the packets that pass the filter, sorted by the table's sort specs.
     void rebuildOrder(ui::AppState &state, const ImGuiTableSortSpecs *specs) {
-        if (!specs || specs->SpecsCount == 0) {
+        if (state.filter.active) {
+            state.order = state.filter.visible;
+        } else {
             state.order.resize(state.packets.size());
             std::iota(state.order.begin(), state.order.end(), 0u);
-            return;
         }
+        if (!specs || specs->SpecsCount == 0) return;
         const ImGuiTableColumnSortSpecs &spec = specs->Specs[0];
-        ui::sortPacketOrder(state.order, state.packets, static_cast<ui::SortColumn>(spec.ColumnUserID),
-                            spec.SortDirection == ImGuiSortDirection_Ascending);
+        ui::sortOrder(state.order, state.packets, static_cast<ui::SortColumn>(spec.ColumnUserID),
+                      spec.SortDirection == ImGuiSortDirection_Ascending);
     }
 
     // Up/Down/PageUp/PageDown/Home/End move the selection through the displayed rows.
@@ -58,6 +60,11 @@ void ui::sortPacketOrder(std::vector<uint32_t> &order, const std::vector<packet:
                          bool ascending) {
     order.resize(packets.size());
     std::iota(order.begin(), order.end(), 0u);
+    sortOrder(order, packets, column, ascending);
+}
+
+void ui::sortOrder(std::vector<uint32_t> &order, const std::vector<packet::PacketInfo> &packets, SortColumn column,
+                   bool ascending) {
     std::stable_sort(order.begin(), order.end(), [&](uint32_t ia, uint32_t ib) {
         const auto &a = packets[ia];
         const auto &b = packets[ib];
@@ -91,8 +98,9 @@ void ui::drawPacketList(AppState &state, float height) {
         ImGui::TableHeadersRow();
 
         ImGuiTableSortSpecs *specs = ImGui::TableGetSortSpecs();
-        if ((specs && specs->SpecsDirty) || state.order.size() != state.packets.size()) {
+        if ((specs && specs->SpecsDirty) || state.orderDirty) {
             rebuildOrder(state, specs);
+            state.orderDirty = false;
             if (specs) specs->SpecsDirty = false;
         }
         handleKeys(state);

@@ -30,11 +30,23 @@ namespace ui {
     void drawLoadProgressPopup(AppState &state);
     float statusBarHeight();
 
+    // filter_bar.cpp
+    /// Compiles `text` and, if valid, makes it the active filter and recomputes the visible packets.
+    /// Returns false (and leaves the previous filter active) if it does not compile; the error is in
+    /// state.filter.previewError.
+    bool applyFilter(AppState &state, const std::string &text);
+    /// Re-evaluates the active filter (after a capture was loaded).
+    void refilter(AppState &state);
+    void drawFilterBar(AppState &state);
+    void drawFilterHelp(AppState &state);
+
     // packet_list.cpp
     void drawPacketList(AppState &state, float height);
 
     enum class SortColumn : int { Number, Time, Source, Destination, Protocol, Length, Info };
-    /// Fills `order` with the indices of `packets` sorted by `column` (stable: ties keep capture order).
+    /// Sorts the indices already in `order` by `column` (stable: ties keep the existing order).
+    void sortOrder(std::vector<uint32_t> &order, const std::vector<packet::PacketInfo> &packets, SortColumn column, bool ascending);
+    /// Fills `order` with all packet indices, sorted by `column` (stable: ties keep capture order).
     void sortPacketOrder(std::vector<uint32_t> &order, const std::vector<packet::PacketInfo> &packets, SortColumn column,
                          bool ascending);
 

@@ -4,12 +4,28 @@
 #include <string>
 #include <vector>
 
+#include <filter/filter.h>
 #include <packet/packet_info.h>
 
 #include "settings.h"
 
 namespace ui {
     struct LoadJob; // background load in progress (loader.cpp)
+
+    /// The display filter bar: what is typed, what is applied, and which packets pass.
+    struct FilterState {
+        std::string text;                  // contents of the filter bar (edited live)
+        std::string previewText;           // `text` the preview below was compiled from
+        bool previewOk = true;             // does `text` compile?
+        filter::Error previewError;
+        std::string appliedText;           // the filter that is active
+        filter::Filter applied;
+        bool active = false;               // a non-empty filter is applied
+        std::vector<uint32_t> visible;     // indices of packets that pass (valid when active)
+        bool focusRequested = false;       // put the keyboard cursor into the bar next frame
+        bool showHelp = false;
+        std::string helpSearch;            // search box of the reference window
+    };
 
     /// Everything the UI needs to remember between frames.
     struct AppState {
@@ -37,7 +53,10 @@ namespace ui {
         int selectionEnd = -1;
         bool revealSelectedField = false;                // expand the tree down to `selectedField` next frame
 
-        // Packet list presentation
+        // Display filter and packet list presentation
+        FilterState filter;
+        double captureStartEpoch = 0;       // UTC epoch seconds of the first packet
+        bool orderDirty = true;             // `order` must be rebuilt (new capture or new filter)
         std::vector<uint32_t> order;        // displayed order: indices into `packets` (rebuilt by the list)
         bool scrollToSelection = false;      // bring the selected row into view (keyboard navigation)
 
@@ -48,6 +67,8 @@ namespace ui {
 
         // Layout
         float listHeight = 300.0f;                       // height of the packet list (user-adjustable splitter)
+
+        size_t displayedCount() const { return filter.active ? filter.visible.size() : packets.size(); }
 
         bool hasSelection() const { return selectionStart >= 0 && selectionEnd >= selectionStart; }
         bool isSelected(int byte) const { return hasSelection() && byte >= selectionStart && byte <= selectionEnd; }

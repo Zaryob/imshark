@@ -15,6 +15,7 @@ void ui::drawMainWindow(AppState &state) {
     const ImGuiWindowFlags flags = ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse |
                                    ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoSavedSettings;
     if (ImGui::Begin("ImShark", nullptr, flags)) {
+        drawFilterBar(state);
         const float available = ImGui::GetContentRegionAvail().y;
         const float splitter = 6.0f;
 
@@ -33,4 +34,5 @@ void ui::drawMainWindow(AppState &state) {
         }
     }
     ImGui::End();
+    drawFilterHelp(state);
 }

@@ -23,6 +23,7 @@ namespace ui {
         std::vector<packet::PacketInfo> packets;
         std::string message;
         bool ok = false;
+        double startEpoch = 0;
 
         std::atomic<bool> finished{false};
         std::thread thread;
@@ -49,6 +50,7 @@ namespace {
             job.ok = isPcapng(job.path) ? processor.processPcapngFile(job.path, job.packets, job.message, &job.control)
                                         : processor.processPcapFile(job.path, job.packets, job.message, &job.control);
         }
+        job.startEpoch = processor.captureStartEpoch();
         job.finished = true;
     }
 } // namespace
@@ -89,8 +91,9 @@ void ui::pollLoad(AppState &state) {
     state.loadMessage = job->message;
     if (job->ok) {
         state.packets = std::move(job->packets);
-        state.order.clear(); // the list rebuilds it
+        state.captureStartEpoch = job->startEpoch;
         state.clearSelection();
+        refilter(state); // an active display filter stays active on the new capture
         state.currentFile = job->path;
         state.loadFailed = false;
         addRecentFile(state.settings, job->path);

@@ -8,7 +8,10 @@ namespace ui {
     struct Settings {
         static constexpr size_t kMaxRecentFiles = 10;
 
+        static constexpr size_t kMaxFilterHistory = 15;
+
         std::vector<std::string> recentFiles; // most recent first
+        std::vector<std::string> filterHistory; // applied display filters, most recent first
         bool darkTheme = true;
         float listHeight = 300.0f;             // height of the packet list (splitter position)
     };
@@ -24,4 +27,7 @@ namespace ui {
 
     /// Moves `path` to the front of the recent files (no duplicates, capped at kMaxRecentFiles).
     void addRecentFile(Settings &settings, const std::string &path);
+
+    /// Remembers an applied display filter (most recent first, no duplicates, capped).
+    void addFilterHistory(Settings &settings, const std::string &filterText);
 } // namespace ui
