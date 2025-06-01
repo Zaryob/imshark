@@ -40,6 +40,11 @@ namespace ui {
     void drawFilterBar(AppState &state);
     void drawFilterHelp(AppState &state);
 
+    // color_editor.cpp
+    /// (Re)compiles the coloring rules from the settings (or the defaults).
+    void recompileColorRules(AppState &state);
+    void drawColorRulesWindow(AppState &state);
+
     // packet_list.cpp
     void drawPacketList(AppState &state, float height);
 

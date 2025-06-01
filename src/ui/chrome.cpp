@@ -17,6 +17,7 @@ void ui::initSettings(AppState &state, const std::string &path) {
     state.settings = path.empty() ? Settings() : loadSettings(path);
     state.listHeight = state.settings.listHeight;
     state.settingsDirty = false;
+    recompileColorRules(state);
 }
 
 void ui::saveSettingsIfDirty(AppState &state) {
@@ -77,6 +78,12 @@ void ui::drawMenuAndDialogs(AppState &state) {
                 state.settingsDirty = true;
                 applyTheme(false);
             }
+            ImGui::Separator();
+            if (ImGui::MenuItem("Colorize Packet List", nullptr, state.settings.colorize)) {
+                state.settings.colorize = !state.settings.colorize;
+                state.settingsDirty = true;
+            }
+            if (ImGui::MenuItem("Coloring Rules...")) state.showColorRules = true;
             ImGui::EndMenu();
         }
         ImGui::EndMainMenuBar();
