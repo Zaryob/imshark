@@ -45,6 +45,11 @@ namespace ui {
     void recompileColorRules(AppState &state);
     void drawColorRulesWindow(AppState &state);
 
+    // find_bar.cpp
+    /// Searches from the selected row (or from the start) and selects the match; updates state.find.message.
+    bool findAndSelect(AppState &state, bool forward);
+    void drawFindBar(AppState &state);
+
     // packet_list.cpp
     void drawPacketList(AppState &state, float height);
 

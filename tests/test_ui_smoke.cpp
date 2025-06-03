@@ -338,3 +338,64 @@ TEST_F(UiSmoke, ColoringRulesDrawAndCanBeEdited) {
     state.showColorRules = false;
     frames(state);
 }
+
+TEST_F(UiSmoke, FindSelectsMatchesAndWraps) {
+    ui::AppState state;
+    load(state);
+    frames(state);
+    state.find.text = "example.com";
+    EXPECT_TRUE(ui::findAndSelect(state, true));
+    EXPECT_EQ(state.selectedPacket, 4);
+    EXPECT_TRUE(ui::findAndSelect(state, true));
+    EXPECT_EQ(state.selectedPacket, 5);
+    EXPECT_TRUE(ui::findAndSelect(state, true));
+    EXPECT_EQ(state.selectedPacket, 4) << "wrapped";
+    EXPECT_TRUE(ui::findAndSelect(state, false));
+    EXPECT_EQ(state.selectedPacket, 5);
+    EXPECT_FALSE(state.find.messageIsError);
+
+    state.find.text = "zzz-not-there";
+    EXPECT_FALSE(ui::findAndSelect(state, true));
+    EXPECT_EQ(state.selectedPacket, 5) << "the selection stays when nothing matches";
+    EXPECT_EQ(state.find.message, "No match");
+    EXPECT_TRUE(state.find.messageIsError);
+
+    state.find.mode = ui::FindMode::Filter;
+    state.find.text = "tcp.flags.fin";
+    EXPECT_TRUE(ui::findAndSelect(state, true));
+    EXPECT_EQ(state.selectedPacket, 10);
+    state.find.text = "tcp &&";
+    EXPECT_FALSE(ui::findAndSelect(state, true));
+    EXPECT_TRUE(state.find.messageIsError);
+}
+
+TEST_F(UiSmoke, FindOnlySearchesDisplayedPackets) {
+    ui::AppState state;
+    load(state);
+    ASSERT_TRUE(ui::applyFilter(state, "udp"));       // packets 4, 5, 12, 13
+    state.find.text = "SMTP";                          // packet 11 is hidden by the filter
+    EXPECT_FALSE(ui::findAndSelect(state, true));
+    state.find.text = "example";
+    EXPECT_TRUE(ui::findAndSelect(state, true));
+    EXPECT_EQ(state.selectedPacket, 4);
+}
+
+TEST_F(UiSmoke, FindBarIsDrawnAndKeysWork) {
+    ui::AppState state;
+    load(state);
+    frames(state);
+    state.find.open = true;
+    state.find.focusRequested = true;
+    state.find.text = "example";
+    frames(state);                                    // bar with the text field, combo and buttons
+    state.find.message = "No match";
+    state.find.messageIsError = true;
+    frames(state);
+    // F3 repeats the search even with the bar closed
+    state.find.open = false;
+    ImGui::GetIO().AddKeyEvent(ImGuiKey_F3, true);
+    frame(state);
+    ImGui::GetIO().AddKeyEvent(ImGuiKey_F3, false);
+    frame(state);
+    EXPECT_EQ(state.selectedPacket, 4);
+}
