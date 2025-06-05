@@ -399,3 +399,13 @@ TEST_F(UiSmoke, FindBarIsDrawnAndKeysWork) {
     frame(state);
     EXPECT_EQ(state.selectedPacket, 4);
 }
+
+TEST_F(UiSmoke, EveryTimeFormatIsDrawn) {
+    ui::AppState state;
+    load(state);
+    for (auto f: {ui::TimeFormat::SincePrevious, ui::TimeFormat::UtcDateTime, ui::TimeFormat::EpochSeconds, ui::TimeFormat::SinceCaptureStart}) {
+        state.settings.timeFormat = f;
+        frames(state, 2);
+    }
+    EXPECT_GT(state.captureStartEpoch, 1.6e9) << "the readers report the capture start";
+}
