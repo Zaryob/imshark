@@ -15,6 +15,8 @@ ImShark, [Dear ImGui](https://github.com/ocornut/imgui) ile yazılmış, Wiresha
 - Link type desteği: Ethernet (802.1Q/QinQ), NULL/Loopback, Raw IP, Linux SLL/SLL2
 - Bozuk/kırpık dosya ve paketlerde çökmez: `[Malformed Packet]` işaretler, yükleme sorunlarını durum çubuğunda gösterir
 - Büyük dosyalar: arka planda yükleme (ilerleme çubuğu, iptal), paket başına ~0,5 KB bellek (500 bin paket ≈ 265 MB); ham bayt ve alan ağacı yalnızca seçilen paket için dosyadan okunur
+- **Görüntüleme filtresi** (Wireshark benzeri): `tcp.port in {80 443} && !tcp.flags.rst`, `ip.addr == 10.0.0.0/8`, `info contains "GET"`, `frame.time_delta > 1` … Yazarken doğrulanır (hata konumuyla), geçmişi tutulur, `?` düğmesi alan listesini açar; 500 bin pakette 8–18 ms
+- Paket bulma (Ctrl+F, F3), renklendirme kuralları (düzenlenebilir), zaman görünümü (başlangıca göre / önceki paketten / UTC / epoch)
 - Sütuna göre sıralama, klavyeyle gezinme (↑ ↓ PgUp PgDn Home End), kopyalama menüleri (alan, bayt hex/ASCII, hex dump, satır)
 - Son açılan dosyalar, sürükle-bırak ile açma, koyu/açık tema; ayarlar kullanıcı yapılandırma klasöründe saklanır
 - Dosya açma penceresi (ImGuiFileDialog), Ctrl+O / Ctrl+W

@@ -41,16 +41,16 @@ Hedef: yüz binlerce paketlik dosyalar akıcı açılsın.
 - [x] Klavye: Ctrl+O/Ctrl+W, ↑/↓/PgUp/PgDn/Home/End ile paket gezinme; koyu/açık tema. *(Ctrl+F arama v0.5'te)* — **S**
 - [x] Paket detay panelinde kopyala (hex, ASCII, alan değeri) — **S**
 
-## v0.5 — Filtreleme ve arama
+## v0.5 — Filtreleme ve arama ✅ tamamlandı
 
 Hedef: büyük bir yakalamada aranan paketi hızla bulmak.
 
-- [ ] IP adreslerini ayrıştırma (IPv4/IPv6, CIDR) ve özet bilgileri genişletme: portlar, IP protokolü, TCP bayrakları, TTL — **S**
-- [ ] **Görüntüleme filtresi dili** (`ip.addr == 10.0.0.0/8 && tcp.port in {80 443}`): lexer, ayrıştırıcı, alan kaydı, değerlendirici — **L**
-- [ ] Filtre çubuğu (geçerli/hatalı gösterimi, "Displayed X of Y") — **S**
-- [ ] Renklendirme kuralları (TCP RST, SYN, ICMP, DNS, ARP, hatalı paket…) — **S**
-- [ ] Paket bulma (Ctrl+F): metin ve görüntüleme filtresi, ileri/geri — **M**
-- [ ] Zaman görünümü (yakalama başlangıcına göre / önceki paketten beri / UTC) ve `frame.time_*` alanları — **S**
+- [x] IP adreslerini ayrıştırma (IPv4/IPv6, CIDR) ve özet bilgileri genişletme: portlar, IP protokolü, TCP bayrakları, TTL — **S**
+- [x] **Görüntüleme filtresi dili** (`ip.addr == 10.0.0.0/8 && tcp.port in {80 443}`): lexer, ayrıştırıcı, alan kaydı, değerlendirici — **L**
+- [x] Filtre çubuğu (geçerli/hatalı gösterimi, "Displayed X of Y") — **S**
+- [x] Renklendirme kuralları (varsayılanlar + düzenleme penceresi, ayarlarda kalıcı) — **S**
+- [x] Paket bulma (Ctrl+F): metin ve görüntüleme filtresi, ileri/geri (F3). *(bayt/hex arama v0.6'da)* — **M**
+- [x] Zaman görünümü (yakalama başlangıcına göre / önceki paketten beri / UTC) ve `frame.time_*` alanları — **S**
 
 ## v0.6 — Akış analizi
 
