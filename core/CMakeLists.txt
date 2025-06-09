@@ -15,6 +15,7 @@ add_library(imshark_core STATIC
     src/dissect/simple.cpp
     src/filter/fields.cpp
     src/filter/filter.cpp
+    src/stats/statistics.cpp
 )
 set_target_properties(imshark_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
