@@ -67,6 +67,12 @@ void ui::drawMenuAndDialogs(AppState &state) {
             if (ImGui::MenuItem("Exit")) std::exit(0);
             ImGui::EndMenu();
         }
+        if (ImGui::BeginMenu("Statistics")) {
+            ImGui::MenuItem("Protocol Hierarchy", nullptr, &state.stats.showHierarchy);
+            ImGui::MenuItem("Conversations", nullptr, &state.stats.showConversations);
+            ImGui::MenuItem("Endpoints", nullptr, &state.stats.showEndpoints);
+            ImGui::EndMenu();
+        }
         if (ImGui::BeginMenu("View")) {
             if (ImGui::MenuItem("Dark Theme", nullptr, state.settings.darkTheme)) {
                 state.settings.darkTheme = true;
