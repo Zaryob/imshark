@@ -51,6 +51,9 @@ namespace packet {
         // (-1 = not applicable); needed again when the field tree is rebuilt for a single packet.
         int64_t tcp_relative_seq = -1;
         int64_t tcp_relative_ack = -1;
+        // TCP analysis result (network::TcpAnalysisFlag bits) and the "Dup ACK #n" counter
+        uint16_t tcp_analysis = 0;
+        uint8_t tcp_dup_ack = 0;
 
         // Where the captured frame lives in the capture file.
         uint64_t file_offset = 0;

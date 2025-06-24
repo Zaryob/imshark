@@ -22,5 +22,10 @@ namespace network {
         /// ISN of the other direction is unknown.
         void trackTCPConnections(int64_t &relativeSeq, int64_t &relativeAck, const std::string &srcIP,
                                  const std::string &dstIP, const TCPHeader &tcpHeader);
+
+        /// Same, and additionally analyses the segment (retransmission, out-of-order, lost segment,
+        /// duplicate ACK, zero window, keep-alive, window update). `payloadLength` is the TCP payload size.
+        TcpAnalysis trackAndAnalyze(int64_t &relativeSeq, int64_t &relativeAck, const std::string &srcIP,
+                                    const std::string &dstIP, const TCPHeader &tcpHeader, uint32_t payloadLength);
     };
 } // namespace network

@@ -76,9 +76,12 @@ void dissect::dissectTcp(Context &ctx, const char *data, size_t length) {
         seq = pack.tcp_relative_seq; // the connection table only exists while the capture is loaded
         ack = pack.tcp_relative_ack;
     } else {
-        ctx.tcp.trackTCPConnections(seq, ack, pack.source, pack.destination, tcpHeader);
+        const network::TcpAnalysis analysis = ctx.tcp.trackAndAnalyze(seq, ack, pack.source, pack.destination, tcpHeader,
+                                                                      static_cast<uint32_t>(payloadLen));
         pack.tcp_relative_seq = seq;
         pack.tcp_relative_ack = ack;
+        pack.tcp_analysis = analysis.flags;
+        pack.tcp_dup_ack = analysis.duplicateAckCount;
     }
 
     const uint16_t window = network::ntoh16(tcpHeader.window);
@@ -87,7 +90,17 @@ void dissect::dissectTcp(Context &ctx, const char *data, size_t length) {
 
     const std::string flagNames = tcpFlagNames(tcpHeader.flags);
     const std::string options = describeTcpOptions(data + sizeof(network::TCPHeader), headerLen - sizeof(network::TCPHeader));
-    pack.info = std::to_string(srcPort) + " -> " + std::to_string(dstPort) + " [" + flagNames + "] " +
+    // analysis notes go in front of the usual summary, like Wireshark's "[TCP Retransmission] ..."
+    std::string notes;
+    if (pack.tcp_analysis & network::kTcpLostSegment) notes += "[TCP Previous segment not captured] ";
+    if (pack.tcp_analysis & network::kTcpRetransmission) notes += "[TCP Retransmission] ";
+    if (pack.tcp_analysis & network::kTcpOutOfOrder) notes += "[TCP Out-Of-Order] ";
+    if (pack.tcp_analysis & network::kTcpDuplicateAck) notes += "[TCP Dup ACK #" + std::to_string(pack.tcp_dup_ack) + "] ";
+    if (pack.tcp_analysis & network::kTcpZeroWindow) notes += "[TCP ZeroWindow] ";
+    if (pack.tcp_analysis & network::kTcpKeepAlive) notes += "[TCP Keep-Alive] ";
+    if (pack.tcp_analysis & network::kTcpWindowUpdate) notes += "[TCP Window Update] ";
+
+    pack.info = notes + std::to_string(srcPort) + " -> " + std::to_string(dstPort) + " [" + flagNames + "] " +
                 (seq >= 0 ? (" Seq=" + std::to_string(seq)) : "") +
                 (ack >= 0 ? (" Ack=" + std::to_string(ack)) : "") +
                 (window > 0 ? (" Win=" + std::to_string(window)) : "") + options;
@@ -117,6 +130,17 @@ void dissect::dissectTcp(Context &ctx, const char *data, size_t length) {
         if (headerLen > sizeof(network::TCPHeader)) {
             l.add("Options:" + (options.empty() ? std::string(" (no decoded options)") : options), o + 20,
                   headerLen - sizeof(network::TCPHeader));
+        }
+        if (pack.tcp_analysis != 0) {
+            Field &a = l.add("[SEQ/ACK analysis]");
+            auto note = [&](uint16_t flag, const char *text) { if (pack.tcp_analysis & flag) a.add(text); };
+            note(network::kTcpLostSegment, "A segment before this one was not captured (sequence number jumped ahead)");
+            note(network::kTcpRetransmission, "This frame is a (suspected) retransmission");
+            note(network::kTcpOutOfOrder, "This frame is a (suspected) out-of-order segment");
+            if (pack.tcp_analysis & network::kTcpDuplicateAck) a.add("This is a TCP duplicate ack (#" + std::to_string(pack.tcp_dup_ack) + ")");
+            note(network::kTcpZeroWindow, "The receive window is 0: the sender cannot receive more data");
+            note(network::kTcpKeepAlive, "This is a TCP keep-alive segment");
+            note(network::kTcpWindowUpdate, "This is a TCP window update");
         }
         if (payloadLen > 0) l.add("TCP payload (" + std::to_string(payloadLen) + " bytes)", o + headerLen, payloadLen);
     }

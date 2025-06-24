@@ -8,6 +8,8 @@
 #include <cstdint>
 #include <functional>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace network {
     /// One endpoint of a TCP connection.
@@ -34,9 +36,34 @@ namespace network {
     };
 
     /// Per-direction initial sequence number.
+    /// What the TCP analysis found about one segment (bit flags).
+    enum TcpAnalysisFlag : uint16_t {
+        kTcpRetransmission = 1,   // carries data that was already seen
+        kTcpOutOfOrder = 2,       // arrives late, filling a gap left by an earlier segment
+        kTcpLostSegment = 4,      // a previous segment was not captured (sequence jumped ahead)
+        kTcpDuplicateAck = 8,     // pure ACK repeating the previous ACK number
+        kTcpZeroWindow = 16,      // the sender advertises a zero receive window
+        kTcpKeepAlive = 32,       // 0/1 byte probe one byte behind the next expected sequence number
+        kTcpWindowUpdate = 64,    // pure ACK that only changes the advertised window
+    };
+
+    struct TcpAnalysis {
+        uint16_t flags = 0;
+        uint8_t duplicateAckCount = 0;   // "Dup ACK #n" (valid with kTcpDuplicateAck)
+    };
+
     struct DirectionState {
         uint32_t initialSeq = 0;
         bool initialized = false;
+
+        // --- sequence analysis (per direction)
+        bool haveNext = false;
+        uint32_t nextSeq = 0;                                   // highest sequence number seen + 1
+        std::vector<std::pair<uint32_t, uint32_t>> gaps;        // [begin, end) ranges that were skipped
+        bool haveAck = false;
+        uint32_t lastAck = 0;
+        uint32_t lastWindow = 0;
+        uint8_t dupAcks = 0;
     };
 
     struct ConnectionState {
