@@ -57,6 +57,7 @@ void ui::drawMenuAndDialogs(AppState &state) {
             ImGui::Separator();
             if (ImGui::MenuItem("Close File", "Ctrl+W", false, !state.currentFile.empty())) {
                 state.loadJob.reset();
+                cancelSearch(state);
                 state.packets.clear();
                 refilter(state);
                 state.clearSelection();
@@ -109,6 +110,7 @@ void ui::drawMenuAndDialogs(AppState &state) {
 
     if (ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_W, false) && !state.currentFile.empty()) {
         state.loadJob.reset();
+        cancelSearch(state);
         state.packets.clear();
         refilter(state);
         state.clearSelection();

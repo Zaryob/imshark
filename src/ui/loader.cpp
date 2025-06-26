@@ -90,6 +90,7 @@ void ui::pollLoad(AppState &state) {
 
     state.loadMessage = job->message;
     if (job->ok) {
+        cancelSearch(state); // the search thread reads state.packets
         state.packets = std::move(job->packets);
         state.captureStartEpoch = job->startEpoch;
         state.clearSelection();

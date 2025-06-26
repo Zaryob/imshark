@@ -464,3 +464,49 @@ TEST_F(UiSmoke, ExpertInformationWindow) {
     state.stats.showExpert = false;
     frames(state);
 }
+
+TEST_F(UiSmoke, ByteSearchRunsInTheBackgroundAndSelectsTheMatch) {
+    ui::AppState state;
+    load(state);
+    frames(state);
+    state.find.mode = ui::FindMode::BytesText;
+    state.find.text = "EHLO";
+    EXPECT_FALSE(ui::findAndSelect(state, true)) << "the result arrives asynchronously";
+    EXPECT_TRUE(static_cast<bool>(state.find.job));
+    for (int i = 0; i < 3000 && state.find.job; ++i) {
+        frame(state);                       // pollSearch runs in drawFindBar
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_FALSE(static_cast<bool>(state.find.job));
+    EXPECT_EQ(state.selectedPacket, 11);
+    EXPECT_FALSE(state.find.messageIsError);
+
+    state.find.mode = ui::FindMode::Hex;
+    state.find.text = "47 45 54";            // "GET"
+    ui::findAndSelect(state, false);        // backwards from packet 11 finds packet 9
+    for (int i = 0; i < 3000 && state.find.job; ++i) { frame(state); std::this_thread::sleep_for(std::chrono::milliseconds(1)); }
+    EXPECT_EQ(state.selectedPacket, 9);
+
+    state.find.text = "zz";                  // invalid hex is reported immediately
+    EXPECT_FALSE(ui::findAndSelect(state, true));
+    EXPECT_TRUE(state.find.messageIsError);
+    EXPECT_FALSE(static_cast<bool>(state.find.job));
+
+    state.find.text = "00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00";
+    ui::findAndSelect(state, true);
+    for (int i = 0; i < 3000 && state.find.job; ++i) { frame(state); std::this_thread::sleep_for(std::chrono::milliseconds(1)); }
+    EXPECT_EQ(state.find.message, "No match");
+    EXPECT_EQ(state.selectedPacket, 9) << "no match keeps the selection";
+}
+
+TEST_F(UiSmoke, LoadingOrClosingCancelsARunningSearch) {
+    ui::AppState state;
+    load(state);
+    frames(state);
+    state.find.mode = ui::FindMode::BytesText;
+    state.find.text = "never-found";
+    ui::findAndSelect(state, true);
+    load(state);                            // replaces state.packets: the search thread must be gone first
+    EXPECT_FALSE(static_cast<bool>(state.find.job));
+    frames(state);
+}

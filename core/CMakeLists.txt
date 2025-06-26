@@ -1,6 +1,7 @@
 # imshark_core: capture file readers, protocol parsing and the packet model.
 # Deliberately free of any UI / OpenGL / GLFW dependency so it can be tested and reused on its own.
 add_library(imshark_core STATIC
+    src/capture_reader.cpp
     src/core.cpp
     src/packet_parser.cpp
     src/tcp_connection.cpp
