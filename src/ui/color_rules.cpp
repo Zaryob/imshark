@@ -8,6 +8,7 @@ std::vector<ui::ColorRule> ui::defaultColorRules() {
     return {
         {true, "Malformed packet", "malformed", 0x12272E, 0xFC0000},
         {true, "TCP reset", "tcp.flags.rst", 0xA40000, 0xFFFFFF},
+        {true, "TCP problem", "tcp.analysis.flags && !tcp.analysis.window_update && !tcp.analysis.keep_alive", 0x4B1A1A, 0xFFD0D0},
         {true, "TCP SYN/FIN", "tcp.flags.syn || tcp.flags.fin", 0xA0A0A0, 0x12272E},
         {true, "ICMP", "icmp || icmpv6", 0xFCE0FF, 0x12272E},
         {true, "ARP", "arp", 0xD6E8FF, 0x12272E},

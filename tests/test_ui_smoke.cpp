@@ -450,3 +450,17 @@ TEST_F(UiSmoke, StatisticsOnAnEmptyCaptureDrawNothingBroken) {
     frames(state);
     EXPECT_EQ(state.stats.hierarchy.packets, 0u);
 }
+
+TEST_F(UiSmoke, ExpertInformationWindow) {
+    ui::AppState state;
+    load(state);
+    state.stats.showExpert = true;
+    frames(state);
+    ASSERT_TRUE(state.stats.expertValid);
+    EXPECT_FALSE(state.stats.expert.empty());
+    ASSERT_TRUE(ui::applyFilter(state, "udp"));
+    frames(state);
+    EXPECT_TRUE(state.stats.expert.empty()) << "limited to the displayed (UDP) packets nothing is noteworthy";
+    state.stats.showExpert = false;
+    frames(state);
+}

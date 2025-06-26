@@ -42,12 +42,14 @@ namespace ui {
 
     /// The Statistics windows and their cached results (recomputed lazily when `dirty`).
     struct StatsState {
-        bool showHierarchy = false, showConversations = false, showEndpoints = false;
+        bool showHierarchy = false, showConversations = false, showEndpoints = false, showExpert = false;
         bool limitToDisplayed = true;      // count only the packets that pass the display filter
         bool dirty = true;                 // capture or filter changed: caches are stale
         int tab = 0;                       // AddressKind tab that was drawn last in the Conversations / Endpoints windows
         int selectTab = -1;                // request to switch to this tab (then reset)
 
+        std::vector<stats::ExpertItem> expert;
+        bool expertValid = false;
         stats::HierarchyNode hierarchy;
         bool hierarchyValid = false;
         std::vector<stats::Conversation> conversations[4];

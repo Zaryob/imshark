@@ -54,6 +54,22 @@ namespace stats {
     /// Display filter expression for one endpoint.
     std::string endpointFilter(const Endpoint &endpoint, AddressKind kind);
 
+    enum class Severity { Chat, Note, Warn, Error };
+    const char *severityName(Severity severity);
+
+    /// One line of the expert summary: a class of finding, how many packets have it, and the display
+    /// filter that selects them.
+    struct ExpertItem {
+        Severity severity;
+        std::string summary;
+        std::string filter;
+        uint64_t count = 0;
+    };
+
+    /// Counts the well-known findings (malformed packets, TCP retransmissions, lost segments, resets, ...)
+    /// over `subset`. Only items that occur are returned, most severe first.
+    std::vector<ExpertItem> expertInfo(const std::vector<packet::PacketInfo> &packets, Subset subset, double captureStartEpoch = 0);
+
     struct HierarchyNode {
         std::string name;
         uint64_t packets = 0, bytes = 0;
