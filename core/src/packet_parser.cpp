@@ -64,6 +64,7 @@ void packet::PacketParser::parsePacket(packet::PacketInfo &pack, const std::vect
         pack.tcp_dup_ack = 0;
     }
     pack.src_port = pack.dst_port = 0;
+    pack.payload_offset = pack.payload_length = 0;
     pack.protocol.clear();
     pack.info.clear();
     pack.source.clear();

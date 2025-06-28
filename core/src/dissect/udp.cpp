@@ -31,6 +31,10 @@ void dissect::dissectUdp(Context &ctx, const char *data, size_t length) {
     const size_t o = ctx.offsetOf(data);
     const char *payload = data + sizeof(network::UDPHeader);
     const size_t payloadLen = std::min(udpLen, length) - sizeof(network::UDPHeader);
+    if (payloadLen > 0) {
+        pack.payload_offset = static_cast<uint32_t>(ctx.offsetOf(payload));
+        pack.payload_length = static_cast<uint32_t>(payloadLen);
+    }
 
     if (ctx.wantFields()) {
         Field &l = ctx.addLayer("User Datagram Protocol, Src Port: " + std::to_string(srcPort) + ", Dst Port: " + std::to_string(dstPort),
