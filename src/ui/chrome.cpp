@@ -57,7 +57,7 @@ void ui::drawMenuAndDialogs(AppState &state) {
             ImGui::Separator();
             if (ImGui::MenuItem("Close File", "Ctrl+W", false, !state.currentFile.empty())) {
                 state.loadJob.reset();
-                cancelSearch(state);
+                cancelBackgroundJobs(state);
                 state.packets.clear();
                 refilter(state);
                 state.clearSelection();
@@ -66,6 +66,13 @@ void ui::drawMenuAndDialogs(AppState &state) {
                 state.loadFailed = false;
             }
             if (ImGui::MenuItem("Exit")) std::exit(0);
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("Analyze")) {
+            const packet::PacketInfo *sel = state.currentPacket();
+            const bool isStream = sel && sel->ip_version != 0 && (sel->ip_protocol == 6 || sel->ip_protocol == 17);
+            if (ImGui::MenuItem("Follow TCP Stream", nullptr, false, isStream && sel->ip_protocol == 6)) startFollow(state, state.selectedPacket);
+            if (ImGui::MenuItem("Follow UDP Stream", nullptr, false, isStream && sel->ip_protocol == 17)) startFollow(state, state.selectedPacket);
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("Statistics")) {
@@ -110,7 +117,7 @@ void ui::drawMenuAndDialogs(AppState &state) {
 
     if (ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_W, false) && !state.currentFile.empty()) {
         state.loadJob.reset();
-        cancelSearch(state);
+        cancelBackgroundJobs(state);
         state.packets.clear();
         refilter(state);
         state.clearSelection();

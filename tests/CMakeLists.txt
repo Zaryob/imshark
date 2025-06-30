@@ -12,6 +12,7 @@ add_executable(imshark_tests
     test_color_rules.cpp
     test_filter.cpp
     test_find.cpp
+    test_follow_view.cpp
     test_parser.cpp
     test_reader.cpp
     test_settings.cpp
