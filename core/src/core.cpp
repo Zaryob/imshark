@@ -1,5 +1,7 @@
 #include <core.h>
 
+#include <capture_reader.h>
+
 #include <algorithm>
 #include <cstring>
 #include <fstream>
@@ -105,6 +107,14 @@ namespace {
         pack.captured_length = static_cast<uint32_t>(data.size());
         pack.frame_length = originalLength;
         parser.parsePacket(pack, data, dissect::ParseMode::Summary);
+        // this packet completed an IPv4 datagram: tell the earlier fragments where it was reassembled
+        for (const auto &[fragment, completing]: parser.takeCompletedReassemblies()) {
+            if (fragment >= 1 && fragment <= packets.size()) {
+                auto &f = packets[fragment - 1];
+                f.reassembled_in = completing;
+                f.info += " [Reassembled in #" + std::to_string(completing) + "]";
+            }
+        }
         packets.emplace_back(std::move(pack));
     }
 
@@ -364,12 +374,54 @@ bool core::readPacketBytes(const std::string &filepath, const packet::PacketInfo
     return summary.captured_length == 0 || file.read(out.data(), summary.captured_length).good();
 }
 
-bool core::buildPacketDetails(const std::string &filepath, const packet::PacketInfo &summary, packet::PacketInfo &details) {
+namespace {
+    // The IPv4 fragment (payload slice + flags) inside a captured Ethernet/link frame
+    bool readFragment(const std::vector<char> &frame, const packet::PacketInfo &p, network::IpFragment &out) {
+        const size_t ip = p.l2_size;
+        if (frame.size() < ip + 20) return false;
+        const auto u8 = [&](size_t i) { return static_cast<uint8_t>(frame[ip + i]); };
+        const size_t ihl = static_cast<size_t>(u8(0) & 0x0F) * 4;
+        const size_t total = (static_cast<size_t>(u8(2)) << 8) | u8(3);
+        const uint16_t field = static_cast<uint16_t>((u8(6) << 8) | u8(7));
+        if (ihl < 20 || total < ihl || frame.size() < ip + ihl) return false;
+        const size_t end = std::min(frame.size(), ip + total);
+        out.offset = (field & 0x1FFF) * 8u;
+        out.moreFragments = (field & 0x2000) != 0;
+        out.packetNumber = static_cast<uint32_t>(p.number);
+        out.data.assign(frame.begin() + static_cast<std::ptrdiff_t>(ip + ihl), frame.begin() + static_cast<std::ptrdiff_t>(end));
+        return true;
+    }
+} // namespace
+
+bool core::buildPacketDetails(const std::string &filepath, const packet::PacketInfo &summary, packet::PacketInfo &details,
+                              const std::vector<packet::PacketInfo> *allPackets) {
     std::vector<char> bytes;
     if (!readPacketBytes(filepath, summary, bytes)) return false;
 
     details = summary;
     packet::PacketParser parser; // fresh parser: TCP numbers come from `summary` (Replay mode)
+
+    // the last fragment of a datagram needs the earlier ones to show the reassembled protocols
+    std::vector<char> reassembled;
+    std::vector<uint32_t> fragmentNumbers;
+    if (summary.ip_frag == 2 && allPackets) {
+        CaptureReader reader(filepath);
+        std::vector<network::IpFragment> fragments;
+        std::vector<char> frame;
+        for (const auto &p: *allPackets) {
+            if (p.ip_version != 4 || p.ip_frag == 0 || p.ip_id != summary.ip_id || p.ip_protocol != summary.ip_protocol ||
+                p.source != summary.source || p.destination != summary.destination) continue;
+            network::IpFragment f;
+            if (reader.read(p, frame) && readFragment(frame, p, f)) fragments.push_back(std::move(f));
+        }
+        if (network::assembleIpv4Payload(fragments, reassembled)) {
+            for (const auto &f: fragments) fragmentNumbers.push_back(f.packetNumber);
+            std::sort(fragmentNumbers.begin(), fragmentNumbers.end());
+            fragmentNumbers.erase(std::unique(fragmentNumbers.begin(), fragmentNumbers.end()), fragmentNumbers.end());
+            parser.setReassembly(&reassembled, &fragmentNumbers);
+        }
+    }
+
     parser.parsePacket(details, bytes, dissect::ParseMode::Replay);
     details.raw_data = std::move(bytes);
     return true;

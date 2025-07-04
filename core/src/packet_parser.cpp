@@ -65,6 +65,11 @@ void packet::PacketParser::parsePacket(packet::PacketInfo &pack, const std::vect
     }
     pack.src_port = pack.dst_port = 0;
     pack.payload_offset = pack.payload_length = 0;
+    pack.ip_id = 0;
+    if (mode != dissect::ParseMode::Replay) { // in Replay mode these come from the summary
+        pack.ip_frag = 0;
+        pack.reassembled_in = 0;
+    }
     pack.protocol.clear();
     pack.info.clear();
     pack.source.clear();
@@ -73,6 +78,13 @@ void packet::PacketParser::parsePacket(packet::PacketInfo &pack, const std::vect
     const size_t len = packetData.size();
     pack.length = static_cast<uint32_t>(len);
     dissect::Context ctx{pack, base, len, connection, *registry_, mode};
+    if (mode != dissect::ParseMode::Replay) {
+        ctx.reassembler = &reassembler_;
+        ctx.completed = &completed_;
+    } else {
+        ctx.reassembledPayload = reassembledPayload_;
+        ctx.fragmentNumbers = fragmentNumbers_;
+    }
 
     if (ctx.wantFields()) {
         Field &frame = ctx.addLayer("Frame " + std::to_string(pack.number) + ": " + std::to_string(len) + " bytes on wire", 0, len);

@@ -9,6 +9,101 @@
 
 using packet::Field;
 
+namespace {
+    std::string ipProtocolName(uint8_t p) {
+        switch (p) {
+            case 1: return "ICMP 1";
+            case 6: return "TCP 6";
+            case 17: return "UDP 17";
+            case 58: return "ICMPv6 58";
+            default: return "protocol " + std::to_string(p);
+        }
+    }
+
+    void zeroRanges(Field &f) {
+        f.offset = 0;
+        f.length = 0;
+        for (auto &c: f.children) zeroRanges(c);
+    }
+
+    // A fragment of an IPv4 datagram: wait for the rest; once the datagram is complete, decode its payload.
+    void dissectFragment(dissect::Context &ctx, const char *payload, size_t avail, uint8_t protocol, bool moreFragments, uint32_t fragOffset) {
+        using namespace dissect;
+        auto &pack = ctx.pack;
+        const bool replay = ctx.mode == ParseMode::Replay;
+
+        bool complete = false;
+        std::vector<char> whole;
+        std::vector<uint32_t> numbers;
+        if (replay) {
+            if (pack.ip_frag == 2 && ctx.reassembledPayload) {
+                complete = true;
+                whole = *ctx.reassembledPayload;
+                if (ctx.fragmentNumbers) numbers = *ctx.fragmentNumbers;
+            }
+        } else if (ctx.reassembler) {
+            network::IpFragment f;
+            f.offset = fragOffset;
+            f.moreFragments = moreFragments;
+            f.data.assign(payload, payload + avail);
+            f.packetNumber = static_cast<uint32_t>(pack.number);
+            const std::string key = pack.source + ">" + pack.destination + "#" + std::to_string(pack.ip_id) + "/" + std::to_string(protocol);
+            auto r = ctx.reassembler->add(key, f);
+            if (r.complete) {
+                complete = true;
+                whole = std::move(r.payload);
+                numbers = std::move(r.fragmentNumbers);
+                if (ctx.completed) {
+                    for (uint32_t n: numbers) if (n != static_cast<uint32_t>(pack.number)) ctx.completed->push_back({n, static_cast<uint32_t>(pack.number)});
+                }
+            }
+        }
+
+        if (ctx.wantFields() && !ctx.pack.fields.empty()) {
+            ctx.pack.fields.back().add("[Fragment: offset " + std::to_string(fragOffset) + ", " + std::to_string(avail) + " bytes" +
+                                       (moreFragments ? ", more fragments follow]" : ", last fragment]"));
+        }
+
+        if (!complete) {
+            pack.ip_frag = 1;
+            pack.protocol = "IPv4";
+            pack.info = "Fragmented IP protocol (proto=" + ipProtocolName(protocol) + ", off=" + std::to_string(fragOffset) +
+                        ", ID=" + hexString(pack.ip_id, 4) + ")" +
+                        (pack.reassembled_in ? " [Reassembled in #" + std::to_string(pack.reassembled_in) + "]" : "");
+            return;
+        }
+
+        // decode the reassembled payload as if it had arrived in one piece
+        pack.ip_frag = 2;
+        pack.length = static_cast<uint32_t>(whole.size());
+        packet::PacketInfo nested = pack;
+        nested.fields.clear();
+        Context nctx{nested, whole.data(), whole.size(), ctx.tcp, ctx.registry, ctx.mode};
+        if (const Dissector *next = ctx.registry.findIpProtocol(protocol)) (*next)(nctx, whole.data(), whole.size());
+        else nested.protocol = "Other";
+
+        pack.protocol = nested.protocol;
+        pack.info = nested.info;
+        pack.src_port = nested.src_port;
+        pack.dst_port = nested.dst_port;
+        pack.tcp_flags = nested.tcp_flags;
+        pack.tcp_relative_seq = nested.tcp_relative_seq;
+        pack.tcp_relative_ack = nested.tcp_relative_ack;
+        pack.tcp_analysis = nested.tcp_analysis;
+        pack.tcp_dup_ack = nested.tcp_dup_ack;
+        pack.length = nested.length;
+        pack.payload_offset = pack.payload_length = 0; // the payload is not contiguous in this frame
+
+        if (ctx.wantFields()) {
+            std::string from;
+            for (uint32_t n: numbers) from += (from.empty() ? "#" : ", #") + std::to_string(n);
+            Field &layer = ctx.addLayer("[Reassembled IPv4 payload (" + std::to_string(whole.size()) + " bytes) from frames " + from + "]", 0, 0);
+            layer.children = std::move(nested.fields);
+            for (auto &c: layer.children) zeroRanges(c); // offsets inside the reassembled data do not map to bytes of this frame
+        }
+    }
+} // namespace
+
 void dissect::dissectIPv4(Context &ctx, const char *base, size_t len) {
     auto &pack = ctx.pack;
     network::IPHeader ipHeader;
@@ -54,6 +149,12 @@ void dissect::dissectIPv4(Context &ctx, const char *base, size_t len) {
     pack.length = totalLen >= ipHeaderLen ? totalLen - ipHeaderLen : 0;
     const size_t avail = std::min<size_t>(pack.length, len - ipHeaderLen); // drops Ethernet padding
     pack.ip_protocol = ipHeader.protocol;
+    pack.ip_id = network::ntoh16(ipHeader.id);
+    const uint16_t fragField = network::ntoh16(ipHeader.flags_frag_off);
+    if ((fragField & 0x2000) || (fragField & 0x1FFF) != 0) { // More Fragments flag set, or not the first piece
+        dissectFragment(ctx, base + ipHeaderLen, avail, ipHeader.protocol, (fragField & 0x2000) != 0, (fragField & 0x1FFF) * 8u);
+        return;
+    }
     if (const Dissector *next = ctx.registry.findIpProtocol(ipHeader.protocol)) {
         (*next)(ctx, base + ipHeaderLen, avail);
     } else {
