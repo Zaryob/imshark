@@ -52,16 +52,16 @@ Hedef: büyük bir yakalamada aranan paketi hızla bulmak.
 - [x] Paket bulma (Ctrl+F): metin ve görüntüleme filtresi, ileri/geri (F3). *(bayt/hex arama v0.6'da)* — **M**
 - [x] Zaman görünümü (yakalama başlangıcına göre / önceki paketten beri / UTC) ve `frame.time_*` alanları — **S**
 
-## v0.6 — Akış analizi
+## v0.6 — Akış analizi ✅ tamamlandı
 
 Hedef: paketlerden konuşmalara ve oturumlara çıkmak.
 
-- [ ] Yakalamayı sıralı baytlarla tarayan altyapı (arka plan işi, ilerleme, iptal) — **M**
-- [ ] Konuşmalar/uç noktalar tablosu ve protokol hiyerarşisi istatistikleri — **M**
-- [ ] TCP analizi: yeniden iletim, dup-ACK, sıra dışı, RST/FIN işaretleri — **M**
-- [ ] **Follow TCP/UDP stream** ve TCP yeniden birleştirme (reassembly) — **L**
-- [ ] IPv4 parçalanma birleştirme (#11) — **M**
-- [ ] Bayt/hex arama (tarama altyapısı üzerinden) — **S**
+- [x] Yakalamayı baytlarıyla tarayan altyapı (`CaptureReader`, `scanPackets`; ilerleme + iptal) — **M**
+- [x] Konuşmalar/uç noktalar tablosu ve protokol hiyerarşisi istatistikleri — **M**
+- [x] TCP analizi: yeniden iletim, dup-ACK, sıra dışı, kayıp segment, sıfır pencere, keep-alive, pencere güncellemesi; Expert Information penceresi — **M**
+- [x] **Follow TCP/UDP stream** ve TCP yeniden birleştirme (reassembly) — **L**
+- [x] IPv4 parçalanma birleştirme (#11). *(IPv6 parçaları henüz yok)* — **M**
+- [x] Bayt/hex arama (tarama altyapısı üzerinden) — **S**
 
 ## v0.7 — Protokoller ve dışa aktarım
 

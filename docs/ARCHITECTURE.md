@@ -79,6 +79,14 @@ registry.registerUdpPort(53, dissectDns);              // application layer
 
 `Filter::compile(text)` bir ifadeyi (`&& || ! and or not`, `== != < > <= >=`, `contains`, `matches`, `in {…}`, CIDR) ayrıştırıp değerlendirilebilir bir ağaca çevirir; hata durumunda ileti ve bayt konumu döner. Alanlar `fields.cpp`'deki sıralı bir tabloda tanımlıdır (ad, tür, özetten değer okuyan fonksiyon, açıklama) ve **yalnızca paket özetini** kullanır (`PacketInfo`'daki EtherType, IP sürümü/protokolü, TTL, TCP bayrakları, portlar, adresler, zaman…), bu yüzden bir yakalamayı filtrelemek dosyaya hiç dokunmaz. Yeni bir alan eklemek = tabloya bir satır. `!=` daima `==`'in tam olumsuzudur (alan yoksa da). Aynı motor renklendirme kurallarında ve "Paket bul" aramasında kullanılır.
 
+### Akış analizi ve istatistikler
+
+- `stats/` — uç noktalar, konuşmalar, protokol hiyerarşisi ve expert özeti **yalnızca paket özetlerinden** hesaplanır (dosyaya dokunmaz); `subset` ile görüntülenen paketlerle sınırlanabilir. `conversationFilter` bir satırı tam o paketleri seçen filtreye çevirir (testle doğrulanır).
+- `network/tcp_connection` — bağlantıyı uç noktalarla anahtarlar, yön başına ISN, sonraki beklenen seq, atlanan aralıklar ve son ACK/pencere tutar; her segment için yeniden iletim / sıra dışı / kayıp segment / dup-ACK / sıfır pencere / keep-alive / pencere güncellemesi bayrakları üretir (32-bit sarma dikkate alınır). Sonuç özette saklanır; tek paket yeniden kurulurken (Replay) bağlantı tablosu gerekmez.
+- `capture_reader` — dosyayı açık tutan `CaptureReader` ve bir paket listesini sırayla okuyan `scanPackets` (ilerleme + iptal). Bayt/hex arama ve Follow Stream bunun üzerine kuruludur ve arka plan iş parçacıklarında çalışır; yakalama değişmeden önce `cancelBackgroundJobs` ile durdurulur.
+- `stream/follow` — bir TCP/UDP konuşmasının paketlerini bulur ve yükü yeniden birleştirir: TCP segmentleri sıraya dizilir, sıra dışı veri boşluk dolana kadar tutulur, yeniden iletimler yalnızca yeni baytlarıyla katkı yapar, hiç yakalanmayan boşluklar "eksik bayt" olarak raporlanır. Özet, yükün çerçeve içindeki yerini (`payload_offset/length`) tutar.
+- `network/ip_reassembly` + `dissect/ip.cpp` — yükleme sırasında IPv4 parçaları toplanır; datagramı tamamlayan paket birleşmiş yükü çözer, önceki parçalara okuyucu "[Reassembled in #N]" yazar. Ayrıntıda son parçanın ağacı, diğer parçalar dosyadan okunarak yeniden kurulur ve "[Reassembled IPv4 payload …]" katmanı olarak eklenir.
+
 ## 5. Arayüz (`src/ui/`)
 
 - `AppState` (`app_state.h`): paket özetleri, görüntü sırası, yükleme işi/durumu, seçili paket + onun ayrıntısı (`detail`), seçili alan/bayt aralığı, ayarlar; global değişken yok.
@@ -89,6 +97,8 @@ registry.registerUdpPort(53, dissectDns);              // application layer
 - `filter_bar.cpp`: filtre çubuğu (canlı doğrulama, geçmiş, başvuru penceresi), `applyFilter`/`refilter` görünür paket kümesini hesaplar.
 - `find.cpp`/`find_bar.cpp`: Ctrl+F paket bulma (saf `findPacket` fonksiyonu + çubuk).
 - `color_rules.cpp`/`color_editor.cpp`: renklendirme kuralları (filtre motoruyla eşleşir) ve düzenleme penceresi.
+- `stats_windows.cpp`: İstatistik pencereleri (hiyerarşi, konuşmalar, uç noktalar, expert), tembel hesaplanan önbellekler.
+- `follow_window.cpp`/`follow_view.cpp`: Follow Stream arka plan işi ve satır oluşturma (ASCII / hex dump, yön süzgeci).
 - `time_format.cpp`: Time sütunu biçimleri (UTC dönüşümü platformdan bağımsız).
 - `packet_list.cpp`: 7 sütunlu, sıralanabilir tablo; gösterilen sıra = filtreyi geçenler + sıralama; klavyeyle gezinme; `ImGuiListClipper` ile yalnızca görünen satırlar çizilir.
 - `details.cpp`: `fields` ağacı (alan tıklanınca bayt aralığı seçilir) ve hex/ASCII görünümü (bayta tıklayınca en özel alan seçilip ağaçta açılır).
