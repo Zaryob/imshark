@@ -315,7 +315,7 @@ TEST(SampleCapture, ParsesEverythingInTheSampleFile) {
     const std::vector<std::string> expected = {"ARP", "ARP", "ICMP", "ICMP", "DNS", "DNS", "TCP", "TCP", "TCP", "TCP",
                                                "TCP", "SMTP", "UDP", "UDP", "Ethernet", "TCP"};
     EXPECT_EQ(protocols, expected);
-    EXPECT_EQ(packets[5].info, "Standard query response 0x1234 A example.com example.com A 93.184.216.34");
+    EXPECT_EQ(packets[5].info, "Standard query response 0x1234 A example.com A 93.184.216.34");
     EXPECT_EQ(packets[13].vlan_ids, std::vector<uint16_t>{100});
     EXPECT_NE(packets[15].info.find("Malformed"), std::string::npos);
 }

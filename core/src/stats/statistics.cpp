@@ -200,7 +200,7 @@ namespace stats {
             if (protocol == "HTTP") return "Hypertext Transfer Protocol";
             if (protocol == "TLS") return "Transport Layer Security";
             if (protocol == "NTP") return "Network Time Protocol";
-            if (protocol == "mDNS") return "Multicast DNS";
+            if (protocol == "MDNS") return "Multicast Domain Name System";
             return "";
         }
 

@@ -71,6 +71,12 @@ namespace packet {
         uint16_t ip_id = 0;          // IPv4 identification
         uint8_t ip_frag = 0;         // 0 = not fragmented, 1 = fragment that is not the last, 2 = last fragment (datagram reassembled here)
         uint32_t reassembled_in = 0; // for a fragment (ip_frag == 1): number of the frame that completed the datagram
+        // Facts of the application protocol, filled by its dissector (meaning depends on `protocol`):
+        //   DNS/MDNS: app_text = first question name, app_type = its type, app_flags = flags word, app_code = rcode
+        uint16_t app_type = 0;
+        uint16_t app_flags = 0;
+        uint16_t app_code = 0;
+        std::string app_text;
         uint32_t payload_offset = 0; // TCP/UDP payload inside the captured frame (0/0 if there is none)
         uint32_t payload_length = 0;
 
