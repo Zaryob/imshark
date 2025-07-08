@@ -67,6 +67,7 @@ void packet::PacketParser::parsePacket(packet::PacketInfo &pack, const std::vect
     pack.payload_offset = pack.payload_length = 0;
     pack.app_type = pack.app_flags = pack.app_code = 0;
     pack.app_text.clear();
+    pack.app_text2.clear();
     pack.ip_id = 0;
     if (mode != dissect::ParseMode::Replay) { // in Replay mode these come from the summary
         pack.ip_frag = 0;

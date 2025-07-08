@@ -18,4 +18,6 @@ namespace dissect {
     void dissectTelnet(Context &ctx, const char *data, size_t length);
     void dissectSmtp(Context &ctx, const char *data, size_t length);
     void dissectBgp(Context &ctx, const char *data, size_t length);
+    bool dissectHttp(Context &ctx, const char *data, size_t length);   // heuristic: false if it is not HTTP/1.x
+    bool dissectTls(Context &ctx, const char *data, size_t length);    // heuristic: false if it is not a TLS record
 } // namespace dissect

@@ -18,6 +18,11 @@ namespace filter {
 
         bool isProtocol(const PacketInfo &p, const char *name) { return p.protocol == name; }
 
+        std::string_view httpMethodName(uint16_t code) {
+            static const char *names[] = {"", "GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS", "PATCH", "CONNECT", "TRACE"};
+            return code < sizeof(names) / sizeof(*names) ? names[code] : "";
+        }
+
         template<uint8_t Bit>
         void tcpFlag(const PacketInfo &p, const Context &, Values &out) { if (hasTcp(p)) out.addU((p.tcp_flags & Bit) ? 1 : 0); }
 
@@ -100,6 +105,19 @@ namespace filter {
                 {"udp.dstport", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (hasUdp(p)) o.addU(p.dst_port); }, "UDP destination port"},
                 {"udp.port", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (hasUdp(p)) { o.addU(p.src_port); o.addU(p.dst_port); } }, "UDP source or destination port"},
                 // ---- application protocols (by the protocol column)
+                {"http", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "HTTP")) o.addU(1); }, "HTTP/1.x"},
+                {"http.request", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "HTTP")) o.addU(p.app_flags == 0); }, "HTTP request"},
+                {"http.response", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "HTTP")) o.addU(p.app_flags == 1); }, "HTTP response"},
+                {"http.request.method", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "HTTP") && p.app_flags == 0) o.addS(httpMethodName(p.app_type)); }, "HTTP request method (GET, POST ...)"},
+                {"http.request.uri", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "HTTP") && p.app_flags == 0) o.addS(p.app_text2); }, "HTTP request URI"},
+                {"http.host", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "HTTP") && !p.app_text.empty()) o.addS(p.app_text); }, "HTTP Host header"},
+                {"http.response.code", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "HTTP") && p.app_flags == 1) o.addU(p.app_code); }, "HTTP response status code"},
+                {"http.content_type", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "HTTP") && p.app_flags == 1 && !p.app_text2.empty()) o.addS(p.app_text2); }, "HTTP response Content-Type"},
+                {"tls", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "TLS")) o.addU(1); }, "TLS / SSL"},
+                {"tls.record.content_type", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "TLS")) o.addU(p.app_code); }, "Content type of the first TLS record (22 = handshake, 23 = application data)"},
+                {"tls.record.version", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "TLS")) o.addU(p.app_flags); }, "Version of the first TLS record (0x0303 = TLS 1.2)"},
+                {"tls.handshake.type", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "TLS") && p.app_type != 0) o.addU(p.app_type); }, "First handshake message type (1 = ClientHello, 2 = ServerHello ...)"},
+                {"tls.handshake.extensions_server_name", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "TLS") && !p.app_text.empty()) o.addS(p.app_text); }, "Server name indication (SNI) of a ClientHello"},
                 {"dns.qry.name", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if ((isProtocol(p, "DNS") || isProtocol(p, "MDNS")) && !p.app_text.empty()) o.addS(p.app_text); }, "Name of the first DNS question"},
                 {"dns.qry.type", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if ((isProtocol(p, "DNS") || isProtocol(p, "MDNS")) && !p.app_text.empty()) o.addU(p.app_type); }, "Type of the first DNS question (1 = A, 28 = AAAA, 15 = MX ...)"},
                 {"dns.flags.response", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "DNS") || isProtocol(p, "MDNS")) o.addU((p.app_flags & 0x8000) != 0); }, "DNS message is a response"},

@@ -1,7 +1,9 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
 #include <unordered_map>
+#include <vector>
 
 #include "context.h"
 
@@ -14,6 +16,12 @@ namespace dissect {
         void registerIpProtocol(uint8_t protocol, Dissector d) { ipProtocols_[protocol] = std::move(d); }
         void registerTcpPort(uint16_t port, Dissector d) { tcpPorts_[port] = std::move(d); }
         void registerUdpPort(uint16_t port, Dissector d) { udpPorts_[port] = std::move(d); }
+
+        /// A heuristic dissector inspects a TCP payload that no port-based dissector claimed. It returns
+        /// true if it recognised the payload (and then filled in the packet), false to pass.
+        using Heuristic = std::function<bool(Context &ctx, const char *data, size_t length)>;
+        void registerTcpHeuristic(Heuristic h) { tcpHeuristics_.push_back(std::move(h)); }
+        const std::vector<Heuristic> &tcpHeuristics() const { return tcpHeuristics_; }
 
         const Dissector *findEtherType(uint16_t etherType) const { return find(etherTypes_, etherType); }
         const Dissector *findIpProtocol(uint8_t protocol) const { return find(ipProtocols_, protocol); }
@@ -42,5 +50,6 @@ namespace dissect {
         std::unordered_map<uint8_t, Dissector> ipProtocols_;
         std::unordered_map<uint16_t, Dissector> tcpPorts_;
         std::unordered_map<uint16_t, Dissector> udpPorts_;
+        std::vector<Heuristic> tcpHeuristics_;
     };
 } // namespace dissect
