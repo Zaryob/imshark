@@ -18,6 +18,7 @@ add_library(imshark_core STATIC
     src/dissect/tls.cpp
     src/dissect/dhcp.cpp
     src/dissect/simple.cpp
+    src/export/export.cpp
     src/filter/fields.cpp
     src/filter/filter.cpp
     src/stats/statistics.cpp

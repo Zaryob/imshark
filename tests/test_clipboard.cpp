@@ -42,7 +42,7 @@ TEST(Clipboard, SummaryRowIsTabSeparated) {
     p.source = "10.0.0.1";
     p.destination = "10.0.0.2";
     p.protocol = "TCP";
-    p.length = 60;
+    p.frame_length = 60;
     p.info = "1 -> 2 [SYN]";
     EXPECT_EQ(ui::summaryRow(p), "3\t1.500000\t10.0.0.1\t10.0.0.2\tTCP\t60\t1 -> 2 [SYN]");
 }

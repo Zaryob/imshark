@@ -47,5 +47,5 @@ std::string ui::summaryRow(const packet::PacketInfo &p) {
     char time[32];
     std::snprintf(time, sizeof(time), "%.6f", p.time);
     return std::to_string(p.number) + "\t" + time + "\t" + p.source + "\t" + p.destination + "\t" + p.protocol + "\t" +
-           std::to_string(p.length) + "\t" + p.info;
+           std::to_string(p.frame_length) + "\t" + p.info;
 }
