@@ -14,6 +14,7 @@ namespace dissect {
     void dissectDnsTcp(Context &ctx, const char *data, size_t length);     // DNS over TCP (2-byte length prefix)
     void dissectMdns(Context &ctx, const char *data, size_t length);       // multicast DNS
     void dissectDhcp(Context &ctx, const char *data, size_t length);
+    void dissectNtp(Context &ctx, const char *data, size_t length);
     void dissectSnmp(Context &ctx, const char *data, size_t length);
     void dissectTelnet(Context &ctx, const char *data, size_t length);
     void dissectSmtp(Context &ctx, const char *data, size_t length);
