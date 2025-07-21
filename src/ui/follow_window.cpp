@@ -26,6 +26,7 @@ namespace ui {
 void ui::cancelBackgroundJobs(AppState &state) {
     cancelSearch(state);
     state.follow.job.reset();
+    state.exportDialog.job.reset();
 }
 
 bool ui::startFollow(AppState &state, int packetIndex) {

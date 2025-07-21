@@ -9,6 +9,7 @@
 
 #include <imgui.h>
 
+#include <core.h>
 #include <ui/ui.h>
 
 namespace {
@@ -557,5 +558,66 @@ TEST_F(UiSmoke, FollowUdpAndTheJobIsCancelledByLoading) {
     EXPECT_NE(state.follow.title.find("UDP"), std::string::npos);
     load(state);                                     // replacing the packets must stop the reader first
     EXPECT_FALSE(static_cast<bool>(state.follow.job));
+    frames(state);
+}
+
+// ---- export dialog ----------------------------------------------------------------------------------------
+
+TEST_F(UiSmoke, ExportIndicesFollowTheRange) {
+    ui::AppState state;
+    load(state);
+    EXPECT_EQ(ui::exportIndices(state, ui::ExportState::All).size(), 16u);
+    EXPECT_EQ(ui::exportIndices(state, ui::ExportState::Displayed).size(), 16u);
+    EXPECT_TRUE(ui::exportIndices(state, ui::ExportState::Selected).empty());
+    ASSERT_TRUE(ui::applyFilter(state, "tcp"));
+    EXPECT_EQ(ui::exportIndices(state, ui::ExportState::Displayed), (std::vector<uint32_t>{6, 7, 8, 9, 10, 11, 15}));
+    EXPECT_EQ(ui::exportIndices(state, ui::ExportState::All).size(), 16u);
+    state.selectedPacket = 9;
+    EXPECT_EQ(ui::exportIndices(state, ui::ExportState::Selected), (std::vector<uint32_t>{9}));
+}
+
+TEST_F(UiSmoke, BackgroundExportWritesTheDisplayedPackets) {
+    ui::AppState state;
+    load(state);
+    ASSERT_TRUE(ui::applyFilter(state, "dns"));
+    frames(state);
+    const auto path = (std::filesystem::temp_directory_path() / "imshark_ui_export.pcapng").string();
+    std::remove(path.c_str());
+    ASSERT_TRUE(ui::startExport(state, ui::ExportState::Displayed, exporter::Format::Pcapng, path));
+    for (int i = 0; i < 3000 && state.exportDialog.job; ++i) {
+        frame(state);                                   // drawExportDialog polls the job
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_FALSE(static_cast<bool>(state.exportDialog.job));
+    EXPECT_FALSE(state.exportDialog.resultIsError) << state.exportDialog.resultMessage;
+    EXPECT_NE(state.exportDialog.resultMessage.find("Exported 2 packets"), std::string::npos) << state.exportDialog.resultMessage;
+    frames(state);                                       // the result popup is drawn
+
+    core::FileProcessor fp;
+    std::vector<packet::PacketInfo> packets;
+    std::string message;
+    ASSERT_TRUE(fp.processPcapngFile(path, packets, message)) << message;
+    EXPECT_EQ(packets.size(), 2u);
+    EXPECT_EQ(packets[0].protocol, "DNS");
+    std::remove(path.c_str());
+
+    EXPECT_FALSE(ui::startExport(state, ui::ExportState::Selected, exporter::Format::Csv, path)) << "nothing selected, nothing to export";
+}
+
+TEST_F(UiSmoke, ExportFailureIsReportedAndLoadingCancelsARunningExport) {
+    ui::AppState state;
+    load(state);
+    ASSERT_TRUE(ui::startExport(state, ui::ExportState::All, exporter::Format::Csv, "/no/such/directory/out.csv"));
+    for (int i = 0; i < 3000 && state.exportDialog.job; ++i) { frame(state); std::this_thread::sleep_for(std::chrono::milliseconds(1)); }
+    EXPECT_TRUE(state.exportDialog.resultIsError);
+    EXPECT_NE(state.exportDialog.resultMessage.find("Cannot write"), std::string::npos);
+    frames(state);
+
+    const auto path = (std::filesystem::temp_directory_path() / "imshark_ui_export2.pcap").string();
+    ASSERT_TRUE(ui::startExport(state, ui::ExportState::All, exporter::Format::Pcap, path));
+    load(state);                                         // must stop the export thread before packets are replaced
+    EXPECT_FALSE(static_cast<bool>(state.exportDialog.job));
+    std::remove(path.c_str());
+    state.exportDialog.openPopup = true;                 // the options popup
     frames(state);
 }

@@ -31,6 +31,7 @@ add_library(imshark_ui STATIC
     src/ui/color_rules.cpp
     src/ui/clipboard.cpp
     src/ui/details.cpp
+    src/ui/export_dialog.cpp
     src/ui/find.cpp
     src/ui/find_bar.cpp
     src/ui/follow_view.cpp
