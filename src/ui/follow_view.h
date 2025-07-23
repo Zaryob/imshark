@@ -23,6 +23,9 @@ namespace ui {
     std::vector<FollowLine> buildFollowLines(const stream::Stream &stream, FollowDirection direction, FollowView view,
                                              size_t maxLineLength = 160);
 
+    /// The raw payload bytes of the chosen direction (or both, in arrival order) - what "Save As" writes.
+    std::string followRawBytes(const stream::Stream &stream, FollowDirection direction);
+
     /// The plain text of the lines (what "Copy" puts on the clipboard).
     std::string followText(const std::vector<FollowLine> &lines);
 } // namespace ui

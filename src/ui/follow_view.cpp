@@ -68,3 +68,11 @@ std::string ui::followText(const std::vector<FollowLine> &lines) {
     for (const auto &l: lines) out += l.text + "\n";
     return out;
 }
+
+std::string ui::followRawBytes(const stream::Stream &s, FollowDirection direction) {
+    std::string out;
+    for (const auto &chunk: s.chunks) {
+        if (wanted(direction, chunk.direction)) out += chunk.data;
+    }
+    return out;
+}
