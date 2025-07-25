@@ -11,6 +11,7 @@
 #include <imgui.h>
 
 #include <core.h>
+#include <gzip.h>
 
 namespace ui {
     /// One background load. Owned by AppState::loadJob; destroying it cancels and joins the thread.
@@ -26,12 +27,23 @@ namespace ui {
         double startEpoch = 0;
         core::CaptureInfo info;
 
+        // .gz input: decompressed to a temporary file first
+        std::string dataPath;               // what the packets were read from (== path unless decompressed)
+        std::string tempPath;               // the temporary copy (deleted unless taken over by the UI state)
+        bool keepTemp = false;
+        std::atomic<bool> decompressing{false};
+        uint64_t compressedSize = 0;
+
         std::atomic<bool> finished{false};
         std::thread thread;
 
         ~LoadJob() {
             control.cancelRequested = true;
             if (thread.joinable()) thread.join();
+            if (!tempPath.empty() && !keepTemp) {
+                std::error_code ec;
+                std::filesystem::remove(core::pathFromUtf8(tempPath), ec);
+            }
         }
     };
 } // namespace ui
@@ -43,16 +55,45 @@ namespace {
         return file.read(reinterpret_cast<char *>(&magic), sizeof(magic)) && magic == 0x0A0D0D0A;
     }
 
+    std::string makeTempPath() {
+        static std::atomic<unsigned> counter{0};
+        const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
+        return (std::filesystem::temp_directory_path() / ("imshark_" + std::to_string(stamp) + "_" + std::to_string(counter++) + ".cap")).string();
+    }
+
     void runJob(ui::LoadJob &job) {
         core::FileProcessor processor;
         if (!std::filesystem::is_regular_file(core::pathFromUtf8(job.path))) {
             job.message = "Not a regular file: " + job.path;
-        } else {
-            job.ok = isPcapng(job.path) ? processor.processPcapngFile(job.path, job.packets, job.message, &job.control)
-                                        : processor.processPcapFile(job.path, job.packets, job.message, &job.control);
+            job.finished = true;
+            return;
         }
+
+        job.dataPath = job.path;
+        if (core::isGzipFile(job.path)) {
+            // the packets keep file offsets, so a compressed capture is unpacked to a temporary file first
+            job.decompressing = true;
+            job.tempPath = makeTempPath();
+            std::error_code ec;
+            job.compressedSize = std::filesystem::file_size(core::pathFromUtf8(job.path), ec);
+            std::string error;
+            if (!core::gunzipFile(job.path, job.tempPath, error, &job.control)) {
+                job.message = error.empty() ? "Cancelled" : error;
+                job.decompressing = false;
+                job.finished = true;
+                return;
+            }
+            job.decompressing = false;
+            job.dataPath = job.tempPath;
+        }
+        job.ok = isPcapng(job.dataPath) ? processor.processPcapngFile(job.dataPath, job.packets, job.message, &job.control)
+                                        : processor.processPcapFile(job.dataPath, job.packets, job.message, &job.control);
         job.startEpoch = processor.captureStartEpoch();
         job.info = processor.captureInfo();
+        if (!job.tempPath.empty()) {
+            job.info.container = "gzip";
+            job.info.compressedSize = job.compressedSize;
+        }
         job.finished = true;
     }
 } // namespace
@@ -92,13 +133,20 @@ void ui::pollLoad(AppState &state) {
 
     state.loadMessage = job->message;
     if (job->ok) {
-        cancelBackgroundJobs(state); // the search thread reads state.packets
+        cancelBackgroundJobs(state); // background threads read state.packets
         state.packets = std::move(job->packets);
+        if (!state.tempFile.empty()) { // the previous capture's decompressed copy is not needed any more
+            std::error_code ec;
+            std::filesystem::remove(core::pathFromUtf8(state.tempFile), ec);
+        }
+        state.tempFile = job->tempPath;
+        job->keepTemp = true;
         state.captureStartEpoch = job->startEpoch;
         state.captureInfo = std::move(job->info);
         state.clearSelection();
         refilter(state); // an active display filter stays active on the new capture
-        state.currentFile = job->path;
+        state.currentFile = job->dataPath;
+        state.displayName = job->path;
         state.loadFailed = false;
         addRecentFile(state.settings, job->path);
         state.settingsDirty = true;
@@ -136,9 +184,39 @@ void ui::drawLoadProgressPopup(AppState &state) {
     if (ImGui::BeginPopupModal("Loading capture", nullptr, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove)) {
         ImGui::TextUnformatted(state.loadJob->path.c_str());
         ImGui::ProgressBar(fraction, ImVec2(420, 0));
-        ImGui::Text("%llu packets, %.1f / %.1f MB", static_cast<unsigned long long>(control.packetsLoaded.load()),
-                    static_cast<double>(control.bytesProcessed) / 1048576.0, static_cast<double>(total) / 1048576.0);
+        if (state.loadJob->decompressing) {
+            ImGui::Text("Decompressing... %.1f / %.1f MB", static_cast<double>(control.bytesProcessed) / 1048576.0, static_cast<double>(total) / 1048576.0);
+        } else {
+            ImGui::Text("%llu packets, %.1f / %.1f MB", static_cast<unsigned long long>(control.packetsLoaded.load()),
+                        static_cast<double>(control.bytesProcessed) / 1048576.0, static_cast<double>(total) / 1048576.0);
+        }
         if (ImGui::Button("Cancel", ImVec2(120, 0))) cancelLoad(state);
         ImGui::EndPopup();
+    }
+}
+
+ui::AppState::~AppState() {
+    loadJob.reset(); // joins the worker before the state goes away
+    if (!tempFile.empty()) {
+        std::error_code ec;
+        std::filesystem::remove(core::pathFromUtf8(tempFile), ec);
+    }
+}
+
+void ui::closeCapture(AppState &state) {
+    state.loadJob.reset();
+    cancelBackgroundJobs(state);
+    state.packets.clear();
+    refilter(state);
+    state.clearSelection();
+    state.currentFile.clear();
+    state.displayName.clear();
+    state.captureInfo = core::CaptureInfo();
+    state.loadMessage.clear();
+    state.loadFailed = false;
+    if (!state.tempFile.empty()) {
+        std::error_code ec;
+        std::filesystem::remove(core::pathFromUtf8(state.tempFile), ec);
+        state.tempFile.clear();
     }
 }

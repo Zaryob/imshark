@@ -60,8 +60,12 @@ void ui::drawCaptureInfoWindow(AppState &state) {
     if (ImGui::BeginTable("general", 2, ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp)) {
         ImGui::TableSetupColumn("", ImGuiTableColumnFlags_WidthFixed, 150);
         ImGui::TableSetupColumn("");
-        keyValue("File", state.currentFile);
-        keyValue("Size", sizeText(info.fileSize));
+        keyValue("File", state.displayName);
+        if (info.container.empty()) {
+            keyValue("Size", sizeText(info.fileSize));
+        } else {
+            keyValue("Size", sizeText(info.compressedSize) + " compressed (" + info.container + "), " + sizeText(info.fileSize) + " decompressed");
+        }
         keyValue("Format", info.format);
         keyValue("Packets", std::to_string(state.packets.size()) +
                                 (state.filter.active ? " (" + std::to_string(state.displayedCount()) + " displayed)" : ""));

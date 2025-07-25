@@ -25,7 +25,9 @@ namespace core {
     /// Metadata of a capture file that is not part of any packet.
     struct CaptureInfo {
         std::string format;                  // "pcap" / "pcapng" with byte order and precision
-        uint64_t fileSize = 0;
+        uint64_t fileSize = 0;               // size of the file the packets are read from (decompressed size for .gz)
+        std::string container;               // "gzip" if the file was opened from a compressed copy
+        uint64_t compressedSize = 0;         // size of the compressed file (0 if not compressed)
         uint32_t sections = 0;               // pcapng section header blocks
         std::string comment, hardware, os, application; // first section header
         std::vector<InterfaceInfo> interfaces;
