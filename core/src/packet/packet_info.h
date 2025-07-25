@@ -68,6 +68,7 @@ namespace packet {
         uint8_t tcp_flags = 0;       // raw TCP flag byte
         uint16_t src_port = 0;       // TCP/UDP ports (0 if not applicable)
         uint16_t dst_port = 0;
+        bool has_comment = false;    // the capture file attaches a comment to this packet (pcapng)
         uint16_t ip_id = 0;          // IPv4 identification
         uint8_t ip_frag = 0;         // 0 = not fragmented, 1 = fragment that is not the last, 2 = last fragment (datagram reassembled here)
         uint32_t reassembled_in = 0; // for a fragment (ip_frag == 1): number of the frame that completed the datagram

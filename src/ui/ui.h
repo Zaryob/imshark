@@ -63,6 +63,9 @@ namespace ui {
     /// Stops background readers of the capture file (search, follow); required before packets change.
     void cancelBackgroundJobs(AppState &state);
 
+    // capture_info_window.cpp
+    void drawCaptureInfoWindow(AppState &state);
+
     // find_bar.cpp
     /// Searches from the selected row (or from the start) and selects the match; updates state.find.message.
     bool findAndSelect(AppState &state, bool forward);

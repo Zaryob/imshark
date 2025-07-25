@@ -40,6 +40,7 @@ namespace filter {
             std::vector<FieldDef> t = {
                 // ---- frame
                 {"frame.number", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { o.addU(static_cast<uint64_t>(p.number)); }, "Packet number (1-based)"},
+                {"frame.comment", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { o.addU(p.has_comment); }, "The capture file has a comment for this packet (pcapng)"},
                 {"frame.len", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { o.addU(p.frame_length); }, "Length of the frame on the wire"},
                 {"frame.cap_len", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { o.addU(p.captured_length); }, "Number of bytes captured"},
                 {"frame.time_relative", FieldType::Float, [](const PacketInfo &p, const Context &, Values &o) { o.addD(p.time); }, "Seconds since the first packet"},
