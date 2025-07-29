@@ -63,12 +63,12 @@ Hedef: paketlerden konuşmalara ve oturumlara çıkmak.
 - [x] IPv4 parçalanma birleştirme (#11). *(IPv6 parçaları henüz yok)* — **M**
 - [x] Bayt/hex arama (tarama altyapısı üzerinden) — **S**
 
-## v0.7 — Protokoller ve dışa aktarım
+## v0.7 — Protokoller ve dışa aktarım ✅ tamamlandı
 
-- [ ] Yeni dissector'lar: HTTP/1.x, TLS (handshake/SNI), DNS tam (CNAME/MX/TXT/PTR), DHCP seçenekleri, NTP, mDNS, ICMP tam (#15) — **L**
-- [ ] Seçili/filtreli paketleri pcap/pcapng olarak kaydet; CSV/JSON dışa aktarım — **M**
-- [ ] pcapng yorumları (comment option) ve IDB/ISB/NRB bilgilerini arayüzde gösterme — **S**
-- [ ] Sıkıştırılmış girdiler (`.pcap.gz`) — **S**
+- [x] Yeni dissector'lar: HTTP/1.x, TLS (handshake/SNI), DNS tam (tüm bölümler, kayıt türleri, TCP üzerinden, mDNS), DHCP seçenekleri, NTP, ICMP/ICMPv6 tam (#15). *(HTTP/TLS mesajları TCP segmentleri arasında birleştirilmez; Follow Stream bunu yapar)* — **L**
+- [x] File > Export Packets: tüm / görüntülenen / seçili paketleri pcap, pcapng, CSV, JSON olarak kaydet; Follow Stream "Save As" — **M**
+- [x] pcapng yorumları, arayüz/istatistik/ad çözümleme bilgileri: File > Capture File Properties — **S**
+- [x] Sıkıştırılmış girdiler (`.pcap.gz`, `.pcapng.gz`): harici kütüphanesiz akış tabanlı gzip çözücü — **S**
 
 ## v0.8 — Canlı yakalama
 
@@ -79,6 +79,7 @@ Hedef: paketlerden konuşmalara ve oturumlara çıkmak.
 - [ ] Dokümantasyon sitesi/kullanım kılavuzu ve ekran görüntüleri (`docs/`), katkı rehberi (`CONTRIBUTING.md`)
 - [ ] Paketleme: macOS `.app`/dmg, Linux AppImage, Windows zip; sürüm etiketleme ve otomatik release
 - [ ] Protokol dissector eklemek için geliştirici kılavuzu (`docs/DISSECTORS.md`)
+- [ ] Paket özetini küçült (`PacketInfo` şimdi 328 bayt; uygulama katmanı metinleri ve nadiren dolu alanlar ayrı bir tabloya taşınabilir)
 - [ ] Performans referansı (ör. 1 GB pcap'i X saniyede açar, tepe bellek Y)
 
 ## Fikirler (kalıcı öncelik değil)
