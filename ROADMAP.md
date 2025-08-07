@@ -91,6 +91,7 @@ Kabul ölçütü: FCS'li Ethernet ve eski Packet Block paketleri kaybolmaz; IPv6
 Hedef: bir protokolün adını göstermekten mesajı ve alanlarını doğru çözmeye geçmek.
 
 - [ ] TCP mesaj birleştirmeyi dissector'lara aç: iki yönlü akış, sıra dışı/yeniden iletilmiş segmentler, eksik bayt aralıkları, bağlantı kapanışı ve bellek sınırları; paket detayını yeniden kurarken aynı sonuç — **L**
+- [ ] TCP seçeneklerinde SACK bloklarının sınırlarını ve MPTCP alt tür/alanlarını çöz; çok yollu akışları birleştirmeyi ayrı genişleme olarak tut — **M**
 - [ ] DNS/TCP uzunluk öneki ve mesaj gövdesi segmentlere bölündüğünde birleştir; aynı TCP yükündeki birden fazla DNS mesajını ayrı çöz — **M**
 - [ ] HTTP/1.x mesaj sınırları: bölünmüş başlık/gövde, Content-Length, chunked aktarım ve aynı akıştaki ardışık mesajlar; gzip gövdeyi çöz, çözülmüş boyutu sınırla — **L**
 - [ ] TLS record ve handshake mesajlarını TCP segmentleri ve record'lar arasında birleştir; Client/ServerHello, extension ve açık Certificate alanlarını genişlet. *(Şifre çözme ayrı aşama)* — **L**
@@ -122,6 +123,33 @@ Kabul ölçütü: `stp.pcap`, `telecomitalia-pppoe.pcap`, `mpls-basic.cap` ve t�
 
 - [ ] Canlı yakalama (libpcap/Npcap): arayüz seçimi, BPF yakalama filtresi, başlat/durdur — **L**
 
+## v0.9 — Yaygın protokoller (küçük teslimler)
+
+### v0.9.1 — Özet dissector'larını alan düzeyine çıkar
+
+- [ ] SNMP: sınır denetimli ASN.1/BER, sürüm/community, PDU/request-id/error, OID/varbind; SNMPv3 USM başlığı ve şifreli içerik göstergesi. *(SNMPv3 şifre çözme kapsam dışı)* — **L**
+- [ ] BGP: mesaj sınırları, OPEN capabilities, UPDATE withdrawn routes/path attributes/NLRI, NOTIFICATION — **L**
+- [ ] Telnet IAC negotiation/subnegotiation ve SMTP komut/yanıt/çok satırlı yanıt/DATA durumları; STARTTLS geçişini v0.7.2 altyapısına bağla — **M**
+- [ ] FTP kontrol komutları ve veri bağlantısı eşleştirme; TFTP opcode/block/options; SSH banner ve açık key-exchange başlıkları. *(Şifreli SSH/SFTP içeriğini çözme ayrı iş)* — **L**
+
+Kabul ölçütü: SNMP/Telnet/SMTP/BGP yalnızca port etiketi ve ham veri göstermez; mesaj alanları filtrelenir ve detay ağacında görünür. Her protokol ayrı commit/test kümesiyle teslim edilir; TCP'ye dayananlar v0.7.2'nin mesaj birleştirmesini kullanır.
+
+### v0.9.2 — Kablosuz çerçeveleri aç
+
+- [ ] LINKTYPE_IEEE802_11 (105), Radiotap (127) ve PPI (192): değişken başlık uzunluğu, present bitmap/TLV ve hizalama; link katmanından 802.11'e yönlendirme — **L**
+- [ ] 802.11 management/control/data, adres alanları/DS bayrakları, QoS ve information element'ler; şifresiz data → LLC/SNAP → IP — **L**
+- [ ] EAPOL/802.1X mesajları ve WPA handshake başlıkları; korumalı yükü açıkça göster. *(802.11 şifre çözme yapılmaz)* — **M**
+
+Kabul ölçütü: `http_PPI.cap` içindeki 140 paketin tamamının `Unknown` kalması giderilir; her çerçeve kendi tipine göre çözülür, HTTP taşıyan şifresiz çerçevelerde iç katmanlara ulaşılır. Radiotap ve PPI için kırpık, bilinmeyen alanlı ve farklı hizalamalı örnekler doğrulanır.
+
+### v0.9.3 — Modern uygulama mesajları ve TLS anahtarları
+
+- [ ] HTTP/2 açık metin frame/stream yönetimi ve HPACK; güncel standart örneklerini tarihî draft örneklerinden ayır — **L**
+- [ ] TLS anahtar günlüğü (SSLKEYLOGFILE) ve pcapng Decryption Secrets Block (DSB); TLS 1.2/1.3 için desteklenen cipher'ları aşamalı ekle, çözülmüş HTTP/1.x/HTTP/2 yükünü dissector'a aktar — **L**
+- [ ] DTLS record/handshake, message sequence ve fragment birleştirme; ilk teslimde açık alanları çöz, şifre çözmeyi destek matrisiyle genişlet — **L**
+
+Kabul ölçütü: anahtar olmayan yakalamada şifreli veri açık metin gibi yorumlanmaz; doğru/yanlış/eksik anahtar örnekleri ayrılır. Kripto ve HPACK bağımlılıkları seçilip lisans/paketleme etkileri belgelenir; eski draft yakalamaları güncel uyumluluğun kanıtı sayılmaz.
+
 ## v1.0 — Yayın hazırlığı
 
 - [ ] Dokümantasyon sitesi/kullanım kılavuzu ve ekran görüntüleri (`docs/`), katkı rehberi (`CONTRIBUTING.md`)
@@ -129,15 +157,49 @@ Kabul ölçütü: `stp.pcap`, `telecomitalia-pppoe.pcap`, `mpls-basic.cap` ve t�
 - [ ] Protokol dissector eklemek için geliştirici kılavuzu (`docs/DISSECTORS.md`)
 - [ ] Paket özetini küçült (`PacketInfo` şimdi 328 bayt; uygulama katmanı metinleri ve nadiren dolu alanlar ayrı bir tabloya taşınabilir)
 - [ ] Performans referansı (ör. 1 GB pcap'i X saniyede açar, tepe bellek Y)
+- [ ] Destek matrisi: dosya formatı → link type → kapsülleme → protokol → çözülen alanlar/şifre çözme; README ve bilinen sorunlardaki "tam"/"desteklenir" ifadelerini bu matrisle eşleştir
+- [ ] Regresyon corpus'unda paket kaybı, yanlış sınıflandırma ve alan doğruluğunu Wireshark/tshark ile seçilmiş alanlar üzerinden karşılaştır; sürüm/preference/Decode As ayarlarını sabitle. Bilinen `Unknown`, şifreli ve kasıtlı bozuk örnekleri ayrı raporla
+- [ ] macOS/Linux arayüzünü ekran görüntüleriyle doğrula; Windows'ta gerçek derleme/çalıştırma ve dosya açma/dışa aktarma testi
+- [ ] Yeni parser'larla 500 bin paket yükleme/filtreleme/tepe bellek ölçümünü tekrarla; corpus'un tamamına ilişkin kapsama oranını küçük örnek kümesinden çıkarma
+
+## v1.1+ — Seçmeli protokol ve yakalama genişlemeleri
+
+Öncelik: önce yaygın ağ/kurumsal kullanım, sonra cihaz ve uzmanlık protokolleri. Her aile ayrı bir sürüm/teslim olarak ele alınır; hepsinin tamamlanması v1.0 için koşul değildir.
+
+- [ ] Ağ/taşıma: IGMP, OSPF, SCTP chunk'ları ve birleştirme, UDP-Lite; DCCP daha sonra — **L** (aile başına)
+- [ ] IPsec: AH alanları, ESP başlığı/şifreli yük, IKEv1/v2 mesaj ve payload'ları; anahtarlı çözme ayrı destek matrisi — **L**
+- [ ] Kurumsal dosya/kimlik: sınır denetimli RPC/XDR/ASN.1 altyapısı üzerine SMB2/3, NFS, DCE/RPC, LDAP ve Kerberos; protokol sürümleri ve şifreli yükleri aşamalı ele al — **L** (protokol başına)
+- [ ] Veritabanları: PostgreSQL, MySQL, TDS; bağlantı kurma, sorgu/yanıt ve TLS geçişleri — **L** (protokol başına)
+- [ ] USB: raw/usbmon/USBPcap link type'ları, transfer/control/setup ve descriptor alanları; Darwin/usbdump gibi yakalama biçimleri ayrı okuyucu işi — **L**
+- [ ] Bluetooth HCI/H4/pseudo-header → ACL/L2CAP/ATT; IEEE 802.15.4 → 6LoWPAN/ZigBee için ayrı aşamalar — **L** (aile başına)
+- [ ] SIP/SDP, RTP/RTCP/RTSP temel mesaj/başlıkları; medya çözümü ve VoIP analizörleri kapsam dışı — **L**
+- [ ] Endüstriyel/telekom/otomotiv: EtherCAT, S7COMM, DNP3, IEC 60870-5-104, GSM/UMTS/SIGTRAN, CAN/otomotiv protokolleri; ihtiyaç ve gerçek corpus'a göre protokol seç — **L** (protokol başına)
+- [ ] Eski/üretici dosya okuyucuları: NetMon, snoop, ERF, iptrace; önce açık "desteklenmeyen dosya formatı" teşhisi, sonra talebe göre okuyucu — **L** (format başına)
+
+## SampleCaptures incelemesinin başlangıç ölçümü
+
+Mevcut parser ile indirilebilen **10 gerçek dosya** çalıştırıldı; bu sonuçlar bütün koleksiyonun kapsama oranı değildir. Diğer ailelerin eksikleri kayıt defteri/kod incelemesinden çıkarıldı. Corpus manifesti hazırlanırken kaynak dosya/hash ve beklenen alanlar ayrıca sabitlenecek.
+
+| Örnek | Mevcut sonuç | Planlanan aşama |
+|---|---|---|
+| `dhcp.pcap`, `dhcp-nanosecond.pcap` | Her birinde 4 DHCP paketi tanındı; tüm alanların eksiksizliğini kanıtlamaz | v0.7.1 regresyon |
+| `NTP_sync.pcap` | 30 NTP + 2 DNS tanındı | v0.7.2 alan kapsamı |
+| `dns_port.pcap` | 2 DNS paketi UDP olarak kaldı | v0.7.2 tanıma/Decode As |
+| `PRIV_bootp-both_overload.pcap`, `PRIV_bootp-both_overload_empty-no_end.pcap` | DHCP tanındı; option 52 bilinmiyor, `sname`/`file` seçenekleri çözülmedi | v0.7.2 DHCP |
+| `ipv4frags.pcap` | 3 paket: 2 ICMP, 1 IPv4; tamamlanan datagram ICMP olarak çözüldü | v0.7.1 regresyon |
+| `http.cap` | 43 paket: 5 HTTP, 2 DNS, 36 TCP; TCP etiketi tek başına eksik ayrıştırma kanıtı değildir | v0.7.2 mesaj sınırları |
+| `http_PPI.cap` | 140 paketin tamamı `Unknown`, link type 192 | v0.9.2 PPI/802.11 |
+| `BT_USB_LinCooked_Eth_80211_RT.ntar.gz` | Çok bölümlü/çok link type'lı pcapng açıldı; 27.228 paketin 27.152'si `Unknown` | v0.9.2 ve v1.1+ USB/Bluetooth |
+
+Sentetik doğrulamalar: FCS bayrağı taşıyan Ethernet'in yanlış link type olması, eski pcapng Packet Block'un sessizce atlanması ve ilk olmayan IPv6 parçanın UDP gibi çözülmesi. Üçü de v0.7.1'in öncelikli regresyonlarıdır.
 
 ## Fikirler (kalıcı öncelik değil)
 
 - Lua/WASM ile kullanıcı dissector'ları
-- TLS anahtar günlüğü (SSLKEYLOGFILE) ile şifre çözme; pcapng DSB desteği
 - Paket diff / iki yakalamayı karşılaştırma
 - I/O grafiği ve akış/zaman dizisi görselleştirme
 - Uzak yakalama (SSH/`tcpdump` üzerinden)
 
 ## Kapsam dışı (şimdilik)
 
-Tam Wireshark eşdeğerliği, yüzlerce protokol, VoIP/RTP analizörleri ve 802.11 şifre çözme; proje önce küçük, hızlı ve güvenilir bir çekirdek olmayı hedefler.
+Tam Wireshark eşdeğerliği, bütün SampleCaptures koleksiyonunun eksiksiz çözülmesi, VoIP/RTP medya analizörleri ve 802.11 şifre çözme; proje önce küçük, hızlı ve güvenilir bir çekirdek olmayı hedefler. Temel 802.11 çerçeve ve RTP başlık ayrıştırması bu sınırdan ayrı, yukarıdaki aşamalarda planlanmıştır.
