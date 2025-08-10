@@ -15,6 +15,7 @@ namespace core {
         uint64_t packets = 0;               // packets of this interface in the file
         bool hasStats = false;              // an Interface Statistics Block was present
         uint64_t received = 0, dropped = 0; // from the statistics block (if given)
+        uint8_t fcsLength = 0;              // FCS bytes appended to each frame (0 = unknown/none)
     };
 
     struct NameRecord {

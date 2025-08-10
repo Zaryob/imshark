@@ -77,6 +77,7 @@ namespace {
         uint32_t snapLen = 0;
         uint64_t ticksPerSecond = kDefaultTicksPerSecond;
         std::string name, description;
+        uint8_t fcsLength = 0; // FCS bytes per frame from if_fcslen option
     };
 
     // true if the multi-byte integers of the file are big endian (Endian::swap says "differs from this machine")
@@ -107,7 +108,7 @@ namespace {
     // tree is rebuilt on demand (see core::buildPacketDetails).
     void addPacket(packet::PacketParser &parser, std::vector<packet::PacketInfo> &packets,
                    double time, uint32_t linkType, uint64_t fileOffset, uint32_t originalLength,
-                   const std::vector<char> &data, bool hasComment = false) {
+                   const std::vector<char> &data, bool hasComment = false, uint8_t fcsLength = 0) {
         packet::PacketInfo pack(static_cast<int>(packets.size()) + 1);
         pack.time = time;
         pack.link_type = linkType;
@@ -115,6 +116,7 @@ namespace {
         pack.captured_length = static_cast<uint32_t>(data.size());
         pack.frame_length = originalLength;
         pack.has_comment = hasComment;
+        pack.fcs_length = fcsLength;
         parser.parsePacket(pack, data, dissect::ParseMode::Summary);
         // this packet completed an IPv4 datagram: tell the earlier fragments where it was reassembled
         for (const auto &[fragment, completing]: parser.takeCompletedReassemblies()) {
@@ -146,7 +148,7 @@ namespace {
 
     std::string optionText(const uint8_t *v, size_t len) { return std::string(reinterpret_cast<const char *>(v), std::min<size_t>(len, 4096)); }
 
-    /// Parses the options of an Interface Description Block (if_name, if_description, if_tsresol).
+    /// Parses the options of an Interface Description Block (if_name, if_description, if_tsresol, if_fcslen).
     void parseIdbOptions(const Endian &e, const uint8_t *p, size_t size, Interface &iface) {
         forEachOption(e, p, size, [&](uint16_t code, const uint8_t *v, size_t len) {
             if (code == 2) iface.name = optionText(v, len);
@@ -160,6 +162,8 @@ namespace {
                     for (unsigned i = 0; i < exponent; ++i) t *= 10;
                     iface.ticksPerSecond = t;
                 }
+            } else if (code == 13 && len == 1) { // if_fcslen: number of FCS bytes per frame
+                iface.fcsLength = v[0];
             }
         });
     }
@@ -200,8 +204,11 @@ bool core::FileProcessor::processPcapFile(const std::string &filepath, std::vect
     }
     if (e.u32(gh) == kPcapMagicNano) fractionsPerSecond = 1000000000;
 
-    // The low 28 bits of the "network" field are the LINKTYPE (upper bits hold FCS flags).
-    const uint32_t linkType = e.u32(gh + 20) & 0x0fffffff;
+    // The low 16 bits of the "network" field are the LINKTYPE; bits 28..31 carry the FCS length
+    // when the FCS-present flag (bit 29) is set.
+    const uint32_t rawLinkType = e.u32(gh + 20);
+    const uint32_t linkType = rawLinkType & 0xFFFF;
+    const uint8_t fcsLen = (rawLinkType >> 28) & 0xF;
 
     info_ = CaptureInfo();
     info_.fileSize = fileSize;
@@ -212,6 +219,7 @@ bool core::FileProcessor::processPcapFile(const std::string &filepath, std::vect
         itf.linkType = linkType;
         itf.snapLen = e.u32(gh + 16);
         itf.ticksPerSecond = fractionsPerSecond;
+        itf.fcsLength = fcsLen;
         info_.interfaces.push_back(itf);
     }
 
@@ -246,7 +254,7 @@ bool core::FileProcessor::processPcapFile(const std::string &filepath, std::vect
 
         const uint64_t dataOffset = consumed + sizeof(ph);
         consumed = dataOffset + inclLen;
-        addPacket(parser, packets, timeBase.relative(tsSec, tsFrac, fractionsPerSecond), linkType, dataOffset, origLen, data);
+        addPacket(parser, packets, timeBase.relative(tsSec, tsFrac, fractionsPerSecond), linkType, dataOffset, origLen, data, false, fcsLen);
         info_.interfaces[0].packets++;
         if (reportProgress(control, consumed, packets.size() - firstPacket)) {
             message = "Cancelled";
@@ -377,6 +385,7 @@ bool core::FileProcessor::processPcapngFile(const std::string &filepath, std::ve
                 itf.ticksPerSecond = iface.ticksPerSecond;
                 itf.name = iface.name;
                 itf.description = iface.description;
+                itf.fcsLength = iface.fcsLength;
                 info_.interfaces.push_back(itf);
             } break;
             case kBlockEPB: {
@@ -391,6 +400,7 @@ bool core::FileProcessor::processPcapngFile(const std::string &filepath, std::ve
                                          : kDefaultTicksPerSecond;
                 lastTime = timeBase.relative(ticks / tps, ticks % tps, tps);
                 const uint32_t linkType = interfaceId < interfaces.size() ? interfaces[interfaceId].linkType : 1;
+                const uint8_t epbFcs = interfaceId < interfaces.size() ? interfaces[interfaceId].fcsLength : 0;
 
                 // Only captured_length bytes are packet data; the rest is padding and options.
                 const char *data = reinterpret_cast<const char *>(body + 20);
@@ -406,7 +416,7 @@ bool core::FileProcessor::processPcapngFile(const std::string &filepath, std::ve
                 }
                 if (sectionBase + interfaceId < info_.interfaces.size()) info_.interfaces[sectionBase + interfaceId].packets++;
                 addPacket(parser, packets, lastTime, linkType, blockStart + 8 + 20, e.u32(body + 16),
-                          std::vector<char>(data, data + capturedLength), hasComment);
+                          std::vector<char>(data, data + capturedLength), hasComment, epbFcs);
             } break;
             case kBlockSPB: {
                 if (bodySize < 4) return fail("Simple Packet Block too short");
@@ -418,8 +428,9 @@ bool core::FileProcessor::processPcapngFile(const std::string &filepath, std::ve
                 if (sectionBase < info_.interfaces.size()) info_.interfaces[sectionBase].packets++;
                 // SPBs carry no timestamp; reuse the previous packet's time.
                 const char *data = reinterpret_cast<const char *>(body + 4);
+                const uint8_t spbFcs = interfaces.empty() ? 0 : interfaces[0].fcsLength;
                 addPacket(parser, packets, lastTime, interfaces.empty() ? 1 : interfaces[0].linkType, blockStart + 8 + 4,
-                          originalLength, std::vector<char>(data, data + captured));
+                          originalLength, std::vector<char>(data, data + captured), false, spbFcs);
             } break;
             case kBlockNRB: { // name resolution records: type, length, value (padded to 4)
                 size_t off = 0;

@@ -354,3 +354,59 @@ TEST(Readers, ProgressAndCancellation) {
         std::remove(path.c_str());
     }
 }
+
+TEST(PcapReader, LinkTypeMaskingWithFcsFlags) {
+    // A pcap file whose "network" field has FCS flags in the upper bits: 0x40000001 means
+    // link type 1 (Ethernet) with 4 bytes of FCS (bits 28..31 = 4). Before the fix the mask
+    // 0x0fffffff would produce 1, but any value like 0x10000001 would produce a wrong link type.
+    const uint32_t networkField = 0x40000001; // FCS length = 4, link type = Ethernet
+    auto bytes = pcapFile(false, 0xa1b2c3d4, {{1, 0}}, networkField);
+    auto r = load("fcs.pcap", bytes, false);
+    ASSERT_TRUE(r.ok) << r.message;
+    ASSERT_EQ(r.packets.size(), 1u);
+    EXPECT_EQ(r.packets[0].link_type, 1u) << "link type must be the lower 16 bits only";
+    EXPECT_EQ(r.packets[0].fcs_length, 4u) << "FCS length from bits 28..31";
+}
+
+TEST(PcapReader, FcsStrippedFromDissection) {
+    // Build an ARP frame (42 bytes) followed by 4 FCS bytes. The pcap header declares FCS=4 so the
+    // parser should strip the trailing 4 bytes and still correctly decode ARP.
+    auto frame = hex(support::kArpRequest); // 42-byte ARP request
+    frame.push_back('\xDE'); frame.push_back('\xAD'); frame.push_back('\xBE'); frame.push_back('\xEF'); // fake FCS
+
+    std::vector<char> f;
+    const uint32_t networkField = 0x40000001; // FCS length = 4, Ethernet
+    const bool be = false;
+    put<uint32_t>(f, 0xa1b2c3d4, be);
+    put<uint16_t>(f, 2, be);
+    put<uint16_t>(f, 4, be);
+    put<int32_t>(f, 0, be);
+    put<uint32_t>(f, 0, be);
+    put<uint32_t>(f, 65535, be);
+    put<uint32_t>(f, networkField, be);
+    put<uint32_t>(f, 1, be); // ts_sec
+    put<uint32_t>(f, 0, be); // ts_usec
+    put<uint32_t>(f, static_cast<uint32_t>(frame.size()), be);
+    put<uint32_t>(f, static_cast<uint32_t>(frame.size()), be);
+    f.insert(f.end(), frame.begin(), frame.end());
+
+    auto r = load("fcs_arp.pcap", f, false);
+    ASSERT_TRUE(r.ok) << r.message;
+    ASSERT_EQ(r.packets.size(), 1u);
+    EXPECT_EQ(r.packets[0].protocol, "ARP") << "ARP must be recognised despite trailing FCS";
+    EXPECT_EQ(r.packets[0].fcs_length, 4u);
+
+    // Verify the field tree shows the FCS as a separate layer
+    const auto path = support::writeTemp("fcs_detail.pcap", f);
+    packet::PacketInfo details;
+    ASSERT_TRUE(core::buildPacketDetails(path, r.packets[0], details));
+    bool foundFcs = false;
+    for (const auto &field : details.fields) {
+        if (field.text.find("Frame Check Sequence") != std::string::npos) {
+            foundFcs = true;
+            EXPECT_EQ(field.length, 4u);
+        }
+    }
+    EXPECT_TRUE(foundFcs) << "FCS should appear in the field tree";
+    std::remove(path.c_str());
+}

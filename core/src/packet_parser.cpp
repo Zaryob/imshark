@@ -78,9 +78,15 @@ void packet::PacketParser::parsePacket(packet::PacketInfo &pack, const std::vect
     pack.source.clear();
     pack.destination.clear();
     const char *base = packetData.data();
-    const size_t len = packetData.size();
+    size_t len = packetData.size();
     pack.length = static_cast<uint32_t>(len);
-    dissect::Context ctx{pack, base, len, connection, *registry_, mode};
+
+    // Strip trailing FCS bytes so dissectors do not parse them as protocol data. The FCS field
+    // is still shown in the field tree below when wantFields() is true.
+    const size_t fcsBytes = std::min<size_t>(pack.fcs_length, len);
+    const size_t effectiveLen = len - fcsBytes;
+
+    dissect::Context ctx{pack, base, effectiveLen, connection, *registry_, mode};
     if (mode != dissect::ParseMode::Replay) {
         ctx.reassembler = &reassembler_;
         ctx.completed = &completed_;
@@ -173,9 +179,14 @@ void packet::PacketParser::parsePacket(packet::PacketInfo &pack, const std::vect
     pack.l2_size = static_cast<uint16_t>(l3Offset);
     if (ctx.wantFields() && !haveEthernet && l3Offset > 0) ctx.addLayer(linkTypeName(pack.link_type) + " link header", 0, l3Offset);
 
+    // Show the trailing FCS in the field tree if present (it is excluded from dissection).
+    if (ctx.wantFields() && fcsBytes > 0) {
+        ctx.addLayer("Frame Check Sequence: " + std::to_string(fcsBytes) + " bytes", effectiveLen, fcsBytes);
+    }
+
     pack.ether_type = etherType;
     if (const dissect::Dissector *network = registry_->findEtherType(etherType)) {
-        (*network)(ctx, base + l3Offset, len - l3Offset);
+        (*network)(ctx, base + l3Offset, effectiveLen - l3Offset);
         return;
     }
 
@@ -188,5 +199,5 @@ void packet::PacketParser::parsePacket(packet::PacketInfo &pack, const std::vect
     std::ostringstream oss;
     oss << "EtherType 0x" << std::hex << std::setw(4) << std::setfill('0') << etherType;
     pack.info = oss.str();
-    if (ctx.wantFields() && len > l3Offset) ctx.addLayer("Data (" + std::to_string(len - l3Offset) + " bytes)", l3Offset, len - l3Offset);
+    if (ctx.wantFields() && effectiveLen > l3Offset) ctx.addLayer("Data (" + std::to_string(effectiveLen - l3Offset) + " bytes)", l3Offset, effectiveLen - l3Offset);
 }
