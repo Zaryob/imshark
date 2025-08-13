@@ -92,6 +92,7 @@ namespace {
         pack.tcp_analysis = nested.tcp_analysis;
         pack.tcp_dup_ack = nested.tcp_dup_ack;
         pack.length = nested.length;
+        pack.tcp_len = nested.tcp_len;
         pack.payload_offset = pack.payload_length = 0; // the payload is not contiguous in this frame
 
         if (ctx.wantFields()) {

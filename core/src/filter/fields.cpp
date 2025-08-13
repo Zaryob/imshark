@@ -90,7 +90,7 @@ namespace filter {
                 {"tcp.flags.urg", FieldType::Boolean, tcpFlag<0x20>, "TCP URG flag"},
                 {"tcp.flags.ece", FieldType::Boolean, tcpFlag<0x40>, "TCP ECE flag"},
                 {"tcp.flags.cwr", FieldType::Boolean, tcpFlag<0x80>, "TCP CWR flag"},
-                {"tcp.len", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (hasTcp(p)) o.addU(p.length); }, "TCP payload length"},
+                {"tcp.len", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (hasTcp(p)) o.addU(p.tcp_len); }, "TCP payload length"},
                 {"tcp.seq", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (hasTcp(p) && p.tcp_relative_seq >= 0) o.addU(static_cast<uint64_t>(p.tcp_relative_seq)); }, "TCP relative sequence number"},
                 {"tcp.ack", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (hasTcp(p) && p.tcp_relative_ack >= 0) o.addU(static_cast<uint64_t>(p.tcp_relative_ack)); }, "TCP relative acknowledgment number"},
                 {"tcp.analysis.flags", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (hasTcp(p)) o.addU(p.tcp_analysis != 0); }, "Any TCP analysis note (retransmission, dup ACK, ...)"},

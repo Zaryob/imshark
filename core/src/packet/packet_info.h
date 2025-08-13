@@ -70,6 +70,7 @@ namespace packet {
         uint16_t dst_port = 0;
         bool has_comment = false;    // the capture file attaches a comment to this packet (pcapng)
         uint8_t fcs_length = 0;      // trailing FCS bytes to exclude from dissection (from the pcap/pcapng header)
+        uint32_t tcp_len = 0;        // TCP payload length on the wire (from the IP length, not the captured bytes)
         uint16_t ip_id = 0;          // IPv4 identification
         uint8_t ip_frag = 0;         // 0 = not fragmented, 1 = fragment that is not the last, 2 = last fragment (datagram reassembled here)
         uint32_t reassembled_in = 0; // for a fragment (ip_frag == 1): number of the frame that completed the datagram
