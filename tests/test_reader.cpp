@@ -450,3 +450,38 @@ TEST(PcapngReader, LegacyPacketBlockIsLoaded) {
     EXPECT_EQ(r.packets[0].link_type, 1u);
     EXPECT_EQ(r.packets[0].captured_length, kFrame.size());
 }
+
+// ---- memory footprint ---------------------------------------------------------------------------------------
+
+// The summary of every packet stays in memory for the whole session: a growth here costs memory in proportion
+// to the capture size, so it has to be a deliberate decision (reorder fields by size, avoid new std::string).
+static_assert(sizeof(packet::PacketInfo) <= 320, "PacketInfo grew: check the member order and whether the new field is needed per packet");
+
+TEST(Readers, ReserveRoomForAllPacketsUpFrontWithoutOverdoingIt) {
+    std::vector<std::pair<uint32_t, uint32_t>> times;
+    for (uint32_t i = 0; i < 1000; ++i) times.push_back({i, 0});
+    for (bool ng: {false, true}) {
+        const auto bytes = ng ? pcapngFile(false, -1, std::vector<uint64_t>(1000, 1), false) : pcapFile(false, 0xa1b2c3d4, times);
+        const auto path = support::writeTemp("reserve.bin", bytes);
+        core::FileProcessor fp;
+        std::vector<packet::PacketInfo> packets;
+        std::string message;
+        ASSERT_TRUE(ng ? fp.processPcapngFile(path, packets, message) : fp.processPcapFile(path, packets, message)) << message;
+        EXPECT_EQ(packets.size(), 1000u);
+        EXPECT_GE(packets.capacity(), packets.size());
+        // an upper bound from the file size, not an absurd amount for a small file
+        EXPECT_LE(packets.capacity(), bytes.size() / 40 + 64) << (ng ? "pcapng" : "pcap");
+        std::remove(path.c_str());
+    }
+}
+
+TEST(Readers, ReservingDoesNotChangeAppendingToAnExistingList) {
+    const auto bytes = pcapFile(false, 0xa1b2c3d4, {{1, 0}, {2, 0}});
+    const auto path = support::writeTemp("append.pcap", bytes);
+    core::FileProcessor fp;
+    std::vector<packet::PacketInfo> packets(3);   // already holds some packets
+    std::string message;
+    ASSERT_TRUE(fp.processPcapFile(path, packets, message)) << message;
+    EXPECT_EQ(packets.size(), 5u);
+    std::remove(path.c_str());
+}

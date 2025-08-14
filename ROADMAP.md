@@ -155,7 +155,7 @@ Kabul ölçütü: anahtar olmayan yakalamada şifreli veri açık metin gibi yor
 - [ ] Dokümantasyon sitesi/kullanım kılavuzu ve ekran görüntüleri (`docs/`), katkı rehberi (`CONTRIBUTING.md`)
 - [ ] Paketleme: macOS `.app`/dmg, Linux AppImage, Windows zip; sürüm etiketleme ve otomatik release
 - [ ] Protokol dissector eklemek için geliştirici kılavuzu (`docs/DISSECTORS.md`)
-- [ ] Paket özetini küçült (`PacketInfo` şimdi 328 bayt; uygulama katmanı metinleri ve nadiren dolu alanlar ayrı bir tabloya taşınabilir)
+- [x] Paket özeti: üyeler boyuta göre sıralandı (328 → 312 bayt), okuyucular dosya boyutundan üst sınır tahminiyle `reserve` yapıyor (tepe RSS 370 → 190 MB, 500 bin paket). *(Daha fazlası için `raw_data`/`fields`/metinleri ayrı bir tabloya taşımak gerekir)*
 - [ ] Performans referansı (ör. 1 GB pcap'i X saniyede açar, tepe bellek Y)
 - [ ] Destek matrisi: dosya formatı → link type → kapsülleme → protokol → çözülen alanlar/şifre çözme; README ve bilinen sorunlardaki "tam"/"desteklenir" ifadelerini bu matrisle eşleştir
 - [ ] Regresyon corpus'unda paket kaybı, yanlış sınıflandırma ve alan doğruluğunu Wireshark/tshark ile seçilmiş alanlar üzerinden karşılaştır; sürüm/preference/Decode As ayarlarını sabitle. Bilinen `Unknown`, şifreli ve kasıtlı bozuk örnekleri ayrı raporla
