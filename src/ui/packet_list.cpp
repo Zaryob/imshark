@@ -98,6 +98,11 @@ void ui::drawPacketList(AppState &state, float height) {
         ImGui::TableSetupColumn("Info", ImGuiTableColumnFlags_WidthStretch, 0.0f, static_cast<ImGuiID>(SortColumn::Info));
         ImGui::TableHeadersRow();
 
+        // The displayed order must describe exactly the packets there are; if the list changed behind our back,
+        // rebuild it instead of indexing out of range.
+        const size_t expected = state.filter.active ? state.filter.visible.size() : state.packets.size();
+        if (state.order.size() != expected) state.orderDirty = true;
+
         ImGuiTableSortSpecs *specs = ImGui::TableGetSortSpecs();
         if ((specs && specs->SpecsDirty) || state.orderDirty) {
             rebuildOrder(state, specs);

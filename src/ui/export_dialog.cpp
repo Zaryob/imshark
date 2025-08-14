@@ -12,7 +12,7 @@
 #include <core.h>
 
 namespace ui {
-    /// One background export. The thread reads `state.packets` (see cancelBackgroundJobs).
+    /// One background export. The thread works on a snapshot of the packet list.
     struct ExportJob {
         std::thread thread;
         core::ScanControl control;
@@ -21,6 +21,7 @@ namespace ui {
         std::string error;
         std::string path;
         size_t count = 0;
+        std::shared_ptr<const std::vector<packet::PacketInfo>> packets;   // snapshot of the capture
 
         ~ExportJob() {
             control.cancelRequested = true;
@@ -69,10 +70,10 @@ bool ui::startExport(AppState &state, ExportState::Range range, Format format, c
     job->count = indices.size();
     job->control.total = indices.size();
     const std::string capture = state.currentFile;
-    const auto *packets = &state.packets;
+    job->packets = state.packets.share();
     const double epoch = state.captureStartEpoch;
-    job->thread = std::thread([raw = job.get(), capture, packets, epoch, format, indices = std::move(indices)] {
-        raw->ok = exporter::exportPackets(capture, *packets, indices, epoch, format, raw->path, raw->error, &raw->control);
+    job->thread = std::thread([raw = job.get(), capture, epoch, format, indices = std::move(indices)] {
+        raw->ok = exporter::exportPackets(capture, *raw->packets, indices, epoch, format, raw->path, raw->error, &raw->control);
         raw->finished = true;
     });
     e.job = std::move(job);

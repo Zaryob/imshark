@@ -62,7 +62,10 @@ namespace ui {
     /// packet is not TCP/UDP. The result appears in the Follow Stream window when the background job ends.
     bool startFollow(AppState &state, int packetIndex);
     void drawFollowWindow(AppState &state);
-    /// Stops background readers of the capture file (search, follow); required before packets change.
+    /// Stops background readers of the capture file (search, follow, export). Jobs hold their own snapshot
+    /// of the packets, so this is no longer needed for memory safety; it avoids useless work for a capture
+    /// that is going away and releases the file (a temporary copy must be deleted, which Windows refuses
+    /// while it is open).
     void cancelBackgroundJobs(AppState &state);
 
     // capture_info_window.cpp

@@ -91,9 +91,41 @@ namespace ui {
         bool showResult = false;
     };
 
+    /// The packets of the open capture, shared with background jobs. A job takes a snapshot with share();
+    /// replacing or clearing the list only swaps the pointer, so a job that is still running keeps reading
+    /// the old, unchanged data and can never see it freed or modified. (The list is never modified in place.)
+    ///
+    /// Threading contract: the list object itself (assign, clear, share) belongs to the UI thread. A worker
+    /// receives the snapshot from the UI thread when it is started and only ever touches that snapshot.
+    class PacketList {
+    public:
+        using Vector = std::vector<packet::PacketInfo>;
+
+        PacketList() : data_(std::make_shared<const Vector>()) {}
+
+        size_t size() const { return data_->size(); }
+        bool empty() const { return data_->empty(); }
+        const packet::PacketInfo &operator[](size_t i) const { return (*data_)[i]; }
+        const packet::PacketInfo &at(size_t i) const { return data_->at(i); }
+        const packet::PacketInfo &front() const { return data_->front(); }
+        const packet::PacketInfo &back() const { return data_->back(); }
+        Vector::const_iterator begin() const { return data_->begin(); }
+        Vector::const_iterator end() const { return data_->end(); }
+        operator const Vector &() const { return *data_; }
+
+        void clear() { data_ = std::make_shared<const Vector>(); }
+        void assign(Vector &&packets) { data_ = std::make_shared<const Vector>(std::move(packets)); }
+
+        /// Snapshot for a background job: stays valid and unchanged for as long as the job holds it.
+        std::shared_ptr<const Vector> share() const { return data_; }
+
+    private:
+        std::shared_ptr<const Vector> data_;
+    };
+
     /// Everything the UI needs to remember between frames.
     struct AppState {
-        std::vector<packet::PacketInfo> packets;
+        PacketList packets;
 
         AppState() = default;
         AppState(const AppState &) = delete;

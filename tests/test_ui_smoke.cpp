@@ -720,3 +720,75 @@ TEST_F(UiSmoke, ADamagedGzipFileFailsCleanlyAndKeepsTheOpenCapture) {
     frames(state);
     std::remove(broken.c_str());
 }
+
+// ---- the packet list is shared safely with background jobs -------------------------------------------------
+
+TEST(PacketListSharing, ASnapshotSurvivesReplacingAndClearing) {
+    ui::PacketList list;
+    EXPECT_TRUE(list.empty());
+    std::vector<packet::PacketInfo> a(3);
+    a[0].info = "first";
+    list.assign(std::move(a));
+    auto snapshot = list.share();
+    ASSERT_EQ(snapshot->size(), 3u);
+
+    list.clear();
+    EXPECT_TRUE(list.empty());
+    EXPECT_EQ(snapshot->size(), 3u) << "the job's view is unchanged";
+    EXPECT_EQ((*snapshot)[0].info, "first");
+
+    std::vector<packet::PacketInfo> b(5);
+    list.assign(std::move(b));
+    EXPECT_EQ(list.size(), 5u);
+    EXPECT_EQ(snapshot->size(), 3u);
+    const ui::PacketList::Vector &asVector = list;
+    EXPECT_EQ(asVector.size(), 5u);
+    EXPECT_EQ(&list.front(), &asVector.front());
+}
+
+TEST(PacketListSharing, WorkersNeverSeeTornOrFreedData) {
+    ui::PacketList list;
+    std::vector<std::thread> workers;
+    std::atomic<uint64_t> checked{0};
+    std::atomic<bool> corrupt{false};
+
+    // the UI thread starts workers with a snapshot and keeps replacing / clearing the list meanwhile
+    for (int round = 0; round < 400; ++round) {
+        std::vector<packet::PacketInfo> v(static_cast<size_t>(round % 50));
+        for (size_t i = 0; i < v.size(); ++i) { v[i].number = static_cast<int>(i) + 1; v[i].info = std::string(v.size(), 'x'); }
+        if (round % 7 == 0) list.clear(); else list.assign(std::move(v));
+
+        workers.emplace_back([&, snap = list.share()] {
+            for (int rep = 0; rep < 20; ++rep) {
+                uint64_t sum = 0;
+                for (const auto &p: *snap) sum += static_cast<uint64_t>(p.number) + p.info.size();
+                const uint64_t n = snap->size();       // numbers 1..n, info "x" * n -> sum is determined by n
+                if (sum != n * (n + 1) / 2 + n * n) corrupt = true;
+                std::this_thread::yield();
+            }
+            ++checked;
+        });
+        if (round % 3 == 0) list.clear();               // drop the owner's reference while workers still run
+    }
+    for (auto &t: workers) t.join();
+    EXPECT_FALSE(corrupt.load());
+    EXPECT_EQ(checked.load(), 400u);
+}
+
+TEST_F(UiSmoke, ARunningJobSurvivesTheCaptureBeingDropped) {
+    ui::AppState state;
+    load(state);
+    frames(state);
+    state.find.mode = ui::FindMode::BytesText;
+    state.find.text = "never-found-anywhere";
+    ui::findAndSelect(state, true);                  // the search holds a snapshot of the 16 packets
+    ASSERT_TRUE(static_cast<bool>(state.find.job));
+    state.packets.clear();                           // nothing cancels the job: this must be safe by itself
+    EXPECT_TRUE(state.packets.empty());
+    for (int i = 0; i < 3000 && state.find.job; ++i) {
+        frame(state);                                // the result is published when the job ends
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    EXPECT_FALSE(static_cast<bool>(state.find.job)) << "the job ran to the end on its private snapshot";
+    EXPECT_EQ(state.find.message, "No match");
+}
