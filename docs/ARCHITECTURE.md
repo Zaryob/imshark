@@ -99,7 +99,7 @@ registry.registerUdpPort(53, dissectDns);              // application layer
 
 ## 5. Arayüz (`src/ui/`)
 
-- `AppState` (`app_state.h`): paket özetleri, görüntü sırası, yükleme işi/durumu, seçili paket + onun ayrıntısı (`detail`), seçili alan/bayt aralığı, ayarlar; global değişken yok.
+- `AppState` (`app_state.h`): paket özetleri (`PacketList`: değişmez liste, arka plan işleri başlarken bir anlık görüntü (`share()`) alır; liste yalnızca UI iş parçacığında değiştirilir, işçiler yalnızca kendi görüntülerine dokunur), görüntü sırası, yükleme işi/durumu, seçili paket + onun ayrıntısı (`detail`), seçili alan/bayt aralığı, ayarlar; global değişken yok.
 - `loader.cpp`: `LoadJob` (arka plan iş parçacığı), ilerleme popup'ı, `pollLoad` ile sonucun yayımlanması; başarısız/iptal edilen yükleme açık yakalamayı bozmaz.
 - `settings.cpp`: tema, liste yüksekliği, son dosyalar (platforma göre yapılandırma klasöründe `settings.ini`).
 - `clipboard.cpp`: kopyalama biçimlendirme yardımcıları (saf fonksiyonlar).
