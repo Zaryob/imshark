@@ -79,8 +79,8 @@ Hedef: geçerli paketleri sessizce atlamamak veya yanlış protokol başlığı 
 - [x] pcap `LinkType` alanını alt 16 bitten oku; FCS varlık/uzunluk bilgisini ayrı tut ve çerçeve sonundaki FCS'yi protokol yükünden ayır. *(Yapıldı; `LinkTypeMaskingWithFcsFlags` ve `FcsStrippedFromDissection` testleri)* — **S**
 - [x] pcapng eski Packet Block (`0x00000002`) desteği; SHB/IDB/EPB/SPB ile birlikte paket sayısı ve bayt ofsetlerini doğrula. *(Yapıldı; `LegacyPacketBlockIsLoaded` testi)* — **S**
 - [x] pcapng `if_tsoffset`, arayüz/FCS seçenekleri ve EPB arayüz kimliği doğrulaması; tanımsız arayüzü Ethernet varsayma. *(Yapıldı: `if_tsoffset` (işaretli, arayüz başına, iki bayt sırası), tanımsız arayüz `kUndefinedLinkType` ile korunur ve dosya mesajında bildirilir, arayüzler bölüm kapsamlıdır)* — **M**
-- [ ] IPv6 Fragment Header: offset/M/identification alanlarını çöz; ilk olmayan parçayı L4 başlığı gibi yorumlama; henüz birleştirilemeyen parçayı açıkça işaretle. *(Sentetik sonraki parça şu anda UDP gibi çözülebiliyor)* — **S**
-- [ ] IPv6 parçalanma birleştirme: eksik, yinelenen, sıra dışı ve çakışan parçalar; sınırlı bellek/zaman aşımı; alan ağacında kaynak paketler — **M**
+- [x] IPv6 Fragment Header: offset/M/identification alanlarını çöz; ilk olmayan parçayı L4 başlığı gibi yorumlama; henüz birleştirilemeyen parçayı açıkça işaretle. *(Yapıldı: ilk olmayan parça asla L4 sayılmaz, atomik parça bütün paket gibi çözülür)* — **S**
+- [x] IPv6 parçalanma birleştirme: eksik, yinelenen, sıra dışı ve çakışan parçalar; sınırlı bellek/zaman aşımı; alan ağacında kaynak paketler. *(Yapıldı: RFC 5722 çakışma kuralı, 60 sn zaman aşımı, 1024 datagram / 64 MB sınırı, uzantı başlıkları birleşmiş yükte de çözülür)* — **M**
 - [ ] IPv4/IPv6 birleştirilmiş datagram yükünü Follow Stream'e aktar; ham çerçeve ofseti ile birleştirilmiş veri ofsetini ayır — **M**
 - [ ] Küçük regresyon corpus'u ve manifesti: kaynak URL, dosya SHA-256, format/link type, beklenen paket sayısı, protokol ve temel alanlar. Sentetik sınır durumlarını ve seçilmiş gerçek yakalamaları ASan/UBSan altında çalıştır; indirilebilir büyük koleksiyonu CI'ın her çalışmasında çekme — **M**
 

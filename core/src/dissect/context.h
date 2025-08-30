@@ -35,6 +35,7 @@ namespace dissect {
         std::vector<std::pair<uint32_t, uint32_t>> *completed = nullptr;
         const std::vector<char> *reassembledPayload = nullptr;
         const std::vector<uint32_t> *fragmentNumbers = nullptr;
+        uint8_t reassembledProtocol = 0;   // upper layer protocol of `reassembledPayload`
 
         /// Dissectors skip building the (comparatively expensive) field tree when this is false.
         bool wantFields() const { return mode != ParseMode::Summary; }

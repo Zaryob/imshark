@@ -33,9 +33,10 @@ namespace packet {
 
         /// For Replay mode of the last fragment of a datagram: the reassembled payload and the numbers of
         /// the packets it came from (the pointers must stay valid during parsePacket).
-        void setReassembly(const std::vector<char> *payload, const std::vector<uint32_t> *fragmentNumbers) {
+        void setReassembly(const std::vector<char> *payload, const std::vector<uint32_t> *fragmentNumbers, uint8_t protocol) {
             reassembledPayload_ = payload;
             fragmentNumbers_ = fragmentNumbers;
+            reassembledProtocol_ = protocol;
         }
 
     private:
@@ -44,5 +45,6 @@ namespace packet {
         std::vector<std::pair<uint32_t, uint32_t>> completed_;
         const std::vector<char> *reassembledPayload_ = nullptr;
         const std::vector<uint32_t> *fragmentNumbers_ = nullptr;
+        uint8_t reassembledProtocol_ = 0;
     };
 } // namespace packet
