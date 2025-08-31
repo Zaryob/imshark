@@ -65,7 +65,8 @@ namespace packet {
         uint32_t frame_length = 0;   // length on the wire (>= captured_length when the capture was truncated)
         uint32_t tcp_len = 0;        // TCP payload length on the wire (from the IP length, not the captured bytes)
         uint32_t reassembled_in = 0; // for a fragment (ip_frag == 1): number of the frame that completed the datagram
-        uint32_t payload_offset = 0; // TCP/UDP payload inside the captured frame (0/0 if there is none)
+        uint32_t payload_offset = 0; // TCP/UDP payload position (0/0 if there is none). Relative to the captured frame -
+                                     // except when ip_frag == 2: then relative to the reassembled IP payload (see core::reassembleIpPayload)
         uint32_t payload_length = 0;
         // Number of link-layer bytes in front of the network header (0 for raw IP).
         uint16_t l2_size = 0;

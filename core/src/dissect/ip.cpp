@@ -114,7 +114,8 @@ namespace {
         pack.tcp_dup_ack = nested.tcp_dup_ack;
         pack.length = nested.length;
         pack.tcp_len = nested.tcp_len;
-        pack.payload_offset = pack.payload_length = 0; // the payload is not contiguous in this frame
+        pack.payload_offset = nested.payload_offset; // relative to the reassembled data, not to this frame (ip_frag == 2)
+        pack.payload_length = nested.payload_length;
 
         if (ctx.wantFields()) {
             std::string from;

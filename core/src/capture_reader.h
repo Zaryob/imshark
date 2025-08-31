@@ -8,6 +8,7 @@
 #include <vector>
 
 #include <packet/packet_info.h>
+#include <network/ip_reassembly.h>
 
 namespace core {
     /// Random access to the frames of an already loaded capture. Keeps the file open, so reading many
@@ -40,4 +41,12 @@ namespace core {
                      const std::vector<uint32_t> &order,
                      const std::function<bool(const packet::PacketInfo &, const std::vector<char> &)> &visit,
                      ScanControl *control = nullptr);
+
+    /// Rebuilds the whole IP payload of a reassembled datagram. `completing` is the packet that finished it
+    /// (ip_frag == 2); the earlier fragments are the packets annotated with `reassembled_in == completing.number`.
+    /// Their frames are read through `reader`. Optionally reports the numbers of all fragments and the upper layer
+    /// protocol announced by the first one. Returns false if a frame cannot be read or the datagram is not complete.
+    bool reassembleIpPayload(CaptureReader &reader, const std::vector<packet::PacketInfo> &packets,
+                             const packet::PacketInfo &completing, std::vector<char> &payload,
+                             std::vector<uint32_t> *fragmentNumbers = nullptr, uint8_t *protocol = nullptr);
 } // namespace core
