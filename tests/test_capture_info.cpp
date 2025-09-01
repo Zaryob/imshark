@@ -390,10 +390,26 @@ TEST(PcapngInterfaces, InterfacesAreScopedToTheirSection) {
     EXPECT_EQ(cap.packets[1].link_type, packet::kUndefinedLinkType);
 }
 
+TEST(PcapngInterfaces, FcsLengthOptionIsInBitsButSmallValuesAreReadAsBytes) {
+    std::vector<char> f;
+    append(f, shb(false, false));
+    append(f, idbWithOffset(false, 1, -1, 0, 16));          // 16 bits = 2 bytes
+    append(f, idbWithOffset(false, 1, -1, 0, 4));           // cannot be 4 bits: lenient reading as 4 bytes
+    append(f, idbWithOffset(false, 1, -1, 0, 0));           // explicit "no FCS"
+    append(f, epb(false, 0, 1000000));
+    append(f, epb(false, 1, 2000000));
+    append(f, epb(false, 2, 3000000));
+    Loaded cap(f);
+    ASSERT_TRUE(cap.ok);
+    EXPECT_EQ(cap.packets[0].fcs_length, 2);
+    EXPECT_EQ(cap.packets[1].fcs_length, 4);
+    EXPECT_EQ(cap.packets[2].fcs_length, 0);
+}
+
 TEST(PcapngInterfaces, FcsLengthOptionIsUsedPerInterface) {
     std::vector<char> f;
     append(f, shb(false, false));
-    append(f, idbWithOffset(false, 1, -1, 0, 4));          // 4 FCS bytes per frame
+    append(f, idbWithOffset(false, 1, -1, 0, 32));         // if_fcslen is in bits: 32 = 4 bytes
     append(f, idbWithOffset(false, 1, -1, 0));             // none
     append(f, epb(false, 0, 1000000));
     append(f, epb(false, 1, 2000000));
