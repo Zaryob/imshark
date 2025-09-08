@@ -1,0 +1,538 @@
+{
+  "description": "Regression corpus for ImShark. 'synthetic' files live in this directory; 'real' ones are optional and found through the IMSHARK_CORPUS_DIR environment variable (never downloaded by the tests).",
+  "entries": [
+    {
+      "file": "arp-little-endian.pcap",
+      "kind": "synthetic",
+      "source": "tools/make_corpus.py",
+      "sha256": "0b0f9af63e71285fd394728358d075ef226941ca5934b73c7d159fdcca3ea6a7",
+      "size": 140,
+      "format": "pcap",
+      "link_types": [
+        1
+      ],
+      "packets": 2,
+      "protocols": {
+        "ARP": 2
+      },
+      "malformed": 0,
+      "facts": [],
+      "expectation": "by construction",
+      "note": "the smallest valid capture"
+    },
+    {
+      "file": "arp-big-endian.pcap",
+      "kind": "synthetic",
+      "source": "tools/make_corpus.py",
+      "sha256": "b94c3256edd12c2f1fb08b3edeeb222cc6f1d24f962a57822290c2262d81d78a",
+      "size": 82,
+      "format": "pcap",
+      "link_types": [
+        1
+      ],
+      "packets": 1,
+      "protocols": {
+        "ARP": 1
+      },
+      "malformed": 0,
+      "facts": [],
+      "expectation": "by construction",
+      "note": "byte-swapped pcap"
+    },
+    {
+      "file": "arp-nanosecond.pcap",
+      "kind": "synthetic",
+      "source": "tools/make_corpus.py",
+      "sha256": "8e7655ef640032b5f34d3bad4d68b98c7a8e5655e6cc9545eb425856c61b8854",
+      "size": 140,
+      "format": "pcap",
+      "link_types": [
+        1
+      ],
+      "packets": 2,
+      "protocols": {
+        "ARP": 2
+      },
+      "malformed": 0,
+      "facts": [
+        {
+          "packet": 2,
+          "time_relative": 1.5
+        }
+      ],
+      "expectation": "by construction",
+      "note": "nanosecond precision"
+    },
+    {
+      "file": "ethernet-fcs.pcap",
+      "kind": "synthetic",
+      "source": "tools/make_corpus.py",
+      "sha256": "ab54648c9a4c1400b3a91af07dd2a6963bd53fc5a6212bb8de5cbfd2ffcfdff6",
+      "size": 86,
+      "format": "pcap",
+      "link_types": [
+        1
+      ],
+      "packets": 1,
+      "protocols": {
+        "ARP": 1
+      },
+      "malformed": 0,
+      "facts": [
+        {
+          "packet": 1,
+          "fcs_length": 4
+        }
+      ],
+      "expectation": "by construction",
+      "note": "FCS flag + length in the network field: the 4 trailing bytes are not payload"
+    },
+    {
+      "file": "truncated-last-record.pcap",
+      "kind": "synthetic",
+      "source": "tools/make_corpus.py",
+      "sha256": "5c9f4d31331d10653aef0b927294a035abf9a229ba4a5dec61497e7a827daa5b",
+      "size": 131,
+      "format": "pcap",
+      "link_types": [
+        1
+      ],
+      "packets": 1,
+      "protocols": {
+        "ARP": 1
+      },
+      "malformed": 0,
+      "facts": [],
+      "expectation": "by construction",
+      "note": "a damaged tail keeps the earlier packets",
+      "message_contains": "Truncated"
+    },
+    {
+      "file": "pcapng-legacy-packet-block.pcapng",
+      "kind": "synthetic",
+      "source": "tools/make_corpus.py",
+      "sha256": "1c2c318db2f5e310ff38204d6804a30d791d0e67904b84d2b760ce859b709967",
+      "size": 128,
+      "format": "pcapng",
+      "link_types": [
+        1
+      ],
+      "packets": 1,
+      "protocols": {
+        "ARP": 1
+      },
+      "malformed": 0,
+      "facts": [],
+      "expectation": "by construction",
+      "note": "obsolete block type 2"
+    },
+    {
+      "file": "pcapng-two-interfaces-tsoffset.pcapng",
+      "kind": "synthetic",
+      "source": "tools/make_corpus.py",
+      "sha256": "1d8063d44c5c7be9cb035bdb720fd6a0dd7d5ea7d16cc902fb5349cf636500e4",
+      "size": 268,
+      "format": "pcapng",
+      "link_types": [
+        1
+      ],
+      "packets": 2,
+      "protocols": {
+        "ARP": 2
+      },
+      "malformed": 0,
+      "facts": [
+        {
+          "packet": 2,
+          "time_relative": 100.0
+        }
+      ],
+      "expectation": "by construction",
+      "note": "if_tsoffset puts the clocks of two interfaces in line"
+    },
+    {
+      "file": "pcapng-undefined-interface.pcapng",
+      "kind": "synthetic",
+      "source": "tools/make_corpus.py",
+      "sha256": "f34f27e2dca05fd4ce736cfd687a3b0e2f50e78147d42237ea36a0d81f22f5d4",
+      "size": 204,
+      "format": "pcapng",
+      "link_types": [
+        1,
+        4294967295
+      ],
+      "packets": 2,
+      "protocols": {
+        "ARP": 1,
+        "Unknown": 1
+      },
+      "malformed": 0,
+      "facts": [],
+      "expectation": "by construction",
+      "note": "a packet of an interface nobody defined is kept but not decoded",
+      "message_contains": "no Interface Description Block"
+    },
+    {
+      "file": "pcapng-big-endian-fcs-bits.pcapng",
+      "kind": "synthetic",
+      "source": "tools/make_corpus.py",
+      "sha256": "6ac613a73942d316007d5483583c21a4778801c27b905cb35fcdf1bb4042759f",
+      "size": 140,
+      "format": "pcapng",
+      "link_types": [
+        1
+      ],
+      "packets": 1,
+      "protocols": {
+        "ARP": 1
+      },
+      "malformed": 0,
+      "facts": [
+        {
+          "packet": 1,
+          "fcs_length": 4
+        }
+      ],
+      "expectation": "by construction",
+      "note": "if_fcslen is in bits"
+    },
+    {
+      "file": "ipv6-fragments-out-of-order.pcap",
+      "kind": "synthetic",
+      "source": "tools/make_corpus.py",
+      "sha256": "08edbdac6dd84a789b8b5ecd789d9ea6fe18aaa30395ba854bd553fc167908a1",
+      "size": 295,
+      "format": "pcap",
+      "link_types": [
+        1
+      ],
+      "packets": 3,
+      "protocols": {
+        "IPv6": 2,
+        "DNS": 1
+      },
+      "malformed": 0,
+      "facts": [
+        {
+          "packet": 3,
+          "protocol": "DNS",
+          "info_contains": "example.com"
+        },
+        {
+          "packet": 1,
+          "reassembled_in": 3
+        },
+        {
+          "packet": 2,
+          "reassembled_in": 3
+        }
+      ],
+      "expectation": "by construction",
+      "note": "whatever order the fragments arrive in, the packet that arrives last (3) completes the datagram"
+    },
+    {
+      "file": "ipv6-non-first-fragment.pcap",
+      "kind": "synthetic",
+      "source": "tools/make_corpus.py",
+      "sha256": "4731e5a5615d6cbfd1af2b33ec0f3e8155c156619d724dc2ce56667b03f2eba3",
+      "size": 118,
+      "format": "pcap",
+      "link_types": [
+        1
+      ],
+      "packets": 1,
+      "protocols": {
+        "IPv6": 1
+      },
+      "malformed": 0,
+      "facts": [
+        {
+          "packet": 1,
+          "protocol": "IPv6",
+          "info_contains": "Fragmented IPv6 protocol"
+        }
+      ],
+      "expectation": "by construction",
+      "note": "a middle fragment alone must never be read as a UDP header"
+    },
+    {
+      "file": "ipv4-fragments.pcap",
+      "kind": "synthetic",
+      "source": "tools/make_corpus.py",
+      "sha256": "94468da81a618be11fffcfc59d3fe0420671d3aa590852c5d77dadb68e0418f1",
+      "size": 211,
+      "format": "pcap",
+      "link_types": [
+        1
+      ],
+      "packets": 3,
+      "protocols": {
+        "IPv4": 2,
+        "DNS": 1
+      },
+      "malformed": 0,
+      "facts": [
+        {
+          "packet": 3,
+          "protocol": "DNS"
+        },
+        {
+          "packet": 1,
+          "reassembled_in": 3
+        }
+      ],
+      "expectation": "by construction",
+      "note": ""
+    },
+    {
+      "file": "ethernet-vlan-qinq.pcap",
+      "kind": "synthetic",
+      "source": "tools/make_corpus.py",
+      "sha256": "a50f32798e85f5f01edd12864d1c9ff80072a891aabbab9868a62cace844fa5c",
+      "size": 94,
+      "format": "pcap",
+      "link_types": [
+        1
+      ],
+      "packets": 1,
+      "protocols": {
+        "UDP": 1
+      },
+      "malformed": 0,
+      "facts": [],
+      "expectation": "by construction",
+      "note": "two VLAN tags in front of the IP header"
+    },
+    {
+      "file": "linux-cooked-udp.pcap",
+      "kind": "synthetic",
+      "source": "tools/make_corpus.py",
+      "sha256": "96d6117eb5dfbef4b85e721ec84d090444373af82060226607b54e5b3e59c689",
+      "size": 87,
+      "format": "pcap",
+      "link_types": [
+        113
+      ],
+      "packets": 1,
+      "protocols": {
+        "UDP": 1
+      },
+      "malformed": 0,
+      "facts": [],
+      "expectation": "by construction",
+      "note": ""
+    },
+    {
+      "file": "dhcp.pcap",
+      "kind": "real",
+      "optional": true,
+      "source": "https://wiki.wireshark.org/uploads/__moin_import__/attachments/SampleCaptures/dhcp.pcap",
+      "protocols": {
+        "DHCP": 4
+      },
+      "malformed": 0,
+      "facts": [
+        {
+          "packet": 1,
+          "info_contains": "DHCP Discover"
+        }
+      ],
+      "expectation": "packet count counted independently; protocol histogram is a snapshot of ImShark's output",
+      "sha256": "2471b5420bdac826eecf8f61a2bbb4a3eb20dbfab7c02ff2be502f349f368214",
+      "size": 1400,
+      "packets": 4,
+      "format": "pcap",
+      "link_types": [
+        1
+      ]
+    },
+    {
+      "file": "dhcp-nanosecond.pcap",
+      "kind": "real",
+      "optional": true,
+      "source": "https://wiki.wireshark.org/uploads/__moin_import__/attachments/SampleCaptures/dhcp-nanosecond.pcap",
+      "protocols": {
+        "DHCP": 4
+      },
+      "malformed": 0,
+      "facts": [],
+      "expectation": "packet count counted independently; protocol histogram is a snapshot of ImShark's output",
+      "sha256": "9373e166ae72064cda66fd70e1139cb4807f410c9eb4f865df719181e7e05023",
+      "size": 1400,
+      "packets": 4,
+      "format": "pcap",
+      "link_types": [
+        1
+      ]
+    },
+    {
+      "file": "NTP_sync.pcap",
+      "kind": "real",
+      "optional": true,
+      "source": "https://wiki.wireshark.org/uploads/__moin_import__/attachments/SampleCaptures/NTP_sync.pcap",
+      "protocols": {
+        "DNS": 2,
+        "NTP": 30
+      },
+      "malformed": 0,
+      "facts": [
+        {
+          "packet": 1,
+          "info_contains": "us.pool.ntp.org"
+        }
+      ],
+      "expectation": "packet count counted independently; protocol histogram is a snapshot of ImShark's output",
+      "sha256": "227c60c42b80e646e7f425b46f5fb1cb3d48ba5be6924c3d55fab67adf258684",
+      "size": 3851,
+      "packets": 32,
+      "format": "pcap",
+      "link_types": [
+        1
+      ]
+    },
+    {
+      "file": "ipv4frags.pcap",
+      "kind": "real",
+      "optional": true,
+      "source": "https://wiki.wireshark.org/uploads/__moin_import__/attachments/SampleCaptures/ipv4frags.pcap",
+      "protocols": {
+        "ICMP": 2,
+        "IPv4": 1
+      },
+      "malformed": 0,
+      "facts": [
+        {
+          "packet": 1,
+          "info_contains": "Fragmented IP protocol (proto=ICMP 1, off=0, ID=0xb5d0)"
+        },
+        {
+          "packet": 1,
+          "reassembled_in": 2
+        },
+        {
+          "packet": 2,
+          "info_contains": "Echo (ping) request"
+        }
+      ],
+      "expectation": "packet count counted independently; protocol histogram is a snapshot of ImShark's output",
+      "sha256": "d0b1965aa0c7f9792ee1922f18b1c4e67a45f014fbd324c18dda0dd280605ec4",
+      "size": 2990,
+      "packets": 3,
+      "format": "pcap",
+      "link_types": [
+        1
+      ]
+    },
+    {
+      "file": "http.cap",
+      "kind": "real",
+      "optional": true,
+      "source": "https://wiki.wireshark.org/uploads/27707187aeb30df68e70c8fb9d614981/http.cap",
+      "protocols": {
+        "DNS": 2,
+        "HTTP": 5,
+        "TCP": 36
+      },
+      "malformed": 0,
+      "facts": [
+        {
+          "packet": 4,
+          "info_contains": "GET /download.html HTTP/1.1"
+        },
+        {
+          "packet": 6,
+          "info_contains": "HTTP/1.1 200 OK"
+        }
+      ],
+      "expectation": "packet count counted independently; protocol histogram is a snapshot of ImShark's output",
+      "known_limitation": "HTTP messages are not reassembled across TCP segments yet (v0.7.2)",
+      "sha256": "25a72bdf10339f2c29916920c8b9501d294923108de8f29b19aba7cc001ab60d",
+      "size": 25803,
+      "packets": 43,
+      "format": "pcap",
+      "link_types": [
+        1
+      ]
+    },
+    {
+      "file": "dns_port.pcap",
+      "kind": "real",
+      "optional": true,
+      "source": "https://wiki.wireshark.org/uploads/__moin_import__/attachments/SampleCaptures/dns_port.pcap",
+      "protocols": {
+        "UDP": 2
+      },
+      "malformed": 0,
+      "facts": [],
+      "expectation": "packet count counted independently; protocol histogram is a snapshot of ImShark's output",
+      "known_limitation": "DNS on a non-standard port is not recognised yet (v0.7.2 Decode As)",
+      "sha256": "badf9490a5bfdb632131bb393ad808776859a0c31a5056287de95d577dd1c11d",
+      "size": 671,
+      "packets": 2,
+      "format": "pcap",
+      "link_types": [
+        1
+      ]
+    },
+    {
+      "file": "PRIV_bootp-both_overload.pcap",
+      "kind": "real",
+      "optional": true,
+      "source": "https://wiki.wireshark.org/uploads/__moin_import__/attachments/SampleCaptures/PRIV_bootp-both_overload.pcap",
+      "protocols": {
+        "DHCP": 1
+      },
+      "malformed": 0,
+      "facts": [],
+      "expectation": "packet count counted independently; protocol histogram is a snapshot of ImShark's output",
+      "known_limitation": "DHCP option overload (sname/file) is not scanned yet (v0.7.2)",
+      "sha256": "49b22cdecb1ab5b9c299fc0e2b87b18e0215f8f9f06bc0f41b0a3f69111b56e6",
+      "size": 364,
+      "packets": 1,
+      "format": "pcap",
+      "link_types": [
+        1
+      ]
+    },
+    {
+      "file": "PRIV_bootp-both_overload_empty-no_end.pcap",
+      "kind": "real",
+      "optional": true,
+      "source": "https://wiki.wireshark.org/uploads/__moin_import__/attachments/SampleCaptures/PRIV_bootp-both_overload_empty-no_end.pcap",
+      "protocols": {
+        "DHCP": 1
+      },
+      "malformed": 0,
+      "facts": [],
+      "expectation": "packet count counted independently; protocol histogram is a snapshot of ImShark's output",
+      "known_limitation": "DHCP option overload is not scanned yet (v0.7.2)",
+      "sha256": "5e4e53eefce0924a46e0e4cb5ed3217a798e0a8a39e7c2e9f7fe71abe705ce26",
+      "size": 364,
+      "packets": 1,
+      "format": "pcap",
+      "link_types": [
+        1
+      ]
+    },
+    {
+      "file": "http_PPI.cap",
+      "kind": "real",
+      "optional": true,
+      "source": "https://wiki.wireshark.org/uploads/e8cebabd278b76e3bc9edbd484c4d293/http_PPI.cap",
+      "protocols": {
+        "Unknown": 140
+      },
+      "malformed": 0,
+      "facts": [],
+      "expectation": "packet count counted independently; protocol histogram is a snapshot of ImShark's output",
+      "known_limitation": "link type 192 (PPI / 802.11) is not supported yet (v0.9)",
+      "sha256": "4fc3ed1a0afefe504fb3005a86932f0cd84cd5246018c8bf12a8dc66862ca0db",
+      "size": 70587,
+      "packets": 140,
+      "format": "pcap",
+      "link_types": [
+        192
+      ]
+    }
+  ]
+}
