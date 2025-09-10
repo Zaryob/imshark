@@ -7,7 +7,7 @@ ImShark, [Dear ImGui](https://github.com/ocornut/imgui) ile yazılmış, Wiresha
 ## Özellikler (bugün)
 
 - `.pcap` (little/big-endian, mikro/nano-saniye) ve `.pcapng` (SHB/IDB/EPB/SPB/ISB/NRB, `if_tsresol`, paket yorumları) desteği, **gzip sıkıştırılmış** (`.gz`) dosyalar dahil; dosya türü magic number ile otomatik algılanır
-- Protokoller: Ethernet/VLAN, ARP, IPv4 (parçalanma birleştirme)/IPv6, ICMP/ICMPv6, TCP (analiz), UDP, **DNS** (tüm bölümler ve kayıt türleri, TCP üzerinden, mDNS), **DHCP** (seçenekler), **NTP**, **HTTP/1.x**, **TLS** (Client/Server Hello, SNI), SNMP/Telnet/SMTP/BGP (özet). HTTP ve TLS portdan bağımsız, içerikten tanınır
+- Protokoller: Ethernet/VLAN, ARP, IPv4/IPv6 (parça birleştirme), ICMP/ICMPv6, TCP (analiz), UDP, **DNS** (tüm bölümler ve kayıt türleri, TCP üzerinden, mDNS), **DHCP** (seçenekler), **NTP**, **HTTP/1.x**, **TLS** (Client/Server Hello, SNI), SNMP/Telnet/SMTP/BGP (özet). HTTP ve TLS portdan bağımsız, içerikten tanınır
 - TCP için bağıl (relative) seq/ack numaraları
 - Paket listesi (No, Time, Source, Destination, Protocol, Length, Info), çoklu seçim
 - Genişletilebilir protokol ağacı (Frame, Ethernet/VLAN, IP, ARP, ICMP, TCP/UDP, DNS, DHCP…); bir alan seçilince hex/ASCII panelinde ilgili baytlar vurgulanır, hex'te bir bayta tıklayınca o bayta ait en özel alan ağaçta açılır
@@ -15,7 +15,7 @@ ImShark, [Dear ImGui](https://github.com/ocornut/imgui) ile yazılmış, Wiresha
 - Bozuk/kırpık dosya ve paketlerde çökmez: `[Malformed Packet]` işaretler, yükleme sorunlarını durum çubuğunda gösterir
 - Büyük dosyalar: arka planda yükleme (ilerleme çubuğu, iptal); pakette yalnızca özet tutulur (500 bin paket ≈ 190 MB, yükleme < 1 sn), ham bayt ve alan ağacı yalnızca seçilen paket için dosyadan okunur
 - **Görüntüleme filtresi** (Wireshark benzeri): `tcp.port in {80 443} && !tcp.flags.rst`, `ip.addr == 10.0.0.0/8`, `info contains "GET"`, `frame.time_delta > 1` … Yazarken doğrulanır (hata konumuyla), geçmişi tutulur, `?` düğmesi alan listesini açar; 500 bin pakette 8–18 ms
-- **Akış analizi:** Statistics menüsünde Protocol Hierarchy, Conversations (IPv4/IPv6/TCP/UDP), Endpoints, Expert Information; satıra çift tıklayınca filtre uygulanır. TCP analizi (yeniden iletim, dup-ACK, sıra dışı, kayıp segment, sıfır pencere…) Info sütununda ve `tcp.analysis.*` filtre alanlarında. **Follow TCP/UDP Stream** (Analyze menüsü) yeniden birleştirilmiş veriyi iki yönü renkli gösterir. IPv4 parçalanmış datagramlar birleştirilir.
+- **Akış analizi:** Statistics menüsünde Protocol Hierarchy, Conversations (IPv4/IPv6/TCP/UDP), Endpoints, Expert Information; satıra çift tıklayınca filtre uygulanır. TCP analizi (yeniden iletim, dup-ACK, sıra dışı, kayıp segment, sıfır pencere…) Info sütununda ve `tcp.analysis.*` filtre alanlarında. **Follow TCP/UDP Stream** (Analyze menüsü) yeniden birleştirilmiş veriyi iki yönü renkli gösterir. IPv4 ve IPv6 parçalanmış datagramlar birleştirilir (RFC 5722 çakışma kuralı, 60 sn zaman aşımı) ve Follow Stream'e katkıda bulunur.
 - Paket bulma (Ctrl+F, F3; özet metni, filtre, **hex bayt** ve **baytlarda metin** aramaları), renklendirme kuralları (düzenlenebilir), zaman görünümü (başlangıca göre / önceki paketten / UTC / epoch)
 - Sütuna göre sıralama, klavyeyle gezinme (↑ ↓ PgUp PgDn Home End), kopyalama menüleri (alan, bayt hex/ASCII, hex dump, satır)
 - **Dışa aktarma:** File > Export Packets (tümü / görüntülenen / seçili → pcapng, pcap, CSV, JSON), Follow Stream'de ham bayt olarak kaydetme; File > Capture File Properties (arayüzler, istatistikler, yorumlar, ad çözümleme)
