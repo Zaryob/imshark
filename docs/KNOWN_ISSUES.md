@@ -2,7 +2,29 @@
 
 Statik kod incelemesiyle tespit edilmiştir (derleme/çalıştırma ile ayrıca doğrulanmadı). Önem: **K** = kritik (çökme/güvenlik/yanlış veri), **O** = orta, **D** = düşük.
 
-> **Durum (v0.7.1 tamamlandı):** pcap/pcapng FCS alanları spesifikasyona göre okunuyor, `if_tsoffset` ve tanımsız arayüzler doğru işleniyor, IPv6 parçaları çözülüp birleştiriliyor. Önceki durum: #1–#24 giderildi. Kalanlar: HTTP/TLS mesajları TCP segmentleri arasında birleştirilmez (Follow Stream birleştirir), HTTP gövdesi (chunked, gzip) çözülmez, TLS şifre çözme yok, dışa aktarma mikro-saniye çözünürlüğündedir (nanosaniye yakalamada son 3 hane kaybolur), paket özeti 312 bayt (500 bin paket ≈ 190 MB; `info` metni paket başına ~63 bayt yığın tutuyor), IPv6 parça birleştirme, parçalanmış datagramın Follow Stream'e katkısı (yük çerçevede bitişik değil), TCP analizi Wireshark'a göre sadeleştirilmiştir (ör. spurious retransmission ve hızlı yeniden iletim ayrımı yok), filtrede yalnızca özetteki alanlar kullanılabiliyor (DNS sorgu adı, HTTP alanları vb. yeni dissector'larla gelecek), `matches` (std::regex) 500 bin pakette ~1,7 s sürüyor ve arayüz iş parçacığında çalışıyor, tam DNS/DHCP kayıt türleri (#15), ImGui pencere yerleşiminin kalıcılığı, IP adreslerinin sayısal sıralanması. Sanitizer yapılandırması bir dönem çekirdeği kapsamıyordu (CMake seçenek sırası); düzeltildi ve yapılandırma artık bunu denetliyor, 235 testin tamamı çekirdek dahil ASan+UBSan altında geçiyor. Düzeltmeler ASan/UBSan (ve yükleme iş parçacığı için ThreadSanitizer) altında birim/mutasyon-fuzz testleriyle ve pencere açmadan çalışan ImGui duman testleriyle doğrulandı; arayüz görsel olarak (ekran görüntüsüyle) incelenmedi, sağ tık menüleri ve sürükle-bırak otomatik test edilmedi, Windows derlemesi bir Windows makinesinde denenmedi.
+## Güncel durum (v0.7.1)
+
+İlk analizdeki #1–#24 giderildi. Aşağıdakiler **hâlâ açık** olanlardır; ilgili ROADMAP sürümü parantez içinde.
+
+**İşlevsel sınırlar**
+- HTTP ve TLS mesajları TCP segmentleri arasında birleştirilmez (Follow Stream birleştirir); HTTP gövdesi (chunked, gzip) çözülmez; TLS şifre çözme yok (v0.7.2, v0.9+).
+- DNS yalnızca standart portlarda tanınır; DHCP option overload (sname/file) taranmaz; ICMP/NTP/DNSSEC ayrıntıları kısmi (v0.7.2).
+- Desteklenmeyen link türleri (PPI, 802.11, Radiotap) `Unknown` görünür; 802.3/LLC, PPPoE, MPLS, GRE yok (v0.7.3, v0.9).
+- TCP analizi Wireshark'a göre sadeleştirilmiştir (spurious retransmission ve hızlı yeniden iletim ayrımı yok).
+- Filtre yalnızca özette tutulan alanları görür; `matches` (std::regex) 500 bin pakette ~1,7 sn ve arayüz iş parçacığında çalışır.
+- Dışa aktarma mikro-saniye çözünürlüğündedir (nanosaniye yakalamada son 3 hane kaybolur). IP adresleri sayısal değil metin olarak sıralanır. ImGui pencere yerleşimi kalıcı değil.
+
+**Bellek / performans**
+- Paket özeti 312 bayt, `info` metni paket başına ~63 bayt yığın tutar: 500 bin paket ≈ 190 MB, yükleme < 1 sn.
+
+**Doğrulama boşlukları**
+- Arayüz hiç ekran görüntüsüyle incelenmedi; menü, sağ tık ve sürükle-bırak etkileşimleri otomatik test edilmiyor (`chrome.cpp` kapsamı ≈ %50).
+- Windows derlemesi bir Windows makinesinde denenmedi.
+- Gerçek yakalama corpus'u yalnızca `IMSHARK_CORPUS_DIR` ile çalışır; CI'da yalnızca sentetik dosyalar koşar.
+
+**Güvence (neyin nasıl doğrulandığı)**
+- 263 test çekirdek dahil ASan+UBSan altında geçer (bir dönem sanitizer çekirdeği kapsamıyordu: CMake seçenek sırası; düzeltildi ve yapılandırma artık denetliyor). Arka plan iş parçacıkları için ThreadSanitizer temiz.
+- Satır kapsamı ≈ %92 (`tools/coverage.sh`).
 
 ## Güvenlik ve sağlamlık
 
