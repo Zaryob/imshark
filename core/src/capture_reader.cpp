@@ -108,3 +108,41 @@ bool core::reassembleIpPayload(CaptureReader &reader, const std::vector<packet::
     if (protocol) *protocol = first;
     return true;
 }
+
+bool core::reassembleTcpPdu(CaptureReader &reader, const std::vector<packet::PacketInfo> &packets, const packet::PacketInfo &completing,
+                            std::string &pdu, std::vector<uint32_t> &numbers) {
+    const uint32_t start = completing.tcp_pdu_start, length = completing.tcp_pdu_len;
+    if (completing.tcp_pdu_state != 2 || length == 0) return false;
+    pdu.assign(length, '\0');
+    std::vector<bool> filled(length, false);
+    numbers.clear();
+    std::vector<char> frame, whole;
+
+    for (const auto &p: packets) {
+        if (p.ip_protocol != 6 || p.ip_version != completing.ip_version || p.ip_frag == 1 || p.tcp_relative_seq < 0 || p.payload_length == 0) continue;
+        if (p.source != completing.source || p.destination != completing.destination || p.src_port != completing.src_port ||
+            p.dst_port != completing.dst_port) continue;
+        // position of the segment's first byte relative to the message start (wrap-around safe)
+        const int32_t first = static_cast<int32_t>(static_cast<uint32_t>(p.tcp_relative_seq) - start);
+        if (first >= static_cast<int64_t>(length) || static_cast<int64_t>(first) + p.payload_length <= 0) continue;   // no overlap
+
+        const char *bytes = nullptr;
+        if (p.ip_frag == 2) {   // the TCP segment was reassembled from IP fragments: its payload is not in the frame
+            if (!reassembleIpPayload(reader, packets, p, whole) || static_cast<uint64_t>(p.payload_offset) + p.payload_length > whole.size()) return false;
+            bytes = whole.data() + p.payload_offset;
+        } else {
+            if (!reader.read(p, frame) || static_cast<uint64_t>(p.payload_offset) + p.payload_length > frame.size()) return false;
+            bytes = frame.data() + p.payload_offset;
+        }
+        bool contributed = false;
+        for (uint32_t i = 0; i < p.payload_length; ++i) {
+            const int64_t at = static_cast<int64_t>(first) + i;
+            if (at < 0 || at >= length || filled[static_cast<size_t>(at)]) continue;
+            pdu[static_cast<size_t>(at)] = bytes[i];
+            filled[static_cast<size_t>(at)] = true;
+            contributed = true;
+        }
+        if (contributed) numbers.push_back(static_cast<uint32_t>(p.number));
+    }
+    return std::find(filled.begin(), filled.end(), false) == filled.end();
+}

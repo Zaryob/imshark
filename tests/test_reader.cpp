@@ -477,7 +477,7 @@ TEST(PcapngReader, LegacyPacketBlockIsLoaded) {
 
 // The summary of every packet stays in memory for the whole session: a growth here costs memory in proportion
 // to the capture size, so it has to be a deliberate decision (reorder fields by size, avoid new std::string).
-static_assert(sizeof(packet::PacketInfo) <= 320, "PacketInfo grew: check the member order and whether the new field is needed per packet");
+static_assert(sizeof(packet::PacketInfo) <= 336, "PacketInfo grew (limit 336 bytes): check the member order and whether the new field is needed per packet");
 
 TEST(Readers, ReserveRoomForAllPacketsUpFrontWithoutOverdoingIt) {
     std::vector<std::pair<uint32_t, uint32_t>> times;

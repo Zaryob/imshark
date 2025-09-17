@@ -1,5 +1,7 @@
 #include "protocols.h"
 
+#include "tcp_streams.h"
+
 #include "registry.h"
 #include "util.h"
 
@@ -44,6 +46,52 @@ namespace {
             i += optLen;
         }
         return out;
+    }
+} // namespace
+
+namespace {
+    using namespace dissect;
+
+    // The stream protocol for a message starting at `data`: the one registered for the port, else the first heuristic
+    // whose framer does not reject the bytes. nullptr if none applies.
+    const StreamProtocol *selectStreamProtocol(Context &ctx, uint16_t srcPort, uint16_t dstPort, const char *data, size_t size) {
+        if (const StreamProtocol *byPort = ctx.registry.findTcpStream(srcPort, dstPort)) {
+            return byPort->frame(data, size).kind == StreamFrame::Kind::Reject ? nullptr : byPort;
+        }
+        for (const auto &h: ctx.registry.tcpStreamHeuristics()) {
+            if (h->frame(data, size).kind != StreamFrame::Kind::Reject) return h.get();
+        }
+        return nullptr;
+    }
+
+    void zeroRanges(Field &f) {
+        f.offset = 0;
+        f.length = 0;
+        for (auto &c: f.children) zeroRanges(c);
+    }
+
+    // Decodes one reassembled message as if it had arrived in one piece and takes over what the dissector found.
+    void dissectPdu(Context &ctx, const std::string &data, const StreamProtocol &protocol, const std::vector<uint32_t> &packets) {
+        auto &pack = ctx.pack;
+        packet::PacketInfo nested = pack;
+        nested.fields.clear();
+        Context nctx{nested, data.data(), data.size(), ctx.tcp, ctx.registry, ctx.mode};
+        protocol.dissect(nctx, data.data(), data.size());
+
+        pack.protocol = nested.protocol;
+        pack.info = nested.info;
+        pack.app_type = nested.app_type;
+        pack.app_flags = nested.app_flags;
+        pack.app_code = nested.app_code;
+        pack.app_text = nested.app_text;
+        pack.app_text2 = nested.app_text2;
+        if (ctx.wantFields()) {
+            std::string from;
+            for (uint32_t n: packets) from += (from.empty() ? "#" : ", #") + std::to_string(n);
+            Field &layer = ctx.addLayer("[Reassembled TCP (" + std::to_string(data.size()) + " bytes) from frames " + from + "]", 0, 0);
+            layer.children = std::move(nested.fields);
+            for (auto &c: layer.children) zeroRanges(c); // offsets inside the reassembled data do not map to bytes of this frame
+        }
     }
 } // namespace
 
@@ -149,6 +197,67 @@ void dissect::dissectTcp(Context &ctx, const char *data, size_t length) {
         }
         if (payloadLen > 0) l.add("TCP payload (" + std::to_string(payloadLen) + " bytes)", o + headerLen, payloadLen);
     }
+
+    // ---- messages that span segments ------------------------------------------------------------------------------
+    const bool fin = tcpHeader.flags & 0x01, rst = tcpHeader.flags & 0x04, syn = tcpHeader.flags & 0x02;
+    const std::string segmentNote = " [TCP segment of a reassembled PDU]";
+    auto markSegment = [&] {
+        pack.tcp_pdu_state = 1;
+        pack.info += segmentNote + (pack.tcp_reassembled_in ? " [Reassembled in #" + std::to_string(pack.tcp_reassembled_in) + "]" : "");
+        if (ctx.wantFields() && !pack.fields.empty()) pack.fields.back().add("[TCP segment of a reassembled PDU]");
+    };
+    bool handled = false;
+
+    if (ctx.mode == ParseMode::Replay) {
+        if (pack.tcp_pdu_state == 1) {
+            markSegment();
+            handled = true;
+        } else if (pack.tcp_pdu_state == 3) {   // a whole message inside this segment
+            const int32_t skip = static_cast<int32_t>(pack.tcp_pdu_start - static_cast<uint32_t>(seq >= 0 ? seq : 0));
+            if (skip >= 0 && static_cast<size_t>(skip) + pack.tcp_pdu_len <= payloadLen) {
+                if (const StreamProtocol *protocol = selectStreamProtocol(ctx, srcPort, dstPort, payload + skip, pack.tcp_pdu_len)) {
+                    protocol->dissect(ctx, payload + skip, pack.tcp_pdu_len);   // in this frame: the fields keep their real offsets
+                    handled = true;
+                }
+            }
+        } else if (pack.tcp_pdu_state == 2 && ctx.tcpPdu) {
+            const StreamProtocol *protocol = selectStreamProtocol(ctx, srcPort, dstPort, ctx.tcpPdu->data(), ctx.tcpPdu->size());
+            if (protocol) {
+                dissectPdu(ctx, *ctx.tcpPdu, *protocol, ctx.tcpPduPackets ? *ctx.tcpPduPackets : std::vector<uint32_t>());
+                handled = true;
+            }
+        }
+    } else if (ctx.streams && ctx.registry.hasStreamProtocols() && (payloadLen > 0 || fin || rst || syn)) {
+        const std::string key = pack.source + ":" + std::to_string(srcPort) + ">" + pack.destination + ":" + std::to_string(dstPort);
+        const auto result = ctx.streams->feed(key, static_cast<uint32_t>(pack.number), static_cast<uint32_t>(seq >= 0 ? seq : 0), payload,
+                                              payloadLen, syn, fin || rst,
+                                              [&](const char *d, size_t n) { return selectStreamProtocol(ctx, srcPort, dstPort, d, n); });
+        if (ctx.completedTcp) {
+            for (uint32_t earlier: result.earlier) ctx.completedTcp->push_back({earlier, static_cast<uint32_t>(pack.number)});
+        }
+        if (result.action == StreamFeedResult::Action::Segment) {
+            markSegment();
+            handled = true;
+        } else if (result.action == StreamFeedResult::Action::Pdu) {
+            const StreamPdu &pdu = result.pdus.front();
+            pack.tcp_pdu_state = 2;
+            pack.tcp_pdu_start = pdu.startSeq;
+            pack.tcp_pdu_len = static_cast<uint32_t>(pdu.data.size());
+            dissectPdu(ctx, pdu.data, *pdu.protocol, pdu.packets);
+            handled = true;
+        } else if (result.action == StreamFeedResult::Action::Whole) {
+            const StreamPdu &pdu = result.pdus.front();
+            pack.tcp_pdu_state = 3;
+            pack.tcp_pdu_start = pdu.startSeq;
+            pack.tcp_pdu_len = static_cast<uint32_t>(pdu.data.size());
+            const size_t skip = pdu.startSeq - static_cast<uint32_t>(seq >= 0 ? seq : 0);
+            if (skip + pdu.data.size() <= payloadLen) {
+                pdu.protocol->dissect(ctx, payload + skip, pdu.data.size());
+                handled = true;
+            }
+        }
+    }
+    if (handled) return;
 
     if (const Dissector *app = ctx.registry.findTcpPort(srcPort, dstPort)) {
         (*app)(ctx, payload, payloadLen);

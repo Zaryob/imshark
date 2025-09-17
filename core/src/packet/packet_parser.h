@@ -7,6 +7,7 @@
 #include <vector>
 
 #include <dissect/registry.h>
+#include <dissect/tcp_streams.h>
 #include <network/tcp_connection.h>
 #include <packet/packet_info.h>
 
@@ -31,6 +32,16 @@ namespace packet {
         /// call. The file reader uses them to annotate the earlier fragments.
         std::vector<std::pair<uint32_t, uint32_t>> takeCompletedReassemblies() { return std::move(completed_); }
 
+        /// (earlier segment packet number, packet number that completed its TCP message) pairs found since the last call.
+        std::vector<std::pair<uint32_t, uint32_t>> takeCompletedTcpPdus() { return std::move(completedTcp_); }
+
+        /// For Replay mode of a packet that completes a reassembled TCP message: the message bytes and the packets
+        /// they came from (the pointers must stay valid during parsePacket).
+        void setTcpPdu(const std::string *pdu, const std::vector<uint32_t> *packets) {
+            tcpPdu_ = pdu;
+            tcpPduPackets_ = packets;
+        }
+
         /// For Replay mode of the last fragment of a datagram: the reassembled payload and the numbers of
         /// the packets it came from (the pointers must stay valid during parsePacket).
         void setReassembly(const std::vector<char> *payload, const std::vector<uint32_t> *fragmentNumbers, uint8_t protocol) {
@@ -46,5 +57,9 @@ namespace packet {
         const std::vector<char> *reassembledPayload_ = nullptr;
         const std::vector<uint32_t> *fragmentNumbers_ = nullptr;
         uint8_t reassembledProtocol_ = 0;
+        dissect::TcpStreams tcpStreams_;
+        std::vector<std::pair<uint32_t, uint32_t>> completedTcp_;
+        const std::string *tcpPdu_ = nullptr;
+        const std::vector<uint32_t> *tcpPduPackets_ = nullptr;
     };
 } // namespace packet

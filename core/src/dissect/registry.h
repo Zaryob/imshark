@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <functional>
+#include <memory>
 #include <unordered_map>
 #include <vector>
 
@@ -22,6 +23,20 @@ namespace dissect {
         using Heuristic = std::function<bool(Context &ctx, const char *data, size_t length)>;
         void registerTcpHeuristic(Heuristic h) { tcpHeuristics_.push_back(std::move(h)); }
         const std::vector<Heuristic> &tcpHeuristics() const { return tcpHeuristics_; }
+
+        /// A TCP protocol whose messages span segments (or share one). `frame` looks at the bytes of a stream (in order,
+        /// starting at a message boundary) and says how long the first message is; `dissect` then decodes one complete
+        /// message. Port based registration is tried before the heuristic ones; a heuristic framer answers Reject for
+        /// bytes that are not its protocol.
+        void registerTcpStream(uint16_t port, StreamProtocol p) { tcpStreams_[port] = std::make_shared<StreamProtocol>(std::move(p)); }
+        void registerTcpStreamHeuristic(StreamProtocol p) { streamHeuristics_.push_back(std::make_shared<StreamProtocol>(std::move(p))); }
+        const StreamProtocol *findTcpStream(uint16_t src, uint16_t dst) const {
+            auto it = tcpStreams_.find(dst);
+            if (it == tcpStreams_.end()) it = tcpStreams_.find(src);
+            return it == tcpStreams_.end() ? nullptr : it->second.get();
+        }
+        const std::vector<std::shared_ptr<StreamProtocol>> &tcpStreamHeuristics() const { return streamHeuristics_; }
+        bool hasStreamProtocols() const { return !tcpStreams_.empty() || !streamHeuristics_.empty(); }
 
         const Dissector *findEtherType(uint16_t etherType) const { return find(etherTypes_, etherType); }
         const Dissector *findIpProtocol(uint8_t protocol) const { return find(ipProtocols_, protocol); }
@@ -51,5 +66,7 @@ namespace dissect {
         std::unordered_map<uint16_t, Dissector> tcpPorts_;
         std::unordered_map<uint16_t, Dissector> udpPorts_;
         std::vector<Heuristic> tcpHeuristics_;
+        std::unordered_map<uint16_t, std::shared_ptr<StreamProtocol>> tcpStreams_;
+        std::vector<std::shared_ptr<StreamProtocol>> streamHeuristics_;
     };
 } // namespace dissect

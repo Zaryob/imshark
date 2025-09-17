@@ -93,6 +93,10 @@ namespace {
         packet::PacketInfo nested = pack;
         nested.fields.clear();
         Context nctx{nested, whole.data(), whole.size(), ctx.tcp, ctx.registry, ctx.mode};
+        nctx.streams = ctx.streams;
+        nctx.completedTcp = ctx.completedTcp;
+        nctx.tcpPdu = ctx.tcpPdu;
+        nctx.tcpPduPackets = ctx.tcpPduPackets;
         nested.ip_protocol = wholeProtocol;
         if (v6) {
             ipv6Chain(nctx, whole.data(), whole.size(), wholeProtocol, nullptr, /*allowFragment=*/false);
@@ -114,6 +118,14 @@ namespace {
         pack.tcp_dup_ack = nested.tcp_dup_ack;
         pack.length = nested.length;
         pack.tcp_len = nested.tcp_len;
+        pack.tcp_pdu_state = nested.tcp_pdu_state;
+        pack.tcp_pdu_start = nested.tcp_pdu_start;
+        pack.tcp_pdu_len = nested.tcp_pdu_len;
+        pack.app_type = nested.app_type;
+        pack.app_flags = nested.app_flags;
+        pack.app_code = nested.app_code;
+        pack.app_text = nested.app_text;
+        pack.app_text2 = nested.app_text2;
         pack.payload_offset = nested.payload_offset; // relative to the reassembled data, not to this frame (ip_frag == 2)
         pack.payload_length = nested.payload_length;
 

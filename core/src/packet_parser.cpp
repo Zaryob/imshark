@@ -73,6 +73,8 @@ void packet::PacketParser::parsePacket(packet::PacketInfo &pack, const std::vect
     if (mode != dissect::ParseMode::Replay) { // in Replay mode these come from the summary
         pack.ip_frag = 0;
         pack.reassembled_in = 0;
+        pack.tcp_pdu_state = 0;
+        pack.tcp_pdu_start = pack.tcp_pdu_len = pack.tcp_reassembled_in = 0;
     }
     pack.protocol.clear();
     pack.info.clear();
@@ -91,10 +93,14 @@ void packet::PacketParser::parsePacket(packet::PacketInfo &pack, const std::vect
     if (mode != dissect::ParseMode::Replay) {
         ctx.reassembler = &reassembler_;
         ctx.completed = &completed_;
+        ctx.streams = &tcpStreams_;
+        ctx.completedTcp = &completedTcp_;
     } else {
         ctx.reassembledPayload = reassembledPayload_;
         ctx.fragmentNumbers = fragmentNumbers_;
         ctx.reassembledProtocol = reassembledProtocol_;
+        ctx.tcpPdu = tcpPdu_;
+        ctx.tcpPduPackets = tcpPduPackets_;
     }
 
     if (ctx.wantFields()) {
