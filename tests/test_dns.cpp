@@ -155,10 +155,10 @@ TEST(Dns, OverTcpWithLengthPrefixAndMdns) {
     EXPECT_EQ(tcp.protocol, "DNS");
     EXPECT_EQ(tcp.info, "Standard query 0x1234 A example.com");
 
-    // the message continues in a later segment
+    // the message continues in a later segment: this one is a segment of a message to be reassembled
     const std::string cut = u16(500) + msg;
     const auto partial = support::parse(support::tcpPacket("0a000001", "08080808", "c350", "0035", "00000001", "00000001", "18", bytes(cut)));
-    EXPECT_NE(partial.info.find("message continues in later segments"), std::string::npos) << partial.info;
+    EXPECT_NE(partial.info.find("[TCP segment of a reassembled PDU]"), std::string::npos) << partial.info;
 
     const auto mdns = viaUdp(message(0, 0x0000, 1, 0, 0, 0, nameHex("printer.local") + "000c" "0001"), "14e9", "14e9");
     EXPECT_EQ(mdns.protocol, "MDNS");
