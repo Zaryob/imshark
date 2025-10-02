@@ -154,3 +154,28 @@ TEST(Gzip, RandomCorruptionNeverCrashesOrHangs) {
         if (!ok) EXPECT_FALSE(error.empty());   // every failure has an explanation
     }
 }
+
+TEST(GzipMemory, DecodesEveryFixtureLikeTheFileVersion) {
+    for (const char *name: {"hello.gz", "stored.gz", "fixed.gz", "dynamic.gz", "fast.gz", "random.gz", "empty.gz"}) {
+        SCOPED_TRACE(name);
+        std::string fromFile, error, fromMemory;
+        ASSERT_TRUE(gunzip(kDir + name, fromFile, error)) << error;
+        ASSERT_TRUE(core::gunzipMemory(slurp(kDir + name), fromMemory, 1u << 30, error)) << error;
+        EXPECT_EQ(fromMemory, fromFile);
+    }
+}
+
+TEST(GzipMemory, RejectsDamagedTruncatedAndOversizedData) {
+    const std::string good = slurp(kDir + "dynamic.gz");
+    std::string out, error;
+    EXPECT_FALSE(core::gunzipMemory(good.substr(0, good.size() / 2), out, 1u << 30, error));
+    EXPECT_FALSE(error.empty());
+    std::string damaged = good;
+    damaged[damaged.size() / 2] ^= 0x55;
+    EXPECT_FALSE(core::gunzipMemory(damaged, out, 1u << 30, error));
+    EXPECT_FALSE(core::gunzipMemory("not gzip at all", out, 1u << 30, error));
+    EXPECT_FALSE(core::gunzipMemory("", out, 1u << 30, error));
+    EXPECT_FALSE(core::gunzipMemory(good, out, 1000, error)) << "a bomb is stopped at the limit";
+    EXPECT_NE(error.find("larger"), std::string::npos) << error;
+    EXPECT_TRUE(out.empty());
+}

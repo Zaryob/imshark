@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <cstring>
 #include <fstream>
+#include <sstream>
 #include <vector>
 
 #include <core.h>
@@ -34,7 +35,7 @@ namespace core {
         // Reads bytes of the compressed file through a buffer; bits are handed out LSB first.
         class Input {
         public:
-            Input(std::ifstream &f, LoadControl *control) : in_(f), control_(control), buf_(1 << 16) {}
+            Input(std::istream &f, LoadControl *control) : in_(f), control_(control), buf_(1 << 16) {}
 
             // Next byte without consuming it, or -1 at the end of the file (only valid at a byte boundary).
             int peek() {
@@ -75,7 +76,7 @@ namespace core {
                 return end_ > 0;
             }
 
-            std::ifstream &in_;
+            std::istream &in_;
             LoadControl *control_;
             std::vector<uint8_t> buf_;
             size_t pos_ = 0, end_ = 0;
@@ -87,9 +88,10 @@ namespace core {
         // Output: written to the file in blocks, the last 32 KiB kept as the back-reference window.
         class Output {
         public:
-            explicit Output(std::ofstream &f) : out_(f), window_(kWindow), block_() { block_.reserve(1 << 16); }
+            explicit Output(std::ostream &f, uint64_t limit = UINT64_MAX) : out_(f), limit_(limit), window_(kWindow), block_() { block_.reserve(1 << 16); }
 
             void put(uint8_t b) {
+                if (total_ >= limit_) throw Failure{"The decompressed data is larger than the allowed size"};
                 window_[wpos_] = b;
                 wpos_ = (wpos_ + 1) & (kWindow - 1);
                 block_.push_back(b);
@@ -117,7 +119,8 @@ namespace core {
 
         private:
             static constexpr size_t kWindow = 32768;
-            std::ofstream &out_;
+            std::ostream &out_;
+            uint64_t limit_;
             std::vector<uint8_t> window_;
             std::vector<uint8_t> block_;
             size_t wpos_ = 0;
@@ -294,6 +297,33 @@ namespace core {
         std::ifstream f(pathFromUtf8(path), std::ios::binary);
         unsigned char magic[2] = {0, 0};
         return f.read(reinterpret_cast<char *>(magic), 2) && magic[0] == 0x1f && magic[1] == 0x8b;
+    }
+
+    bool gunzipMemory(const std::string &compressed, std::string &out, uint64_t maxOutput, std::string &error) {
+        error.clear();
+        out.clear();
+        std::istringstream in(compressed, std::ios::binary);
+        std::ostringstream outStream(std::ios::binary);
+        try {
+            Input input(in, nullptr);
+            Output output(outStream, maxOutput);
+            int members = 0;
+            int next;
+            while ((next = input.peek()) >= 0) {
+                if (next == 0) { input.byte(); continue; }
+                gunzipMember(input, output);
+                ++members;
+            }
+            if (members == 0) throw Failure{"Not gzip data"};
+            output.flush();
+        } catch (const Failure &f) {
+            error = f.message;
+            return false;
+        } catch (const Cancelled &) {
+            return false;
+        }
+        out = outStream.str();
+        return true;
     }
 
     uint64_t lastGunzipOutputSize() { return g_lastOutputSize; }
