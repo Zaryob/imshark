@@ -34,6 +34,7 @@ namespace dissect {
             Whole,     // a message that lies entirely inside this segment: decoded by its stream protocol, no reassembly shown
         } action = Action::None;
         std::vector<StreamPdu> pdus;       // all messages completed by this segment (Action::Pdu)
+        bool startsMessage = false;        // Action::Segment: the segment is where the message begins (nothing was buffered before it)
         std::vector<uint32_t> earlier;     // packets (other than the current one) that made up those messages
     };
 

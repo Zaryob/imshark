@@ -96,7 +96,7 @@ namespace packet {
         uint8_t tcp_flags = 0;       // raw TCP flag byte
         bool has_comment = false;    // the capture file attaches a comment to this packet (pcapng)
         uint8_t fcs_length = 0;      // trailing FCS bytes to exclude from dissection (from the pcap/pcapng header)
-        uint8_t tcp_pdu_state = 0;   // 0 = none, 1 = segment of a message reassembled later, 2 = packet that completes a reassembled message
+        uint8_t tcp_pdu_state = 0;   // 0 = none, 1 = segment of a message reassembled later, 2 = packet that completes a reassembled message, 3 = whole message inside this segment, 4 = first segment of a message reassembled later (decoded as far as it goes)
         uint8_t ip_frag = 0;         // 0 = not fragmented, 1 = fragment that is not the last, 2 = last fragment (datagram reassembled here)
 
         PacketInfo() = default;

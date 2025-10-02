@@ -112,9 +112,11 @@ TEST(Http, NotHttpIsLeftAlone) {
 
 TEST(Http, HeadersThatContinueInTheNextSegment) {
     const auto p = tcpPayload("POST /upload HTTP/1.1\r\nHost: a.example\r\nContent-Le");
-    EXPECT_EQ(p.protocol, "HTTP");
+    EXPECT_EQ(p.protocol, "HTTP") << "decoded as far as it goes";
     EXPECT_EQ(p.app_text, "a.example");
     EXPECT_NE(find(p.fields, "[Headers continue in later segments]"), nullptr);
+    EXPECT_EQ(p.tcp_pdu_state, 4);
+    EXPECT_NE(p.info.find("[TCP segment of a reassembled PDU]"), std::string::npos) << p.info;
 }
 
 TEST(Tls, ClientHelloWithSniAndAlpn) {

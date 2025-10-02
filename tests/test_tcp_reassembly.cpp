@@ -101,7 +101,7 @@ TEST(TcpReassembly, AMessageSplitOverThreeSegments) {
     Capture cap({syn(), seg(1000, msg.substr(0, 10)), seg(1010, msg.substr(10, 10)), seg(1020, msg.substr(20))});
     ASSERT_EQ(cap.packets.size(), 4u);
     EXPECT_EQ(cap.packets[1].protocol, "TCP");
-    EXPECT_EQ(cap.packets[1].tcp_pdu_state, 1);
+    EXPECT_EQ(cap.packets[1].tcp_pdu_state, 4);
     EXPECT_EQ(cap.packets[1].tcp_reassembled_in, 4u);
     EXPECT_NE(cap.packets[1].info.find("[TCP segment of a reassembled PDU] [Reassembled in #4]"), std::string::npos) << cap.packets[1].info;
     EXPECT_EQ(cap.packets[2].tcp_pdu_state, 1);
@@ -157,10 +157,10 @@ TEST(TcpReassembly, SeveralMessagesInOneStreamAndPipelining) {
     const std::string joined = a + b + c;
     Capture cap({syn(), seg(1000, joined.substr(0, 8)), seg(1008, joined.substr(8, a.size() - 8 + b.size())),
                  seg(1000 + a.size() + b.size(), c.substr(0, 5)), seg(1000 + a.size() + b.size() + 5, c.substr(5))});
-    EXPECT_EQ(cap.packets[1].tcp_pdu_state, 1);
+    EXPECT_EQ(cap.packets[1].tcp_pdu_state, 4);
     EXPECT_EQ(cap.packets[2].tcp_pdu_state, 2) << "completes the first message (the second one fits behind it)";
     EXPECT_EQ(cap.packets[2].info, "TESTMSG: first message, TESTMSG: second") << "the whole message that follows in the segment is decoded as well";
-    EXPECT_EQ(cap.packets[3].tcp_pdu_state, 1) << "starts the third message";
+    EXPECT_EQ(cap.packets[3].tcp_pdu_state, 4) << "starts the third message";
     EXPECT_EQ(cap.packets[4].tcp_pdu_state, 2);
     EXPECT_EQ(cap.packets[4].info, "TESTMSG: third one here");
     EXPECT_EQ(cap.packets[3].tcp_reassembled_in, 5u);
@@ -209,7 +209,8 @@ TEST(TcpReassembly, ANonMatchingStreamIsLeftAlone) {
 TEST(TcpReassembly, MessagesThatRunUntilTheConnectionCloses) {
     Capture cap({syn("2329"), seg(1000, "UC first part ", "2329"), seg(1014, "second part ", "2329"), seg(1026, "and the end", "2329"),
                  seg(1037, "", "2329", "11")});                       // FIN + ACK
-    for (size_t i = 1; i <= 3; ++i) EXPECT_EQ(cap.packets[i].tcp_pdu_state, 1) << i;
+    EXPECT_EQ(cap.packets[1].tcp_pdu_state, 4);
+    for (size_t i = 2; i <= 3; ++i) EXPECT_EQ(cap.packets[i].tcp_pdu_state, 1) << i;
     EXPECT_EQ(cap.packets[3].tcp_reassembled_in, 5u);
     const auto &fin = cap.packets[4];
     EXPECT_EQ(fin.tcp_pdu_state, 2) << "the FIN completes it, although it carries no data";
@@ -224,7 +225,7 @@ TEST(TcpReassembly, AClosedConnectionForgetsAnIncompleteMessage) {
     const std::string msg = makeTm("never completed");
     Capture cap({syn(), seg(1000, msg.substr(0, 8)), seg(1008, "", "2328", "11"),     // FIN with half a message
                  syn(), seg(1000, makeTm("fresh start"))});                                // the port is reused
-    EXPECT_EQ(cap.packets[1].tcp_pdu_state, 1);
+    EXPECT_EQ(cap.packets[1].tcp_pdu_state, 4);
     EXPECT_EQ(cap.packets[1].tcp_reassembled_in, 0u) << "it never completed";
     EXPECT_EQ(cap.packets[2].tcp_pdu_state, 0) << "a bare FIN is not a segment of anything";
     EXPECT_EQ(cap.packets[4].tcp_pdu_state, 3);
@@ -338,7 +339,7 @@ TEST(DnsOverTcp, MessageSplitAfterTheLengthPrefixIsReassembled) {
     std::string msg;
     const std::string path = support::writeTemp("dnstcp1.pcap", support::pcapBytes({syn("0035"), seg(1000, q.substr(0, 2), "0035"), seg(1002, q.substr(2, 7), "0035"), seg(1009, q.substr(9), "0035")}));
     ASSERT_TRUE(fp.processPcapFile(path, packets, msg)) << msg;
-    EXPECT_EQ(packets[1].tcp_pdu_state, 1);
+    EXPECT_EQ(packets[1].tcp_pdu_state, 4);
     EXPECT_EQ(packets[3].protocol, "DNS");
     EXPECT_NE(packets[3].info.find("Standard query 0x1234 A a.test"), std::string::npos) << packets[3].info;
     packet::PacketInfo d;
@@ -381,4 +382,149 @@ TEST(DnsOverTcp, TheTailOfOneMessageAndWholeNextOnesShareASegment) {
     ASSERT_TRUE(core::buildPacketDetails(path, p, d, &packets, &fp.captureInfo(), &builtin()));
     EXPECT_EQ(d.info, p.info);
     std::remove(path.c_str());
+}
+
+namespace {
+    // client -> server on port 80 ("0050"), server -> client replies
+    std::vector<char> toServer(uint32_t seq, const std::string &data) { return seg(seq, data, "0050"); }
+    std::vector<char> fromServer(uint32_t seq, const std::string &data) { return reply(seq, data, "0050"); }
+
+    struct HttpCapture {
+        std::string path;
+        std::vector<packet::PacketInfo> packets;
+        core::FileProcessor fp{builtin()};
+        explicit HttpCapture(const std::vector<std::vector<char>> &frames) {
+            std::string message;
+            path = support::writeTemp("httpstream.pcap", support::pcapBytes(frames));
+            EXPECT_TRUE(fp.processPcapFile(path, packets, message)) << message;
+        }
+        ~HttpCapture() { std::remove(path.c_str()); }
+        packet::PacketInfo details(size_t i) {
+            packet::PacketInfo d;
+            EXPECT_TRUE(core::buildPacketDetails(path, packets[i], d, &packets, &fp.captureInfo(), &builtin()));
+            return d;
+        }
+    };
+
+    std::string readFixture(const char *name) {
+        std::ifstream f(std::string(IMSHARK_TEST_DATA_DIR) + "/gzip/" + name, std::ios::binary);
+        return std::string(std::istreambuf_iterator<char>(f), {});
+    }
+}
+
+TEST(HttpStream, ResponseWithContentLengthSplitOverSegments) {
+    const std::string body(3000, 'b');
+    const std::string resp = "HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nContent-Length: 3000\r\n\r\n" + body;
+    HttpCapture cap({syn("0050"), fromServer(1000, resp.substr(0, 1400)), fromServer(2400, resp.substr(1400, 1400)), fromServer(3800, resp.substr(2800))});
+    // the SYN is on the client direction; the server side starts at its own sequence number
+    EXPECT_EQ(cap.packets[1].tcp_pdu_state, 4);
+    EXPECT_EQ(cap.packets[3].tcp_pdu_state, 2);
+    EXPECT_EQ(cap.packets[3].protocol, "HTTP");
+    EXPECT_EQ(cap.packets[3].info, "HTTP/1.1 200 OK (text/plain)");
+    const auto d = cap.details(3);
+    EXPECT_EQ(d.info, cap.packets[3].info);
+    EXPECT_NE(find(d.fields, "File Data: 3000 bytes"), nullptr);
+    EXPECT_TRUE(filter::Filter::compile("http.response.code == 200 && tcp.reassembled").filter.matches(cap.packets[3]));
+}
+
+TEST(HttpStream, PipelinedRequestsAreAllShown) {
+    const std::string reqs = "GET /a HTTP/1.1\r\nHost: h\r\n\r\nGET /b HTTP/1.1\r\nHost: h\r\n\r\n";
+    HttpCapture cap({syn("0050"), toServer(1000, reqs)});
+    EXPECT_EQ(cap.packets[1].protocol, "HTTP");
+    EXPECT_EQ(cap.packets[1].info, "GET /a HTTP/1.1, GET /b HTTP/1.1");
+    EXPECT_EQ(cap.packets[1].app_text2, "/a") << "the filter facts are the first message's";
+    EXPECT_EQ(cap.details(1).info, cap.packets[1].info);
+}
+
+TEST(HttpStream, ChunkedBodyIsFramedAndDechunked) {
+    const std::string resp = "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhello\r\n6\r\n world\r\n0\r\n\r\n";
+    HttpCapture cap({syn("0050"), fromServer(1000, resp.substr(0, 60)), fromServer(1060, resp.substr(60))});
+    EXPECT_EQ(cap.packets[1].tcp_pdu_state, 4);
+    EXPECT_EQ(cap.packets[2].tcp_pdu_state, 2);
+    const auto d = cap.details(2);
+    EXPECT_NE(find(d.fields, "De-chunked entity body (11 bytes)"), nullptr);
+}
+
+TEST(HttpStream, GzipBodyIsInflated) {
+    const std::string gz = readFixture("hello.gz");
+    ASSERT_FALSE(gz.empty());
+    const std::string resp = "HTTP/1.1 200 OK\r\nContent-Encoding: gzip\r\nContent-Length: " + std::to_string(gz.size()) + "\r\n\r\n" + gz;
+    HttpCapture cap({syn("0050"), fromServer(1000, resp.substr(0, 70)), fromServer(1070, resp.substr(70))});
+    const auto d = cap.details(2);
+    EXPECT_NE(find(d.fields, "Content-encoded entity body (gzip): " + std::to_string(gz.size()) + " bytes -> 12 bytes"), nullptr);
+
+    std::string bad = resp;
+    bad[bad.size() - 12] ^= 0x7f;
+    HttpCapture cap2({syn("0050"), fromServer(1000, bad)});
+    EXPECT_NE(find(cap2.details(1).fields, "[Could not decompress the gzip body"), nullptr);
+}
+
+TEST(HttpStream, ResponseWithoutLengthShowsItsHeadersAndTheBodyFollowsAsSegments) {
+    HttpCapture cap({syn("0050"), fromServer(1000, "HTTP/1.0 200 OK\r\nContent-Type: text/html\r\n\r\n<html>"), fromServer(1051, "</html>")});
+    EXPECT_EQ(cap.packets[1].info, "HTTP/1.0 200 OK (text/html)");
+    EXPECT_EQ(cap.packets[1].tcp_pdu_state, 3);
+    EXPECT_EQ(cap.packets[2].protocol, "TCP");
+}
+
+TEST(HttpStream, FirstSegmentOfAMessageIsDecodedAsFarAsItGoes) {
+    const std::string resp = "HTTP/1.1 200 OK\r\nContent-Length: 3000\r\nContent-Type: text/plain\r\n\r\n" + std::string(3000, 'z');
+    HttpCapture cap({syn("0050"), fromServer(1000, resp.substr(0, 100)), fromServer(1100, resp.substr(100))});
+    EXPECT_EQ(cap.packets[1].tcp_pdu_state, 4);
+    EXPECT_EQ(cap.packets[1].protocol, "HTTP");
+    EXPECT_EQ(cap.packets[1].info, "HTTP/1.1 200 OK (text/plain) [TCP segment of a reassembled PDU] [Reassembled in #3]");
+    EXPECT_EQ(cap.details(1).info, cap.packets[1].info);
+    EXPECT_TRUE(filter::Filter::compile("tcp.segment && http").filter.matches(cap.packets[1]));
+}
+
+TEST(HttpStream, ResponseToHeadAndBodylessStatusesDoNotSwallowTheNextMessage) {
+    const std::string head = "HTTP/1.1 200 OK\r\nContent-Length: 5000\r\n\r\n";            // reply to HEAD: announces, sends nothing
+    const std::string next = "HTTP/1.1 304 Not Modified\r\nETag: x\r\n\r\n";
+    HttpCapture cap({syn("0050"), fromServer(1000, head + next)});
+    EXPECT_EQ(cap.packets[1].info.rfind("HTTP/1.1 200 OK", 0), 0u) << cap.packets[1].info;
+    EXPECT_NE(cap.packets[1].info.find("HTTP/1.1 304 Not Modified"), std::string::npos) << cap.packets[1].info;
+}
+
+TEST(HttpStream, NonHttpAndUpgradedStreamsAreLeftAlone) {
+    HttpCapture cap({syn("0050"), fromServer(1000, "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\n\r\n\x81\x05hello"), fromServer(1048, std::string("\x81\x05world", 7))});
+    EXPECT_EQ(cap.packets[1].protocol, "HTTP");
+    EXPECT_EQ(cap.packets[2].protocol, "TCP") << "WebSocket frames are not HTTP";
+    EXPECT_EQ(cap.packets[2].tcp_pdu_state, 0);
+
+    HttpCapture junk({syn("0050"), fromServer(1000, "GET but not really\x01 http"), fromServer(1030, "more")});
+    EXPECT_EQ(junk.packets[1].tcp_pdu_state, 0);
+    EXPECT_EQ(junk.packets[2].tcp_pdu_state, 0);
+}
+
+TEST(HttpStream, HugeBodiesDoNotBufferTheWholeMessage) {
+    HttpCapture cap({syn("0050"), fromServer(1000, "HTTP/1.1 200 OK\r\nContent-Length: 1000000000\r\n\r\nstart of a very large body")});
+    EXPECT_EQ(cap.packets[1].protocol, "HTTP") << "the headers are shown at once";
+    EXPECT_EQ(cap.packets[1].tcp_pdu_state, 3);
+}
+
+TEST(HttpStream, MalformedLengthsAndChunksAreRejectedNotTrusted) {
+    HttpCapture cap({syn("0050"), fromServer(1000, "HTTP/1.1 200 OK\r\nContent-Length: 12x\r\n\r\nabc"),
+                     fromServer(1100, "HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\nZZ\r\nabc")});
+    for (size_t i = 1; i < 3; ++i) EXPECT_EQ(cap.packets[i].tcp_pdu_state, 0) << i;
+}
+
+TEST(HttpStream, RandomSegmentationNeverChangesTheDecodedMessages) {
+    std::mt19937 rng(9);
+    const std::string body(2500, 'x');
+    const std::string stream = "HTTP/1.1 200 OK\r\nContent-Length: 2500\r\n\r\n" + body + "HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n";
+    for (int round = 0; round < 40; ++round) {
+        std::vector<std::vector<char>> frames = {syn("0050")};
+        for (size_t pos = 0; pos < stream.size();) {
+            const size_t n = std::min<size_t>(1 + rng() % 900, stream.size() - pos);
+            frames.push_back(fromServer(static_cast<uint32_t>(1000 + pos), stream.substr(pos, n)));
+            pos += n;
+        }
+        HttpCapture cap(frames);
+        std::string all;
+        for (const auto &p: cap.packets) if (p.protocol == "HTTP") all += p.info + "|";
+        EXPECT_NE(all.find("HTTP/1.1 200 OK"), std::string::npos) << round << ": " << all;
+        EXPECT_NE(all.find("HTTP/1.1 404 Not Found"), std::string::npos) << round << ": " << all;
+        for (size_t i = 0; i < cap.packets.size(); ++i) {
+            if (cap.packets[i].protocol == "HTTP") ASSERT_EQ(cap.details(i).info, cap.packets[i].info) << round << " #" << i + 1;
+        }
+    }
 }

@@ -430,8 +430,8 @@
       "source": "https://wiki.wireshark.org/uploads/27707187aeb30df68e70c8fb9d614981/http.cap",
       "protocols": {
         "DNS": 2,
-        "HTTP": 5,
-        "TCP": 36
+        "HTTP": 7,
+        "TCP": 34
       },
       "malformed": 0,
       "facts": [

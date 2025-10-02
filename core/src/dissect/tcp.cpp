@@ -230,17 +230,19 @@ void dissect::dissectTcp(Context &ctx, const char *data, size_t length) {
     // ---- messages that span segments ------------------------------------------------------------------------------
     const bool fin = tcpHeader.flags & 0x01, rst = tcpHeader.flags & 0x04, syn = tcpHeader.flags & 0x02;
     const std::string segmentNote = " [TCP segment of a reassembled PDU]";
-    auto markSegment = [&] {
-        pack.tcp_pdu_state = 1;
+    auto markSegment = [&](uint8_t state) {
+        pack.tcp_pdu_state = state;
         pack.info += segmentNote + (pack.tcp_reassembled_in ? " [Reassembled in #" + std::to_string(pack.tcp_reassembled_in) + "]" : "");
         if (ctx.wantFields() && !pack.fields.empty()) pack.fields.back().add("[TCP segment of a reassembled PDU]");
     };
-    bool handled = false;
+    bool handled = false, noteAfter = false;   // noteAfter: the first segment of a message is decoded as far as it goes, then marked
 
     if (ctx.mode == ParseMode::Replay) {
         if (pack.tcp_pdu_state == 1) {
-            markSegment();
+            markSegment(1);
             handled = true;
+        } else if (pack.tcp_pdu_state == 4) {
+            noteAfter = true;
         } else if (pack.tcp_pdu_state == 3) {   // a whole message inside this segment
             const int32_t skip = static_cast<int32_t>(pack.tcp_pdu_start - static_cast<uint32_t>(seq >= 0 ? seq : 0));
             if (skip >= 0 && static_cast<size_t>(skip) + pack.tcp_pdu_len <= payloadLen) {
@@ -267,8 +269,10 @@ void dissect::dissectTcp(Context &ctx, const char *data, size_t length) {
         if (ctx.completedTcp) {
             for (uint32_t earlier: result.earlier) ctx.completedTcp->push_back({earlier, static_cast<uint32_t>(pack.number)});
         }
-        if (result.action == StreamFeedResult::Action::Segment) {
-            markSegment();
+        if (result.action == StreamFeedResult::Action::Segment && result.startsMessage) {
+            noteAfter = true;
+        } else if (result.action == StreamFeedResult::Action::Segment) {
+            markSegment(1);
             handled = true;
         } else if (result.action == StreamFeedResult::Action::Pdu) {
             const StreamPdu &pdu = result.pdus.front();
@@ -301,4 +305,5 @@ void dissect::dissectTcp(Context &ctx, const char *data, size_t length) {
             if (heuristic(ctx, payload, payloadLen)) break;
         }
     }
+    if (noteAfter) markSegment(4);
 }
