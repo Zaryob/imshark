@@ -138,6 +138,61 @@ namespace {
         }
     }
 
+    // Tree nodes for one IPv6 extension header (not the fragment header) at data[pos, pos + extLen)
+    void addExtensionHeader(Field &layer, size_t o, const char *h, size_t extLen, uint8_t type, uint8_t following) {
+        using namespace dissect;
+        const char *name = type == 0 ? "Hop-by-Hop Options" : type == 43 ? "Routing Header" : type == 51 ? "Authentication Header" : "Destination Options";
+        Field &f = layer.add(std::string(name) + " (" + std::to_string(extLen) + " bytes)", o, extLen);
+        f.add("Next Header: " + ipProtocolName(following) + " (" + std::to_string(following) + ")", o, 1);
+        if (type == 51) {
+            f.add("Length: " + std::to_string(static_cast<unsigned>(static_cast<uint8_t>(h[1]))) + " (" + std::to_string(extLen) + " bytes)", o + 1, 1);
+            if (extLen >= 12) f.add("SPI: " + hexString(be32(h + 4), 8), o + 4, 4);
+            if (extLen >= 16) f.add("Sequence Number: " + std::to_string(be32(h + 8)), o + 8, 4);
+            if (extLen > 12) f.add("Integrity Check Value: " + std::to_string(extLen - 12) + " bytes", o + 12, extLen - 12);
+            return;
+        }
+        f.add("Length: " + std::to_string(static_cast<unsigned>(static_cast<uint8_t>(h[1]))) + " (" + std::to_string(extLen) + " bytes)", o + 1, 1);
+        if (type == 43) {   // routing: type, segments left, then type specific data
+            const unsigned rt = static_cast<uint8_t>(h[2]), left = static_cast<uint8_t>(h[3]);
+            f.add("Routing Type: " + std::string(rt == 0 ? "Source Route (deprecated)" : rt == 2 ? "Mobile IPv6" : rt == 3 ? "RPL Source Route" : rt == 4 ? "Segment Routing" : "type") + " (" + std::to_string(rt) + ")", o + 2, 1);
+            f.add("Segments Left: " + std::to_string(left), o + 3, 1);
+            if (rt == 4 && extLen >= 8) {   // SRH: last entry, flags, tag, then 16-byte segments
+                const unsigned lastEntry = static_cast<uint8_t>(h[4]);
+                f.add("Last Entry: " + std::to_string(lastEntry), o + 4, 1);
+                for (unsigned k = 0; k <= lastEntry && 8 + (k + 1) * 16 <= extLen; ++k) f.add("Segment List[" + std::to_string(k) + "]: " + network::formatIPv6(h + 8 + k * 16), o + 8 + k * 16, 16);
+            } else if (rt == 2 && extLen >= 24) {
+                f.add("Home Address: " + network::formatIPv6(h + 8), o + 8, 16);
+            }
+            return;
+        }
+        // hop-by-hop and destination options: type-length-value options after the first two bytes
+        size_t i = 2;
+        int count = 0;
+        while (i < extLen && count++ < 64) {
+            const unsigned t = static_cast<uint8_t>(h[i]);
+            if (t == 0) { f.add("Pad1", o + i, 1); ++i; continue; }
+            if (i + 2 > extLen) break;
+            const size_t len = static_cast<uint8_t>(h[i + 1]);
+            const size_t take = std::min(len, extLen - i - 2);
+            std::string text;
+            switch (t) {
+                case 1: text = "PadN (" + std::to_string(len) + " bytes)"; break;
+                case 5: text = "Router Alert" + std::string(len == 2 ? ": " + std::string(be16(h + i + 2) == 0 ? "MLD" : be16(h + i + 2) == 1 ? "RSVP" : be16(h + i + 2) == 2 ? "Active Networks" : "value " + std::to_string(be16(h + i + 2))) : ""); break;
+                case 194: text = "Jumbo Payload" + std::string(len == 4 ? ": " + std::to_string(be32(h + i + 2)) + " bytes" : ""); break;
+                case 4: text = "Tunnel Encapsulation Limit" + std::string(len == 1 ? ": " + std::to_string(static_cast<uint8_t>(h[i + 2])) : ""); break;
+                case 201: text = "Home Address" + std::string(len == 16 ? ": " + network::formatIPv6(h + i + 2) : ""); break;
+                default: text = "Option " + std::to_string(t) + " (" + std::to_string(len) + " bytes)";
+            }
+            // the two highest bits say what a node does with an option it does not know (RFC 8200 4.2)
+            static const char *action[] = {"skip", "discard", "discard and send ICMP", "discard and send ICMP unless multicast"};
+            Field &opt = f.add(text, o + i, 2 + take);
+            opt.add("Type: " + std::to_string(t) + " (" + action[t >> 6] + " if unrecognised" + ((t & 0x20) ? ", may change en route" : "") + ")", o + i, 1);
+            opt.add("Length: " + std::to_string(len), o + i + 1, 1);
+            if (len > extLen - i - 2) { opt.add("[Option continues past the end of the header]", o + i, extLen - i); break; }
+            i += 2 + len;
+        }
+    }
+
     // Walks the IPv6 extension headers (hop-by-hop, routing, destination options, AH and - at the top level - the
     // fragment header) starting at `data`, then hands the upper layer to its dissector.
     void ipv6Chain(dissect::Context &ctx, const char *data, size_t avail, uint8_t nextHeader, Field *layer, bool allowFragment) {
@@ -173,7 +228,7 @@ namespace {
                     return;
                 }
             } else if (layer) {
-                layer->add("Extension Header (type " + std::to_string(nextHeader) + ", " + std::to_string(extLen) + " bytes)", o, extLen);
+                addExtensionHeader(*layer, o, data + pos, extLen, nextHeader, following);
             }
             pack.length = pack.length >= extLen ? pack.length - static_cast<uint32_t>(extLen) : 0; // the payload excludes extension headers
             pos += extLen;
