@@ -7,7 +7,7 @@ Statik kod incelemesiyle tespit edilmiştir (derleme/çalıştırma ile ayrıca 
 İlk analizdeki #1–#24 giderildi. Aşağıdakiler **hâlâ açık** olanlardır; ilgili ROADMAP sürümü parantez içinde.
 
 **İşlevsel sınırlar**
-- TLS kayıtları TCP segmentleri arasında henüz birleştirilmez; TLS şifre çözme yok (v0.7.2, v0.9+). HTTP/1.x ve DNS/TCP mesajları birleştirilir; kapanışa kadar süren HTTP yanıtlarında yalnızca başlıklar mesaj sayılır, gövde segment olarak görünür; 4 MiB'tan büyük gövdeler arabelleğe alınmaz; HEAD yanıtı yalnızca sonraki mesajın başlangıcına bakılarak ayırt edilir.
+- TLS şifre çözme yok (v0.9+); TLS kayıtları ve kayıtlara yayılan el sıkışma mesajları (ör. uzun Certificate) birleştirilir, sertifikalar konu/veren/geçerlilik/SAN ile gösterilir (imza ve zincir doğrulanmaz). HTTP/1.x ve DNS/TCP mesajları birleştirilir; kapanışa kadar süren HTTP yanıtlarında yalnızca başlıklar mesaj sayılır, gövde segment olarak görünür; 4 MiB'tan büyük gövdeler arabelleğe alınmaz; HEAD yanıtı yalnızca sonraki mesajın başlangıcına bakılarak ayırt edilir.
 - DNS yalnızca standart portlarda tanınır; DHCP option overload (sname/file) taranmaz; ICMP/NTP/DNSSEC ayrıntıları kısmi (v0.7.2).
 - Desteklenmeyen link türleri (PPI, 802.11, Radiotap) `Unknown` görünür; 802.3/LLC, PPPoE, MPLS, GRE yok (v0.7.3, v0.9).
 - TCP analizi Wireshark'a göre sadeleştirilmiştir (spurious retransmission ve hızlı yeniden iletim ayrımı yok).

@@ -159,7 +159,8 @@ TEST(Tls, RecordsCutByTheSegmentEnd) {
     const auto full = record(22, 0x0303, handshake(11, std::string(1200, 'b')));   // a big Certificate
     const auto cut = tcpPayload(raw(full.substr(0, 2 * 300)));                           // only 300 bytes in this segment
     EXPECT_EQ(cut.protocol, "TLS");
-    EXPECT_EQ(cut.info, "Certificate [fragment]");
+    EXPECT_EQ(cut.info.rfind("Certificate [fragment]", 0), 0u) << cut.info;
+    EXPECT_EQ(cut.tcp_pdu_state, 4);
 }
 
 TEST(Tls, ARecordHeaderWithoutItsBodyIsStillTls) {

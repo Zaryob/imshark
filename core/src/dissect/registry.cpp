@@ -19,6 +19,7 @@ const dissect::Registry &dissect::Registry::builtin() {
 
         // application layer, recognised by content when no port matched
         r.registerTcpStreamHeuristic({"HTTP", frameHttp, [](Context &c, const char *d, size_t n) { dissectHttp(c, d, n); }});
+        r.registerTcpStreamHeuristic({"TLS", frameTls, [](Context &c, const char *d, size_t n) { dissectTls(c, d, n); }});
         r.registerTcpHeuristic(dissectHttp);
         r.registerTcpHeuristic(dissectTls);
 

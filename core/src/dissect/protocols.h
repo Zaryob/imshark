@@ -22,5 +22,6 @@ namespace dissect {
     void dissectBgp(Context &ctx, const char *data, size_t length);
     StreamFrame frameHttp(const char *data, size_t length);            // message boundary of HTTP/1.x (Content-Length, chunked, until close)
     bool dissectHttp(Context &ctx, const char *data, size_t length);   // heuristic: false if it is not HTTP/1.x
+    StreamFrame frameTls(const char *data, size_t length);             // message boundary of TLS records (handshake messages may span records)
     bool dissectTls(Context &ctx, const char *data, size_t length);    // heuristic: false if it is not a TLS record
 } // namespace dissect
