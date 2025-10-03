@@ -50,6 +50,7 @@ add_library(imshark_ui STATIC
     src/ui/chrome.cpp
     src/ui/color_editor.cpp
     src/ui/color_rules.cpp
+    src/ui/decode_as.cpp
     src/ui/clipboard.cpp
     src/ui/details.cpp
     src/ui/export_dialog.cpp

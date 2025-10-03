@@ -794,3 +794,40 @@ TEST_F(UiSmoke, ARunningJobSurvivesTheCaptureBeingDropped) {
     EXPECT_FALSE(static_cast<bool>(state.find.job)) << "the job ran to the end on its private snapshot";
     EXPECT_EQ(state.find.message, "No match");
 }
+
+TEST_F(UiSmoke, DecodeAsRulesReloadTheCaptureWithOtherDissectors) {
+    // an NTP client request on UDP port 9999, which nothing claims by itself
+    const std::string ntp = "23" "00" "06" "ec" + std::string(88, '0');
+    const auto ntpBytes = support::hex(ntp);
+    const auto path = support::writeTemp("decodeas_ui.pcap", support::pcapBytes({support::udpPacket("0a000001", "0a000002", "c350", "270f", std::string(ntpBytes.begin(), ntpBytes.end()))}));
+    ui::AppState state;
+    ui::loadCapture(state, path);
+    ASSERT_EQ(state.packets.size(), 1u);
+    EXPECT_EQ(state.packets[0].protocol, "UDP");
+
+    state.decodeAs.open = true;
+    frames(state);                                           // draws the (empty) window
+
+    EXPECT_FALSE(ui::applyDecodeAs(state, {{false, 9999, "Nonsense"}}));
+    EXPECT_FALSE(state.decodeAs.error.empty());
+    EXPECT_TRUE(state.decodeAs.rules.empty()) << "an invalid rule changes nothing";
+    EXPECT_FALSE(ui::applyDecodeAs(state, {{false, 70000, "NTP"}}));
+
+    ASSERT_TRUE(ui::applyDecodeAs(state, {{false, 9999, "NTP"}}));
+    while (state.loading()) frame(state);
+    ASSERT_EQ(state.packets.size(), 1u);
+    EXPECT_EQ(state.packets[0].protocol, "NTP");
+    state.selectPacket(0);
+    frames(state);
+    EXPECT_EQ(state.detail.protocol, "NTP") << "the details are rebuilt with the same rules";
+    EXPECT_FALSE(state.detail.fields.empty());
+
+    state.decodeAs.edit = {{true, 8080, "HTTP"}, {false, 53, "NTP"}};   // the window draws rules being edited
+    frames(state);
+    ASSERT_TRUE(ui::applyDecodeAs(state, {}));
+    while (state.loading()) frame(state);
+    EXPECT_EQ(state.packets[0].protocol, "UDP") << "removing the rules restores the built-in behaviour";
+    state.decodeAs.open = false;
+    frames(state);
+    std::remove(path.c_str());
+}
