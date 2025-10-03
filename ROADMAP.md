@@ -99,7 +99,7 @@ Hedef: bir protokolün adını göstermekten mesajı ve alanlarını doğru çö
 - [x] DNS RDATA kapsamı: SOA'nın kalan zaman alanları, EDNS seçenekleri/extended RCODE, DS/DNSKEY/RRSIG/NSEC ve SVCB/HTTPS; desteklenmeyen kayıtları ham veri olarak açıkça göster — **M**
 - [x] DHCP option overload (52): `sname`/`file` alanlarını tara; pad/end bulunmayan ve kırpık seçenekleri işle. Uzun seçenek birleştirme, relay alt seçenekleri ve authentication seçeneğini çöz — **M**
 - [x] ICMP/ICMPv6 mesaj gövdeleri: MTU/pointer, alıntılanan IPv6 paketleri, router/neighbor discovery bayrakları ve seçenekleri, multicast listener mesajları; IPv6 uzantı başlıklarının TLV alanları — **M**
-- [ ] NTP control/private mesajlarını temel 48 baytlık zaman paketinden ayır; extension/authentication alanlarını çöz — **M**
+- [x] NTP control/private mesajlarını temel 48 baytlık zaman paketinden ayır; extension/authentication alanlarını çöz — **M**
 - [ ] IPv4/TCP/UDP/ICMP checksum doğrulaması; doğrulanmış hata ile kesilmiş paket veya checksum offload nedeniyle doğrulanamayan durumu Expert Information'da ayır — **M**
 
 Kabul ölçütü: `dns_port.pcap` DNS olarak çözülür; `PRIV_bootp-both_overload*.pcap` içindeki overload seçenekleri görünür; bölünmüş ve birleştirilmiş DNS/HTTP/TLS girdileri aynı mesaj/alanları üretir. Eksik yakalama mesajı tamamlanmış sayılmaz; mevcut özetten filtreleme performansı korunur.

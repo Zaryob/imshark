@@ -486,3 +486,78 @@ TEST(Ipv6Extensions, OptionsRoutingAndAuthenticationHeaders) {
     const auto bad = support::parse(ipv6Packet(0, "3a 00 0509 0000 0100" "80 00 0000 abcd 0007"));
     EXPECT_NE(find(bad.fields, "[Option continues past the end of the header]"), nullptr);
 }
+
+namespace {
+    packet::PacketInfo ntp(const std::string &hexPayload) { return support::parse(support::udpPacket("0a000002", "0a000001", "007b", "007b", bytes(hexPayload))); }
+    std::string ntpClient() { return "23" "00" "06" "ec" + zeros(44); }
+}
+
+TEST(NtpModes, ControlMessages) {
+    const auto request = ntp("16" "02" "0001" "0000" "0000" "0000" "0000");   // version 2, mode 6, read variables
+    EXPECT_EQ(request.protocol, "NTP");
+    EXPECT_EQ(request.info, "NTP Version 2, control message, read variables request");
+    EXPECT_TRUE(matches("ntp.mode == 6 && ntp.ctrl.opcode == 2 && !ntp.stratum", request));
+
+    const std::string text = "version=\"ntpd 4.2.8\"";
+    const std::string padded = support::hexOf(text) + zeros(((text.size() + 3) / 4 * 4) - text.size());
+    const auto response = ntp("16" "82" "0001" "0000" "0000" "0000" + u32(static_cast<unsigned>(text.size())).substr(4) + padded + u32(7) + zeros(16));
+    EXPECT_EQ(response.info, "NTP Version 2, control message, read variables response");
+    EXPECT_NE(find(response.fields, "Data: version=\"ntpd 4.2.8\""), nullptr);
+    EXPECT_NE(find(response.fields, "Authenticator"), nullptr);
+    EXPECT_NE(find(response.fields, "Key ID: 7"), nullptr);
+
+    const auto error = ntp("16" "c2" "0001" "0000" "0000" "0000" "0000");
+    EXPECT_NE(error.info.find("(error)"), std::string::npos);
+    EXPECT_NE(ntp("16" "02").info.find("Malformed"), std::string::npos);
+    const auto lying = ntp("16" "82" "0001" "0000" "0000" "0000" "0100" "6161");
+    EXPECT_NE(find(lying.fields, "[Data continues past the end of the message]"), nullptr);
+}
+
+TEST(NtpModes, PrivateMessages) {
+    const auto p = ntp("17" "00" "03" "00" "0000" "0000");   // version 2, mode 7, implementation 3, request 0 = PEER_LIST
+    EXPECT_EQ(p.info, "NTP Version 2, private message, PEER_LIST request");
+    EXPECT_TRUE(matches("ntp.mode == 7 && ntp.priv.reqcode == 0", p));
+    const auto response = ntp("97" "80" "03" "2a" "0002" "0010" + zeros(32));
+    EXPECT_EQ(response.info, "NTP Version 2, private message, REQ_MON_GETLIST_1 response");
+    EXPECT_NE(find(response.fields, "Number of data items: 2"), nullptr);
+    EXPECT_EQ(find(response.fields, "Data (32 bytes,"), nullptr) << "item count and size agree with the data";
+}
+
+TEST(NtpModes, ExtensionFieldsAndAuthenticators) {
+    const auto md5 = ntp(ntpClient() + u32(5) + zeros(16));
+    EXPECT_NE(find(md5.fields, "Message Authentication Code (MD5)"), nullptr);
+    EXPECT_NE(find(md5.fields, "Key ID: 5"), nullptr);
+    const auto sha1 = ntp(ntpClient() + u32(6) + zeros(20));
+    EXPECT_NE(find(sha1.fields, "Message Authentication Code (SHA-1)"), nullptr);
+    const auto nak = ntp(ntpClient() + u32(0));
+    EXPECT_NE(find(nak.fields, "Key ID: 0 (crypto-NAK if zero)"), nullptr);
+
+    // one extension field (type 0x0104, 16 bytes) followed by an MD5 MAC
+    const auto ext = ntp(ntpClient() + "0104" "0010" + zeros(12) + u32(5) + zeros(16));
+    EXPECT_NE(find(ext.fields, "Extension Field: type 0x0104, length 16"), nullptr);
+    EXPECT_NE(find(ext.fields, "Message Authentication Code (MD5)"), nullptr);
+
+    const auto bad = ntp(ntpClient() + "0104" "0003" + zeros(30));
+    EXPECT_NE(find(bad.fields, "[Malformed extension field]"), nullptr);
+    EXPECT_NE(find(ntp(ntpClient() + "aabbcc").fields, "Trailing data (3 bytes)"), nullptr);
+}
+
+TEST(NtpModes, SurviveRandomCorruption) {
+    std::mt19937 rng(31);
+    const std::vector<std::string> seeds = {"16" "82" "0001" "0000" "0000" "0000" "0004" "61616161" + u32(7) + zeros(16), "97" "80" "03" "2a" "0002" "0010" + zeros(32),
+                                            ntpClient() + "0104" "0010" + zeros(12) + u32(5) + zeros(16)};
+    for (int i = 0; i < 5000; ++i) {
+        auto b = bytes(seeds[rng() % seeds.size()]);
+        b.resize(rng() % (b.size() + 1));
+        for (unsigned k = rng() % 4; k > 0 && !b.empty(); --k) b[rng() % b.size()] = static_cast<char>(rng());
+        auto frame = support::udpPacket("0a000002", "0a000001", "007b", "007b", support::hexOf(b));
+        packet::PacketParser parser;
+        packet::PacketInfo info(1);
+        parser.parsePacket(info, frame, dissect::ParseMode::Full);
+        std::function<void(const packet::Field &)> check = [&](const packet::Field &f) {
+            EXPECT_LE(size_t(f.offset) + f.length, frame.size()) << f.text;
+            for (const auto &c: f.children) check(c);
+        };
+        for (const auto &l: info.fields) check(l);
+    }
+}
