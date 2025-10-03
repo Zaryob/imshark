@@ -22,6 +22,8 @@ const dissect::Registry &dissect::Registry::builtin() {
         r.registerTcpStreamHeuristic({"TLS", frameTls, [](Context &c, const char *d, size_t n) { dissectTls(c, d, n); }});
         r.registerTcpHeuristic(dissectHttp);
         r.registerTcpHeuristic(dissectTls);
+        r.registerTcpStreamHeuristic({"DNS", frameDnsTcpHeuristic, dissectDnsTcp});   // after HTTP and TLS: it only claims streams that parse as DNS
+        r.registerUdpHeuristic(dissectDnsHeuristic);
 
         // application layer, by well-known port
         r.registerTcpPort(23, dissectTelnet);
@@ -36,7 +38,46 @@ const dissect::Registry &dissect::Registry::builtin() {
         r.registerUdpPort(123, dissectNtp);
         r.registerUdpPort(161, dissectSnmp);
         r.registerUdpPort(162, dissectSnmp);
+        // names for Decode As
+        auto both = [&](const char *name, Dissector udp, Dissector tcp, std::shared_ptr<StreamProtocol> stream = nullptr) { r.registerProtocolName(name, {std::move(udp), std::move(tcp), std::move(stream)}); };
+        both("DNS", dissectDns, dissectDnsTcp, std::make_shared<StreamProtocol>(StreamProtocol{"DNS", frameDnsTcp, dissectDnsTcp}));
+        both("MDNS", dissectMdns, nullptr);
+        both("DHCP", dissectDhcp, nullptr);
+        both("NTP", dissectNtp, nullptr);
+        both("SNMP", dissectSnmp, nullptr);
+        both("HTTP", nullptr, nullptr, std::make_shared<StreamProtocol>(StreamProtocol{"HTTP", frameHttp, [](Context &c, const char *d, size_t n) { dissectHttp(c, d, n); }}));
+        both("TLS", nullptr, nullptr, std::make_shared<StreamProtocol>(StreamProtocol{"TLS", frameTls, [](Context &c, const char *d, size_t n) { dissectTls(c, d, n); }}));
+        both("Telnet", nullptr, dissectTelnet);
+        both("SMTP", nullptr, dissectSmtp);
+        both("BGP", nullptr, dissectBgp);
         return r;
     }();
     return registry;
+}
+
+std::vector<std::string> dissect::Registry::protocolNames(bool tcp) const {
+    std::vector<std::string> out;
+    for (const auto &[name, h]: named_) if (tcp ? (h.tcp || h.stream) : static_cast<bool>(h.udp)) out.push_back(name);
+    return out;   // std::map keeps them sorted
+}
+
+bool dissect::Registry::decodeAs(bool tcp, uint16_t port, const std::string &protocol, std::string *error) {
+    const auto it = named_.find(protocol);
+    if (it == named_.end() || !(tcp ? (it->second.tcp || it->second.stream) : static_cast<bool>(it->second.udp))) {
+        if (error) *error = "No protocol \"" + protocol + "\" for " + (tcp ? "TCP" : "UDP");
+        return false;
+    }
+    if (port == 0) {
+        if (error) *error = "Port 0 cannot be used";
+        return false;
+    }
+    if (tcp) {
+        tcpPorts_.erase(port);
+        tcpStreams_.erase(port);
+        if (it->second.stream) registerTcpStream(port, *it->second.stream);
+        else registerTcpPort(port, it->second.tcp);
+    } else {
+        registerUdpPort(port, it->second.udp);
+    }
+    return true;
 }

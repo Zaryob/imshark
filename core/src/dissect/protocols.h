@@ -13,6 +13,8 @@ namespace dissect {
     void dissectDns(Context &ctx, const char *data, size_t length);        // DNS over UDP
     void dissectDnsTcp(Context &ctx, const char *data, size_t length);     // DNS over TCP (2-byte length prefix)
     StreamFrame frameDnsTcp(const char *data, size_t length);              // message boundary of DNS over TCP
+    StreamFrame frameDnsTcpHeuristic(const char *data, size_t length);     // same, but only for bytes that look like DNS (any port)
+    bool dissectDnsHeuristic(Context &ctx, const char *data, size_t length);   // DNS over UDP on any port, validated structurally
     void dissectMdns(Context &ctx, const char *data, size_t length);       // multicast DNS
     void dissectDhcp(Context &ctx, const char *data, size_t length);
     void dissectNtp(Context &ctx, const char *data, size_t length);

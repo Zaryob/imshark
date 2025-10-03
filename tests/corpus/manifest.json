@@ -464,13 +464,12 @@
       "optional": true,
       "source": "https://wiki.wireshark.org/uploads/__moin_import__/attachments/SampleCaptures/dns_port.pcap",
       "protocols": {
-        "UDP": 2
+        "DNS": 2
       },
       "malformed": 0,
       "checksums": {"ip_good": 2, "l4_good": 2},
-      "facts": [],
+      "facts": [{"packet": 1, "protocol": "DNS"}, {"packet": 2, "protocol": "DNS"}],
       "expectation": "packet count counted independently; protocol histogram is a snapshot of ImShark's output",
-      "known_limitation": "DNS on a non-standard port is not recognised yet (v0.7.2 Decode As)",
       "sha256": "badf9490a5bfdb632131bb393ad808776859a0c31a5056287de95d577dd1c11d",
       "size": 671,
       "packets": 2,
