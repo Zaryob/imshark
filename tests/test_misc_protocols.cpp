@@ -326,3 +326,31 @@ TEST(HttpNames, StandardPhrasesWhenTheLineHasNone) {
     const auto unknown = tcpTo("c351", "HTTP/1.1 299\r\n\r\n");
     EXPECT_EQ(find(unknown.fields, "Response Phrase"), nullptr) << "no invented phrase for unknown codes";
 }
+
+TEST(Dhcp, OptionOverloadReadsTheFileAndSnameFields) {
+    // fixed header with sname = "Message: from sname" and file = "Message: from file" given as options, End-terminated
+    auto field = [&](const std::string &options, size_t size) { return options + zeros(size - options.size() / 2); };
+    const std::string sname = field("38" "05" + support::hexOf("snm") + "6161" "ff", 64);                 // option 56, 5 bytes: "snm"+"aa"
+    const std::string file = field("0c" "04" + support::hexOf("fhst") + "ff", 128);                         // option 12 hostname "fhst"
+    const std::string fixed = std::string("01") + "01" "06" "00" + u32(9) + "0000" "8000" "00000000" "00000000" "00000000" "00000000" "001122334455" + zeros(10);
+    const std::string options = "63825363" "350101" "3401" "03" "ff";                                       // overload both
+    const auto p = dhcp(fixed + sname + file + options);
+    EXPECT_EQ(p.protocol, "DHCP");
+    EXPECT_NE(find(p.fields, "Option: (52) Option Overload: the file and sname fields hold options (3)"), nullptr);
+    EXPECT_NE(find(p.fields, "Options in the file field (option overload)"), nullptr);
+    EXPECT_NE(find(p.fields, "Options in the sname field (option overload)"), nullptr);
+    EXPECT_NE(find(p.fields, "Option: (56) Message: snmaa"), nullptr);
+    EXPECT_EQ(p.app_text, "fhst") << "an option found in the file field is a real option";
+    EXPECT_NE(find(p.fields, "Server host name: options (option overload)"), nullptr);
+    expectRangesInside(p, 14 + 20 + 8 + 236 + options.size() / 2);
+}
+
+TEST(Dhcp, ServerNameAndBootFileAreShownWhenNotOverloaded) {
+    auto text = [&](const std::string &s, size_t size) { return support::hexOf(s) + zeros(size - s.size()); };
+    const std::string fixed = std::string("02") + "01" "06" "00" + u32(9) + "0000" "8000" "00000000" "0a000032" "0a000001" "00000000" "001122334455" + zeros(10);
+    const auto p = dhcp(fixed + text("tftp.example", 64) + text("pxelinux.0", 128) + "63825363" "350102" "ff", true);
+    EXPECT_NE(find(p.fields, "Server host name: tftp.example"), nullptr);
+    EXPECT_NE(find(p.fields, "Boot file name: pxelinux.0"), nullptr);
+    const auto bare = dhcp(dhcpFixed(1, 1));
+    EXPECT_NE(find(bare.fields, "Server host name not given"), nullptr);
+}

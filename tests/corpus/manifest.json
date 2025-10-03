@@ -445,7 +445,6 @@
         }
       ],
       "expectation": "packet count counted independently; protocol histogram is a snapshot of ImShark's output",
-      "known_limitation": "HTTP messages are not reassembled across TCP segments yet (v0.7.2)",
       "sha256": "25a72bdf10339f2c29916920c8b9501d294923108de8f29b19aba7cc001ab60d",
       "size": 25803,
       "packets": 43,
@@ -483,9 +482,21 @@
         "DHCP": 1
       },
       "malformed": 0,
-      "facts": [],
+      "facts": [
+          {
+            "packet": 1,
+            "tree_contains": "Option: (56) Message: file name field overload"
+          },
+          {
+            "packet": 1,
+            "tree_contains": "Option: (56) Message: sname field overload"
+          },
+          {
+            "packet": 1,
+            "tree_contains": "Option: (52) Option Overload: the file and sname fields hold options (3)"
+          }
+        ],
       "expectation": "packet count counted independently; protocol histogram is a snapshot of ImShark's output",
-      "known_limitation": "DHCP option overload (sname/file) is not scanned yet (v0.7.2)",
       "sha256": "49b22cdecb1ab5b9c299fc0e2b87b18e0215f8f9f06bc0f41b0a3f69111b56e6",
       "size": 364,
       "packets": 1,
@@ -503,9 +514,13 @@
         "DHCP": 1
       },
       "malformed": 0,
-      "facts": [],
+      "facts": [
+          {
+            "packet": 1,
+            "tree_contains": "Option: (52) Option Overload: the file and sname fields hold options (3)"
+          }
+        ],
       "expectation": "packet count counted independently; protocol histogram is a snapshot of ImShark's output",
-      "known_limitation": "DHCP option overload is not scanned yet (v0.7.2)",
       "sha256": "5e4e53eefce0924a46e0e4cb5ed3217a798e0a8a39e7c2e9f7fe71abe705ce26",
       "size": 364,
       "packets": 1,
