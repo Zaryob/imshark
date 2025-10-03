@@ -4,6 +4,10 @@
 
 #include "util.h"
 
+#include <cstdio>
+#include <string>
+#include <vector>
+
 #include <network/l7_application/dns_header.h>
 #include <network/utils.h>
 
@@ -24,13 +28,20 @@ namespace {
             case 28: return "AAAA";
             case 33: return "SRV";
             case 41: return "OPT";
+            case 13: return "HINFO";
+            case 39: return "DNAME";
             case 43: return "DS";
+            case 44: return "SSHFP";
             case 46: return "RRSIG";
             case 47: return "NSEC";
             case 48: return "DNSKEY";
+            case 50: return "NSEC3";
+            case 51: return "NSEC3PARAM";
+            case 52: return "TLSA";
             case 64: return "SVCB";
             case 65: return "HTTPS";
             case 255: return "ANY";
+            case 257: return "CAA";
             default: return nullptr;
         }
     }
@@ -112,6 +123,8 @@ namespace {
         std::string rdata;      // decoded record data for the tree ("addr 1.2.3.4" style pieces are in `treeText`)
         std::string infoText;   // what the Info column shows after the type
         std::string treeText;   // short description for the record's tree line
+        std::vector<std::string> details;   // further lines under the record data
+        unsigned extendedRcode = 0;         // OPT: upper 8 bits of the response code
         bool ok = false;
     };
 
@@ -119,6 +132,152 @@ namespace {
         std::string s = "\"";
         for (size_t i = 0; i < n; ++i) s += (static_cast<unsigned char>(p[i]) >= 32 && static_cast<unsigned char>(p[i]) < 127) ? p[i] : '.';
         return s + "\"";
+    }
+
+
+    std::string hexBytes(const char *p, size_t n, size_t max = 32) {
+        static const char *digits = "0123456789abcdef";
+        std::string out;
+        for (size_t i = 0; i < std::min(n, max); ++i) {
+            out += digits[static_cast<uint8_t>(p[i]) >> 4];
+            out += digits[static_cast<uint8_t>(p[i]) & 15];
+        }
+        if (n > max) out += "...";
+        return out;
+    }
+
+    std::string algorithmText(unsigned a) {
+        switch (a) {
+            case 1: return "RSAMD5";
+            case 3: return "DSA";
+            case 5: return "RSASHA1";
+            case 6: return "DSA-NSEC3-SHA1";
+            case 7: return "RSASHA1-NSEC3-SHA1";
+            case 8: return "RSASHA256";
+            case 10: return "RSASHA512";
+            case 13: return "ECDSAP256SHA256";
+            case 14: return "ECDSAP384SHA384";
+            case 15: return "ED25519";
+            case 16: return "ED448";
+            default: return "algorithm " + std::to_string(a);
+        }
+    }
+
+    std::string digestText(unsigned d) {
+        switch (d) {
+            case 1: return "SHA-1";
+            case 2: return "SHA-256";
+            case 3: return "GOST R 34.11-94";
+            case 4: return "SHA-384";
+            default: return "digest type " + std::to_string(d);
+        }
+    }
+
+    // seconds since the epoch -> "2026-01-02 03:04:05 UTC" (proleptic Gregorian, no leap seconds)
+    std::string utcText(uint32_t t) {
+        const int64_t days = t / 86400;
+        const unsigned sod = t % 86400;
+        int64_t z = days + 719468;
+        const int64_t era = z / 146097;
+        const unsigned doe = static_cast<unsigned>(z - era * 146097);
+        const unsigned yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+        const int64_t y = static_cast<int64_t>(yoe) + era * 400;
+        const unsigned doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+        const unsigned mp = (5 * doy + 2) / 153;
+        const unsigned d = doy - (153 * mp + 2) / 5 + 1;
+        const unsigned m = mp < 10 ? mp + 3 : mp - 9;
+        char buf[40];
+        std::snprintf(buf, sizeof buf, "%04lld-%02u-%02u %02u:%02u:%02u UTC", static_cast<long long>(y + (m <= 2)), m, d, sod / 3600, sod / 60 % 60, sod % 60);
+        return buf;
+    }
+
+    // NSEC / NSEC3 type bitmap: windows of {block, length, bits}
+    std::string typeBitmap(const char *p, size_t n) {
+        std::string out;
+        size_t i = 0;
+        int shown = 0;
+        while (n - i >= 2) {
+            const unsigned block = static_cast<uint8_t>(p[i]), len = static_cast<uint8_t>(p[i + 1]);
+            if (len == 0 || len > 32 || n - i - 2 < len) break;
+            for (unsigned b = 0; b < len * 8u; ++b) {
+                if (static_cast<uint8_t>(p[i + 2 + b / 8]) & (0x80 >> (b % 8))) {
+                    if (shown++ >= 48) return out + " ...";
+                    out += (out.empty() ? "" : " ") + typeText(static_cast<uint16_t>(block * 256 + b));
+                }
+            }
+            i += 2 + len;
+        }
+        return out;
+    }
+
+    std::string joinList(const std::vector<std::string> &items) {
+        std::string out;
+        for (size_t i = 0; i < items.size(); ++i) out += (i ? "," : "") + items[i];
+        return out;
+    }
+
+    // SVCB / HTTPS SvcParams
+    void decodeSvcParams(const char *d, size_t n, Record &r, std::string &summary) {
+        static const char *names[] = {"mandatory", "alpn", "no-default-alpn", "port", "ipv4hint", "ech", "ipv6hint"};
+        size_t i = 0;
+        while (n - i >= 4) {
+            const unsigned key = be16(d + i), len = be16(d + i + 2);
+            if (n - i - 4 < len) break;
+            const char *v = d + i + 4;
+            const std::string keyName = key < 7 ? names[key] : "key" + std::to_string(key);
+            std::string text;
+            if (key == 1) {                                      // alpn: length-prefixed ids
+                std::vector<std::string> ids;
+                for (size_t k = 0; k < len;) {
+                    const size_t l = static_cast<uint8_t>(v[k]);
+                    if (k + 1 + l > len) break;
+                    ids.emplace_back(v + k + 1, l);
+                    k += 1 + l;
+                }
+                text = joinList(ids);
+            } else if (key == 3 && len == 2) {
+                text = std::to_string(be16(v));
+            } else if (key == 4 && len % 4 == 0) {
+                std::vector<std::string> a;
+                for (size_t k = 0; k < len; k += 4) a.push_back(ip4(v + k));
+                text = joinList(a);
+            } else if (key == 6 && len % 16 == 0) {
+                std::vector<std::string> a;
+                for (size_t k = 0; k < len; k += 16) a.push_back(network::formatIPv6(v + k));
+                text = joinList(a);
+            } else if (key == 0) {
+                std::vector<std::string> ks;
+                for (size_t k = 0; k + 1 < len; k += 2) ks.push_back(be16(v + k) < 7 ? names[be16(v + k)] : "key" + std::to_string(be16(v + k)));
+                text = joinList(ks);
+            } else if (len > 0) {
+                text = std::to_string(len) + " bytes";
+            }
+            r.details.push_back("SvcParam: " + keyName + (text.empty() ? "" : "=" + text));
+            summary += " " + keyName + (text.empty() ? "" : "=" + text);
+            i += 4 + len;
+        }
+    }
+
+    void decodeOpt(const char *d, size_t n, Record &r) {
+        size_t i = 0;
+        while (n - i >= 4) {
+            const unsigned code = be16(d + i), len = be16(d + i + 2);
+            if (n - i - 4 < len) break;
+            const char *v = d + i + 4;
+            std::string text;
+            switch (code) {
+                case 3: text = "NSID: " + hexBytes(v, len); break;
+                case 8: text = "Client subnet (family " + std::to_string(len >= 2 ? be16(v) : 0) + ", source prefix " + std::to_string(len >= 3 ? static_cast<uint8_t>(v[2]) : 0) + ")"; break;
+                case 9: text = "EDNS expire"; break;
+                case 10: text = "Cookie: " + hexBytes(v, len); break;
+                case 11: text = "TCP keepalive"; break;
+                case 12: text = "Padding: " + std::to_string(len) + " bytes"; break;
+                case 15: text = "Extended DNS error " + std::to_string(len >= 2 ? be16(v) : 0) + (len > 2 ? ": " + std::string(v + 2, len - 2) : ""); break;
+                default: text = "Option " + std::to_string(code) + ": " + std::to_string(len) + " bytes";
+            }
+            r.details.push_back(text);
+            i += 4 + len;
+        }
     }
 
     // decodes the type specific data of a record
@@ -171,6 +330,9 @@ namespace {
                     r.treeText = "mname " + name + ", rname " + name2;
                     r.rdata = "Primary name server: " + name + ", Responsible authority: " + name2 + ", Serial: " + std::to_string(be32(msg + off)) +
                               ", Minimum TTL: " + std::to_string(be32(msg + off + 16));
+                    r.details = {"Serial Number: " + std::to_string(be32(msg + off)), "Refresh Interval: " + std::to_string(be32(msg + off + 4)) + " seconds",
+                                 "Retry Interval: " + std::to_string(be32(msg + off + 8)) + " seconds", "Expire limit: " + std::to_string(be32(msg + off + 12)) + " seconds",
+                                 "Minimum TTL: " + std::to_string(be32(msg + off + 16)) + " seconds"};
                 }
                 break;
             case 33:
@@ -183,14 +345,139 @@ namespace {
                     }
                 }
                 break;
-            case 41: // EDNS0 pseudo record: the class field carries the UDP payload size
+            case 41: { // EDNS0 pseudo record: the class field carries the UDP payload size, the TTL the extended flags
                 r.infoText = "<Root>";
                 r.treeText = "UDP payload size " + std::to_string(r.cls);
+                r.extendedRcode = r.ttl >> 24;
+                r.details.push_back("Higher bits in extended RCODE: " + hexString(r.ttl >> 24, 2));
+                r.details.push_back("EDNS0 version: " + std::to_string((r.ttl >> 16) & 0xff));
+                r.details.push_back(std::string("DO bit: ") + ((r.ttl & 0x8000) ? "Accepts DNSSEC security RRs" : "Cannot handle DNSSEC security RRs"));
+                decodeOpt(d, n, r);
+                break;
+            }
+            case 39:
+                if (readName(msg, r.dataOffset + n, off, name)) { r.infoText = r.treeText = name; r.rdata = "Delegation name: " + name; }
+                break;
+            case 13: // HINFO: two character strings
+                if (n >= 2 && 1u + static_cast<uint8_t>(d[0]) < n) {
+                    const size_t cl = static_cast<uint8_t>(d[0]);
+                    const size_t ol = static_cast<uint8_t>(d[1 + cl]);
+                    if (2 + cl + ol <= n) {
+                        r.infoText = r.treeText = quoteTxt(d + 1, cl) + " " + quoteTxt(d + 2 + cl, ol);
+                        r.rdata = "CPU: " + quoteTxt(d + 1, cl) + ", OS: " + quoteTxt(d + 2 + cl, ol);
+                    }
+                }
+                break;
+            case 43: // DS
+                if (n >= 4) {
+                    r.infoText = std::to_string(be16(d)) + " " + algorithmText(static_cast<uint8_t>(d[2])) + " " + digestText(static_cast<uint8_t>(d[3]));
+                    r.treeText = "key tag " + std::to_string(be16(d)) + ", " + algorithmText(static_cast<uint8_t>(d[2]));
+                    r.rdata = "Delegation Signer";
+                    r.details = {"Key Tag: " + std::to_string(be16(d)), "Algorithm: " + algorithmText(static_cast<uint8_t>(d[2])) + " (" + std::to_string(static_cast<uint8_t>(d[2])) + ")",
+                                 "Digest Type: " + digestText(static_cast<uint8_t>(d[3])) + " (" + std::to_string(static_cast<uint8_t>(d[3])) + ")", "Digest: " + hexBytes(d + 4, n - 4)};
+                }
+                break;
+            case 48: // DNSKEY
+                if (n >= 4) {
+                    const unsigned flags = be16(d);
+                    const char *role = (flags & 1) ? "Key Signing Key" : (flags & 0x100) ? "Zone Signing Key" : "Key";
+                    r.infoText = std::string(role) + " " + algorithmText(static_cast<uint8_t>(d[3]));
+                    r.treeText = std::string(role) + ", " + algorithmText(static_cast<uint8_t>(d[3]));
+                    r.rdata = "DNS Key";
+                    r.details = {"Flags: " + hexString(flags, 4) + (flags & 0x100 ? " (zone key)" : "") + (flags & 1 ? " (secure entry point)" : ""),
+                                 "Protocol: " + std::to_string(static_cast<uint8_t>(d[2])), "Algorithm: " + algorithmText(static_cast<uint8_t>(d[3])) + " (" + std::to_string(static_cast<uint8_t>(d[3])) + ")",
+                                 "Public Key: " + std::to_string(n - 4) + " bytes " + hexBytes(d + 4, n - 4, 16)};
+                }
+                break;
+            case 46: // RRSIG
+                if (n >= 18) {
+                    size_t at = r.dataOffset + 18;
+                    if (readName(msg, r.dataOffset + n, at, name2)) {
+                        r.infoText = typeText(be16(d)) + " " + algorithmText(static_cast<uint8_t>(d[2])) + " " + name2;
+                        r.treeText = "covers " + typeText(be16(d)) + ", signer " + name2;
+                        r.rdata = "RRSIG";
+                        r.details = {"Type Covered: " + typeText(be16(d)), "Algorithm: " + algorithmText(static_cast<uint8_t>(d[2])) + " (" + std::to_string(static_cast<uint8_t>(d[2])) + ")",
+                                     "Labels: " + std::to_string(static_cast<uint8_t>(d[3])), "Original TTL: " + std::to_string(be32(d + 4)),
+                                     "Signature Expiration: " + utcText(be32(d + 8)), "Signature Inception: " + utcText(be32(d + 12)),
+                                     "Key Tag: " + std::to_string(be16(d + 16)), "Signer's name: " + name2,
+                                     "Signature: " + std::to_string(r.dataOffset + n - at) + " bytes"};
+                    }
+                }
+                break;
+            case 47: // NSEC: next domain name + type bitmap
+                if (readName(msg, r.dataOffset + n, off, name) && off <= r.dataOffset + n) {
+                    const std::string types = typeBitmap(msg + off, r.dataOffset + n - off);
+                    r.infoText = name + " " + types;
+                    r.treeText = "next " + name;
+                    r.rdata = "Next domain name: " + name;
+                    r.details = {"Record types in bitmap: " + types};
+                }
+                break;
+            case 50: // NSEC3
+                if (n >= 5) {
+                    const size_t saltLen = static_cast<uint8_t>(d[4]);
+                    if (5 + saltLen + 1 <= n) {
+                        const size_t hashLen = static_cast<uint8_t>(d[5 + saltLen]);
+                        if (6 + saltLen + hashLen <= n) {
+                            r.infoText = "iterations " + std::to_string(be16(d + 2)) + " " + typeBitmap(d + 6 + saltLen + hashLen, n - 6 - saltLen - hashLen);
+                            r.treeText = "hash algorithm " + std::to_string(static_cast<uint8_t>(d[0])) + ", iterations " + std::to_string(be16(d + 2));
+                            r.rdata = "NSEC3";
+                            r.details = {"Hash algorithm: " + std::to_string(static_cast<uint8_t>(d[0])), std::string("Opt-out flag: ") + ((d[1] & 1) ? "set" : "not set"),
+                                         "Iterations: " + std::to_string(be16(d + 2)), "Salt: " + (saltLen ? hexBytes(d + 5, saltLen) : std::string("-")),
+                                         "Next hashed owner: " + hexBytes(d + 6 + saltLen, hashLen),
+                                         "Record types in bitmap: " + typeBitmap(d + 6 + saltLen + hashLen, n - 6 - saltLen - hashLen)};
+                        }
+                    }
+                }
+                break;
+            case 51: // NSEC3PARAM
+                if (n >= 5 && 5u + static_cast<uint8_t>(d[4]) <= n) {
+                    const size_t saltLen = static_cast<uint8_t>(d[4]);
+                    r.infoText = "iterations " + std::to_string(be16(d + 2));
+                    r.treeText = "hash algorithm " + std::to_string(static_cast<uint8_t>(d[0])) + ", iterations " + std::to_string(be16(d + 2));
+                    r.rdata = "NSEC3PARAM";
+                    r.details = {"Hash algorithm: " + std::to_string(static_cast<uint8_t>(d[0])), "Iterations: " + std::to_string(be16(d + 2)), "Salt: " + (saltLen ? hexBytes(d + 5, saltLen) : std::string("-"))};
+                }
+                break;
+            case 52: // TLSA
+                if (n >= 3) {
+                    r.infoText = std::to_string(static_cast<uint8_t>(d[0])) + " " + std::to_string(static_cast<uint8_t>(d[1])) + " " + std::to_string(static_cast<uint8_t>(d[2]));
+                    r.treeText = "usage " + std::to_string(static_cast<uint8_t>(d[0])) + ", selector " + std::to_string(static_cast<uint8_t>(d[1])) + ", matching type " + std::to_string(static_cast<uint8_t>(d[2]));
+                    r.rdata = "TLSA";
+                    r.details = {"Certificate Usage: " + std::to_string(static_cast<uint8_t>(d[0])), "Selector: " + std::to_string(static_cast<uint8_t>(d[1])),
+                                 "Matching Type: " + std::to_string(static_cast<uint8_t>(d[2])), "Certificate Association Data: " + hexBytes(d + 3, n - 3)};
+                }
+                break;
+            case 257: // CAA
+                if (n >= 2 && 2u + static_cast<uint8_t>(d[1]) <= n) {
+                    const size_t tl = static_cast<uint8_t>(d[1]);
+                    const std::string tag(d + 2, tl), value(d + 2 + tl, n - 2 - tl);
+                    r.infoText = std::to_string(static_cast<uint8_t>(d[0])) + " " + tag + " " + quoteTxt(value.data(), value.size());
+                    r.treeText = tag + " " + quoteTxt(value.data(), value.size());
+                    r.rdata = "CAA";
+                    r.details = {"Flags: " + std::to_string(static_cast<uint8_t>(d[0])), "Tag: " + tag, "Value: " + value};
+                }
+                break;
+            case 64: case 65: // SVCB / HTTPS
+                if (n >= 3) {
+                    size_t at = off + 2;
+                    if (readName(msg, r.dataOffset + n, at, name) && at <= r.dataOffset + n) {
+                        const unsigned priority = be16(d);
+                        std::string params;
+                        decodeSvcParams(msg + at, r.dataOffset + n - at, r, params);
+                        r.infoText = std::to_string(priority) + " " + name + params;
+                        r.treeText = (priority == 0 ? "alias " : "priority " + std::to_string(priority) + ", ") + std::string(priority == 0 ? "" : "target ") + name;
+                        r.rdata = std::string(priority == 0 ? "AliasMode" : "ServiceMode") + ": priority " + std::to_string(priority) + ", target " + name;
+                    }
+                }
                 break;
             default:
                 r.treeText = std::to_string(n) + " bytes of data";
         }
-        if (r.rdata.empty()) r.rdata = "Data (" + std::to_string(n) + " bytes)";
+        if (r.rdata.empty()) {   // not decoded (unknown type or damaged data): shown as raw bytes, never silently dropped
+            r.rdata = "Data (" + std::to_string(n) + " bytes)" + (n ? ": " + hexBytes(d, n, 24) : std::string());
+            if (r.treeText.empty()) r.treeText = std::to_string(n) + " bytes of data";
+        }
     }
 
     bool parseRecord(const char *msg, size_t len, size_t &off, Record &r) {
@@ -261,6 +548,7 @@ namespace {
         std::string info = opcodeText((flags >> 11) & 0xF) + (response ? " response 0x" : " 0x");
         { std::ostringstream h; h << std::hex << id; info += h.str(); }
         if (response && rcode != 0) info += " " + rcodeText(rcode);
+        unsigned extendedRcode = 0;
 
         size_t off = sizeof(network::DNSHeader);
         bool ok = true;
@@ -295,6 +583,7 @@ namespace {
                 } else {
                     Record r;
                     if (!parseRecord(msg, len, off, r)) { ok = false; break; }
+                    if (r.type == 41) extendedRcode = r.extendedRcode;
                     if (r.type != 41 && infoRecords < 8) { // OPT pseudo records are not interesting in the Info column
                         info += " " + typeText(r.type) + (r.infoText.empty() ? "" : " " + r.infoText);
                         ++infoRecords;
@@ -311,12 +600,14 @@ namespace {
                         rr.add("Class: " + classText(r.cls) + " (" + hexString(r.cls, 4) + ")", o + r.dataOffset - 8, 2);
                         rr.add("Time to live: " + std::to_string(r.ttl), o + r.dataOffset - 6, 4);
                         rr.add("Data length: " + std::to_string(r.dataLength), o + r.dataOffset - 2, 2);
-                        rr.add(r.rdata, o + r.dataOffset, r.dataLength);
+                        Field &data = rr.add(r.rdata, o + r.dataOffset, r.dataLength);
+                        for (const auto &line: r.details) data.add(line, o + r.dataOffset, r.dataLength);
                     }
                 }
             }
             if (sec) { sec->offset = static_cast<uint32_t>(o + sectionStart); sec->length = static_cast<uint32_t>(off - sectionStart); }
         }
+        if (response && extendedRcode != 0) info += " (extended rcode " + std::to_string((extendedRcode << 4) | rcode) + ")";
         if (!ok) info += " [Malformed Packet: truncated DNS record]";
         pack.info = info;
     }

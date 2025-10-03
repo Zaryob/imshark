@@ -217,3 +217,102 @@ TEST(Dns, RandomisedMessagesNeverCrash) {
         }
     }
 }
+
+namespace {
+    packet::PacketInfo answerWith(unsigned type, const std::string &rdata, unsigned additional = 0, const std::string &extra = "") {
+        return viaUdp(message(1, 0x8180, 1, 1, 0, additional, kQuestion + rr("c00c", type, rdata) + extra));
+    }
+}
+
+TEST(DnsRecords, SoaShowsAllTimers) {
+    const auto p = answerWith(6, nameHex("ns.example.com") + nameHex("admin.example.com") + u32(2026010101) + u32(7200) + u32(900) + u32(1209600) + u32(300));
+    EXPECT_NE(find(p.fields, "Refresh Interval: 7200 seconds"), nullptr);
+    EXPECT_NE(find(p.fields, "Retry Interval: 900 seconds"), nullptr);
+    EXPECT_NE(find(p.fields, "Expire limit: 1209600 seconds"), nullptr);
+    EXPECT_NE(find(p.fields, "Minimum TTL: 300 seconds"), nullptr);
+}
+
+TEST(DnsRecords, EdnsOptionsExtendedRcodeAndDoBit) {
+    // OPT: root name, type 41, class = payload size 1232, ttl = ext rcode 1 | version 0 | DO, options: cookie + EDE
+    const std::string options = u16(10) + u16(8) + "0102030405060708" + u16(15) + u16(6) + u16(18) + support::hexOf("abcd");
+    const std::string opt = "00" + u16(41) + u16(1232) + "01008000" + u16(static_cast<unsigned>(options.size() / 2)) + options;
+    const auto p = viaUdp(message(2, 0x8183, 1, 0, 0, 1, kQuestion + opt));
+    EXPECT_NE(p.info.find("(extended rcode 19)"), std::string::npos) << p.info;
+    EXPECT_NE(find(p.fields, "Higher bits in extended RCODE: 0x01"), nullptr);
+    EXPECT_NE(find(p.fields, "DO bit: Accepts DNSSEC security RRs"), nullptr);
+    EXPECT_NE(find(p.fields, "Cookie: 0102030405060708"), nullptr);
+    EXPECT_NE(find(p.fields, "Extended DNS error 18: abcd"), nullptr);
+}
+
+TEST(DnsRecords, DnssecRecords) {
+    const auto ds = answerWith(43, u16(60485) + "0802" + std::string(64, 'a'));
+    EXPECT_NE(find(ds.fields, "Key Tag: 60485"), nullptr);
+    EXPECT_NE(find(ds.fields, "Algorithm: RSASHA256 (8)"), nullptr);
+    EXPECT_NE(find(ds.fields, "Digest Type: SHA-256 (2)"), nullptr);
+    EXPECT_NE(ds.info.find("60485 RSASHA256 SHA-256"), std::string::npos) << ds.info;
+
+    const auto key = answerWith(48, "0101" "03" "0d" + std::string(128, '1'));
+    EXPECT_NE(find(key.fields, "Algorithm: ECDSAP256SHA256 (13)"), nullptr);
+    EXPECT_NE(find(key.fields, "Flags: 0x0101 (zone key) (secure entry point)"), nullptr);
+    EXPECT_NE(key.info.find("Key Signing Key"), std::string::npos) << key.info;
+
+    // RRSIG covering A, expiration 2026-01-02 03:04:05 (1767323045), inception one day earlier
+    const auto sig = answerWith(46, u16(1) + "0802" + u32(300) + u32(1767323045) + u32(1767323045 - 86400) + u16(1234) + nameHex("example.com") + std::string(64, '2'));
+    EXPECT_NE(find(sig.fields, "Type Covered: A"), nullptr);
+    EXPECT_NE(find(sig.fields, "Signature Expiration: 2026-01-02 03:04:05 UTC"), nullptr);
+    EXPECT_NE(find(sig.fields, "Signature Inception: 2026-01-01 03:04:05 UTC"), nullptr);
+    EXPECT_NE(find(sig.fields, "Signer's name: example.com"), nullptr);
+    EXPECT_NE(find(sig.fields, "Signature: 32 bytes"), nullptr);
+
+    // NSEC: next name + bitmap window 0 with A (1), NS (2), SOA (6), MX (15), RRSIG (46 -> window 0, byte 5)
+    const auto nsec = answerWith(47, nameHex("b.example.com") + "00" "06" "620100000002");
+    EXPECT_NE(find(nsec.fields, "Next domain name: b.example.com"), nullptr);
+    EXPECT_NE(find(nsec.fields, "Record types in bitmap: A NS SOA MX RRSIG"), nullptr);
+}
+
+TEST(DnsRecords, SvcbAndHttps) {
+    // priority 1, target ".", alpn=h2,h3 port=8443 ipv4hint=192.0.2.1
+    const std::string alpn = u16(1) + u16(6) + "02" + support::hexOf("h2") + "02" + support::hexOf("h3");
+    const std::string rdata = u16(1) + "00" + alpn + u16(3) + u16(2) + u16(8443) + u16(4) + u16(4) + "c0000201";
+    const auto p = answerWith(65, rdata);
+    EXPECT_NE(p.info.find("HTTPS 1 <Root> alpn=h2,h3 port=8443 ipv4hint=192.0.2.1"), std::string::npos) << p.info;
+    EXPECT_NE(find(p.fields, "SvcParam: alpn=h2,h3"), nullptr);
+    EXPECT_NE(find(p.fields, "SvcParam: ipv4hint=192.0.2.1"), nullptr);
+    EXPECT_NE(find(p.fields, "ServiceMode: priority 1"), nullptr);
+
+    const auto alias = answerWith(64, u16(0) + nameHex("svc.example.net"));
+    EXPECT_NE(find(alias.fields, "AliasMode: priority 0, target svc.example.net"), nullptr);
+}
+
+TEST(DnsRecords, UnknownAndDamagedRecordsAreShownAsRawBytes) {
+    const auto unknown = answerWith(999, "deadbeef");
+    EXPECT_NE(find(unknown.fields, "Data (4 bytes): deadbeef"), nullptr);
+    const auto damaged = answerWith(43, "ab");                                   // DS that is too short
+    EXPECT_NE(find(damaged.fields, "Data (1 bytes): ab"), nullptr);
+    const auto caa = answerWith(257, "00" "05" + support::hexOf("issue") + support::hexOf("ca.test"));
+    EXPECT_NE(find(caa.fields, "Tag: issue"), nullptr);
+}
+
+TEST(DnsRecords, SurviveRandomCorruption) {
+    std::mt19937 rng(41);
+    const std::vector<std::string> seeds = {
+        message(1, 0x8180, 1, 1, 0, 0, kQuestion + rr("c00c", 46, u16(1) + "0802" + u32(300) + u32(1767323045) + u32(1767236645) + u16(1234) + nameHex("example.com") + std::string(64, '2'))),
+        message(1, 0x8180, 1, 1, 0, 0, kQuestion + rr("c00c", 65, u16(1) + "00" + u16(1) + u16(6) + "02" + support::hexOf("h2") + "02" + support::hexOf("h3"))),
+        message(1, 0x8180, 1, 1, 0, 1, kQuestion + rr("c00c", 50, "01" "01" + u16(10) + "02" "abcd" "04" "01020304" "00" "02" "4000")),
+        message(1, 0x8183, 1, 0, 0, 1, kQuestion + "00" + u16(41) + u16(1232) + "01008000" + u16(8) + u16(10) + u16(4) + "01020304"),
+    };
+    for (int i = 0; i < 4000; ++i) {
+        auto b = bytes(seeds[rng() % seeds.size()]);
+        b.resize(rng() % (b.size() + 1));
+        for (unsigned k = rng() % 5; k > 0 && !b.empty(); --k) b[rng() % b.size()] = static_cast<char>(rng());
+        auto frame = support::udpPacket("0a000001", "08080808", "c350", "0035", support::hexOf(b));
+        packet::PacketParser parser;
+        packet::PacketInfo info(1);
+        parser.parsePacket(info, frame, dissect::ParseMode::Full);
+        std::function<void(const packet::Field &)> check = [&](const packet::Field &f) {
+            EXPECT_LE(size_t(f.offset) + f.length, frame.size()) << f.text;
+            for (const auto &c: f.children) check(c);
+        };
+        for (const auto &l: info.fields) check(l);
+    }
+}
