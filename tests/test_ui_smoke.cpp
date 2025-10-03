@@ -463,7 +463,9 @@ TEST_F(UiSmoke, ExpertInformationWindow) {
     EXPECT_FALSE(state.stats.expert.empty());
     ASSERT_TRUE(ui::applyFilter(state, "udp"));
     frames(state);
-    EXPECT_TRUE(state.stats.expert.empty()) << "limited to the displayed (UDP) packets nothing is noteworthy";
+    for (const auto &item: state.stats.expert) {
+        if (item.summary.find("hecksum") == std::string::npos) ADD_FAILURE() << item.summary << ": limited to the displayed (UDP) packets nothing else is noteworthy";
+    }
     state.stats.showExpert = false;
     frames(state);
 }

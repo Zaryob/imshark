@@ -2,6 +2,7 @@
 
 #include "registry.h"
 #include "util.h"
+#include "checksum.h"
 
 #include <network/l4_transport/udp_header.h>
 
@@ -28,6 +29,8 @@ void dissect::dissectUdp(Context &ctx, const char *data, size_t length) {
         return;
     }
 
+    const ChecksumResult sum = checkTransport(ctx, 17, data, length, udpLen, 6);
+    setTransportChecksumState(pack, sum.state);
     const size_t o = ctx.offsetOf(data);
     const char *payload = data + sizeof(network::UDPHeader);
     const size_t payloadLen = std::min(udpLen, length) - sizeof(network::UDPHeader);
@@ -42,7 +45,10 @@ void dissect::dissectUdp(Context &ctx, const char *data, size_t length) {
         l.add("Source Port: " + std::to_string(srcPort), o, 2);
         l.add("Destination Port: " + std::to_string(dstPort), o + 2, 2);
         l.add("Length: " + std::to_string(udpLen), o + 4, 2);
-        l.add("Checksum: " + hexString(network::ntoh16(udpHeader.checksum), 4), o + 6, 2);
+        Field &csum = l.add("Checksum: " + hexString(network::ntoh16(udpHeader.checksum), 4) + " [" + checksumStateText(sum.state) + "]", o + 6, 2);
+        csum.add(std::string("[Checksum Status: ") + checksumStateText(sum.state) + "]", o + 6, 2);
+        if (sum.state == kChecksumBad) csum.add("[Expected checksum: " + hexString(sum.expected, 4) + "]", o + 6, 2);
+        if (sum.state == kChecksumNone) csum.add("[Zero checksum: not used (IPv4 allows this)]", o + 6, 2);
         if (payloadLen > 0) l.add("UDP payload (" + std::to_string(payloadLen) + " bytes)", o + 8, payloadLen);
     }
 

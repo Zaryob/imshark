@@ -46,6 +46,13 @@ namespace dissect {
         const std::string *tcpPdu = nullptr;
         const std::vector<uint32_t> *tcpPduPackets = nullptr;
 
+        /// Addresses of the IP layer below (raw bytes), for the pseudo header of transport checksums.
+        struct Addresses {
+            bool valid = false;
+            uint8_t length = 0;   // 4 or 16
+            unsigned char src[16] = {}, dst[16] = {};
+        } addrs;
+
         /// Dissectors skip building the (comparatively expensive) field tree when this is false.
         bool wantFields() const { return mode != ParseMode::Summary; }
 

@@ -11,6 +11,7 @@ Statik kod incelemesiyle tespit edilmiştir (derleme/çalıştırma ile ayrıca 
 - DNS yalnızca standart portlarda tanınır; NTP control/private ayrıntıları kısmi (v0.7.2).
 - Desteklenmeyen link türleri (PPI, 802.11, Radiotap) `Unknown` görünür; 802.3/LLC, PPPoE, MPLS, GRE yok (v0.7.3, v0.9).
 - TCP analizi Wireshark'a göre sadeleştirilmiştir (spurious retransmission ve hızlı yeniden iletim ayrımı yok).
+- Checksum doğrulaması IPv4 başlığı, TCP, UDP, ICMP ve ICMPv6 için her zaman açıktır (`*.checksum.status`, Expert Information); offload bırakıp doldurulmamış (0 ya da kısmi sahte başlık toplamı) ve snaplen ile kesilmiş segmentler "doğrulanamadı" sayılır, hatalı değil. Kapatma seçeneği yok.
 - Filtre yalnızca özette tutulan alanları görür; `matches` (std::regex) 500 bin pakette ~1,7 sn ve arayüz iş parçacığında çalışır.
 - Dışa aktarma mikro-saniye çözünürlüğündedir (nanosaniye yakalamada son 3 hane kaybolur). IP adresleri sayısal değil metin olarak sıralanır. ImGui pencere yerleşimi kalıcı değil.
 
