@@ -145,7 +145,7 @@ Durum: v0.7.2 tamamlandı — TCP mesaj birleştirme, DNS/HTTP/TLS mesaj çözü
 
 ### v0.9.1 — Özet dissector'larını alan düzeyine çıkar
 
-- [ ] **0.9.1-a: Ortak bounds-checked okuyucu ve BER/ASN.1** — **M**
+- [x] **0.9.1-a: Ortak bounds-checked okuyucu ve BER/ASN.1** — **M**
   - `core/src/dissect/reader.h`: `ByteReader{data, size, pos}` — `u8/u16/u24/u32/u64` (big/little-endian), `skip`, `sub(len)`, taşmada hata durumuna geçer (`ok()` false).
   - `core/src/dissect/asn1.h`: BER TLV okuyucu (`tag class/constructed/number`, kesin/belirsiz uzunluk, 4 bayta kadar), INTEGER (64-bit), OID → "1.3.6.1…", OCTET STRING, SEQUENCE yineleyici. `x509.cpp` bunun üzerine taşınır.
   - Testler: BER/DER test vektörleri (RFC 3416, X.690), uzunluk taşması, iç içe derinlik sınırı (32).

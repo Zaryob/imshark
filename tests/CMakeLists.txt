@@ -8,6 +8,7 @@ if(NOT GTest_FOUND)
 endif()
 
 add_executable(imshark_tests
+    test_asn1_reader.cpp
     test_capture_info.cpp
     test_clipboard.cpp
     test_corpus.cpp
