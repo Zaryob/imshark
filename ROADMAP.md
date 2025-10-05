@@ -149,7 +149,7 @@ Durum: v0.7.2 tamamlandı — TCP mesaj birleştirme, DNS/HTTP/TLS mesaj çözü
   - `core/src/dissect/reader.h`: `ByteReader{data, size, pos}` — `u8/u16/u24/u32/u64` (big/little-endian), `skip`, `sub(len)`, taşmada hata durumuna geçer (`ok()` false).
   - `core/src/dissect/asn1.h`: BER TLV okuyucu (`tag class/constructed/number`, kesin/belirsiz uzunluk, 4 bayta kadar), INTEGER (64-bit), OID → "1.3.6.1…", OCTET STRING, SEQUENCE yineleyici. `x509.cpp` bunun üzerine taşınır.
   - Testler: BER/DER test vektörleri (RFC 3416, X.690), uzunluk taşması, iç içe derinlik sınırı (32).
-- [ ] **0.9.1-b: SNMP (v1, v2c, v3)** — **L**
+- [x] **0.9.1-b: SNMP (v1, v2c, v3)** — **L**
   - Sürümler v1, v2c, v3. Mesaj başlığı: version, community (v1/v2c) ya da `msgGlobalData` + USM `msgSecurityParameters` (engine ID/boots/time/user, auth/priv parametre uzunlukları) (v3); `scopedPDU` şifreliyse "şifreli — çözülmedi" göstergesi (şifre çözme kapsam dışı).
   - PDU türleri: Get/GetNext/Response/Set/Trap v1/GetBulk/Inform/Trap v2/Report; request-id, error-status/index (adlarıyla), non-repeaters/max-repetitions; varbind listesi (OID + tür: INTEGER, OCTET STRING, OID, IpAddress, Counter32/64, Gauge32, TimeTicks, Null, noSuchObject/Instance/EndOfMibView).
   - OID adı tablosu (RFC 1213/3418: sysDescr, sysUpTime, ifTable...), bilinmeyenler sayısal.

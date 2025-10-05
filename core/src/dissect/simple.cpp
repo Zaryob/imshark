@@ -15,12 +15,6 @@ namespace {
     }
 } // namespace
 
-void dissect::dissectSnmp(Context &ctx, const char *data, size_t length) {
-    // SNMP is ASN.1/BER encoded; only the size is reported for now.
-    ctx.pack.protocol = "SNMP";
-    ctx.pack.info = "SNMP message (length: " + std::to_string(length) + ")";
-    addDataLayer(ctx, "Simple Network Management Protocol", data, length);
-}
 
 void dissect::dissectTelnet(Context &ctx, const char *data, size_t length) {
     ctx.pack.protocol = "Telnet";

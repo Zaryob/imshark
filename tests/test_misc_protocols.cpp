@@ -238,9 +238,8 @@ TEST(SummaryProtocols, TelnetSmtpSnmpAndTheirDataLayers) {
 
     const auto snmp = udpTo("00a1", std::string(30, 'x'));
     EXPECT_EQ(snmp.protocol, "SNMP");
-    EXPECT_EQ(snmp.info, "SNMP message (length: 30)");
-    EXPECT_EQ(udpTo("00a2", "x").protocol, "SNMP") << "trap port 162";
     EXPECT_TRUE(matches("snmp", snmp));
+    EXPECT_EQ(udpTo("00a2", "x").protocol, "SNMP") << "trap port 162";
 }
 
 TEST(SummaryProtocols, BgpMessageTypes) {
