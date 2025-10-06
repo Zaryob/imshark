@@ -10,3 +10,4 @@ imgui.ini
 
 .cache/
 build-cov/
+.omc/

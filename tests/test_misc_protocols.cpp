@@ -250,16 +250,16 @@ TEST(SummaryProtocols, BgpMessageTypes) {
         msg.resize(length, '\0');
         return tcpTo("00b3", msg);
     };
-    EXPECT_NE(bgp(1).info.find("[ BGP: OPEN ]"), std::string::npos);
-    EXPECT_NE(bgp(2).info.find("[ BGP: UPDATE ]"), std::string::npos);
-    EXPECT_NE(bgp(3).info.find("[ BGP: NOTIFICATION ]"), std::string::npos);
-    EXPECT_NE(bgp(4).info.find("[ BGP: KEEPALIVE ]"), std::string::npos);
-    EXPECT_NE(bgp(9).info.find("[ BGP: Unknown ]"), std::string::npos);
+    EXPECT_NE(bgp(1).info.find("OPEN Message"), std::string::npos);
+    EXPECT_NE(bgp(2).info.find("UPDATE Message"), std::string::npos);
+    EXPECT_NE(bgp(3).info.find("NOTIFICATION Message"), std::string::npos);
+    EXPECT_NE(bgp(4).info.find("KEEPALIVE Message"), std::string::npos);
+    EXPECT_NE(bgp(9).info.find("UNKNOWN Message"), std::string::npos);
     const auto cut = tcpTo("00b3", std::string(10, '\xff'));
-    EXPECT_NE(cut.info.find("[ BGP: truncated ]"), std::string::npos);
+    EXPECT_NE(cut.info.find("truncated"), std::string::npos);
     EXPECT_EQ(bgp(1).protocol, "BGP");
     EXPECT_TRUE(matches("bgp", bgp(4)));
-    EXPECT_NE(find(bgp(4).fields, "Border Gateway Protocol"), nullptr);
+    EXPECT_NE(find(bgp(4).fields, "Border Gateway Protocol - KEEPALIVE"), nullptr);
 }
 
 TEST(IcmpNames, EveryKnownTypeAndCodeHasAName) {

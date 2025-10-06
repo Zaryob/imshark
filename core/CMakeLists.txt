@@ -21,6 +21,7 @@ add_library(imshark_core STATIC
     src/dissect/snmp.cpp
     src/dissect/tls.cpp
     src/dissect/dhcp.cpp
+    src/dissect/bgp.cpp
     src/dissect/simple.cpp
     src/export/export.cpp
     src/filter/fields.cpp

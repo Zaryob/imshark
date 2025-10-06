@@ -31,6 +31,7 @@ const dissect::Registry &dissect::Registry::builtin() {
         r.registerTcpStream(53, {"DNS", frameDnsTcp, dissectDnsTcp});
         r.registerTcpPort(25, dissectSmtp);
         r.registerTcpPort(179, dissectBgp);
+        r.registerTcpStream(179, {"BGP", frameBgp, dissectBgp});
         r.registerUdpPort(53, dissectDns);
         r.registerUdpPort(5353, dissectMdns);
         r.registerUdpPort(67, dissectDhcp);
@@ -49,7 +50,7 @@ const dissect::Registry &dissect::Registry::builtin() {
         both("TLS", nullptr, nullptr, std::make_shared<StreamProtocol>(StreamProtocol{"TLS", frameTls, [](Context &c, const char *d, size_t n) { dissectTls(c, d, n); }}));
         both("Telnet", nullptr, dissectTelnet);
         both("SMTP", nullptr, dissectSmtp);
-        both("BGP", nullptr, dissectBgp);
+        both("BGP", nullptr, dissectBgp, std::make_shared<StreamProtocol>(StreamProtocol{"BGP", frameBgp, dissectBgp}));
         return r;
     }();
     return registry;

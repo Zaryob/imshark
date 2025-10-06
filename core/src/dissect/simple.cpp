@@ -28,21 +28,3 @@ void dissect::dissectSmtp(Context &ctx, const char *data, size_t length) {
     addDataLayer(ctx, "Simple Mail Transfer Protocol", data, length);
 }
 
-void dissect::dissectBgp(Context &ctx, const char *data, size_t length) {
-    ctx.pack.protocol = "BGP";
-    if (length < 19) {
-        ctx.pack.info += " [ BGP: truncated ]";
-    } else {
-        // The message type is the 19th byte (after 16 marker + 2 length bytes).
-        std::string type;
-        switch (static_cast<uint8_t>(data[18])) {
-            case 1: type = "OPEN"; break;
-            case 2: type = "UPDATE"; break;
-            case 3: type = "NOTIFICATION"; break;
-            case 4: type = "KEEPALIVE"; break;
-            default: type = "Unknown";
-        }
-        ctx.pack.info += " [ BGP: " + type + " ]";
-    }
-    addDataLayer(ctx, "Border Gateway Protocol", data, length);
-}

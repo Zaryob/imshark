@@ -154,7 +154,7 @@ Durum: v0.7.2 tamamlandı — TCP mesaj birleştirme, DNS/HTTP/TLS mesaj çözü
   - PDU türleri: Get/GetNext/Response/Set/Trap v1/GetBulk/Inform/Trap v2/Report; request-id, error-status/index (adlarıyla), non-repeaters/max-repetitions; varbind listesi (OID + tür: INTEGER, OCTET STRING, OID, IpAddress, Counter32/64, Gauge32, TimeTicks, Null, noSuchObject/Instance/EndOfMibView).
   - OID adı tablosu (RFC 1213/3418: sysDescr, sysUpTime, ifTable...), bilinmeyenler sayısal.
   - Filtre: `snmp.version`, `snmp.community`, `snmp.pdu_type`, `snmp.request_id`, `snmp.error_status`, `snmp.oid`.
-- [ ] **0.9.1-c: BGP** — **L**
+- [x] **0.9.1-c: BGP** — **L**
   - Akış framer'ı: 16 bayt `0xff` işaretçisi + 2 bayt uzunluk (19–4096).
   - Mesajlar: OPEN (sürüm, AS, hold time, router ID, capabilities: multiprotocol, route refresh, 4-octet AS, graceful restart, ADD-PATH), UPDATE (withdrawn routes, path attributes: ORIGIN, AS_PATH/AS4_PATH, NEXT_HOP, MED, LOCAL_PREF, ATOMIC_AGGREGATE, AGGREGATOR, COMMUNITIES, MP_REACH/MP_UNREACH_NLRI, NLRI), NOTIFICATION (hata kod/alt kod adları), KEEPALIVE, ROUTE-REFRESH.
   - Durum: AS_PATH 2/4 bayt seçimi OPEN capability'sinden yükleme geçişinde `app_flags`'e yazılır; yoksa tahmin edilip "[AS size guessed]" işaretlenir.

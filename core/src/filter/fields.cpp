@@ -167,6 +167,10 @@ namespace filter {
                 {"telnet", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "Telnet")) o.addU(1); }, "Telnet"},
                 {"smtp", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "SMTP")) o.addU(1); }, "SMTP"},
                 {"bgp", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "BGP")) o.addU(1); }, "BGP"},
+                {"bgp.type", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "BGP")) o.addU(p.app_type); }, "BGP message type (1 = OPEN, 2 = UPDATE, 3 = NOTIFICATION, 4 = KEEPALIVE, 5 = ROUTE-REFRESH)"},
+                {"bgp.as", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "BGP")) o.addU(p.tcp_pdu_start); }, "BGP Autonomous System number"},
+                {"bgp.nlri", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "BGP") && !p.app_text.empty()) o.addS(p.app_text); }, "BGP Network Layer Reachability Information prefix"},
+                {"bgp.notification.code", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "BGP") && p.app_type == 3) o.addU(p.app_code); }, "BGP notification error code"},
                 {"malformed", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "Malformed") || p.info.find("[Malformed Packet") != std::string::npos) o.addU(1); }, "Packet that could not be fully decoded"},
             };
             std::sort(t.begin(), t.end(), [](const FieldDef &a, const FieldDef &b) { return std::string_view(a.name) < b.name; });
