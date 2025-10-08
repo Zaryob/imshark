@@ -16,12 +16,6 @@ namespace {
 } // namespace
 
 
-void dissect::dissectTelnet(Context &ctx, const char *data, size_t length) {
-    ctx.pack.protocol = "Telnet";
-    ctx.pack.info += "[ Telnet data: " + std::string(data, std::min<size_t>(length, 50)) + (length > 50 ? "..." : "") + " ]";
-    addDataLayer(ctx, "Telnet", data, length);
-}
-
 void dissect::dissectSmtp(Context &ctx, const char *data, size_t length) {
     ctx.pack.protocol = "SMTP";
     ctx.pack.info = "SMTP data: " + std::string(data, std::min<size_t>(length, 50)) + (length > 50 ? "..." : "");

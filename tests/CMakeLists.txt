@@ -33,6 +33,7 @@ add_executable(imshark_tests
     test_tcp.cpp
     test_tcp_reassembly.cpp
     test_tcp_options.cpp
+    test_telnet.cpp
     test_checksums.cpp
     test_decode_as.cpp
     test_time_format.cpp
