@@ -30,6 +30,7 @@ const dissect::Registry &dissect::Registry::builtin() {
         r.registerTcpPort(53, dissectDnsTcp);
         r.registerTcpStream(53, {"DNS", frameDnsTcp, dissectDnsTcp});
         r.registerTcpPort(25, dissectSmtp);
+        r.registerTcpPort(587, dissectSmtp);
         r.registerTcpPort(179, dissectBgp);
         r.registerTcpStream(179, {"BGP", frameBgp, dissectBgp});
         r.registerUdpPort(53, dissectDns);

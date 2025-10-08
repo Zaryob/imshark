@@ -232,7 +232,7 @@ TEST(SummaryProtocols, TelnetSmtpSnmpAndTheirDataLayers) {
 
     const auto smtp = tcpTo("0019", "EHLO imshark\r\n");
     EXPECT_EQ(smtp.protocol, "SMTP");
-    EXPECT_EQ(smtp.info, "SMTP data: EHLO imshark\r\n");
+    EXPECT_EQ(smtp.info, "C: EHLO imshark");
     EXPECT_TRUE(matches("smtp", smtp));
     EXPECT_EQ(tcpTo("0019", longText).info, "SMTP data: " + std::string(50, 'a') + "...");
 

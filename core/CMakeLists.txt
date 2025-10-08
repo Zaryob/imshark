@@ -23,7 +23,7 @@ add_library(imshark_core STATIC
     src/dissect/dhcp.cpp
     src/dissect/bgp.cpp
     src/dissect/telnet.cpp
-    src/dissect/simple.cpp
+    src/dissect/smtp.cpp
     src/export/export.cpp
     src/filter/fields.cpp
     src/filter/filter.cpp

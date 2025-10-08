@@ -162,7 +162,7 @@ Durum: v0.7.2 tamamlandı — TCP mesaj birleştirme, DNS/HTTP/TLS mesaj çözü
 - [ ] **0.9.1-d: Telnet, SMTP, FTP, TFTP, SSH** — **L**
   - Oturum tabloları (FTP/TFTP): yükleme geçişinde `SessionTables` doldurulur (`app_flags`), Replay oradan okur.
   - [x] Telnet: IAC komutları (WILL/WONT/DO/DONT/SB…SE), seçenek adları (ECHO, SGA, TERMINAL-TYPE, NAWS, LINEMODE…), alt-müzakere verisi.
-  - SMTP: komut/yanıt ayrımı, çok satırlı yanıtlar (`250-`/`250 `), STARTTLS sonrası TLS geçişi, DATA durumu (satır satır `.` ile bitiş; From/To/Subject ağaçta).
+  - [x] SMTP: komut/yanıt ayrımı, çok satırlı yanıtlar (`250-`/`250 `), STARTTLS sonrası TLS geçişi, DATA durumu (satır satır `.` ile bitiş; From/To/Subject ağaçta).
   - FTP: komut/yanıt, `PASV`/`EPSV` ve `PORT`/`EPRT` veri bağlantısı oturum tablosu → "FTP-DATA" eşleştirmesi; Follow Stream desteği.
   - TFTP: opcode (RRQ/WRQ/DATA/ACK/ERROR/OACK), dosya adı/mod/seçenekler, blok no; UDP dinamik port oturum tablosu.
   - SSH: banner (`SSH-2.0-…`), `KEXINIT` (açık algoritmalar), anahtar değişimi mesajları (DH/ECDH), `NEWKEYS` sonrası "şifreli" işareti (şifre çözme kapsam dışı).
