@@ -90,6 +90,7 @@ void packet::PacketParser::parsePacket(packet::PacketInfo &pack, const std::vect
     const size_t effectiveLen = len - fcsBytes;
 
     dissect::Context ctx{pack, base, effectiveLen, connection, *registry_, mode};
+    ctx.sessions = sessions_ ? sessions_ : &internalSessions_;
     if (mode != dissect::ParseMode::Replay) {
         ctx.reassembler = &reassembler_;
         ctx.completed = &completed_;

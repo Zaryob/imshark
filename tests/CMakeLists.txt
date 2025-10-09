@@ -35,6 +35,7 @@ add_executable(imshark_tests
     test_tcp_options.cpp
     test_telnet.cpp
     test_smtp.cpp
+    test_ftp.cpp
     test_checksums.cpp
     test_decode_as.cpp
     test_time_format.cpp

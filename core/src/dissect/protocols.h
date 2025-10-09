@@ -21,6 +21,10 @@ namespace dissect {
     void dissectSnmp(Context &ctx, const char *data, size_t length);
     void dissectTelnet(Context &ctx, const char *data, size_t length);
     void dissectSmtp(Context &ctx, const char *data, size_t length);
+    void dissectFtp(Context &ctx, const char *data, size_t length);
+    void dissectFtpData(Context &ctx, const char *data, size_t length);
+    void dissectTftp(Context &ctx, const char *data, size_t length);
+    void dissectSsh(Context &ctx, const char *data, size_t length);
     void dissectBgp(Context &ctx, const char *data, size_t length);
     StreamFrame frameBgp(const char *data, size_t length);
     StreamFrame frameHttp(const char *data, size_t length);            // message boundary of HTTP/1.x (Content-Length, chunked, until close)

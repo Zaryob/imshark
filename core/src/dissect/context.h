@@ -7,6 +7,7 @@
 #include <network/ip_reassembly.h>
 #include <network/tcp_connection.h>
 #include <packet/packet_info.h>
+#include <dissect/session.h>
 
 namespace dissect {
     class Registry;
@@ -45,6 +46,8 @@ namespace dissect {
         std::vector<std::pair<uint32_t, uint32_t>> *completedTcp = nullptr;
         const std::string *tcpPdu = nullptr;
         const std::vector<uint32_t> *tcpPduPackets = nullptr;
+
+        SessionTables *sessions = nullptr;
 
         /// Addresses of the IP layer below (raw bytes), for the pseudo header of transport checksums.
         struct Addresses {

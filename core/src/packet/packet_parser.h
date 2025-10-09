@@ -7,6 +7,7 @@
 #include <vector>
 
 #include <dissect/registry.h>
+#include <dissect/session.h>
 #include <dissect/tcp_streams.h>
 #include <network/tcp_connection.h>
 #include <packet/packet_info.h>
@@ -50,6 +51,10 @@ namespace packet {
             reassembledProtocol_ = protocol;
         }
 
+        /// Session tables for dynamic protocol connections (e.g. FTP data, TFTP TID)
+        void setSessions(dissect::SessionTables *sessions) { sessions_ = sessions; }
+        dissect::SessionTables &sessions() { return sessions_ ? *sessions_ : internalSessions_; }
+
     private:
         const dissect::Registry *registry_;
         network::IpReassembler reassembler_;
@@ -61,5 +66,7 @@ namespace packet {
         std::vector<std::pair<uint32_t, uint32_t>> completedTcp_;
         const std::string *tcpPdu_ = nullptr;
         const std::vector<uint32_t> *tcpPduPackets_ = nullptr;
+        dissect::SessionTables *sessions_ = nullptr;
+        dissect::SessionTables internalSessions_;
     };
 } // namespace packet
