@@ -39,6 +39,7 @@ const dissect::Registry &dissect::Registry::builtin() {
         r.registerUdpPort(5353, dissectMdns);
         r.registerUdpPort(67, dissectDhcp);
         r.registerUdpPort(68, dissectDhcp);
+        r.registerUdpPort(69, dissectTftp);
         r.registerUdpPort(123, dissectNtp);
         r.registerUdpPort(161, dissectSnmp);
         r.registerUdpPort(162, dissectSnmp);
@@ -55,6 +56,7 @@ const dissect::Registry &dissect::Registry::builtin() {
         both("SMTP", nullptr, dissectSmtp);
         both("FTP", nullptr, dissectFtp);
         both("FTP-DATA", nullptr, dissectFtpData);
+        both("TFTP", dissectTftp, nullptr);
         both("BGP", nullptr, dissectBgp, std::make_shared<StreamProtocol>(StreamProtocol{"BGP", frameBgp, dissectBgp}));
         return r;
     }();

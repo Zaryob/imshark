@@ -248,6 +248,20 @@ public:
         return readString(remaining());
     }
 
+    /// Reads a null-terminated string (consuming the null terminator if present).
+    std::string stringZ() {
+        if (!ok_) return {};
+        size_t start = pos_;
+        while (pos_ < size_ && data_[pos_] != 0) {
+            ++pos_;
+        }
+        std::string s(reinterpret_cast<const char *>(data_ + start), pos_ - start);
+        if (pos_ < size_ && data_[pos_] == 0) {
+            ++pos_;
+        }
+        return s;
+    }
+
 private:
     const uint8_t *data_ = nullptr;
     size_t size_ = 0;
