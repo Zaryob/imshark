@@ -192,6 +192,12 @@ namespace filter {
                 {"bgp.as", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "BGP")) o.addU(p.tcp_pdu_start); }, "BGP Autonomous System number"},
                 {"bgp.nlri", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "BGP") && !p.app_text.empty()) o.addS(p.app_text); }, "BGP Network Layer Reachability Information prefix"},
                 {"bgp.notification.code", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "BGP") && p.app_type == 3) o.addU(p.app_code); }, "BGP notification error code"},
+                {"ssh", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "SSH")) o.addU(1); }, "SSH"},
+                {"ssh.protocol", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "SSH") && p.app_type == 0 && !p.app_text.empty()) o.addS(p.app_text); }, "SSH protocol version banner"},
+                {"ssh.message_code", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "SSH") && p.app_type != 0 && p.app_type != 255) o.addU(p.app_type); }, "SSH packet message code (e.g. 20 = KEXINIT, 21 = NEWKEYS)"},
+                {"ssh.kex_algorithm", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "SSH") && p.app_type == 20 && !p.app_text.empty()) o.addS(p.app_text); }, "SSH key exchange algorithm"},
+                {"ssh.encryption_algorithm", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "SSH") && p.app_type == 20 && !p.app_text2.empty()) o.addS(p.app_text2); }, "SSH client-to-server encryption algorithm"},
+                {"ssh.encrypted", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "SSH") && p.app_type == 255) o.addU(1); }, "SSH encrypted packet payload"},
                 {"malformed", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "Malformed") || p.info.find("[Malformed Packet") != std::string::npos) o.addU(1); }, "Packet that could not be fully decoded"},
             };
             std::sort(t.begin(), t.end(), [](const FieldDef &a, const FieldDef &b) { return std::string_view(a.name) < b.name; });

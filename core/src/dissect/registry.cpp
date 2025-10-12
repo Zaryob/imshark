@@ -28,6 +28,7 @@ const dissect::Registry &dissect::Registry::builtin() {
         // application layer, by well-known port
         r.registerTcpPort(20, dissectFtpData);
         r.registerTcpPort(21, dissectFtp);
+        r.registerTcpPort(22, dissectSsh);
         r.registerTcpPort(23, dissectTelnet);
         r.registerTcpPort(53, dissectDnsTcp);
         r.registerTcpStream(53, {"DNS", frameDnsTcp, dissectDnsTcp});
@@ -57,6 +58,7 @@ const dissect::Registry &dissect::Registry::builtin() {
         both("FTP", nullptr, dissectFtp);
         both("FTP-DATA", nullptr, dissectFtpData);
         both("TFTP", dissectTftp, nullptr);
+        both("SSH", nullptr, dissectSsh);
         both("BGP", nullptr, dissectBgp, std::make_shared<StreamProtocol>(StreamProtocol{"BGP", frameBgp, dissectBgp}));
         return r;
     }();
