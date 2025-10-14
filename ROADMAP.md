@@ -190,7 +190,7 @@ Kabul ölçütü: `http_PPI.cap` içindeki 140 paketin tamamının `Unknown` kal
 
 ### v0.9.3 — Modern uygulama mesajları ve TLS anahtarları
 
-- [ ] **5.1: Oturum tabloları (0.9.3-a)** — **M**
+- [x] **5.1: Oturum tabloları (0.9.3-a)** — **M**
   - `core::SessionTables`: yükleme sırasında `FileProcessor` tarafından doldurulan, yükleme bitince değişmez (immutable) hale gelen ve `buildPacketDetails`'e geçirilen tür-güvenli tablolar (TLS oturumu, HPACK durumu, FTP veri bağlantıları).
   - Tablo başına bellek üst sınırı (ör. 64 MB), taşmada "durum kayıp" teşhisi.
 - [ ] **5.2: HTTP/2 açık metin ve HPACK (0.9.3-b)** — **L**
@@ -234,7 +234,7 @@ Kabul ölçütü: anahtar olmayan yakalamada şifreli veri açık metin gibi yor
 5. **Performans bütçesi:** 500 bin paketlik yükleme ve filtreleme ölçümü bozulmaz.
 
 ### Ortak altyapı geriçizelgesi
-- **B1: Oturum tabloları** (`core::SessionTables`, v0.9.3-a) — Durumlu çözümde Replay eşitliği (TLS, SMB, SQL, SIP/RTP) — **M**
+- [x] **B1: Oturum tabloları** (`core::SessionTables`, v0.9.3-a) — Durumlu çözümde Replay eşitliği (TLS, SMB, SQL, SIP/RTP) — **M**
 - **B2: Datagram/mesaj birleştirme** — UDP üzerinde parça birleştirme, sınırlı bellek + zaman aşımı (SCTP, DTLS) — **M**
 - **B3: Bayt okuyucu + BER/ASN.1** (v0.9.1-a) ve **XDR okuyucu** (4 bayt hizalı, uzunluk önekli) (LDAP, Kerberos, RPC/NFS) — **M + S**
 - **B4: Dissector başına filtre alanı kaydı** — Alanların merkezi `fields.cpp` yerine dissector tarafından kaydedilmesi — **M**

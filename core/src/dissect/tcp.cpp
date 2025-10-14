@@ -453,7 +453,7 @@ void dissect::dissectTcp(Context &ctx, const char *data, size_t length) {
 
     if (pack.protocol == "FTP-DATA") {
         dissectFtpData(ctx, payload, payloadLen);
-    } else if (ctx.sessions && (ctx.sessions->ftpDataPorts.count(srcPort) || ctx.sessions->ftpDataPorts.count(dstPort))) {
+    } else if (ctx.sessions && (ctx.sessions->hasFtpDataPort(srcPort) || ctx.sessions->hasFtpDataPort(dstPort))) {
         dissectFtpData(ctx, payload, payloadLen);
     } else if (const Dissector *app = ctx.registry.findTcpPort(srcPort, dstPort)) {
         (*app)(ctx, payload, payloadLen);

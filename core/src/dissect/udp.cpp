@@ -57,17 +57,9 @@ void dissect::dissectUdp(Context &ctx, const char *data, size_t length) {
     } else if (const Dissector *app = ctx.registry.findUdpPort(srcPort, dstPort)) {
         (*app)(ctx, payload, payloadLen);
     } else if (payloadLen > 0 && [&] {
-        if (ctx.sessions) {
-            for (auto &sess : ctx.sessions->tftpSessions) {
-                if ((sess.clientPort == srcPort && (sess.serverPort == dstPort || sess.serverPort == 0)) ||
-                    (sess.clientPort == dstPort && (sess.serverPort == srcPort || sess.serverPort == 0))) {
-                    if (sess.serverPort == 0) {
-                        sess.serverPort = (sess.clientPort == srcPort) ? dstPort : srcPort;
-                    }
-                    dissectTftp(ctx, payload, payloadLen);
-                    return true;
-                }
-            }
+        if (ctx.sessions && ctx.sessions->matchOrUpdateTftpSession(srcPort, dstPort)) {
+            dissectTftp(ctx, payload, payloadLen);
+            return true;
         }
         for (const auto &heuristic: ctx.registry.udpHeuristics()) if (heuristic(ctx, payload, payloadLen)) return true;
         return false;

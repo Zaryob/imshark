@@ -8,6 +8,7 @@
 #include <packet/packet_info.h>
 #include <capture_info.h>
 #include <dissect/registry.h>
+#include <dissect/session.h>
 #include <export/export.h>
 #include <stats/statistics.h>
 
@@ -190,6 +191,7 @@ namespace ui {
         std::shared_ptr<const dissect::Registry> registry;   // dissectors with the Decode As rules; null = the built-in ones
         double captureStartEpoch = 0;       // UTC epoch seconds of the first packet
         core::CaptureInfo captureInfo;      // file level metadata of the open capture
+        core::SessionTables sessions;       // dynamic protocol session tables
         bool showCaptureInfo = false;       // the Capture File Properties window
         bool orderDirty = true;             // `order` must be rebuilt (new capture or new filter)
         std::vector<uint32_t> order;        // displayed order: indices into `packets` (rebuilt by the list)

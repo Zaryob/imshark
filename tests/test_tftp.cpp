@@ -117,8 +117,8 @@ TEST(TftpDissect, DynamicTidConversationTracking) {
     packet::PacketInfo p1(1);
     parser.parsePacket(p1, f1, dissect::ParseMode::Summary);
     EXPECT_EQ(p1.protocol, "TFTP");
-    ASSERT_EQ(parser.sessions().tftpSessions.size(), 1u);
-    EXPECT_EQ(parser.sessions().tftpSessions[0].clientPort, 50123);
+    ASSERT_EQ(parser.sessions().tftpSessions().size(), 1u);
+    EXPECT_EQ(parser.sessions().tftpSessions()[0].clientPort, 50123);
 
     // 2. Server port 61456 (0xf010) (TID) -> Client port 50123 (0xc3cb): DATA block 1
     std::string data = std::string("\x00\x03\x00\x01" "KernelData...", 17);
@@ -126,7 +126,7 @@ TEST(TftpDissect, DynamicTidConversationTracking) {
     packet::PacketInfo p2(2);
     parser.parsePacket(p2, f2, dissect::ParseMode::Summary);
     EXPECT_EQ(p2.protocol, "TFTP");
-    EXPECT_EQ(parser.sessions().tftpSessions[0].serverPort, 61456);
+    EXPECT_EQ(parser.sessions().tftpSessions()[0].serverPort, 61456);
 
     // 3. Client port 50123 -> Server port 61456: ACK block 1
     std::string ack = std::string("\x00\x04\x00\x01", 4);

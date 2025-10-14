@@ -81,7 +81,7 @@ void dissectTftp(Context &ctx, const char *data, size_t length) {
             const uint16_t clientPort = (ctx.pack.dst_port == 69) ? ctx.pack.src_port : ctx.pack.dst_port;
             const std::string clientIp = (ctx.pack.dst_port == 69) ? ctx.pack.source : ctx.pack.destination;
             const std::string serverIp = (ctx.pack.dst_port == 69) ? ctx.pack.destination : ctx.pack.source;
-            ctx.sessions->tftpSessions.push_back({clientIp, clientPort, serverIp, 0});
+            ctx.sessions->addTftpSession(clientIp, clientPort, serverIp, 0);
         }
 
         if (layer) {

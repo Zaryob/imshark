@@ -38,6 +38,7 @@ add_executable(imshark_tests
     test_ftp.cpp
     test_tftp.cpp
     test_ssh.cpp
+    test_session_tables.cpp
     test_checksums.cpp
     test_decode_as.cpp
     test_time_format.cpp

@@ -53,6 +53,7 @@ namespace packet {
 
         /// Session tables for dynamic protocol connections (e.g. FTP data, TFTP TID)
         void setSessions(dissect::SessionTables *sessions) { sessions_ = sessions; }
+        const dissect::SessionTables &sessions() const { return sessions_ ? *sessions_ : internalSessions_; }
         dissect::SessionTables &sessions() { return sessions_ ? *sessions_ : internalSessions_; }
 
     private:

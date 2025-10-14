@@ -209,6 +209,7 @@ bool core::FileProcessor::processPcapFile(const std::string &filepath, std::vect
                                           std::string &message, LoadControl *control) {
     message.clear();
     captureStart_ = 0;
+    parser.sessions().clear();
     std::ifstream file(pathFromUtf8(filepath), std::ios::binary);
     if (!file.is_open()) {
         message = "Failed to open file: " + filepath;
@@ -300,6 +301,7 @@ bool core::FileProcessor::processPcapFile(const std::string &filepath, std::vect
     }
     captureStart_ = timeBase.startEpoch();
     reportProgress(control, fileSize, packets.size() - firstPacket);
+    parser.sessions().freeze();
 
     return true;
 }
@@ -310,6 +312,7 @@ bool core::FileProcessor::processPcapngFile(const std::string &filepath, std::ve
                                             std::string &message, LoadControl *control) {
     message.clear();
     captureStart_ = 0;
+    parser.sessions().clear();
     std::ifstream file(pathFromUtf8(filepath), std::ios::binary);
     if (!file.is_open()) {
         message = "Failed to open file: " + filepath;
@@ -553,6 +556,7 @@ bool core::FileProcessor::processPcapngFile(const std::string &filepath, std::ve
     }
     captureStart_ = timeBase.startEpoch();
     reportProgress(control, fileSize, packets.size() - firstPacket);
+    parser.sessions().freeze();
     if (undefinedInterfaceRefs > 0 && message.empty()) {
         message = std::to_string(undefinedInterfaceRefs) + " packet(s) refer to interface " + std::to_string(firstUndefinedInterface) +
                   ", which no Interface Description Block defines; they are shown without protocol decoding";
@@ -574,12 +578,13 @@ namespace {
 
 bool core::buildPacketDetails(const std::string &filepath, const packet::PacketInfo &summary, packet::PacketInfo &details,
                               const std::vector<packet::PacketInfo> *allPackets, const CaptureInfo *info,
-                              const dissect::Registry *registry) {
+                              const dissect::Registry *registry, const dissect::SessionTables *sessions) {
     std::vector<char> bytes;
     if (!readPacketBytes(filepath, summary, bytes)) return false;
 
     details = summary;
     packet::PacketParser parser(registry ? *registry : dissect::Registry::builtin()); // fresh parser: TCP numbers come from `summary` (Replay mode)
+    if (sessions) parser.setSessions(const_cast<dissect::SessionTables *>(sessions));
 
     // the last fragment of a datagram needs the earlier ones to show the reassembled protocols
     std::vector<char> reassembled;

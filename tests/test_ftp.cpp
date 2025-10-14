@@ -111,7 +111,7 @@ TEST(FtpDissect, DynamicDataPortTracking) {
     const auto f1 = support::tcpPacket("0a000002", "0a000001", "0015", "d000", "00000001", "00000001", "18", "227 Entering Passive Mode (10,0,0,2,195,80)\r\n");
     parser.parsePacket(p1, f1, dissect::ParseMode::Summary);
     EXPECT_EQ(p1.protocol, "FTP");
-    EXPECT_TRUE(parser.sessions().ftpDataPorts.count(50000) > 0);
+    EXPECT_TRUE(parser.sessions().hasFtpDataPort(50000));
 
     // 2. Data transferred on dynamic port 50000 (0xc350)
     packet::PacketInfo p2(2);

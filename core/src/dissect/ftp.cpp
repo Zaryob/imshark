@@ -169,7 +169,7 @@ void dissectFtp(Context &ctx, const char *data, size_t length) {
                 hasPasvPort = parseEpsvResponse(param, pasvPort);
             }
             if (hasPasvPort && pasvPort != 0 && ctx.sessions) {
-                ctx.sessions->ftpDataPorts.insert(pasvPort);
+                ctx.sessions->addFtpDataPort(pasvPort);
             }
 
             if (layer) {
@@ -223,7 +223,7 @@ void dissectFtp(Context &ctx, const char *data, size_t length) {
                 hasActPort = parseEprtCommand(arg, actIp, actPort);
             }
             if (hasActPort && actPort != 0 && ctx.sessions) {
-                ctx.sessions->ftpDataPorts.insert(actPort);
+                ctx.sessions->addFtpDataPort(actPort);
             }
 
             if (layer) {

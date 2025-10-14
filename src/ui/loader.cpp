@@ -27,6 +27,7 @@ namespace ui {
         bool ok = false;
         double startEpoch = 0;
         core::CaptureInfo info;
+        core::SessionTables sessions;
 
         // .gz input: decompressed to a temporary file first
         std::string dataPath;               // what the packets were read from (== path unless decompressed)
@@ -91,6 +92,7 @@ namespace {
                                         : processor.processPcapFile(job.dataPath, job.packets, job.message, &job.control);
         job.startEpoch = processor.captureStartEpoch();
         job.info = processor.captureInfo();
+        job.sessions = processor.sessions();
         if (!job.tempPath.empty()) {
             job.info.container = "gzip";
             job.info.compressedSize = job.compressedSize;
@@ -145,6 +147,7 @@ void ui::pollLoad(AppState &state) {
         job->keepTemp = true;
         state.captureStartEpoch = job->startEpoch;
         state.captureInfo = std::move(job->info);
+        state.sessions = std::move(job->sessions);
         state.clearSelection();
         refilter(state); // an active display filter stays active on the new capture
         state.currentFile = job->dataPath;
@@ -214,6 +217,7 @@ void ui::closeCapture(AppState &state) {
     state.currentFile.clear();
     state.displayName.clear();
     state.captureInfo = core::CaptureInfo();
+    state.sessions.clear();
     state.loadMessage.clear();
     state.loadFailed = false;
     if (!state.tempFile.empty()) {

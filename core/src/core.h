@@ -9,6 +9,7 @@
 #include <capture_info.h>
 #include <load_control.h>
 #include <packet/packet_parser.h>
+#include <dissect/session.h>
 
 namespace core {
     /// Reads capture files (classic pcap and pcapng) into a list of parsed packets.
@@ -37,7 +38,8 @@ namespace core {
     /// datagram: the other fragments are found in it and read from the file.
     bool buildPacketDetails(const std::string &filepath, const packet::PacketInfo &summary, packet::PacketInfo &details,
                             const std::vector<packet::PacketInfo> *allPackets = nullptr, const CaptureInfo *info = nullptr,
-                            const dissect::Registry *registry = nullptr);
+                            const dissect::Registry *registry = nullptr,
+                            const dissect::SessionTables *sessions = nullptr);
 
     class FileProcessor {
         packet::PacketParser parser;
@@ -56,6 +58,10 @@ namespace core {
 
         /// Metadata of the last processed file: format, interfaces, statistics, name records, packet comments.
         const CaptureInfo &captureInfo() const { return info_; }
+
+        /// Session tables populated during capture load (FTP-DATA, TFTP, etc.)
+        const dissect::SessionTables &sessions() const { return parser.sessions(); }
+        dissect::SessionTables &sessions() { return parser.sessions(); }
 
     private:
         double captureStart_ = 0;
