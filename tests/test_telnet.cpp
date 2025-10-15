@@ -79,7 +79,7 @@ TEST(TelnetDissect, SubnegotiationNaws) {
 
 TEST(TelnetDissect, SubnegotiationTerminalTypeAndSpeed) {
     // IAC SB TERMINAL-TYPE (24) IS (0) "xterm-256color" IAC SE
-    const std::string payload = std::string("\xff\xfa\x18\x00xterm-256color\xff\xf0", 22);
+    const std::string payload = std::string("\xff\xfa\x18\x00xterm-256color\xff\xf0", 20);
     const auto pkt = telnetTcp(payload);
     EXPECT_EQ(pkt.protocol, "Telnet");
     EXPECT_NE(pkt.info.find("Terminal Type IS xterm-256color"), std::string::npos);
