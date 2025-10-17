@@ -193,7 +193,7 @@ Kabul ölçütü: `http_PPI.cap` içindeki 140 paketin tamamının `Unknown` kal
 - [x] **5.1: Oturum tabloları (0.9.3-a)** — **M**
   - `core::SessionTables`: yükleme sırasında `FileProcessor` tarafından doldurulan, yükleme bitince değişmez (immutable) hale gelen ve `buildPacketDetails`'e geçirilen tür-güvenli tablolar (TLS oturumu, HPACK durumu, FTP veri bağlantıları).
   - Tablo başına bellek üst sınırı (ör. 64 MB), taşmada "durum kayıp" teşhisi.
-- [ ] **5.2: HTTP/2 açık metin ve HPACK (0.9.3-b)** — **L**
+- [ ] **5.2: HTTP/2 açık metin ve HPACK (0.9.3-b)** — **L** *(kısmen: çerçeve çözümü ve HPACK çözücüsü tamam; bağlantı boyunca dinamik tablo, h2c tanıma ayrıntıları ve TLS içindeki h2 kaldı)*
   - Tanıma: `PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n` ön eki, `Upgrade: h2c`, ALPN `h2`, Decode As. 9 baytlık çerçeve başlığı (uzunluk, tür, bayraklar, stream ID) akış framer'ı.
   - Çerçeve türleri: DATA, HEADERS (+PRIORITY), PRIORITY, RST_STREAM, SETTINGS, PUSH_PROMISE, PING, GOAWAY, WINDOW_UPDATE, CONTINUATION. HEADERS/CONTINUATION blok birleştirme.
   - HPACK (RFC 7541): statik tablo (61 giriş), Huffman kod çözücü (257 sembol), dinamik tablo (boyut güncellemesi, kovma). Bağlantı yönü başına sıralı durum; Replay'de blok taze çözücüden geçer.

@@ -7,6 +7,7 @@ Statik kod incelemesiyle tespit edilmiştir (derleme/çalıştırma ile ayrıca 
 İlk analizdeki #1–#24 giderildi. Aşağıdakiler **hâlâ açık** olanlardır; ilgili ROADMAP sürümü parantez içinde.
 
 **İşlevsel sınırlar**
+- HTTP/2: çerçeveler ve HPACK çözülür, ancak HPACK dinamik tablosu mesajlar arasında tutulmaz (her mesaj taze çözücüyle okunur); önceki bir başlık bloğunun dinamik girişlerine başvuran başlıklar bu yüzden çözülemeyebilir. Bağlantı başına durum oturum tablolarıyla eklenecek (PLAN_v0.9, 5.2). TLS içindeki h2 şifre çözme gelene kadar görünmez.
 - TLS şifre çözme yok (v0.9+); TLS kayıtları ve kayıtlara yayılan el sıkışma mesajları (ör. uzun Certificate) birleştirilir, sertifikalar konu/veren/geçerlilik/SAN ile gösterilir (imza ve zincir doğrulanmaz). HTTP/1.x ve DNS/TCP mesajları birleştirilir; kapanışa kadar süren HTTP yanıtlarında yalnızca başlıklar mesaj sayılır, gövde segment olarak görünür; 4 MiB'tan büyük gövdeler arabelleğe alınmaz; HEAD yanıtı yalnızca sonraki mesajın başlangıcına bakılarak ayırt edilir.
 - NTP control/private ayrıntıları kısmi (v0.7.2).
 - Desteklenmeyen link türleri (PPI, 802.11, Radiotap) `Unknown` görünür; 802.3/LLC, PPPoE, MPLS, GRE yok (v0.7.3, v0.9).
@@ -25,7 +26,7 @@ Statik kod incelemesiyle tespit edilmiştir (derleme/çalıştırma ile ayrıca 
 - Gerçek yakalama corpus'u yalnızca `IMSHARK_CORPUS_DIR` ile çalışır; CI'da yalnızca sentetik dosyalar koşar.
 
 **Güvence (neyin nasıl doğrulandığı)**
-- 407 test çekirdek dahil ASan+UBSan altında geçer (bir dönem sanitizer çekirdeği kapsamıyordu: CMake seçenek sırası; düzeltildi ve yapılandırma artık denetliyor). Arka plan iş parçacıkları için ThreadSanitizer temiz.
+- 420 test çekirdek dahil ASan+UBSan altında geçer (bir dönem sanitizer çekirdeği kapsamıyordu: CMake seçenek sırası; düzeltildi ve yapılandırma artık denetliyor). Arka plan iş parçacıkları için ThreadSanitizer temiz.
 - Satır kapsamı ≈ %92 (`tools/coverage.sh`).
 
 ## Güvenlik ve sağlamlık
