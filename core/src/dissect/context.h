@@ -29,6 +29,9 @@ namespace dissect {
         network::TCPConnection &tcp;        // per-capture TCP state (relative seq/ack)
         const Registry &registry;           // lookup of the next-layer dissector
         ParseMode mode = ParseMode::Full;
+        Context(packet::PacketInfo &p, const char *f, size_t fl, network::TCPConnection &t,
+                const Registry &r, ParseMode m = ParseMode::Full)
+            : pack(p), frame(f), frameLength(fl), tcp(t), registry(r), mode(m) {}
 
         // IPv4 reassembly. While a capture is read in order, `reassembler` collects the fragments and `completed`
         // receives (fragment packet, completing packet) pairs. In Replay mode of a completing fragment

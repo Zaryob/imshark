@@ -28,6 +28,7 @@ add_library(imshark_core STATIC
     src/dissect/tftp.cpp
     src/dissect/ssh.cpp
     src/dissect/hpack.cpp
+    src/dissect/http2.cpp
     src/export/export.cpp
     src/filter/fields.cpp
     src/filter/filter.cpp

@@ -22,6 +22,7 @@ add_executable(imshark_tests
     test_gzip.cpp
     test_http_tls.cpp
     test_hpack.cpp
+    test_http2.cpp
     test_ip_reassembly.cpp
     test_follow_view.cpp
     test_misc_protocols.cpp

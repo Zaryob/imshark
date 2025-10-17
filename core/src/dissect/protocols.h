@@ -31,4 +31,7 @@ namespace dissect {
     bool dissectHttp(Context &ctx, const char *data, size_t length);   // heuristic: false if it is not HTTP/1.x
     StreamFrame frameTls(const char *data, size_t length);             // message boundary of TLS records (handshake messages may span records)
     bool dissectTls(Context &ctx, const char *data, size_t length);    // heuristic: false if it is not a TLS record
+    void dissectHttp2(Context &ctx, const char *data, size_t length);
+    StreamFrame frameHttp2(const char *data, size_t length);
+    bool dissectHttp2Heuristic(Context &ctx, const char *data, size_t length);
 } // namespace dissect

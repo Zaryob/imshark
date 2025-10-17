@@ -230,6 +230,7 @@ namespace {
         pack.app_code = nested.app_code;
         pack.app_text = nested.app_text;
         pack.app_text2 = nested.app_text2;
+        pack.app_stream = nested.app_stream;
         if (ctx.wantFields()) {
             std::string from;
             for (uint32_t n: packets) from += (from.empty() ? "#" : ", #") + std::to_string(n);
@@ -248,6 +249,7 @@ namespace {
         const auto appCode = pack.app_code;
         const auto appText = pack.app_text;
         const auto appText2 = pack.app_text2;
+        const auto appStream = pack.app_stream;
         size_t at = from;
         int count = 0;
         while (at < payloadLen && count < 64) {
@@ -266,6 +268,7 @@ namespace {
         pack.app_code = appCode;
         pack.app_text = appText;
         pack.app_text2 = appText2;
+        pack.app_stream = appStream;
     }
 } // namespace
 

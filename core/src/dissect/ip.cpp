@@ -128,6 +128,7 @@ namespace {
         pack.app_code = nested.app_code;
         pack.app_text = nested.app_text;
         pack.app_text2 = nested.app_text2;
+        pack.app_stream = nested.app_stream;
         pack.payload_offset = nested.payload_offset; // relative to the reassembled data, not to this frame (ip_frag == 2)
         pack.payload_length = nested.payload_length;
         setTransportChecksumState(pack, transportChecksumState(nested));

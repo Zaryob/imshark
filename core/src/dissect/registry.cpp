@@ -20,8 +20,10 @@ const dissect::Registry &dissect::Registry::builtin() {
         // application layer, recognised by content when no port matched
         r.registerTcpStreamHeuristic({"HTTP", frameHttp, [](Context &c, const char *d, size_t n) { dissectHttp(c, d, n); }});
         r.registerTcpStreamHeuristic({"TLS", frameTls, [](Context &c, const char *d, size_t n) { dissectTls(c, d, n); }});
+        r.registerTcpStreamHeuristic({"HTTP2", frameHttp2, dissectHttp2});
         r.registerTcpHeuristic(dissectHttp);
         r.registerTcpHeuristic(dissectTls);
+        r.registerTcpHeuristic(dissectHttp2Heuristic);
         r.registerTcpStreamHeuristic({"DNS", frameDnsTcpHeuristic, dissectDnsTcp});   // after HTTP and TLS: it only claims streams that parse as DNS
         r.registerUdpHeuristic(dissectDnsHeuristic);
 
@@ -52,6 +54,7 @@ const dissect::Registry &dissect::Registry::builtin() {
         both("NTP", dissectNtp, nullptr);
         both("SNMP", dissectSnmp, nullptr);
         both("HTTP", nullptr, nullptr, std::make_shared<StreamProtocol>(StreamProtocol{"HTTP", frameHttp, [](Context &c, const char *d, size_t n) { dissectHttp(c, d, n); }}));
+        both("HTTP2", nullptr, dissectHttp2, std::make_shared<StreamProtocol>(StreamProtocol{"HTTP2", frameHttp2, dissectHttp2}));
         both("TLS", nullptr, nullptr, std::make_shared<StreamProtocol>(StreamProtocol{"TLS", frameTls, [](Context &c, const char *d, size_t n) { dissectTls(c, d, n); }}));
         both("Telnet", nullptr, dissectTelnet);
         both("SMTP", nullptr, dissectSmtp);
