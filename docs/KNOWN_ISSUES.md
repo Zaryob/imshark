@@ -10,7 +10,7 @@ Statik kod incelemesiyle tespit edilmiştir (derleme/çalıştırma ile ayrıca 
 - HTTP/2: çerçeveler ve HPACK çözülür, ancak HPACK dinamik tablosu mesajlar arasında tutulmaz (her mesaj taze çözücüyle okunur); önceki bir başlık bloğunun dinamik girişlerine başvuran başlıklar bu yüzden çözülemeyebilir. Bağlantı başına durum oturum tablolarıyla eklenecek (PLAN_v0.9, 5.2). TLS içindeki h2 şifre çözme gelene kadar görünmez.
 - TLS şifre çözme yok (v0.9+); TLS kayıtları ve kayıtlara yayılan el sıkışma mesajları (ör. uzun Certificate) birleştirilir, sertifikalar konu/veren/geçerlilik/SAN ile gösterilir (imza ve zincir doğrulanmaz). HTTP/1.x ve DNS/TCP mesajları birleştirilir; kapanışa kadar süren HTTP yanıtlarında yalnızca başlıklar mesaj sayılır, gövde segment olarak görünür; 4 MiB'tan büyük gövdeler arabelleğe alınmaz; HEAD yanıtı yalnızca sonraki mesajın başlangıcına bakılarak ayırt edilir.
 - NTP control/private ayrıntıları kısmi (v0.7.2).
-- Desteklenmeyen link türleri (PPI, Radiotap) `Unknown` görünür; IEEE 802.11 desteği eklendi (v0.9.2), 802.3/LLC, PPPoE, MPLS, GRE yok (v0.7.3, v0.9).
+- Desteklenmeyen link türleri: IEEE 802.11 (105), Radiotap (127) ve PPI (192) desteği eklendi (v0.9.2), 802.3/LLC, PPPoE, MPLS, GRE yok (v0.7.3, v0.9).
 - TCP analizi Wireshark'a göre sadeleştirilmiştir (spurious retransmission ve hızlı yeniden iletim ayrımı yok).
 - Decode As (Analyze menüsü) TCP/UDP portunu adla bir protokole bağlar ve yakalamayı yeniden yükler; kurallar oturum boyunca durur, ayar dosyasına kaydedilmez ve ImGui arayüzü ekran görüntüsüyle doğrulanmadı (yalnızca başsız duman testi).
 - Checksum doğrulaması IPv4 başlığı, TCP, UDP, ICMP ve ICMPv6 için her zaman açıktır (`*.checksum.status`, Expert Information); offload bırakıp doldurulmamış (0 ya da kısmi sahte başlık toplamı) ve snaplen ile kesilmiş segmentler "doğrulanamadı" sayılır, hatalı değil. Kapatma seçeneği yok.
@@ -18,7 +18,7 @@ Statik kod incelemesiyle tespit edilmiştir (derleme/çalıştırma ile ayrıca 
 - Dışa aktarma mikro-saniye çözünürlüğündedir (nanosaniye yakalamada son 3 hane kaybolur). IP adresleri sayısal değil metin olarak sıralanır. ImGui pencere yerleşimi kalıcı değil.
 
 **Bellek / performans**
-- Paket özeti 328 bayt (testlerde üst sınır 336), `info` metni paket başına ~63 bayt yığın tutar: 500 bin paket ≈ 190 MB, yükleme < 1 sn.
+- Paket özeti 336 bayt (testlerde üst sınır 336), `info` metni paket başına ~63 bayt yığın tutar: 500 bin paket ≈ 190 MB, yükleme < 1 sn.
 
 **Doğrulama boşlukları**
 - Arayüz hiç ekran görüntüsüyle incelenmedi; menü, sağ tık ve sürükle-bırak etkileşimleri otomatik test edilmiyor (`chrome.cpp` kapsamı ≈ %50).
@@ -26,7 +26,7 @@ Statik kod incelemesiyle tespit edilmiştir (derleme/çalıştırma ile ayrıca 
 - Gerçek yakalama corpus'u yalnızca `IMSHARK_CORPUS_DIR` ile çalışır; CI'da yalnızca sentetik dosyalar koşar.
 
 **Güvence (neyin nasıl doğrulandığı)**
-- 425 test çekirdek dahil ASan+UBSan altında geçer (bir dönem sanitizer çekirdeği kapsamıyordu: CMake seçenek sırası; düzeltildi ve yapılandırma artık denetliyor). Arka plan iş parçacıkları için ThreadSanitizer temiz.
+- 428 test çekirdek dahil ASan+UBSan altında geçer (bir dönem sanitizer çekirdeği kapsamıyordu: CMake seçenek sırası; düzeltildi ve yapılandırma artık denetliyor). Arka plan iş parçacıkları için ThreadSanitizer temiz.
 - Satır kapsamı ≈ %92 (`tools/coverage.sh`).
 
 ## Güvenlik ve sağlamlık

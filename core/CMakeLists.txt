@@ -30,6 +30,8 @@ add_library(imshark_core STATIC
     src/dissect/hpack.cpp
     src/dissect/http2.cpp
     src/dissect/wlan.cpp
+    src/dissect/radiotap.cpp
+    src/dissect/ppi.cpp
     src/export/export.cpp
     src/filter/fields.cpp
     src/filter/filter.cpp

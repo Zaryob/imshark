@@ -159,8 +159,6 @@ void dissect::dissectIeee80211(Context &ctx, const char *data, size_t length) {
     const bool order = (fc & 0x8000) != 0;
 
     ctx.pack.wlan_fc = fc;
-    ctx.pack.app_type = static_cast<uint16_t>((type << 4) | subtype);
-    ctx.pack.app_flags = fc;
     ctx.pack.protocol = "802.11";
 
     const uint16_t duration = le16(data + 2);
@@ -244,7 +242,6 @@ void dissect::dissectIeee80211(Context &ctx, const char *data, size_t length) {
         const uint16_t seq = (seqCtrl >> 4) & 0x0FFF;
         const uint8_t frag = seqCtrl & 0x0F;
         ctx.pack.wlan_seq = seq;
-        ctx.pack.app_code = seq;
 
         size_t bodyOffset = 24;
         std::string ssid;
@@ -369,7 +366,6 @@ void dissect::dissectIeee80211(Context &ctx, const char *data, size_t length) {
     const uint16_t seq = (seqCtrl >> 4) & 0x0FFF;
     const uint8_t frag = seqCtrl & 0x0F;
     ctx.pack.wlan_seq = seq;
-    ctx.pack.app_code = seq;
 
     uint8_t tid = 0;
     size_t qosOffset = 0;

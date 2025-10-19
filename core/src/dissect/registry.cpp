@@ -7,6 +7,8 @@ const dissect::Registry &dissect::Registry::builtin() {
         Registry r;
         // link layer, by LinkType
         r.registerLinkType(105, dissectIeee80211);
+        r.registerLinkType(127, dissectRadiotap);
+        r.registerLinkType(192, dissectPpi);
 
         // network layer, by EtherType
         r.registerEtherType(0x0800, dissectIPv4);

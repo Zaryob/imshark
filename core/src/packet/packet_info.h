@@ -72,6 +72,7 @@ namespace packet {
         uint32_t payload_offset = 0; // TCP/UDP payload position (0/0 if there is none). Relative to the captured frame -
                                      // except when ip_frag == 2: then relative to the reassembled IP payload (see core::reassembleIpPayload)
         uint32_t payload_length = 0;
+        uint32_t ip_id = 0;          // IPv4 identification (16 bit) / IPv6 Fragment Header identification (32 bit)
         // Number of link-layer bytes in front of the network header (0 for raw IP).
         uint16_t l2_size = 0;
         // TCP analysis result (network::TcpAnalysisFlag bits) and the "Dup ACK #n" counter
@@ -81,7 +82,9 @@ namespace packet {
         uint16_t src_port = 0;       // TCP/UDP ports (0 if not applicable)
         uint16_t dst_port = 0;
         uint16_t wlan_fc = 0;        // IEEE 802.11 Frame Control word
-        uint32_t ip_id = 0;          // IPv4 identification (16 bit) / IPv6 Fragment Header identification (32 bit)
+        uint16_t wlan_seq = 0;       // IEEE 802.11 sequence number
+        uint16_t radiotap_freq = 0;  // Channel frequency in MHz
+        uint16_t ppi_dlt = 0;        // PPI encapsulated DLT
         // Facts of the application protocol, filled by its dissector (meaning depends on `protocol`):
         //   DNS/MDNS: app_text = first question name, app_type = its type, app_flags = flags word, app_code = rcode
         //   HTTP:     app_text = Host, app_text2 = request URI or response Content-Type, app_type = method (1 = GET ...),
@@ -91,17 +94,18 @@ namespace packet {
         uint16_t app_type = 0;
         uint16_t app_flags = 0;
         uint16_t app_code = 0;
-        uint16_t wlan_seq = 0;       // IEEE 802.11 sequence number
         uint8_t tcp_dup_ack = 0;
-        uint8_t ip_version = 0;      // 4, 6 or 0 for non-IP frames
         uint8_t ip_protocol = 0;     // IP protocol (IPv6: last next-header) of the transport layer; 0 = none
         uint8_t ttl = 0;             // IPv4 TTL / IPv6 hop limit
         uint8_t tcp_flags = 0;       // raw TCP flag byte
-        bool has_comment = false;    // the capture file attaches a comment to this packet (pcapng)
-        uint8_t fcs_length = 0;      // trailing FCS bytes to exclude from dissection (from the pcap/pcapng header)
-        uint8_t tcp_pdu_state = 0;   // 0 = none, 1 = segment of a message reassembled later, 2 = packet that completes a reassembled message, 3 = whole message inside this segment, 4 = first segment of a message reassembled later (decoded as far as it goes)
-        uint8_t checksum_state = 0;  // 2 bits per layer: bits 0-1 IPv4 header, bits 2-3 TCP/UDP/ICMP (see dissect/checksum.h)
-        uint8_t ip_frag = 0;         // 0 = not fragmented, 1 = fragment that is not the last, 2 = last fragment (datagram reassembled here)
+        int32_t radiotap_signal : 8 = 0; // dBm antenna signal (-128..127)
+        uint32_t radiotap_rate : 7 = 0;  // data rate (500 kbps units, 0..127)
+        uint32_t has_comment : 1 = 0;    // the capture file attaches a comment to this packet (pcapng)
+        uint32_t fcs_length : 4 = 0;     // trailing FCS bytes to exclude from dissection (from pcap header, 0..14)
+        uint32_t tcp_pdu_state : 3 = 0;  // 0 = none, 1..4 (see tcp.cpp)
+        uint32_t checksum_state : 4 = 0; // 2 bits per layer: bits 0-1 IPv4 header, bits 2-3 TCP/UDP/ICMP
+        uint32_t ip_frag : 2 = 0;        // 0 = not fragmented, 1 = fragment that is not the last, 2 = last fragment
+        uint32_t ip_version : 3 = 0;     // 4, 6 or 0 for non-IP frames
 
         PacketInfo() = default;
         explicit PacketInfo(int num) : number(num) {}

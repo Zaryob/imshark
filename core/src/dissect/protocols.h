@@ -35,4 +35,6 @@ namespace dissect {
     StreamFrame frameHttp2(const char *data, size_t length);
     bool dissectHttp2Heuristic(Context &ctx, const char *data, size_t length);
     void dissectIeee80211(Context &ctx, const char *data, size_t length);
+    void dissectRadiotap(Context &ctx, const char *data, size_t length);
+    void dissectPpi(Context &ctx, const char *data, size_t length);
 } // namespace dissect

@@ -12,7 +12,7 @@ ImShark, [Dear ImGui](https://github.com/ocornut/imgui) ile yazılmış, Wiresha
 - TCP için bağıl (relative) seq/ack numaraları
 - Paket listesi (No, Time, Source, Destination, Protocol, Length, Info), çoklu seçim
 - Genişletilebilir protokol ağacı (Frame, Ethernet/VLAN, IP, ARP, ICMP, TCP/UDP, DNS, DHCP…); bir alan seçilince hex/ASCII panelinde ilgili baytlar vurgulanır, hex'te bir bayta tıklayınca o bayta ait en özel alan ağaçta açılır
-- Link type desteği: Ethernet (802.1Q/QinQ), NULL/Loopback, Raw IP, Linux SLL/SLL2, IEEE 802.11 kablosuz çerçeveleri (Yönetim, Kontrol, Korumalı veri ve LLC/SNAP ile IP/TCP/HTTP iç katmanlarına yönlendirme)
+- Link type desteği: Ethernet (802.1Q/QinQ), NULL/Loopback, Raw IP, Linux SLL/SLL2, IEEE 802.11 kablosuz çerçeveleri (Yönetim, Kontrol, Korumalı veri ve LLC/SNAP ile IP/TCP/HTTP iç katmanlarına yönlendirme), Radiotap (127) ve PPI (192)
 - Bozuk/kırpık dosya ve paketlerde çökmez: `[Malformed Packet]` işaretler, yükleme sorunlarını durum çubuğunda gösterir
 - Büyük dosyalar: arka planda yükleme (ilerleme çubuğu, iptal); pakette yalnızca özet tutulur (500 bin paket ≈ 190 MB, yükleme < 1 sn), ham bayt ve alan ağacı yalnızca seçilen paket için dosyadan okunur
 - **Görüntüleme filtresi** (Wireshark benzeri): `tcp.port in {80 443} && !tcp.flags.rst`, `ip.addr == 10.0.0.0/8`, `info contains "GET"`, `frame.time_delta > 1` … Yazarken doğrulanır (hata konumuyla), geçmişi tutulur, `?` düğmesi alan listesini açar; 500 bin pakette 8–18 ms
