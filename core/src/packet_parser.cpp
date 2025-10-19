@@ -38,8 +38,11 @@ namespace {
             case 12:
             case 14:
             case 101: return "Raw IP";
+            case 105: return "IEEE 802.11";
             case 108: return "OpenBSD loopback";
             case 113: return "Linux cooked v1";
+            case 127: return "IEEE 802.11 plus radiotap";
+            case 192: return "PPI";
             case 276: return "Linux cooked v2";
             default: return "unsupported";
         }
@@ -57,6 +60,8 @@ void packet::PacketParser::parsePacket(packet::PacketInfo &pack, const std::vect
     pack.ether_type = 0;
     pack.ip_version = 0;
     pack.ip_protocol = 0;
+    pack.wlan_fc = 0;
+    pack.wlan_seq = 0;
     pack.ttl = 0;
     pack.tcp_flags = 0;
     if (mode != dissect::ParseMode::Replay) {
@@ -181,6 +186,13 @@ void packet::PacketParser::parsePacket(packet::PacketInfo &pack, const std::vect
             l3Offset = 20;
         } break;
         default:
+            if (const dissect::Dissector *link = registry_->findLinkType(pack.link_type)) {
+                (*link)(ctx, base, effectiveLen);
+                if (ctx.wantFields() && fcsBytes > 0) {
+                    ctx.addLayer("Frame Check Sequence: " + std::to_string(fcsBytes) + " bytes", effectiveLen, fcsBytes);
+                }
+                return;
+            }
             pack.protocol = "Unknown";
             pack.info = pack.link_type == packet::kUndefinedLinkType ? "Packet refers to an undefined capture interface"
                                                                       : "Unsupported link type " + std::to_string(pack.link_type);

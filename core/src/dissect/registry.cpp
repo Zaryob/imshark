@@ -5,6 +5,9 @@
 const dissect::Registry &dissect::Registry::builtin() {
     static const Registry registry = [] {
         Registry r;
+        // link layer, by LinkType
+        r.registerLinkType(105, dissectIeee80211);
+
         // network layer, by EtherType
         r.registerEtherType(0x0800, dissectIPv4);
         r.registerEtherType(0x86DD, dissectIPv6);

@@ -34,4 +34,5 @@ namespace dissect {
     void dissectHttp2(Context &ctx, const char *data, size_t length);
     StreamFrame frameHttp2(const char *data, size_t length);
     bool dissectHttp2Heuristic(Context &ctx, const char *data, size_t length);
+    void dissectIeee80211(Context &ctx, const char *data, size_t length);
 } // namespace dissect

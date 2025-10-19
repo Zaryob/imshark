@@ -46,6 +46,7 @@ add_executable(imshark_tests
     test_time_format.cpp
     test_utils.cpp
     test_ui_smoke.cpp
+    test_wlan.cpp
 )
 if(IMSHARK_SANITIZE)
     target_sources(imshark_tests PRIVATE asan_options.cpp)

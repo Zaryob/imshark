@@ -80,6 +80,7 @@ namespace packet {
         uint16_t ether_type = 0;     // outermost payload type after the link layer / VLAN tags
         uint16_t src_port = 0;       // TCP/UDP ports (0 if not applicable)
         uint16_t dst_port = 0;
+        uint16_t wlan_fc = 0;        // IEEE 802.11 Frame Control word
         uint32_t ip_id = 0;          // IPv4 identification (16 bit) / IPv6 Fragment Header identification (32 bit)
         // Facts of the application protocol, filled by its dissector (meaning depends on `protocol`):
         //   DNS/MDNS: app_text = first question name, app_type = its type, app_flags = flags word, app_code = rcode
@@ -90,6 +91,7 @@ namespace packet {
         uint16_t app_type = 0;
         uint16_t app_flags = 0;
         uint16_t app_code = 0;
+        uint16_t wlan_seq = 0;       // IEEE 802.11 sequence number
         uint8_t tcp_dup_ack = 0;
         uint8_t ip_version = 0;      // 4, 6 or 0 for non-IP frames
         uint8_t ip_protocol = 0;     // IP protocol (IPv6: last next-header) of the transport layer; 0 = none

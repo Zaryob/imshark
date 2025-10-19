@@ -32,6 +32,31 @@ namespace dissect {
         return network::ntoh32(v);
     }
 
+    inline uint16_t le16(const char *p) {
+        uint16_t v;
+        std::memcpy(&v, p, sizeof(v));
+        return std::endian::native == std::endian::big ? network::bswap16(v) : v;
+    }
+
+    inline uint32_t le32(const char *p) {
+        uint32_t v;
+        std::memcpy(&v, p, sizeof(v));
+        return std::endian::native == std::endian::big ? network::bswap32(v) : v;
+    }
+
+    inline std::string etherTypeName(uint16_t type) {
+        switch (type) {
+            case 0x0800: return "IPv4";
+            case 0x86DD: return "IPv6";
+            case 0x0806: return "ARP";
+            case 0x8035: return "RARP";
+            case 0x8100: return "802.1Q VLAN";
+            case 0x888E: return "802.1X Authentication";
+            case 0x88A8: return "802.1ad VLAN";
+            default: return "unknown";
+        }
+    }
+
     /// `addr` points to 4 bytes in network byte order.
     inline std::string ip4(const void *addr) {
         return network::formatIPv4(addr);

@@ -15,6 +15,7 @@ namespace dissect {
     /// registering it here (or on a custom registry passed to PacketParser).
     class Registry {
     public:
+        void registerLinkType(uint32_t linkType, Dissector d) { linkTypes_[linkType] = std::move(d); }
         void registerEtherType(uint16_t etherType, Dissector d) { etherTypes_[etherType] = std::move(d); }
         void registerIpProtocol(uint8_t protocol, Dissector d) { ipProtocols_[protocol] = std::move(d); }
         void registerTcpPort(uint16_t port, Dissector d) { tcpPorts_[port] = std::move(d); }
@@ -40,6 +41,7 @@ namespace dissect {
         const std::vector<std::shared_ptr<StreamProtocol>> &tcpStreamHeuristics() const { return streamHeuristics_; }
         bool hasStreamProtocols() const { return !tcpStreams_.empty() || !streamHeuristics_.empty(); }
 
+        const Dissector *findLinkType(uint32_t linkType) const { return find(linkTypes_, linkType); }
         const Dissector *findEtherType(uint16_t etherType) const { return find(etherTypes_, etherType); }
         const Dissector *findIpProtocol(uint8_t protocol) const { return find(ipProtocols_, protocol); }
 
@@ -82,6 +84,7 @@ namespace dissect {
             return find(map, src);
         }
 
+        std::unordered_map<uint32_t, Dissector> linkTypes_;
         std::unordered_map<uint16_t, Dissector> etherTypes_;
         std::unordered_map<uint8_t, Dissector> ipProtocols_;
         std::unordered_map<uint16_t, Dissector> tcpPorts_;
