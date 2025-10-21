@@ -173,16 +173,16 @@ Kabul ölçütü: SNMP/Telnet/SMTP/BGP yalnızca port etiketi ve ham veri göste
 
 Ön koşul: v0.7.3 link katmanı kaydı (`Registry::registerLinkType`) ve 802.3/LLC/SNAP.
 
-- [ ] **4.1: Radiotap (127) ve PPI (192)** — **L**
+- [x] **4.1: Radiotap (127) ve PPI (192)** — **L**
   - Radiotap: `it_version`, `it_len`, `it_present` (genişletme bitleri), doğal hizalamalı alanlar (TSFT, flags, rate, channel, dBm signal/noise, antenna, MCS, A-MPDU, VHT, HE...). FCS present bayrağı sondaki 4 baytı ayırır.
   - PPI: `pph_version/flags/len/dlt`, TLV alanları (802.11-Common=2, AMPDU...), dlt=105 → 802.11 yönlendirmesi.
   - Filtre: `radiotap.channel.freq`, `radiotap.dbm_antsignal`, `radiotap.datarate`, `ppi.dlt`.
-- [ ] **4.2: IEEE 802.11 çerçeveleri (105)** — **L**
+- [x] **4.2: IEEE 802.11 çerçeveleri (105)** — **L**
   - Frame Control (tür/alt tür, ToDS/FromDS, Retry, PwrMgt, Protected, Order...), süre, DS bayraklarına göre adresler (RA/TA/DA/SA/BSSID), sequence control, QoS Control, HT Control.
   - Yönetim: Beacon, Probe Req/Resp (timestamp, interval, capability, Information Elements: SSID, rates, DS, TIM, country, RSN, HT/VHT/HE...), Auth/Deauth, Assoc/Disassoc, Action.
   - Kontrol: RTS, CTS, ACK, Block Ack. Data: Data/QoS Data/Null; Protected bayrağı varsa "korumalı veri (CCMP/TKIP/WEP IV)", şifresizse LLC/SNAP → IP/HTTP iç katmanlarına yönlendirme.
   - Filtre: `wlan.fc.type`, `wlan.fc.subtype`, `wlan.sa/da/ra/ta/bssid`, `wlan.ssid`, `wlan.fc.protected`, `wlan.seq`.
-- [ ] **4.3: EAPOL / 802.1X ve WPA el sıkışması** — **M**
+- [x] **4.3: EAPOL / 802.1X ve WPA el sıkışması** — **M**
   - EtherType 0x888E: sürüm, tür (Packet/Start/Logoff/Key), EAP (Identity, TLS, PEAP...).
   - EAPOL-Key: descriptor tipi, Key Information bitleri, replay counter, nonce, IV, RSC, MIC, key data (RSN IE, PMKID KDE, GTK KDE). Info'da "Message 1 of 4" vb. sınıflandırma. (802.11 şifre çözme kapsam dışı).
 

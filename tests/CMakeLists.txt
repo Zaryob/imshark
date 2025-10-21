@@ -48,6 +48,7 @@ add_executable(imshark_tests
     test_ui_smoke.cpp
     test_wlan.cpp
     test_radiotap_ppi.cpp
+    test_eapol.cpp
 )
 if(IMSHARK_SANITIZE)
     target_sources(imshark_tests PRIVATE asan_options.cpp)
