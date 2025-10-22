@@ -33,6 +33,8 @@ add_library(imshark_core STATIC
     src/dissect/radiotap.cpp
     src/dissect/ppi.cpp
     src/dissect/eapol.cpp
+    src/dissect/llc.cpp
+    src/dissect/stp.cpp
     src/export/export.cpp
     src/filter/fields.cpp
     src/filter/filter.cpp

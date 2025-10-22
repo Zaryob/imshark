@@ -9,6 +9,7 @@
 #include <iomanip>
 #include <sstream>
 
+#include <dissect/llc.h>
 #include <dissect/util.h>
 #include <network/l2_data_link/ethernet_header.h>
 #include <network/utils.h>
@@ -64,6 +65,8 @@ void packet::PacketParser::parsePacket(packet::PacketInfo &pack, const std::vect
     pack.wlan_seq = 0;
     pack.ttl = 0;
     pack.tcp_flags = 0;
+    pack.has_llc = 0;
+    pack.has_snap = 0;
     if (mode != dissect::ParseMode::Replay) {
         pack.tcp_analysis = 0; // in Replay mode these come from the summary
         pack.tcp_dup_ack = 0;
@@ -143,6 +146,29 @@ void packet::PacketParser::parsePacket(packet::PacketInfo &pack, const std::vect
                 pack.vlan_ids.push_back(be16(base + l3Offset) & 0x0FFF);
                 etherType = be16(base + l3Offset + 2);
                 l3Offset += 4;
+            }
+
+            if (etherType <= 1500) {
+                pack.has_llc = 1;
+                pack.eth_len = etherType;
+                if (ctx.wantFields()) {
+                    Field &eth = ctx.addLayer("IEEE 802.3 Ethernet, Src: " + network::getMACAddressString(ethHeader.src_mac) +
+                                                  ", Dst: " + network::getMACAddressString(ethHeader.dest_mac),
+                                              0, l3Offset);
+                    eth.add("Destination: " + network::getMACAddressString(ethHeader.dest_mac), 0, 6);
+                    eth.add("Source: " + network::getMACAddressString(ethHeader.src_mac), 6, 6);
+                    eth.add("Length: " + std::to_string(etherType), 12, 2);
+                    for (size_t i = 0; i < pack.vlan_ids.size(); ++i) {
+                        eth.add("802.1Q Virtual LAN, ID: " + std::to_string(pack.vlan_ids[i]), 14 + 4 * i, 4);
+                    }
+                }
+                pack.l2_size = static_cast<uint16_t>(l3Offset);
+                if (ctx.wantFields() && fcsBytes > 0) {
+                    ctx.addLayer("Frame Check Sequence: " + std::to_string(fcsBytes) + " bytes", effectiveLen, fcsBytes);
+                }
+                const size_t payloadLen = std::min<size_t>(effectiveLen > l3Offset ? effectiveLen - l3Offset : 0, etherType);
+                dissect::dissectLlc(ctx, base + l3Offset, payloadLen);
+                return;
             }
 
             if (ctx.wantFields()) {

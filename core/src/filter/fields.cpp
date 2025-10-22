@@ -19,6 +19,9 @@ namespace filter {
         void proto(const PacketInfo &p, const Context &, Values &out) { if (Present(p)) out.addU(1); }
 
         bool isProtocol(const PacketInfo &p, const char *name) { return p.protocol == name; }
+        bool isStp(const PacketInfo &p) { return isProtocol(p, "STP") || isProtocol(p, "RSTP") || isProtocol(p, "MSTP"); }
+        bool isSnap(const PacketInfo &p) { return p.has_snap || isProtocol(p, "SNAP"); }
+        bool isLlc(const PacketInfo &p) { return p.has_llc || isProtocol(p, "LLC") || isSnap(p) || isStp(p); }
 
         // Wireshark's numbering of *.checksum.status: 0 = bad, 1 = good, 2 = unverified, 3 = not present
         uint32_t checksumStatusNumber(uint8_t state) { return state == dissect::kChecksumBad ? 0 : state == dissect::kChecksumGood ? 1 : state == dissect::kChecksumUnverified ? 2 : 3; }
@@ -57,7 +60,8 @@ namespace filter {
                 {"info", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { o.addS(p.info); }, "Info column (alias of _ws.col.info)"},
                 // ---- link layer
                 {"eth", FieldType::Boolean, proto<[](const PacketInfo &p) { return p.link_type == 1; }>, "Ethernet frame"},
-                {"eth.type", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.ether_type) o.addU(p.ether_type); }, "EtherType"},
+                {"eth.len", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.link_type == 1 && p.has_llc && p.eth_len != 0) o.addU(p.eth_len); }, "IEEE 802.3 length field"},
+                {"eth.type", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (!p.has_llc && p.ether_type > 1500) o.addU(p.ether_type); }, "EtherType"},
                 {"vlan", FieldType::Boolean, proto<[](const PacketInfo &p) { return !p.vlan_ids.empty(); }>, "802.1Q VLAN tagged"},
                 {"vlan.id", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { for (size_t i = 0; i < p.vlan_ids.size() && i < 2; ++i) o.addU(p.vlan_ids[i]); }, "VLAN ID (outermost two tags)"},
                 // ---- network layer
@@ -231,6 +235,29 @@ namespace filter {
                 {"eap.code", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "EAP") && p.app_code != 0) o.addU(p.app_code); }, "EAP code (1 = Request, 2 = Response, 3 = Success, 4 = Failure)"},
                 {"eap.type", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "EAP") && p.app_flags != 0) o.addU(p.app_flags); }, "EAP type (1 = Identity, 13 = TLS, 25 = PEAP, 43 = FAST)"},
                 {"eap.identity", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "EAP") && p.app_flags == 1 && !p.app_text.empty()) o.addS(p.app_text); }, "EAP Identity username/string"},
+                {"llc", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isLlc(p)) o.addU(1); }, "IEEE 802.2 Logical-Link Control"},
+                {"llc.dsap", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "LLC") || isProtocol(p, "SNAP")) o.addU(p.app_type); else if (isStp(p)) o.addU(0x42); }, "LLC Destination Service Access Point (DSAP)"},
+                {"llc.ssap", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "LLC") || isProtocol(p, "SNAP")) o.addU(p.app_flags & 0xFF); else if (isStp(p)) o.addU(0x42); }, "LLC Source Service Access Point (SSAP)"},
+                {"llc.control", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "LLC") || isProtocol(p, "SNAP")) o.addU(p.app_code); else if (isStp(p)) o.addU(0x03); }, "LLC Control Field"},
+                {"snap", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isSnap(p)) o.addU(1); }, "Subnetwork Access Protocol (SNAP)"},
+                {"snap.oui", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isSnap(p)) o.addU(p.tcp_pdu_start); }, "SNAP Organizationally Unique Identifier (OUI)"},
+                {"snap.type", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isSnap(p) && p.ether_type != 0) o.addU(p.ether_type); }, "SNAP Protocol ID / EtherType"},
+                {"stp", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isStp(p)) o.addU(1); }, "Spanning Tree Protocol (STP / RSTP / MSTP)"},
+                {"stp.protocol", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isStp(p)) o.addU(0); }, "STP Protocol Identifier"},
+                {"stp.version", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isStp(p)) o.addU(p.app_flags & 0xFF); }, "STP Protocol Version Identifier (0 = STP, 2 = RSTP, 3 = MSTP)"},
+                {"stp.bpdu.type", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isStp(p)) o.addU(p.app_type); }, "STP BPDU Type (0x00 = Config, 0x02 = RST, 0x80 = TCN)"},
+                {"stp.flags", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isStp(p) && (p.app_type == 0 || p.app_type == 2)) o.addU((p.app_flags >> 8) & 0xFF); }, "STP BPDU Flags byte"},
+                {"stp.flags.tc", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isStp(p) && (p.app_type == 0 || p.app_type == 2)) o.addU(((p.app_flags >> 8) & 0x01) ? 1 : 0); }, "STP Topology Change flag"},
+                {"stp.flags.proposal", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isStp(p) && (p.app_type == 0 || p.app_type == 2)) o.addU(((p.app_flags >> 8) & 0x02) ? 1 : 0); }, "STP Proposal flag"},
+                {"stp.flags.port_role", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isStp(p) && (p.app_type == 0 || p.app_type == 2)) o.addU(((p.app_flags >> 8) >> 2) & 0x03); }, "STP Port Role (1 = Alternate/Backup, 2 = Root, 3 = Designated)"},
+                {"stp.flags.learning", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isStp(p) && (p.app_type == 0 || p.app_type == 2)) o.addU(((p.app_flags >> 8) & 0x10) ? 1 : 0); }, "STP Learning flag"},
+                {"stp.flags.forwarding", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isStp(p) && (p.app_type == 0 || p.app_type == 2)) o.addU(((p.app_flags >> 8) & 0x20) ? 1 : 0); }, "STP Forwarding flag"},
+                {"stp.flags.agreement", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isStp(p) && (p.app_type == 0 || p.app_type == 2)) o.addU(((p.app_flags >> 8) & 0x40) ? 1 : 0); }, "STP Agreement flag"},
+                {"stp.flags.tc_ack", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isStp(p) && (p.app_type == 0 || p.app_type == 2)) o.addU(((p.app_flags >> 8) & 0x80) ? 1 : 0); }, "STP Topology Change Acknowledgment flag"},
+                {"stp.root.cost", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isStp(p) && (p.app_type == 0 || p.app_type == 2)) o.addU(p.tcp_pdu_start); }, "STP Root Path Cost"},
+                {"stp.root.id", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (isStp(p) && !p.app_text.empty()) o.addS(p.app_text); }, "STP Root Identifier"},
+                {"stp.bridge.id", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (isStp(p) && !p.app_text2.empty()) o.addS(p.app_text2); }, "STP Bridge Identifier"},
+                {"stp.port", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isStp(p) && (p.app_type == 0 || p.app_type == 2)) o.addU(p.app_code); }, "STP Port Identifier"},
                 {"malformed", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "Malformed") || p.info.find("[Malformed Packet") != std::string::npos) o.addU(1); }, "Packet that could not be fully decoded"},
             };
             std::sort(t.begin(), t.end(), [](const FieldDef &a, const FieldDef &b) { return std::string_view(a.name) < b.name; });

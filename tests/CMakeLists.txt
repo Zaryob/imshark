@@ -49,6 +49,7 @@ add_executable(imshark_tests
     test_wlan.cpp
     test_radiotap_ppi.cpp
     test_eapol.cpp
+    test_llc_stp.cpp
 )
 if(IMSHARK_SANITIZE)
     target_sources(imshark_tests PRIVATE asan_options.cpp)

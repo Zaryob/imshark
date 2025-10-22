@@ -74,14 +74,19 @@ namespace packet {
         uint32_t payload_length = 0;
         uint32_t ip_id = 0;          // IPv4 identification (16 bit) / IPv6 Fragment Header identification (32 bit)
         // Number of link-layer bytes in front of the network header (0 for raw IP).
-        uint16_t l2_size = 0;
+        uint16_t l2_size : 14 = 0;
+        uint16_t has_llc : 1 = 0;    // IEEE 802.2 Logical-Link Control header present
+        uint16_t has_snap : 1 = 0;   // Subnetwork Access Protocol (SNAP) header present
         // TCP analysis result (network::TcpAnalysisFlag bits) and the "Dup ACK #n" counter
         uint16_t tcp_analysis = 0;
         // Compact protocol facts, filled while parsing; the display filter works on these.
         uint16_t ether_type = 0;     // outermost payload type after the link layer / VLAN tags
         uint16_t src_port = 0;       // TCP/UDP ports (0 if not applicable)
         uint16_t dst_port = 0;
-        uint16_t wlan_fc = 0;        // IEEE 802.11 Frame Control word
+        union {
+            uint16_t wlan_fc = 0;        // IEEE 802.11 Frame Control word
+            uint16_t eth_len;            // IEEE 802.3 Ethernet Length field
+        };
         uint16_t wlan_seq = 0;       // IEEE 802.11 sequence number
         uint16_t radiotap_freq = 0;  // Channel frequency in MHz
         uint16_t ppi_dlt = 0;        // PPI encapsulated DLT
@@ -110,4 +115,6 @@ namespace packet {
         PacketInfo() = default;
         explicit PacketInfo(int num) : number(num) {}
     };
+
+    static_assert(sizeof(PacketInfo) == 336, "PacketInfo must remain 336 bytes");
 } // namespace packet

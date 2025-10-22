@@ -436,6 +436,8 @@ void dissect::dissectIeee80211(Context &ctx, const char *data, size_t length) {
         static_cast<uint8_t>(payload[1]) == 0xAA && static_cast<uint8_t>(payload[2]) == 0x03) {
         const uint32_t oui = (static_cast<uint8_t>(payload[3]) << 16) | (static_cast<uint8_t>(payload[4]) << 8) | static_cast<uint8_t>(payload[5]);
         const uint16_t etherType = be16(payload + 6);
+        ctx.pack.has_llc = 1;
+        ctx.pack.has_snap = 1;
 
         if (ctx.wantFields()) {
             addWlanDataLayer();
