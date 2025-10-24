@@ -6,6 +6,7 @@ const dissect::Registry &dissect::Registry::builtin() {
     static const Registry registry = [] {
         Registry r;
         // link layer, by LinkType
+        r.registerLinkType(9, dissectPpp);
         r.registerLinkType(105, dissectIeee80211);
         r.registerLinkType(127, dissectRadiotap);
         r.registerLinkType(192, dissectPpi);
@@ -15,6 +16,8 @@ const dissect::Registry &dissect::Registry::builtin() {
         r.registerEtherType(0x86DD, dissectIPv6);
         r.registerEtherType(0x0806, [](Context &c, const char *d, size_t n) { dissectArp(c, d, n, false); });
         r.registerEtherType(0x8035, [](Context &c, const char *d, size_t n) { dissectArp(c, d, n, true); });
+        r.registerEtherType(0x8863, dissectPppoeDiscovery);
+        r.registerEtherType(0x8864, dissectPppoeSession);
         r.registerEtherType(0x888E, dissectEapol);
 
         // transport layer, by IP protocol number

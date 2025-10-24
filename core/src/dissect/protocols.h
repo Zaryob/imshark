@@ -40,4 +40,7 @@ namespace dissect {
     void dissectEapol(Context &ctx, const char *data, size_t length);
     void dissectLlc(Context &ctx, const char *data, size_t length);
     void dissectStp(Context &ctx, const char *data, size_t length);
+    void dissectPpp(Context &ctx, const char *data, size_t length);
+    void dissectPppoeDiscovery(Context &ctx, const char *data, size_t length);
+    void dissectPppoeSession(Context &ctx, const char *data, size_t length);
 } // namespace dissect

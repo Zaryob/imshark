@@ -109,7 +109,7 @@ Kabul ölçütü: `dns_port.pcap` DNS olarak çözülür; `PRIV_bootp-both_overl
 Hedef: desteklenen IP/TCP/UDP dissector'larına farklı kapsüllemeler üzerinden ulaşmak. İç içe ayrıştırmada derinlik ve uzunluk sınırları ortak uygulanır.
 
 - [x] IEEE 802.3 uzunluk alanını Ethernet II EtherType'tan ayır; LLC/SNAP ve STP/RSTP/MSTP BPDU alanları — **M**
-- [ ] PPP ve PPPoE: discovery/session, LCP/IPCP/IPv6CP, IPv4/IPv6 yüküne yönlendirme — **M**
+- [x] PPP ve PPPoE: discovery/session, LCP/IPCP/IPv6CP, IPv4/IPv6 yüküne yönlendirme — **M**
 - [ ] MPLS label stack: label/TC/S/TTL, çoklu etiket ve IPv4/IPv6 iç yükü — **M**
 - [ ] IP-in-IP (IPv4/IPv6) ve GRE: optional checksum/key/sequence, iç protokole yönlendirme; ERSPAN başlıkları — **M**
 - [ ] LLDP TLV'leri, LACP ve Ethernet pause/control çerçeveleri — **M**

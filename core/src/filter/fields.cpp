@@ -22,6 +22,16 @@ namespace filter {
         bool isStp(const PacketInfo &p) { return isProtocol(p, "STP") || isProtocol(p, "RSTP") || isProtocol(p, "MSTP"); }
         bool isSnap(const PacketInfo &p) { return p.has_snap || isProtocol(p, "SNAP"); }
         bool isLlc(const PacketInfo &p) { return p.has_llc || isProtocol(p, "LLC") || isSnap(p) || isStp(p); }
+        bool isPppoe(const PacketInfo &p) {
+            return p.ether_type == 0x8863 || p.ether_type == 0x8864 ||
+                   isProtocol(p, "PPPoED") || isProtocol(p, "PPPoES") ||
+                   (p.link_type == 1 && (p.pppoe_session_id != 0 || p.pppoe_code != 0 || p.ppp_protocol != 0));
+        }
+        bool isPpp(const PacketInfo &p) {
+            return p.link_type == 9 || p.ppp_protocol != 0 ||
+                   isProtocol(p, "PPP") || isProtocol(p, "LCP") || isProtocol(p, "IPCP") ||
+                   isProtocol(p, "IPv6CP") || isProtocol(p, "PAP") || isProtocol(p, "CHAP");
+        }
 
         // Wireshark's numbering of *.checksum.status: 0 = bad, 1 = good, 2 = unverified, 3 = not present
         uint32_t checksumStatusNumber(uint8_t state) { return state == dissect::kChecksumBad ? 0 : state == dissect::kChecksumGood ? 1 : state == dissect::kChecksumUnverified ? 2 : 3; }
@@ -258,6 +268,17 @@ namespace filter {
                 {"stp.root.id", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (isStp(p) && !p.app_text.empty()) o.addS(p.app_text); }, "STP Root Identifier"},
                 {"stp.bridge.id", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (isStp(p) && !p.app_text2.empty()) o.addS(p.app_text2); }, "STP Bridge Identifier"},
                 {"stp.port", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isStp(p) && (p.app_type == 0 || p.app_type == 2)) o.addU(p.app_code); }, "STP Port Identifier"},
+                {"ppp", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isPpp(p)) o.addU(1); }, "Point-to-Point Protocol"},
+                {"ppp.protocol", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.ppp_protocol != 0) o.addU(p.ppp_protocol); }, "PPP Protocol ID (0x0021 = IPv4, 0x0057 = IPv6, 0xc021 = LCP, 0x8021 = IPCP)"},
+                {"ppp.lcp.code", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.ppp_protocol == 0xc021 || isProtocol(p, "LCP")) o.addU(p.app_type); }, "LCP Code (1 = Config-Req, 2 = Config-Ack, etc.)"},
+                {"ppp.ipcp.code", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.ppp_protocol == 0x8021 || isProtocol(p, "IPCP")) o.addU(p.app_type); }, "IPCP Code"},
+                {"pppoe", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isPppoe(p)) o.addU(1); }, "PPP-over-Ethernet (Discovery or Session)"},
+                {"pppoed", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (p.ether_type == 0x8863 || isProtocol(p, "PPPoED")) o.addU(1); }, "PPPoE Discovery Stage"},
+                {"pppoes", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (p.ether_type == 0x8864 || isProtocol(p, "PPPoES") || (p.link_type == 1 && isPpp(p))) o.addU(1); }, "PPPoE Session Stage"},
+                {"pppoe.code", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isPppoe(p)) o.addU(p.pppoe_code); }, "PPPoE Code (0x00 = Session, 0x09 = PADI, 0x07 = PADO, 0x19 = PADR, 0x65 = PADS, 0xa7 = PADT)"},
+                {"pppoe.session_id", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isPppoe(p)) o.addU(p.pppoe_session_id); }, "PPPoE Session ID"},
+                {"pppoe.service_name", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (isPppoe(p) && !p.app_text.empty()) o.addS(p.app_text); }, "PPPoE Service-Name tag"},
+                {"pppoe.ac_name", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (isPppoe(p) && !p.app_text2.empty()) o.addS(p.app_text2); }, "PPPoE Access Concentrator (AC) Name tag"},
                 {"malformed", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "Malformed") || p.info.find("[Malformed Packet") != std::string::npos) o.addU(1); }, "Packet that could not be fully decoded"},
             };
             std::sort(t.begin(), t.end(), [](const FieldDef &a, const FieldDef &b) { return std::string_view(a.name) < b.name; });

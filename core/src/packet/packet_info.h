@@ -87,9 +87,18 @@ namespace packet {
             uint16_t wlan_fc = 0;        // IEEE 802.11 Frame Control word
             uint16_t eth_len;            // IEEE 802.3 Ethernet Length field
         };
-        uint16_t wlan_seq = 0;       // IEEE 802.11 sequence number
-        uint16_t radiotap_freq = 0;  // Channel frequency in MHz
-        uint16_t ppi_dlt = 0;        // PPI encapsulated DLT
+        union {
+            uint16_t wlan_seq = 0;       // IEEE 802.11 sequence number
+            uint16_t pppoe_code;         // PPPoE Code
+        };
+        union {
+            uint16_t radiotap_freq = 0;  // Channel frequency in MHz
+            uint16_t ppp_protocol;       // PPP Protocol (0x0021, 0x8021, 0xc021...)
+        };
+        union {
+            uint16_t ppi_dlt = 0;        // PPI encapsulated DLT
+            uint16_t pppoe_session_id;   // PPPoE Session ID
+        };
         // Facts of the application protocol, filled by its dissector (meaning depends on `protocol`):
         //   DNS/MDNS: app_text = first question name, app_type = its type, app_flags = flags word, app_code = rcode
         //   HTTP:     app_text = Host, app_text2 = request URI or response Content-Type, app_type = method (1 = GET ...),
