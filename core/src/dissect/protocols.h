@@ -43,4 +43,5 @@ namespace dissect {
     void dissectPpp(Context &ctx, const char *data, size_t length);
     void dissectPppoeDiscovery(Context &ctx, const char *data, size_t length);
     void dissectPppoeSession(Context &ctx, const char *data, size_t length);
+    void dissectMpls(Context &ctx, const char *data, size_t length);
 } // namespace dissect

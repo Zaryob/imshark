@@ -16,6 +16,8 @@ const dissect::Registry &dissect::Registry::builtin() {
         r.registerEtherType(0x86DD, dissectIPv6);
         r.registerEtherType(0x0806, [](Context &c, const char *d, size_t n) { dissectArp(c, d, n, false); });
         r.registerEtherType(0x8035, [](Context &c, const char *d, size_t n) { dissectArp(c, d, n, true); });
+        r.registerEtherType(0x8847, dissectMpls);
+        r.registerEtherType(0x8848, dissectMpls);
         r.registerEtherType(0x8863, dissectPppoeDiscovery);
         r.registerEtherType(0x8864, dissectPppoeSession);
         r.registerEtherType(0x888E, dissectEapol);

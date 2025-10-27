@@ -84,21 +84,40 @@ namespace packet {
         uint16_t src_port = 0;       // TCP/UDP ports (0 if not applicable)
         uint16_t dst_port = 0;
         union {
-            uint16_t wlan_fc = 0;        // IEEE 802.11 Frame Control word
-            uint16_t eth_len;            // IEEE 802.3 Ethernet Length field
+            struct {
+                uint16_t wlan_fc = 0;        // IEEE 802.11 Frame Control word
+                uint16_t wlan_seq = 0;       // IEEE 802.11 sequence number
+                uint16_t radiotap_freq = 0;  // Channel frequency in MHz
+                uint16_t ppi_dlt = 0;        // PPI encapsulated DLT
+            };
+            struct {
+                uint16_t eth_len;            // IEEE 802.3 Ethernet Length field
+                uint16_t pppoe_code;         // PPPoE Code
+                uint16_t ppp_protocol;       // PPP Protocol (0x0021, 0x8021, 0xc021...)
+                uint16_t pppoe_session_id;   // PPPoE Session ID
+            };
+            struct {
+                uint16_t mpls_lse0_hi;       // Outermost MPLS label stack entry (bits 31..16)
+                uint16_t mpls_lse0_lo;       // Outermost MPLS label stack entry (bits 15..0)
+                uint16_t mpls_lse1_hi;       // Second MPLS label stack entry (bits 31..16)
+                uint16_t mpls_lse1_lo;       // Second MPLS label stack entry (bits 15..0)
+            };
         };
-        union {
-            uint16_t wlan_seq = 0;       // IEEE 802.11 sequence number
-            uint16_t pppoe_code;         // PPPoE Code
-        };
-        union {
-            uint16_t radiotap_freq = 0;  // Channel frequency in MHz
-            uint16_t ppp_protocol;       // PPP Protocol (0x0021, 0x8021, 0xc021...)
-        };
-        union {
-            uint16_t ppi_dlt = 0;        // PPI encapsulated DLT
-            uint16_t pppoe_session_id;   // PPPoE Session ID
-        };
+
+        uint32_t mplsLse(size_t idx) const {
+            if (idx == 0) return (static_cast<uint32_t>(mpls_lse0_hi) << 16) | mpls_lse0_lo;
+            if (idx == 1) return (static_cast<uint32_t>(mpls_lse1_hi) << 16) | mpls_lse1_lo;
+            return 0;
+        }
+        void setMplsLse(size_t idx, uint32_t entry) {
+            if (idx == 0) {
+                mpls_lse0_hi = static_cast<uint16_t>(entry >> 16);
+                mpls_lse0_lo = static_cast<uint16_t>(entry & 0xFFFF);
+            } else if (idx == 1) {
+                mpls_lse1_hi = static_cast<uint16_t>(entry >> 16);
+                mpls_lse1_lo = static_cast<uint16_t>(entry & 0xFFFF);
+            }
+        }
         // Facts of the application protocol, filled by its dissector (meaning depends on `protocol`):
         //   DNS/MDNS: app_text = first question name, app_type = its type, app_flags = flags word, app_code = rcode
         //   HTTP:     app_text = Host, app_text2 = request URI or response Content-Type, app_type = method (1 = GET ...),

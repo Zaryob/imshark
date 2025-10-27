@@ -27,7 +27,15 @@ namespace {
             case 0x0806: return "ARP";
             case 0x8035: return "RARP";
             case 0x8100: return "802.1Q VLAN";
+            case 0x8808: return "Ethernet flow control";
+            case 0x8809: return "Slow Protocols";
+            case 0x8847: return "MPLS unicast";
+            case 0x8848: return "MPLS multicast";
+            case 0x8863: return "PPPoE Discovery";
+            case 0x8864: return "PPPoE Session";
+            case 0x888E: return "802.1X Authentication";
             case 0x88A8: return "802.1ad VLAN";
+            case 0x88CC: return "LLDP";
             default: return "unknown";
         }
     }
