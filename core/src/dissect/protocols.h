@@ -44,4 +44,9 @@ namespace dissect {
     void dissectPppoeDiscovery(Context &ctx, const char *data, size_t length);
     void dissectPppoeSession(Context &ctx, const char *data, size_t length);
     void dissectMpls(Context &ctx, const char *data, size_t length);
+    void dissectIpInIp(Context &ctx, const char *data, size_t length);        // IP protocol 4 (IPIP) / 41 (IPv6-in-IP)
+    void dissectGre(Context &ctx, const char *data, size_t length);           // IP protocol 47, RFC 2784/2890 + ERSPAN
+    void dissectLldp(Context &ctx, const char *data, size_t length);          // EtherType 0x88CC, IEEE 802.1AB
+    void dissectSlowProtocols(Context &ctx, const char *data, size_t length); // EtherType 0x8809, LACP (subtype 0x01)
+    void dissectEthernetControl(Context &ctx, const char *data, size_t length); // EtherType 0x8808, PAUSE / PFC
 } // namespace dissect

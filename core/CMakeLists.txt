@@ -38,6 +38,8 @@ add_library(imshark_core STATIC
     src/dissect/ppp.cpp
     src/dissect/pppoe.cpp
     src/dissect/mpls.cpp
+    src/dissect/ipip.cpp
+    src/dissect/gre.cpp
     src/export/export.cpp
     src/filter/fields.cpp
     src/filter/filter.cpp

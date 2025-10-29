@@ -74,9 +74,11 @@ namespace packet {
         uint32_t payload_length = 0;
         uint32_t ip_id = 0;          // IPv4 identification (16 bit) / IPv6 Fragment Header identification (32 bit)
         // Number of link-layer bytes in front of the network header (0 for raw IP).
-        uint16_t l2_size : 14 = 0;
+        uint16_t l2_size : 12 = 0;
         uint16_t has_llc : 1 = 0;    // IEEE 802.2 Logical-Link Control header present
         uint16_t has_snap : 1 = 0;   // Subnetwork Access Protocol (SNAP) header present
+        uint16_t has_gre : 1 = 0;    // a GRE header was dissected somewhere in the encapsulation chain
+        uint16_t has_ipip : 1 = 0;   // an IP-in-IP header was dissected somewhere in the encapsulation chain
         // TCP analysis result (network::TcpAnalysisFlag bits) and the "Dup ACK #n" counter
         uint16_t tcp_analysis = 0;
         // Compact protocol facts, filled while parsing; the display filter works on these.
@@ -101,6 +103,12 @@ namespace packet {
                 uint16_t mpls_lse0_lo;       // Outermost MPLS label stack entry (bits 15..0)
                 uint16_t mpls_lse1_hi;       // Second MPLS label stack entry (bits 31..16)
                 uint16_t mpls_lse1_lo;       // Second MPLS label stack entry (bits 15..0)
+            };
+            struct {
+                uint16_t gre_flags;          // GRE flags/version word (same 16-bit value as on the wire)
+                uint16_t gre_proto;          // GRE protocol type (0x0800 IPv4, 0x86DD IPv6, 0x6558 Ethernet, ...)
+                uint16_t gre_key;            // GRE Key (low 16 bits)
+                uint16_t gre_seq;            // GRE Sequence Number (low 16 bits)
             };
         };
 

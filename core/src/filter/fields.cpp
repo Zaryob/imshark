@@ -22,16 +22,18 @@ namespace filter {
         bool isStp(const PacketInfo &p) { return isProtocol(p, "STP") || isProtocol(p, "RSTP") || isProtocol(p, "MSTP"); }
         bool isSnap(const PacketInfo &p) { return p.has_snap || isProtocol(p, "SNAP"); }
         bool isLlc(const PacketInfo &p) { return p.has_llc || isProtocol(p, "LLC") || isSnap(p) || isStp(p); }
-        // mpls_lse* share union storage with the PPP/PPPoE fields: MPLS must be excluded before any of them is read.
+        // mpls_lse* and gre_* share union storage with the PPP/PPPoE fields: those must be excluded first.
         bool isMpls(const PacketInfo &p) { return p.ether_type == 0x8847 || p.ether_type == 0x8848 || isProtocol(p, "MPLS"); }
+        bool isGre(const PacketInfo &p) { return p.has_gre || isProtocol(p, "GRE") || p.protocol.rfind("ERSPAN", 0) == 0; }
+        bool isIpip(const PacketInfo &p) { return p.has_ipip || isProtocol(p, "IP-in-IP"); }
         bool isPppoe(const PacketInfo &p) {
-            if (isMpls(p)) return false;
+            if (isMpls(p) || isGre(p)) return false;
             return p.ether_type == 0x8863 || p.ether_type == 0x8864 ||
                    isProtocol(p, "PPPoED") || isProtocol(p, "PPPoES") ||
                    (p.link_type == 1 && (p.pppoe_session_id != 0 || p.pppoe_code != 0 || p.ppp_protocol != 0));
         }
         bool isPpp(const PacketInfo &p) {
-            if (isMpls(p)) return false;
+            if (isMpls(p) || isGre(p)) return false;
             return p.link_type == 9 || p.ppp_protocol != 0 ||
                    isProtocol(p, "PPP") || isProtocol(p, "LCP") || isProtocol(p, "IPCP") ||
                    isProtocol(p, "IPv6CP") || isProtocol(p, "PAP") || isProtocol(p, "CHAP");
@@ -289,6 +291,16 @@ namespace filter {
                 {"mpls.ttl", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isMpls(p)) o.addU(p.mplsLse(0) & 0xFF); }, "MPLS Time To Live"},
                 {"mpls.bottom_of_stack", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isMpls(p)) o.addU((p.mplsLse(0) >> 8) & 0x01); }, "MPLS Bottom of Stack flag (outermost label)"},
                 {"mpls.label1", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isMpls(p) && !((p.mplsLse(0) >> 8) & 0x01)) o.addU((p.mplsLse(1) >> 12) & 0xFFFFF); }, "MPLS Label Value (second label in the stack)"},
+                {"ipip", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isIpip(p)) o.addU(1); }, "IP-in-IP tunnel (protocol 4 or 41)"},
+                {"gre", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isGre(p)) o.addU(1); }, "Generic Routing Encapsulation"},
+                {"gre.proto", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isGre(p)) o.addU(p.gre_proto); }, "GRE Protocol Type (0x0800 = IPv4, 0x86DD = IPv6, 0x6558 = Ethernet, 0x880B = PPP)"},
+                {"gre.version", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isGre(p)) o.addU(p.gre_flags & 0x0007); }, "GRE Version (0 = RFC 2784, 1 = Enhanced GRE/RFC 2637)"},
+                {"gre.flags.checksum", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isGre(p)) o.addU((p.gre_flags & 0x8000) ? 1 : 0); }, "GRE Checksum present flag"},
+                {"gre.flags.routing", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isGre(p)) o.addU((p.gre_flags & 0x4000) ? 1 : 0); }, "GRE Routing present flag"},
+                {"gre.flags.key", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isGre(p)) o.addU((p.gre_flags & 0x2000) ? 1 : 0); }, "GRE Key present flag"},
+                {"gre.flags.sequence", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isGre(p)) o.addU((p.gre_flags & 0x1000) ? 1 : 0); }, "GRE Sequence Number present flag"},
+                {"gre.key", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isGre(p) && (p.gre_flags & 0x2000)) o.addU(p.gre_key); }, "GRE Key (low 16 bits)"},
+                {"gre.sequence_number", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isGre(p) && (p.gre_flags & 0x1000)) o.addU(p.gre_seq); }, "GRE Sequence Number (low 16 bits)"},
                 {"malformed", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "Malformed") || p.info.find("[Malformed Packet") != std::string::npos) o.addU(1); }, "Packet that could not be fully decoded"},
             };
             std::sort(t.begin(), t.end(), [](const FieldDef &a, const FieldDef &b) { return std::string_view(a.name) < b.name; });
