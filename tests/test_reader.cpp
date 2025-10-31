@@ -314,7 +314,7 @@ TEST(SampleCapture, ParsesEverythingInTheSampleFile) {
     std::vector<std::string> protocols;
     for (const auto &p: packets) protocols.push_back(p.protocol);
     const std::vector<std::string> expected = {"ARP", "ARP", "ICMP", "ICMP", "DNS", "DNS", "TCP", "TCP", "TCP", "HTTP",
-                                               "TCP", "SMTP", "UDP", "UDP", "Ethernet", "TCP"};
+                                               "TCP", "SMTP", "UDP", "UDP", "LLDP", "TCP"};
     EXPECT_EQ(protocols, expected);
     EXPECT_EQ(packets[5].info, "Standard query response 0x1234 A example.com A 93.184.216.34");
     EXPECT_EQ(packets[13].vlan_ids, std::vector<uint16_t>{100});

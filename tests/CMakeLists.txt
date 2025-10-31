@@ -53,6 +53,7 @@ add_executable(imshark_tests
     test_pppoe_ppp.cpp
     test_mpls.cpp
     test_ipip_gre.cpp
+    test_lldp_lacp.cpp
 )
 if(IMSHARK_SANITIZE)
     target_sources(imshark_tests PRIVATE asan_options.cpp)

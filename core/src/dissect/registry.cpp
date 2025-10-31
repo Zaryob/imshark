@@ -21,6 +21,9 @@ const dissect::Registry &dissect::Registry::builtin() {
         r.registerEtherType(0x8863, dissectPppoeDiscovery);
         r.registerEtherType(0x8864, dissectPppoeSession);
         r.registerEtherType(0x888E, dissectEapol);
+        r.registerEtherType(0x88CC, dissectLldp);
+        r.registerEtherType(0x8809, dissectSlowProtocols);
+        r.registerEtherType(0x8808, dissectEthernetControl);
 
         // transport layer, by IP protocol number
         r.registerIpProtocol(1, [](Context &c, const char *d, size_t n) { dissectIcmp(c, d, n, false); });

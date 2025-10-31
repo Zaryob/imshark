@@ -40,6 +40,9 @@ add_library(imshark_core STATIC
     src/dissect/mpls.cpp
     src/dissect/ipip.cpp
     src/dissect/gre.cpp
+    src/dissect/lldp.cpp
+    src/dissect/slow_protocols.cpp
+    src/dissect/mac_control.cpp
     src/export/export.cpp
     src/filter/fields.cpp
     src/filter/filter.cpp

@@ -119,9 +119,9 @@ TEST(Parser, LinkTypes) {
 }
 
 TEST(Parser, UnknownEtherType) {
-    auto p = parse(hex("001122334455 aabbccddeeff 88cc 0207"));
+    auto p = parse(hex("001122334455 aabbccddeeff 88b5 0207"));
     EXPECT_EQ(p.protocol, "Ethernet");
-    EXPECT_EQ(p.info, "EtherType 0x88cc");
+    EXPECT_EQ(p.info, "EtherType 0x88b5");
 }
 
 TEST(Parser, TruncatedFramesAreMalformedNotCrashes) {

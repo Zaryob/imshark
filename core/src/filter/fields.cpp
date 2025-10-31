@@ -26,6 +26,9 @@ namespace filter {
         bool isMpls(const PacketInfo &p) { return p.ether_type == 0x8847 || p.ether_type == 0x8848 || isProtocol(p, "MPLS"); }
         bool isGre(const PacketInfo &p) { return p.has_gre || isProtocol(p, "GRE") || p.protocol.rfind("ERSPAN", 0) == 0; }
         bool isIpip(const PacketInfo &p) { return p.has_ipip || isProtocol(p, "IP-in-IP"); }
+        bool isLldp(const PacketInfo &p) { return p.ether_type == 0x88CC || isProtocol(p, "LLDP"); }
+        bool isLacp(const PacketInfo &p) { return isProtocol(p, "LACP"); }
+        bool isMacControl(const PacketInfo &p) { return p.ether_type == 0x8808 || isProtocol(p, "MAC Control"); }
         bool isPppoe(const PacketInfo &p) {
             if (isMpls(p) || isGre(p)) return false;
             return p.ether_type == 0x8863 || p.ether_type == 0x8864 ||
@@ -301,6 +304,28 @@ namespace filter {
                 {"gre.flags.sequence", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isGre(p)) o.addU((p.gre_flags & 0x1000) ? 1 : 0); }, "GRE Sequence Number present flag"},
                 {"gre.key", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isGre(p) && (p.gre_flags & 0x2000)) o.addU(p.gre_key); }, "GRE Key (low 16 bits)"},
                 {"gre.sequence_number", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isGre(p) && (p.gre_flags & 0x1000)) o.addU(p.gre_seq); }, "GRE Sequence Number (low 16 bits)"},
+                {"lldp", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isLldp(p)) o.addU(1); }, "Link Layer Discovery Protocol"},
+                {"lldp.chassis_id", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (isLldp(p) && !p.app_text.empty()) o.addS(p.app_text); }, "LLDP Chassis ID"},
+                {"lldp.port_id", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (isLldp(p) && !p.app_text2.empty()) o.addS(p.app_text2); }, "LLDP Port ID"},
+                {"lldp.ttl", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isLldp(p)) o.addU(p.app_code); }, "LLDP Time To Live in seconds"},
+                {"lldp.capabilities", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isLldp(p)) o.addU(p.app_flags); }, "LLDP System Capabilities (enabled bits)"},
+                {"lacp", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isLacp(p)) o.addU(1); }, "Link Aggregation Control Protocol"},
+                {"lacp.actor.system", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (isLacp(p) && !p.app_text.empty()) o.addS(p.app_text); }, "LACP Actor System ID (MAC)"},
+                {"lacp.partner.system", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (isLacp(p) && !p.app_text2.empty()) o.addS(p.app_text2); }, "LACP Partner System ID (MAC)"},
+                {"lacp.actor.port", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isLacp(p)) o.addU(p.app_type); }, "LACP Actor Port number"},
+                {"lacp.partner.port", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isLacp(p)) o.addU(p.app_code); }, "LACP Partner Port number"},
+                {"lacp.actor.state", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isLacp(p)) o.addU(p.app_flags & 0xFF); }, "LACP Actor State byte"},
+                {"lacp.partner.state", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isLacp(p)) o.addU((p.app_flags >> 8) & 0xFF); }, "LACP Partner State byte"},
+                {"lacp.actor.state.activity", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isLacp(p)) o.addU((p.app_flags & 0x01) ? 1 : 0); }, "LACP Actor Activity bit"},
+                {"lacp.actor.state.synchronization", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isLacp(p)) o.addU((p.app_flags & 0x08) ? 1 : 0); }, "LACP Actor Synchronization bit"},
+                {"lacp.actor.state.collecting", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isLacp(p)) o.addU((p.app_flags & 0x10) ? 1 : 0); }, "LACP Actor Collecting bit"},
+                {"lacp.actor.state.distributing", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isLacp(p)) o.addU((p.app_flags & 0x20) ? 1 : 0); }, "LACP Actor Distributing bit"},
+                {"mac_control", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isMacControl(p)) o.addU(1); }, "Ethernet MAC Control"},
+                {"mac_control.opcode", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isMacControl(p)) o.addU(p.app_code); }, "MAC Control opcode (0x0001 PAUSE, 0x0101 PFC)"},
+                {"pause", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isMacControl(p) && p.app_code == 0x0001) o.addU(1); }, "Ethernet PAUSE frame"},
+                {"pause.time", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isMacControl(p) && p.app_code == 0x0001) o.addU(p.app_type); }, "PAUSE time (units of 512 bit times)"},
+                {"pfc", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isMacControl(p) && p.app_code == 0x0101) o.addU(1); }, "Priority Flow Control frame"},
+                {"pfc.class_enable", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isMacControl(p) && p.app_code == 0x0101) o.addU(p.app_type); }, "PFC Class Enable Vector"},
                 {"malformed", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "Malformed") || p.info.find("[Malformed Packet") != std::string::npos) o.addU(1); }, "Packet that could not be fully decoded"},
             };
             std::sort(t.begin(), t.end(), [](const FieldDef &a, const FieldDef &b) { return std::string_view(a.name) < b.name; });

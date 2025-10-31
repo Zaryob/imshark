@@ -27,7 +27,7 @@ TEST(ColorRules, DefaultsCompileAndTheFirstMatchWins) {
     EXPECT_EQ(matched(rules, kTcpAck), "TCP");
     EXPECT_EQ(matched(rules, kUdp), "UDP");
     EXPECT_EQ(matched(rules, support::kArpRequest), "ARP");
-    EXPECT_EQ(matched(rules, "001122334455 aabbccddeeff 88cc 0207"), "") << "no rule for unknown EtherTypes";
+    EXPECT_EQ(matched(rules, "001122334455 aabbccddeeff 88b5 0207"), "") << "no rule for unknown EtherTypes";
     EXPECT_EQ(matched(rules, "001122334455 aabbccddeeff 0800 4500003c123440004006 0000 0a000001 0a000002 1f90 01bb"), "Malformed packet");
 }
 
