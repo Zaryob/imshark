@@ -54,6 +54,7 @@ add_executable(imshark_tests
     test_mpls.cpp
     test_ipip_gre.cpp
     test_lldp_lacp.cpp
+    test_hierarchy.cpp
 )
 if(IMSHARK_SANITIZE)
     target_sources(imshark_tests PRIVATE asan_options.cpp)

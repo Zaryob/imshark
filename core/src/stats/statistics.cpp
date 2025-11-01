@@ -192,6 +192,9 @@ namespace stats {
                 case 108: return "Loopback";
                 case 113:
                 case 276: return "Linux cooked capture";
+                case 105: return "IEEE 802.11 wireless LAN";
+                case 127: return "Radiotap";
+                case 192: return "PPI";
                 default: return "";   // raw IP: no link layer to show
             }
         }
@@ -204,36 +207,62 @@ namespace stats {
             if (protocol == "SMTP") return "Simple Mail Transfer Protocol";
             if (protocol == "BGP") return "Border Gateway Protocol";
             if (protocol == "HTTP") return "Hypertext Transfer Protocol";
+            if (protocol == "HTTP2") return "Hypertext Transfer Protocol 2";
             if (protocol == "TLS") return "Transport Layer Security";
             if (protocol == "NTP") return "Network Time Protocol";
             if (protocol == "MDNS") return "Multicast Domain Name System";
+            if (protocol == "FTP") return "File Transfer Protocol";
+            if (protocol == "FTP-DATA") return "File Transfer Protocol (data)";
+            if (protocol == "TFTP") return "Trivial File Transfer Protocol";
+            if (protocol == "SSH") return "Secure Shell";
             return "";
         }
 
+        // LLDP/LACP/MAC-Control/PPPoE/MPLS arrive as EtherTypes; LLC/STP/SNAP behind an 802.3 length field.
+        std::string ethernetSubprotocol(const packet::PacketInfo &p) {
+            if (p.ether_type == 0x8863) return "PPPoE Discovery";
+            if (p.ether_type == 0x8864) return "PPPoE Session";
+            if (p.ether_type == 0x888E) return "802.1X Authentication";
+            if (p.ether_type == 0x8847 || p.ether_type == 0x8848) return "MultiProtocol Label Switching";
+            if (p.ether_type == 0x88CC) return "Link Layer Discovery Protocol";
+            if (p.ether_type == 0x8809) return "Slow Protocols";
+            if (p.ether_type == 0x8808) return "Ethernet MAC Control";
+            if (p.has_llc) {
+                if (p.protocol == "STP" || p.protocol == "RSTP" || p.protocol == "MSTP") return "Spanning Tree Protocol";
+                if (p.protocol == "SNAP") return "Subnetwork Access Protocol";
+                return "Logical Link Control";
+            }
+            return "";
+        }
+
+        // Summaries carry no field tree, so the encapsulation chain is rebuilt from the state each dissector left.
         std::vector<std::string> chain(const packet::PacketInfo &p) {
             std::vector<std::string> c;
             if (auto l = linkName(p.link_type); !l.empty()) c.push_back(l);
             if (!p.vlan_ids.empty()) c.push_back("802.1Q Virtual LAN");
+            const auto sub = ethernetSubprotocol(p);
+            if (!sub.empty()) c.push_back(sub);
+
             if (p.ip_version == 4) c.push_back("Internet Protocol Version 4");
             else if (p.ip_version == 6) c.push_back("Internet Protocol Version 6");
             else if (p.protocol == "ARP") c.push_back("Address Resolution Protocol");
             else if (p.protocol == "RARP") c.push_back("Reverse Address Resolution Protocol");
             else if (p.protocol == "Malformed" || p.protocol == "Unknown") c.push_back("Malformed / undecoded");
-            else c.push_back("Data");
+            else if (sub.empty()) c.push_back("Data");
 
             if (p.ip_version != 0 && p.ip_frag == 1) {
                 c.push_back("Fragmented IP data");
-            } else if (p.ip_version != 0) {
-                switch (p.ip_protocol) {
-                    case 6: c.push_back("Transmission Control Protocol"); break;
-                    case 17: c.push_back("User Datagram Protocol"); break;
-                    case 1: c.push_back("Internet Control Message Protocol"); break;
-                    case 58: c.push_back("Internet Control Message Protocol v6"); break;
-                    case 0: break;
-                    default: c.push_back("Other IP protocol"); break;
-                }
-                if (auto a = applicationName(p.protocol); !a.empty()) c.push_back(a);
+                return c;
             }
+            if (p.has_ipip) c.push_back("IP-in-IP");
+            if (p.has_gre) c.push_back(p.protocol.rfind("ERSPAN", 0) == 0 ? "ERSPAN" : "GRE");
+
+            if (p.ip_protocol == 6) c.push_back("Transmission Control Protocol");
+            else if (p.ip_protocol == 17) c.push_back("User Datagram Protocol");
+            else if (p.ip_protocol == 1) c.push_back("Internet Control Message Protocol");
+            else if (p.ip_protocol == 58) c.push_back("Internet Control Message Protocol v6");
+            else if (p.ip_version != 0 && p.ip_protocol != 4 && p.ip_protocol != 41 && p.ip_protocol != 47 && !p.has_gre && !p.has_ipip) c.push_back("Other IP protocol");
+            if (auto a = applicationName(p.protocol); !a.empty()) c.push_back(a);
             return c;
         }
 
