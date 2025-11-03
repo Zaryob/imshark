@@ -36,17 +36,19 @@ namespace dissect {
         if (opcode == 0x0001) {
             const uint16_t pauseTime = length >= 4 ? be16(data + 2) : 0;
             ctx.pack.app_type = pauseTime;
+            if (length < 4) ctx.markMalformed("PAUSE frame truncated");
             if (layer) {
                 layer->add("Opcode: PAUSE (0x0001)", baseOffset, 2);
-                layer->add("Pause Time: " + std::to_string(pauseTime), baseOffset + 2, 2);
+                if (length >= 4) layer->add("Pause Time: " + std::to_string(pauseTime), baseOffset + 2, 2);
             }
             info = "PAUSE";
         } else if (opcode == 0x0101) {
             const uint16_t classEnable = length >= 4 ? be16(data + 2) : 0;
             ctx.pack.app_type = classEnable;
+            if (length < 4) ctx.markMalformed("PFC frame truncated");
             if (layer) {
                 layer->add("Opcode: Priority Flow Control (0x0101)", baseOffset, 2);
-                layer->add("Class Enable Vector: 0x" + hexString(classEnable, 4), baseOffset + 2, 2);
+                if (length >= 4) layer->add("Class Enable Vector: 0x" + hexString(classEnable, 4), baseOffset + 2, 2);
                 for (int cls = 0; cls < 8; ++cls) {
                     const size_t quantaOffset = 4 + static_cast<size_t>(cls) * 2;
                     if (quantaOffset + 2 <= length)

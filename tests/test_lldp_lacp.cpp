@@ -172,4 +172,7 @@ TEST(MacControlTest, PriorityFlowControl) {
 
 TEST(MacControlTest, TruncatedDoesNotCrash) {
     EXPECT_TRUE(matchFilter("malformed", parseEthernet(0x8808, {0x00}, false)));
+    // Opcode present but the pause time / class-enable field is cut off
+    EXPECT_TRUE(matchFilter("malformed", parseEthernet(0x8808, {0x00, 0x01}, false)));
+    EXPECT_TRUE(matchFilter("malformed", parseEthernet(0x8808, {0x01, 0x01, 0x00}, false)));
 }

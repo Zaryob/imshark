@@ -104,18 +104,18 @@ Hedef: bir protokolün adını göstermekten mesajı ve alanlarını doğru çö
 
 Kabul ölçütü: `dns_port.pcap` DNS olarak çözülür; `PRIV_bootp-both_overload*.pcap` içindeki overload seçenekleri görünür; bölünmüş ve birleştirilmiş DNS/HTTP/TLS girdileri aynı mesaj/alanları üretir. Eksik yakalama mesajı tamamlanmış sayılmaz; mevcut özetten filtreleme performansı korunur.
 
-## v0.7.3 — Temel kapsüllemeler ve Ethernet kontrol protokolleri
+## v0.7.3 — Temel kapsüllemeler ve Ethernet kontrol protokolleri ✅ tamamlandı
 
 Hedef: desteklenen IP/TCP/UDP dissector'larına farklı kapsüllemeler üzerinden ulaşmak. İç içe ayrıştırmada derinlik ve uzunluk sınırları ortak uygulanır.
 
 - [x] IEEE 802.3 uzunluk alanını Ethernet II EtherType'tan ayır; LLC/SNAP ve STP/RSTP/MSTP BPDU alanları — **M**
 - [x] PPP ve PPPoE: discovery/session, LCP/IPCP/IPv6CP, IPv4/IPv6 yüküne yönlendirme — **M**
-- [ ] MPLS label stack: label/TC/S/TTL, çoklu etiket ve IPv4/IPv6 iç yükü — **M**
-- [ ] IP-in-IP (IPv4/IPv6) ve GRE: optional checksum/key/sequence, iç protokole yönlendirme; ERSPAN başlıkları — **M**
-- [ ] LLDP TLV'leri, LACP ve Ethernet pause/control çerçeveleri — **M**
-- [ ] Her kapsülleme için özet, alan ağacı, bayt aralıkları, görüntüleme filtresi ve protokol hiyerarşisini birlikte güncelle — **M**
+- [x] MPLS label stack: label/TC/S/TTL, çoklu etiket ve IPv4/IPv6 iç yükü — **M** *(Yapıldı: `dissect/mpls.cpp` — EtherType 0x8847/0x8848, en çok 16 etiket, ayrılmış etiket adları, pseudowire kontrol sözcüğü ve iç Ethernet; `mpls`, `mpls.label/exp/ttl/bottom_of_stack/label1` filtreleri; kırpık/aşırı derin yığın `[Malformed Packet]`)*
+- [x] IP-in-IP (IPv4/IPv6) ve GRE: optional checksum/key/sequence, iç protokole yönlendirme; ERSPAN başlıkları — **M** *(Yapıldı: `dissect/ipip.cpp` (IP protokol 4/41) ve `dissect/gre.cpp` — C/R/K/S alanları, kaynak rota girdileri, IPv4/IPv6/ARP/PPP/MPLS/şeffaf Ethernet köprüleme yönlendirmesi, ERSPAN Type II/III başlığı ve yansıtılan çerçeve; `ipip`, `gre`, `gre.proto/version/flags.*/key/sequence_number` filtreleri)*
+- [x] LLDP TLV'leri, LACP ve Ethernet pause/control çerçeveleri — **M** *(Yapıldı: `dissect/lldp.cpp` (0x88CC, chassis/port/TTL/ad/açıklama/yetenek/yönetim/OUI TLV'leri), `dissect/slow_protocols.cpp` (0x8809, LACP actor/partner/collector) ve `dissect/mac_control.cpp` (0x8808, PAUSE ve PFC); `lldp.*`, `lacp.*`, `mac_control.*`, `pause.time`, `pfc.class_enable` filtreleri)*
+- [x] Her kapsülleme için özet, alan ağacı, bayt aralıkları, görüntüleme filtresi ve protokol hiyerarşisini birlikte güncelle — **M** *(Yapıldı: her dissector Info/protokol özetini, `fields` ağacını ve `fields.cpp` filtre alanlarını birlikte üretir; `stats::chain()` katman zincirini (PPPoE/MPLS/IP-in-IP/GRE/ERSPAN/LLDP/LACP/MAC Control/802.3 STP) Protocol Hierarchy'de gösterir; `tests/test_encap_ranges.cpp` her alan ağacı düğümünün çerçeve içinde kaldığını elle hesaplanmış ofsetlerle ve kırpma/mutasyon taramasıyla doğrular — bu tarama kırpık PAUSE/PFC çerçevelerinde taşan bayt aralığını yakalayıp düzeltti)*
 
-Kabul ölçütü: `stp.pcap`, `telecomitalia-pppoe.pcap`, `mpls-basic.cap` ve tünel örneklerinde dış/iç katmanlar ve iç IP adresleri görünür. Kırpık veya aşırı iç içe başlıklarda sınır ihlali olmaz. Bu dosyalar ilk incelemede çalıştırılmadı; beklenen alanlar corpus'a eklenirken doğrulanır.
+Kabul ölçütü: `stp.pcap`, `telecomitalia-pppoe.pcap`, `mpls-basic.cap` ve tünel örneklerinde dış/iç katmanlar ve iç IP adresleri görünür. Kırpık veya aşırı iç içe başlıklarda sınır ihlali olmaz. Gerçek `stp.pcap`, `telecomitalia-pppoe.pcap`, `mpls-basic.cap` ve tünel dosyaları bu makinede bulunmadığından çalıştırılmadı; zincirler sentetik testlerle (`test_llc_stp`, `test_pppoe_ppp`, `test_mpls`, `test_ipip_gre`, `test_lldp_lacp`, `test_hierarchy`, `test_encap_ranges`) kapsanır ve beklenen alanlar gerçek dosyalar `IMSHARK_CORPUS_DIR` ile bulunup corpus'a eklenirken doğrulanır.
 
 ## v0.8 — Canlı yakalama
 
@@ -125,7 +125,7 @@ Kabul ölçütü: `stp.pcap`, `telecomitalia-pppoe.pcap`, `mpls-basic.cap` ve t�
 
 ## v0.9 — Yaygın protokoller (küçük teslimler)
 
-Durum: v0.7.2 tamamlandı — TCP mesaj birleştirme, DNS/HTTP/TLS mesaj çözümü, Decode As, checksum doğrulaması, ICMP/NTP/DHCP/DNS ayrıntıları. v0.7.3 (kapsüllemeler) ve v0.8 (canlı yakalama) henüz yapılmadı; bu bölümdeki iki bağımlılık v0.7.3'ten gelir (aşağıda işaretli).
+Durum: v0.7.2 tamamlandı — TCP mesaj birleştirme, DNS/HTTP/TLS mesaj çözümü, Decode As, checksum doğrulaması, ICMP/NTP/DHCP/DNS ayrıntıları. v0.7.3 tamamlandı — 802.3/LLC/SNAP/STP, PPP/PPPoE, MPLS, IP-in-IP/GRE/ERSPAN, LLDP/LACP/MAC Control ve kapsülleme katmanlarının protokol hiyerarşisi. v0.8 (canlı yakalama) henüz yapılmadı; bu bölümdeki iki bağımlılık v0.7.3'ten geliyordu (aşağıda işaretli) ve artık karşılanmıştır.
 
 ### Ortak teslim kuralları (her madde için)
 1. **Bir madde = bir commit** (gerekirse altyapı ayrı commit). Commit'ten önce `ctest` + ASan/UBSan paketi temiz olmalı.

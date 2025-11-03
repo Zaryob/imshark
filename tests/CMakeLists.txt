@@ -53,6 +53,7 @@ add_executable(imshark_tests
     test_pppoe_ppp.cpp
     test_mpls.cpp
     test_ipip_gre.cpp
+    test_encap_ranges.cpp
     test_lldp_lacp.cpp
     test_hierarchy.cpp
 )
