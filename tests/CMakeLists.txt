@@ -55,6 +55,7 @@ add_executable(imshark_tests
     test_ipip_gre.cpp
     test_encap_ranges.cpp
     test_lldp_lacp.cpp
+    test_live_capture.cpp
     test_hierarchy.cpp
 )
 if(IMSHARK_SANITIZE)

@@ -1,6 +1,7 @@
 # imshark_core: capture file readers, protocol parsing and the packet model.
 # Deliberately free of any UI / OpenGL / GLFW dependency so it can be tested and reused on its own.
 add_library(imshark_core STATIC
+    src/capture/live_capture.cpp
     src/capture_reader.cpp
     src/core.cpp
     src/gzip.cpp
@@ -50,6 +51,47 @@ add_library(imshark_core STATIC
     src/stream/follow.cpp
 )
 set_target_properties(imshark_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
+# Live capture (libpcap; Npcap on Windows). Optional: without the library the same API is built as a stub
+# that reports "Live capture is not available in this build".
+option(IMSHARK_LIVE_CAPTURE "Build live packet capture (needs libpcap, or the Npcap SDK on Windows)" ON)
+set(_imshark_pcap_found OFF)
+if(IMSHARK_LIVE_CAPTURE)
+    if(WIN32)
+        # Npcap SDK: -DNPCAP_SDK_DIR=C:/npcap-sdk (or PCAP_ROOT); libraries live in Lib/x64 (Lib on x86)
+        set(_pcap_roots "${NPCAP_SDK_DIR}" "$ENV{NPCAP_SDK_DIR}" "${PCAP_ROOT}" "$ENV{PCAP_ROOT}")
+        find_path(PCAP_INCLUDE_DIR pcap.h HINTS ${_pcap_roots} PATH_SUFFIXES Include)
+        find_library(PCAP_LIBRARY NAMES wpcap HINTS ${_pcap_roots} PATH_SUFFIXES Lib/x64 Lib)
+    else()
+        find_package(PkgConfig QUIET)
+        if(PkgConfig_FOUND)
+            pkg_check_modules(PKG_PCAP QUIET libpcap)
+        endif()
+        find_path(PCAP_INCLUDE_DIR pcap.h HINTS ${PKG_PCAP_INCLUDE_DIRS})  # macOS: found in the SDK
+        find_library(PCAP_LIBRARY NAMES pcap HINTS ${PKG_PCAP_LIBRARY_DIRS})
+    endif()
+    if(PCAP_INCLUDE_DIR AND PCAP_LIBRARY)
+        set(_imshark_pcap_found ON)
+    else()
+        message(STATUS "libpcap not found - live capture is built as a stub")
+    endif()
+endif()
+
+if(_imshark_pcap_found)
+    message(STATUS "Live capture: libpcap ${PCAP_LIBRARY}")
+    target_sources(imshark_core PRIVATE src/capture/live_capture_pcap.cpp)
+    target_include_directories(imshark_core PRIVATE ${PCAP_INCLUDE_DIR})
+    target_link_libraries(imshark_core PUBLIC ${PCAP_LIBRARY})
+    if(WIN32)
+        target_link_libraries(imshark_core PUBLIC ws2_32)
+    endif()
+    target_compile_definitions(imshark_core PUBLIC IMSHARK_HAVE_LIVE_CAPTURE=1)
+else()
+    target_sources(imshark_core PRIVATE src/capture/live_capture_stub.cpp)
+endif()
+
+find_package(Threads REQUIRED)  # the capture thread
+target_link_libraries(imshark_core PUBLIC Threads::Threads)
 
 target_include_directories(imshark_core PUBLIC src)
 

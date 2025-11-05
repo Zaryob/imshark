@@ -41,6 +41,26 @@ namespace core {
                             const dissect::Registry *registry = nullptr,
                             const dissect::SessionTables *sessions = nullptr);
 
+    /// Reports time relative to the first packet that was seen. The split into whole seconds and a
+    /// fraction keeps full precision even where long double is just a double (MSVC).
+    struct TimeBase {
+        bool set = false;
+        uint64_t baseSeconds = 0;
+        double baseFraction = 0;
+
+        double relative(uint64_t seconds, uint64_t fractionTicks, uint64_t ticksPerSecond) {
+            const double fraction = static_cast<double>(fractionTicks) / static_cast<double>(ticksPerSecond);
+            if (!set) {
+                set = true;
+                baseSeconds = seconds;
+                baseFraction = fraction;
+            }
+            return static_cast<double>(static_cast<int64_t>(seconds - baseSeconds)) + (fraction - baseFraction);
+        }
+
+        double startEpoch() const { return set ? static_cast<double>(static_cast<int64_t>(baseSeconds)) + baseFraction : 0.0; }
+    };
+
     class FileProcessor {
         packet::PacketParser parser;
     public:
@@ -52,6 +72,19 @@ namespace core {
 
         bool processPcapngFile(const std::string &filepath, std::vector<packet::PacketInfo> &packets,
                                std::string &message, LoadControl *control = nullptr);
+
+        /// Incremental ("live") use: packets arrive one at a time while a capture file is still being written.
+        /// beginLive() starts a new capture (clears the session tables, the time base and the metadata; `linkType`
+        /// and `snapLen` describe the single interface). appendLivePacket() then dissects one more frame through
+        /// the same per-packet path the file loaders use (addPacket: summary parse, IP/TCP reassembly annotation of
+        /// earlier packets, session tables), so the summaries equal those of loading the finished file. `tsSeconds` /
+        /// `tsMicros` is the capture timestamp (microsecond resolution), `fileOffset` the offset of the frame bytes
+        /// in the file that detail building reads later. Earlier entries of `packets` may be amended (reassembly
+        /// annotations), exactly as during a file load. The session tables are only unfrozen while a packet is
+        /// dissected, so detail building (Replay) between two packets sees frozen tables.
+        void beginLive(uint32_t linkType, uint32_t snapLen);
+        void appendLivePacket(std::vector<packet::PacketInfo> &packets, uint64_t tsSeconds, uint32_t tsMicros, uint32_t linkType,
+                              uint64_t fileOffset, uint32_t originalLength, const std::vector<char> &frame);
 
         /// UTC epoch seconds of the first packet of the last processed file (0 if there was none).
         double captureStartEpoch() const { return captureStart_; }
@@ -66,5 +99,6 @@ namespace core {
     private:
         double captureStart_ = 0;
         CaptureInfo info_;
+        TimeBase liveTime_;
     };
 } // namespace core

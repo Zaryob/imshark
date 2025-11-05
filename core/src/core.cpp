@@ -54,26 +54,6 @@ namespace {
         }
     };
 
-    /// Reports time relative to the first packet that was seen. The split into whole seconds and a
-    /// fraction keeps full precision even where long double is just a double (MSVC).
-    struct TimeBase {
-        bool set = false;
-        uint64_t baseSeconds = 0;
-        double baseFraction = 0;
-
-        double relative(uint64_t seconds, uint64_t fractionTicks, uint64_t ticksPerSecond) {
-            const double fraction = static_cast<double>(fractionTicks) / static_cast<double>(ticksPerSecond);
-            if (!set) {
-                set = true;
-                baseSeconds = seconds;
-                baseFraction = fraction;
-            }
-            return static_cast<double>(static_cast<int64_t>(seconds - baseSeconds)) + (fraction - baseFraction);
-        }
-
-        double startEpoch() const { return set ? static_cast<double>(static_cast<int64_t>(baseSeconds)) + baseFraction : 0.0; }
-    };
-
     struct Interface {
         uint32_t linkType = 1; // LINKTYPE_ETHERNET
         uint32_t snapLen = 0;
@@ -562,6 +542,32 @@ bool core::FileProcessor::processPcapngFile(const std::string &filepath, std::ve
                   ", which no Interface Description Block defines; they are shown without protocol decoding";
     }
     return true;
+}
+
+void core::FileProcessor::beginLive(uint32_t linkType, uint32_t snapLen) {
+    parser.sessions().clear();
+    liveTime_ = TimeBase();
+    captureStart_ = 0;
+    info_ = CaptureInfo();
+    info_.format = "pcap (live capture)";
+    InterfaceInfo itf;
+    itf.linkType = linkType;
+    itf.snapLen = snapLen;
+    itf.ticksPerSecond = 1000000;
+    info_.interfaces.push_back(itf);
+}
+
+void core::FileProcessor::appendLivePacket(std::vector<packet::PacketInfo> &packets, uint64_t tsSeconds, uint32_t tsMicros,
+                                           uint32_t linkType, uint64_t fileOffset, uint32_t originalLength,
+                                           const std::vector<char> &frame) {
+    if (info_.interfaces.empty()) beginLive(linkType, 0);
+    const double time = liveTime_.relative(tsSeconds, tsMicros, 1000000);
+    captureStart_ = liveTime_.startEpoch();
+    parser.sessions().unfreeze();
+    addPacket(parser, packets, time, linkType, fileOffset, originalLength, frame);
+    parser.sessions().freeze();
+    info_.interfaces[0].packets++;
+    info_.fileSize = fileOffset + frame.size();
 }
 
 bool core::readPacketBytes(const std::string &filepath, const packet::PacketInfo &summary, std::vector<char> &out) {

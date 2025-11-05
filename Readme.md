@@ -63,7 +63,7 @@ GLFW, önce CMake paket yapılandırmasıyla (`find_package(glfw3)`), bulunamazs
 
 `python3 tools/make_sample_pcap.py` örnek yakalama dosyasını (`tests/data/sample.pcap`) yeniden üretir: ARP, ICMP, DNS, TCP (seçeneklerle), SMTP, IPv6, VLAN, bilinmeyen EtherType ve kırpık paket içerir.
 
-Windows (MSVC): vcpkg yolu kullanılır — `cmake --preset vcpkg` ardından `cmake --build --preset vcpkg --config Release`. Çekirdek hiçbir POSIX/Winsock başlığına bağımlı değildir (bayt sırası ve IP adres biçimlendirme `core/src/network/byteorder.h` içindedir). **Not:** Windows derlemesi bu depoda henüz bir Windows makinesinde denenmedi; CI işi eklendi ama ilk çalıştırmada düzeltme gerekebilir.
+Windows (MSVC): vcpkg yolu kullanılır — `cmake --preset vcpkg` ardından `cmake --build --preset vcpkg --config Release`. Ayrıştırıcı hiçbir POSIX/Winsock başlığına bağımlı değildir (bayt sırası ve IP adres biçimlendirme `core/src/network/byteorder.h` içindedir); yalnızca isteğe bağlı canlı yakalama modülü (`core/src/capture/`) libpcap'e (Windows'ta Npcap SDK) bağlanır. **Not:** Windows derlemesi bu depoda henüz bir Windows makinesinde denenmedi; CI işi eklendi ama ilk çalıştırmada düzeltme gerekebilir.
 
 ## Test
 
@@ -72,6 +72,8 @@ cmake -S . -B build -DIMSHARK_SANITIZE=ON     # ASan + UBSan (isteğe bağlı)
 cmake --build build
 ctest --test-dir build --output-on-failure
 ```
+
+Canlı yakalama çekirdeği `-DIMSHARK_LIVE_CAPTURE=ON` (varsayılan) ile libpcap bulunursa derlenir (macOS SDK'sında hazırdır; Linux'ta `libpcap-dev`; Windows'ta `-DNPCAP_SDK_DIR=...`). Kütüphane yoksa ya da `OFF` verilirse aynı arayüz "Live capture is not available in this build" diyen bir taslakla derlenir. Gerçek arayüz yakalaması ayrıcalık ister (macOS `/dev/bpf*`, Linux `CAP_NET_RAW`); testler bunu alamazsa ilgili testi atlar.
 
 Testler GoogleTest ile yazılmıştır (`brew install googletest` / `apt install libgtest-dev`; vcpkg'de `tests` özelliği varsayılan açıktır). Ayrıştırıcı/okuyucu için birim ve mutasyon-fuzz testleri, arayüz için ise pencere açmadan çalışan ImGui duman testleri içerir. GoogleTest yoksa testler uyarıyla atlanır; `-DIMSHARK_BUILD_TESTS=OFF` ile kapatılabilir.
 
