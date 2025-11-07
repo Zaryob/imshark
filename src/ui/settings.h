@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -20,6 +21,13 @@ namespace ui {
         bool colorize = true;                  // color packet list rows by the coloring rules
         std::vector<ColorRule> colorRules;     // user's rules; empty = use the built-in defaults
         float listHeight = 300.0f;             // height of the packet list (splitter position)
+
+        // Live capture (Capture > Interfaces): what the last capture used
+        static constexpr uint32_t kMinSnaplen = 64, kMaxSnaplen = 262144;
+        std::string captureInterface;          // empty = none chosen yet
+        std::string captureFilter;             // BPF capture filter
+        uint32_t captureSnaplen = kMaxSnaplen;
+        bool capturePromiscuous = true;
     };
 
     /// Per-user location of the settings file (platform config directory).

@@ -138,6 +138,8 @@ void ui::pollLoad(AppState &state) {
     state.loadMessage = job->message;
     if (job->ok) {
         cancelBackgroundJobs(state); // background threads read state.packets
+        discardLiveCapture(state);   // the file replaces a live capture (its temporary pcap goes with state.tempFile below)
+        state.live.error.clear();
         state.packets.assign(std::move(job->packets));
         if (!state.tempFile.empty()) { // the previous capture's decompressed copy is not needed any more
             std::error_code ec;
@@ -209,6 +211,11 @@ ui::AppState::~AppState() {
 }
 
 void ui::closeCapture(AppState &state) {
+    discardLiveCapture(state);
+    clearCapture(state);
+}
+
+void ui::clearCapture(AppState &state) {
     state.loadJob.reset();
     cancelBackgroundJobs(state);
     state.packets.clear();
@@ -220,6 +227,7 @@ void ui::closeCapture(AppState &state) {
     state.sessions.clear();
     state.loadMessage.clear();
     state.loadFailed = false;
+    state.live.error.clear();
     if (!state.tempFile.empty()) {
         std::error_code ec;
         std::filesystem::remove(core::pathFromUtf8(state.tempFile), ec);

@@ -110,7 +110,8 @@ namespace {
     // tree is rebuilt on demand (see core::buildPacketDetails).
     void addPacket(packet::PacketParser &parser, std::vector<packet::PacketInfo> &packets,
                    double time, uint32_t linkType, uint64_t fileOffset, uint32_t originalLength,
-                   const std::vector<char> &data, bool hasComment = false, uint8_t fcsLength = 0) {
+                   const std::vector<char> &data, bool hasComment = false, uint8_t fcsLength = 0,
+                   std::vector<uint32_t> *amended = nullptr) {
         packet::PacketInfo pack(static_cast<int>(packets.size()) + 1);
         pack.time = time;
         pack.link_type = linkType;
@@ -126,6 +127,7 @@ namespace {
                 auto &f = packets[fragment - 1];
                 f.reassembled_in = completing;
                 f.info += " [Reassembled in #" + std::to_string(completing) + "]";
+                if (amended) amended->push_back(static_cast<uint32_t>(fragment - 1));
             }
         }
         // this packet completed a TCP message: tell the earlier segments of it where it was reassembled
@@ -134,6 +136,7 @@ namespace {
                 auto &s = packets[segment - 1];
                 s.tcp_reassembled_in = completing;
                 s.info += " [Reassembled in #" + std::to_string(completing) + "]";
+                if (amended) amended->push_back(static_cast<uint32_t>(segment - 1));
             }
         }
         packets.emplace_back(std::move(pack));
@@ -559,12 +562,12 @@ void core::FileProcessor::beginLive(uint32_t linkType, uint32_t snapLen) {
 
 void core::FileProcessor::appendLivePacket(std::vector<packet::PacketInfo> &packets, uint64_t tsSeconds, uint32_t tsMicros,
                                            uint32_t linkType, uint64_t fileOffset, uint32_t originalLength,
-                                           const std::vector<char> &frame) {
+                                           const std::vector<char> &frame, std::vector<uint32_t> *amended) {
     if (info_.interfaces.empty()) beginLive(linkType, 0);
     const double time = liveTime_.relative(tsSeconds, tsMicros, 1000000);
     captureStart_ = liveTime_.startEpoch();
     parser.sessions().unfreeze();
-    addPacket(parser, packets, time, linkType, fileOffset, originalLength, frame);
+    addPacket(parser, packets, time, linkType, fileOffset, originalLength, frame, false, 0, amended);
     parser.sessions().freeze();
     info_.interfaces[0].packets++;
     info_.fileSize = fileOffset + frame.size();

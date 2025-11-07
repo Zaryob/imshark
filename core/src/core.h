@@ -81,10 +81,13 @@ namespace core {
         /// `tsMicros` is the capture timestamp (microsecond resolution), `fileOffset` the offset of the frame bytes
         /// in the file that detail building reads later. Earlier entries of `packets` may be amended (reassembly
         /// annotations), exactly as during a file load. The session tables are only unfrozen while a packet is
-        /// dissected, so detail building (Replay) between two packets sees frozen tables.
+        /// dissected, so detail building (Replay) between two packets sees frozen tables. `amended` (optional) receives the
+        /// indices (into `packets`) of the earlier entries whose summary was edited in place by this packet (the
+        /// "[Reassembled in #n]" annotations), so a caller that caches filter/colour results can refresh just those rows.
         void beginLive(uint32_t linkType, uint32_t snapLen);
         void appendLivePacket(std::vector<packet::PacketInfo> &packets, uint64_t tsSeconds, uint32_t tsMicros, uint32_t linkType,
-                              uint64_t fileOffset, uint32_t originalLength, const std::vector<char> &frame);
+                              uint64_t fileOffset, uint32_t originalLength, const std::vector<char> &frame,
+                              std::vector<uint32_t> *amended = nullptr);
 
         /// UTC epoch seconds of the first packet of the last processed file (0 if there was none).
         double captureStartEpoch() const { return captureStart_; }

@@ -1,6 +1,7 @@
 #include "ui.h"
 
 #include <algorithm>
+#include <chrono>
 #include <numeric>
 #include <string>
 
@@ -101,12 +102,30 @@ void ui::drawPacketList(AppState &state, float height) {
         // The displayed order must describe exactly the packets there are; if the list changed behind our back,
         // rebuild it instead of indexing out of range.
         const size_t expected = state.filter.active ? state.filter.visible.size() : state.packets.size();
-        if (state.order.size() != expected) state.orderDirty = true;
-
         ImGuiTableSortSpecs *specs = ImGui::TableGetSortSpecs();
+        // ImGui always keeps one sort column; "No." ascending is the capture order, which a live capture only appends to
+        const bool captureOrder = !specs || specs->SpecsCount == 0 ||
+                                  (specs->Specs[0].ColumnUserID == static_cast<ImGuiID>(SortColumn::Number) &&
+                                   specs->Specs[0].SortDirection != ImGuiSortDirection_Descending);
+        const bool sorted = !captureOrder;
+        if (state.order.size() != expected) {
+            const auto now = std::chrono::steady_clock::now();
+            if (state.live.session && !sorted && !state.orderDirty && state.order.size() < expected) {
+                // a live capture appended rows in capture order: extend the list instead of rebuilding it
+                if (state.filter.active) state.order.insert(state.order.end(), state.filter.visible.begin() + static_cast<std::ptrdiff_t>(state.order.size()), state.filter.visible.end());
+                else for (size_t k = state.order.size(); k < expected; ++k) state.order.push_back(static_cast<uint32_t>(k));
+            } else if (state.live.capturing() && sorted && !state.orderDirty && now - state.live.lastSortRebuild < std::chrono::milliseconds(500)) {
+                // sorting a growing capture on every frame is wasted work: the sorted list lags behind a little (its
+                // indices stay valid, packets are only ever appended)
+            } else {
+                state.orderDirty = true;
+            }
+        }
+
         if ((specs && specs->SpecsDirty) || state.orderDirty) {
             rebuildOrder(state, specs);
             state.orderDirty = false;
+            state.live.lastSortRebuild = std::chrono::steady_clock::now();
             if (specs) specs->SpecsDirty = false;
         }
         handleKeys(state);
@@ -174,6 +193,12 @@ void ui::drawPacketList(AppState &state, float height) {
             }
         }
         state.scrollToSelection = false;
+        if (state.live.scrollToEnd) {      // auto-scroll: keep the newest packet (the end of the capture order) in view
+            const bool descending = sorted && specs->Specs[0].SortDirection == ImGuiSortDirection_Descending &&
+                                    specs->Specs[0].ColumnUserID == static_cast<ImGuiID>(SortColumn::Number);
+            ImGui::SetScrollY(descending ? 0.0f : ImGui::GetScrollMaxY());
+            state.live.scrollToEnd = false;
+        }
         ImGui::EndTable();
     }
     ImGui::EndChild();

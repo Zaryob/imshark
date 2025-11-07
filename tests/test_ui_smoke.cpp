@@ -2,8 +2,13 @@
 // unbalanced Begin/End, Push/Pop and similar mistakes; the checks below cover the selection logic.
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <chrono>
+#include <csignal>
 #include <thread>
+#ifndef _WIN32
+#include <sys/resource.h>
+#endif
 
 #include <filesystem>
 
@@ -34,6 +39,7 @@ namespace {
             ImGui::GetIO().DeltaTime = 1.0f / 60.0f;
             ImGui::NewFrame();
             ui::pollLoad(state);
+            ui::pollCapture(state);
             ui::drawMenuAndDialogs(state);
             ui::drawMainWindow(state);
             ui::drawStatusBar(state);
@@ -830,4 +836,408 @@ TEST_F(UiSmoke, DecodeAsRulesReloadTheCaptureWithOtherDissectors) {
     state.decodeAs.open = false;
     frames(state);
     std::remove(path.c_str());
+}
+
+
+// ---- live capture -----------------------------------------------------------------------------------------
+// A real interface needs privileges, so the session is fed through the injection seam of the capture core; poll, stop,
+// filter, details, statistics, export, follow and the unsaved-capture questions are the real code paths.
+
+namespace {
+    std::vector<char> seg(uint32_t seq, const std::string &data, const char *flags = "18") {
+        char s[16];
+        std::snprintf(s, sizeof s, "%08x", seq);
+        return support::tcpPacket("0a000001", "0a000002", "c350", "0050", s, "00000001", flags, data);
+    }
+
+    const std::string kRequest = "GET /index.html HTTP/1.1\r\nHost: example.com\r\n\r\n";
+
+    // ARP, SYN, first half of an HTTP request, UDP datagram, second half of the request (completes the message and
+    // amends the summary of packet 3), a TCP ACK
+    std::vector<std::vector<char>> liveTraffic() {
+        return {
+            support::hex(support::kArpRequest),
+            seg(999, "", "02"),
+            seg(1000, kRequest.substr(0, 20)),
+            support::hex(support::kEthIpUdp),
+            seg(1020, kRequest.substr(20)),
+            seg(1000 + static_cast<uint32_t>(kRequest.size()), "", "10"),
+        };
+    }
+
+    void injectFrames(ui::AppState &state, const std::vector<std::vector<char>> &frames, size_t from, size_t to) {
+        for (size_t i = from; i < to; ++i) {
+            ASSERT_TRUE(state.live.device->injectPacket(1700000000 + i, static_cast<uint32_t>(i * 1000), frames[i])) << state.live.device->lastError();
+        }
+    }
+} // namespace
+
+TEST_F(UiSmoke, CaptureDialogListsInterfacesAndValidatesTheFilterWhileTyping) {
+    ui::AppState state;
+    state.live.dialog.open = true;
+    frames(state);
+    EXPECT_TRUE(state.live.dialog.listLoaded);
+    if (!capture::liveCaptureAvailable()) {
+        EXPECT_FALSE(state.live.dialog.interfaces.error.empty());
+        EXPECT_NE(ui::captureUnavailableReason().find("not available in this build"), std::string::npos);
+        return;
+    }
+    EXPECT_TRUE(state.live.dialog.interfaces.error.empty()) << state.live.dialog.interfaces.error;
+    for (const auto &itf: state.live.dialog.interfaces.interfaces) EXPECT_FALSE(itf.name.empty());
+    if (!state.live.dialog.interfaces.interfaces.empty()) EXPECT_FALSE(state.live.options.interfaceName.empty()) << "a default interface is offered";
+
+    state.live.options.filter = "tcp port 80 and host 10.0.0.1";
+    frames(state);
+    EXPECT_TRUE(state.live.dialog.filterChecked);
+    EXPECT_TRUE(state.live.dialog.filterCheck.ok) << state.live.dialog.filterCheck.error;
+    state.live.options.filter = "tcp port ((";
+    frames(state);
+    EXPECT_FALSE(state.live.dialog.filterCheck.ok);
+    EXPECT_FALSE(state.live.dialog.filterCheck.error.empty());
+    state.live.options.filter.clear();
+    frames(state);
+    EXPECT_TRUE(state.live.dialog.filterCheck.ok) << "an empty filter is valid";
+    state.live.options.snaplen = 96;
+    state.live.options.promiscuous = false;
+    frames(state);
+    state.live.dialog.open = false;
+    frames(state);
+}
+
+TEST_F(UiSmoke, CaptureMenuAndShortcutsDrawWithoutASession) {
+    ui::AppState state;
+    frames(state);
+    EXPECT_EQ(ui::captureStatusText(state), "");
+    EXPECT_FALSE(state.live.capturing());
+    ui::requestStartCapture(state);          // nothing chosen yet: opens the dialog instead of starting
+    if (capture::liveCaptureAvailable()) EXPECT_TRUE(state.live.dialog.open);
+    frames(state);
+}
+
+TEST_F(UiSmoke, FailedStartKeepsTheOpenCaptureAndRemembersTheOptions) {
+    ui::AppState state;
+    load(state);
+    capture::CaptureOptions options;
+    options.interfaceName = "imshark-no-such-interface0";
+    options.filter = "udp port 53";
+    options.snaplen = 1500;
+    options.promiscuous = false;
+    EXPECT_FALSE(ui::startCapture(state, options));
+    EXPECT_FALSE(state.live.error.empty());
+    EXPECT_TRUE(state.live.openError);
+    EXPECT_FALSE(state.live.session);
+    EXPECT_EQ(state.packets.size(), 16u) << "the open capture stays";
+    EXPECT_EQ(state.currentFile, IMSHARK_TEST_DATA_DIR "/sample.pcap");
+    EXPECT_EQ(state.settings.captureInterface, "imshark-no-such-interface0");
+    EXPECT_EQ(state.settings.captureFilter, "udp port 53");
+    EXPECT_EQ(state.settings.captureSnaplen, 1500u);
+    EXPECT_FALSE(state.settings.capturePromiscuous);
+    EXPECT_TRUE(state.settingsDirty);
+    frames(state);                           // the error popup and the red status bar text are drawn
+    EXPECT_FALSE(state.live.openError) << "the popup request is consumed";
+    EXPECT_FALSE(ui::captureStatusText(state).empty() && state.live.session);
+}
+
+TEST_F(UiSmoke, LiveSessionGrowsFiltersSelectsAndBehavesLikeAFileAfterStop) {
+    ui::AppState state;
+    const auto traffic = liveTraffic();
+    ASSERT_TRUE(ui::startInjectedCapture(state, 1, 262144, "fake0"));
+    EXPECT_TRUE(state.live.capturing());
+    EXPECT_TRUE(state.live.session);
+    EXPECT_TRUE(ui::liveUnsaved(state) == false) << "nothing captured yet, nothing to lose";
+    EXPECT_EQ(state.currentFile, state.live.device->tempPath());
+    EXPECT_EQ(ui::captureStatusText(state), "Capturing on fake0 - 0 packets, 0 dropped");
+    frames(state);
+
+    // a display filter that matches rows only after a later packet amended them
+    ASSERT_TRUE(ui::applyFilter(state, "info contains \"Reassembled in\""));
+    injectFrames(state, traffic, 0, 3);
+    frames(state);
+    ASSERT_EQ(state.packets.size(), 3u) << "polled by the frame";
+    EXPECT_TRUE(state.filter.visible.empty());
+    EXPECT_EQ(ui::captureStatusText(state), "Capturing on fake0 - 3 packets, 0 dropped  |  Displayed: 0 / 3");
+    EXPECT_TRUE(ui::liveUnsaved(state));
+
+    // details of a packet while capturing come from the temp file
+    state.selectedPacket = 1;                // the SYN
+    frames(state);
+    EXPECT_TRUE(state.detailOk);
+    EXPECT_FALSE(state.detail.fields.empty());
+    EXPECT_FALSE(state.detail.raw_data.empty());
+
+    injectFrames(state, traffic, 3, 5);      // packet 5 completes the request: packet 3 is edited in place
+    frames(state);
+    ASSERT_EQ(state.packets.size(), 5u);
+    EXPECT_NE(state.packets[2].info.find("[Reassembled in #5]"), std::string::npos) << state.packets[2].info;
+    EXPECT_EQ(state.filter.visible, (std::vector<uint32_t>{2})) << "the amended earlier row now passes the filter";
+    frames(state);
+    EXPECT_EQ(state.order, (std::vector<uint32_t>{2}));
+
+    // the display filter and the colouring apply to new packets as well
+    ASSERT_TRUE(ui::applyFilter(state, "tcp"));
+    EXPECT_EQ(state.filter.visible, (std::vector<uint32_t>{1, 2, 4}));
+    injectFrames(state, traffic, 5, 6);
+    frames(state);
+    EXPECT_EQ(state.filter.visible, (std::vector<uint32_t>{1, 2, 4, 5}));
+    state.selectedPacket = 2;
+    frames(state);
+    EXPECT_TRUE(state.detailOk);
+    const auto selectedInfo = state.packets[2].info;
+    EXPECT_FALSE(state.live.scrollToEnd) << "the list consumed the auto-scroll request";
+
+    // the statistics follow a growing capture (recomputed lazily)
+    state.stats.showHierarchy = true;
+    state.stats.dirty = true;
+    frames(state);
+    EXPECT_TRUE(state.stats.hierarchyValid);
+
+    // stop: the capture becomes an ordinary opened file
+    ui::stopCapture(state);
+    EXPECT_FALSE(state.live.capturing());
+    EXPECT_TRUE(state.live.session);
+    EXPECT_EQ(state.packets.size(), 6u);
+    ASSERT_FALSE(state.tempFile.empty());
+    EXPECT_EQ(state.currentFile, state.tempFile);
+    EXPECT_TRUE(std::filesystem::exists(state.tempFile));
+    EXPECT_EQ(state.captureInfo.interfaces.size(), 1u);
+    EXPECT_EQ(state.captureInfo.interfaces[0].packets, 6u);
+    EXPECT_EQ(ui::captureStatusText(state), "Live capture on fake0 (stopped)  |  6 packets  |  Displayed: 4 / 6");
+    frames(state);
+    EXPECT_TRUE(state.detailOk) << "details are still read from the (now owned) temp file";
+    EXPECT_EQ(state.packets[2].info, selectedInfo);
+
+    // equal to loading the finished file
+    {
+        ui::AppState loaded;
+        ui::loadCapture(loaded, state.tempFile);
+        ASSERT_EQ(loaded.packets.size(), state.packets.size());
+        for (size_t i = 0; i < loaded.packets.size(); ++i) {
+            EXPECT_EQ(loaded.packets[i].info, state.packets[i].info) << i;
+            EXPECT_EQ(loaded.packets[i].protocol, state.packets[i].protocol) << i;
+            EXPECT_EQ(loaded.packets[i].time, state.packets[i].time) << i;
+        }
+    }
+
+    // follow stream works on the stopped capture
+    ASSERT_TRUE(ui::startFollow(state, 2));
+    for (int i = 0; i < 3000 && state.follow.job; ++i) { frame(state); std::this_thread::sleep_for(std::chrono::milliseconds(1)); }
+    ASSERT_TRUE(state.follow.valid);
+    ASSERT_FALSE(state.follow.stream.chunks.empty());
+    EXPECT_EQ(state.follow.stream.chunks[0].data, kRequest);
+    state.follow.open = false;
+
+    // export all as pcap: the capture counts as saved afterwards
+    EXPECT_TRUE(ui::liveUnsaved(state));
+    const auto path = (std::filesystem::temp_directory_path() / "imshark_ui_live_export.pcap").string();
+    std::remove(path.c_str());
+    ASSERT_TRUE(ui::startExport(state, ui::ExportState::All, exporter::Format::Pcap, path));
+    for (int i = 0; i < 3000 && state.exportDialog.job; ++i) { frame(state); std::this_thread::sleep_for(std::chrono::milliseconds(1)); }
+    EXPECT_FALSE(state.exportDialog.resultIsError) << state.exportDialog.resultMessage;
+    EXPECT_FALSE(ui::liveUnsaved(state));
+    {
+        ui::AppState exported;
+        ui::loadCapture(exported, path);
+        EXPECT_EQ(exported.packets.size(), 6u);
+    }
+    std::remove(path.c_str());
+
+    // saved: quitting needs no question; the temp file goes when the state is destroyed
+    const std::string temp = state.tempFile;
+    ui::requestQuit(state);
+    EXPECT_TRUE(state.quitRequested);
+    EXPECT_FALSE(std::filesystem::exists(temp)) << "the discarded live capture's temp file is removed";
+}
+
+TEST_F(UiSmoke, UnsavedLiveCaptureAsksBeforeItIsLost) {
+    ui::AppState state;
+    const auto traffic = liveTraffic();
+    ASSERT_TRUE(ui::startInjectedCapture(state, 1, 262144, "fake0"));
+    injectFrames(state, traffic, 0, 4);
+    frames(state);
+    ASSERT_EQ(state.packets.size(), 4u);
+    const std::string temp = state.live.device->tempPath();
+    ASSERT_TRUE(std::filesystem::exists(temp));
+
+    // quitting while the capture runs: asks, does not quit, keeps capturing
+    ui::requestQuit(state);
+    EXPECT_FALSE(state.quitRequested);
+    EXPECT_EQ(state.live.pending.kind, ui::PendingAction::Quit);
+    frames(state);                                           // the popup is drawn
+    ui::resolveUnsaved(state, ui::UnsavedChoice::Cancel);
+    EXPECT_TRUE(state.live.capturing());
+    EXPECT_EQ(state.live.pending.kind, ui::PendingAction::None);
+    EXPECT_FALSE(state.quitRequested);
+
+    // opening a file asks as well; "Export" ends the capture and opens the export dialog instead of the action
+    ui::requestOpen(state, IMSHARK_TEST_DATA_DIR "/sample.pcap");
+    EXPECT_FALSE(state.loading());
+    ui::resolveUnsaved(state, ui::UnsavedChoice::Export);
+    EXPECT_FALSE(state.live.capturing());
+    EXPECT_EQ(state.packets.size(), 4u);
+    EXPECT_TRUE(state.exportDialog.openPopup);
+    EXPECT_FALSE(state.loading());
+    frames(state);                                           // the export options popup is drawn
+
+    // closing asks; Discard removes the capture and its temp file
+    ui::requestClose(state);
+    EXPECT_EQ(state.live.pending.kind, ui::PendingAction::Close);
+    frames(state);
+    ui::resolveUnsaved(state, ui::UnsavedChoice::Discard);
+    EXPECT_TRUE(state.packets.empty());
+    EXPECT_FALSE(state.live.session);
+    EXPECT_TRUE(state.currentFile.empty());
+    EXPECT_FALSE(std::filesystem::exists(temp));
+    EXPECT_EQ(ui::captureStatusText(state), "");
+    frames(state);
+}
+
+TEST_F(UiSmoke, DiscardingForAnOpenReplacesTheLiveCapture) {
+    ui::AppState state;
+    const auto traffic = liveTraffic();
+    ASSERT_TRUE(ui::startInjectedCapture(state, 1, 262144, "fake0"));
+    injectFrames(state, traffic, 0, 3);
+    frames(state);
+    const std::string temp = state.live.device->tempPath();
+    ui::requestOpen(state, IMSHARK_TEST_DATA_DIR "/sample.pcap");
+    ui::resolveUnsaved(state, ui::UnsavedChoice::Discard);
+    for (int i = 0; i < 2000 && state.loading(); ++i) { frame(state); std::this_thread::sleep_for(std::chrono::milliseconds(1)); }
+    EXPECT_EQ(state.packets.size(), 16u);
+    EXPECT_FALSE(state.live.session);
+    EXPECT_FALSE(std::filesystem::exists(temp));
+}
+
+TEST_F(UiSmoke, NewSessionTakesOverTheQueuedPacketsOfTheOldOneFirst) {
+    ui::AppState state;
+    const auto traffic = liveTraffic();
+    ASSERT_TRUE(ui::startInjectedCapture(state, 1, 262144, "fake0"));
+    injectFrames(state, traffic, 0, 3);                      // not polled by a frame yet
+    const std::string first = state.live.device->tempPath();
+    ASSERT_TRUE(ui::startInjectedCapture(state, 1, 262144, "fake1"));
+    EXPECT_TRUE(state.packets.empty()) << "the replaced capture is gone";
+    EXPECT_EQ(state.live.interfaceName, "fake1");
+    EXPECT_FALSE(std::filesystem::exists(first)) << "the old temp file was removed";
+    EXPECT_NE(state.live.device->tempPath(), first);
+    injectFrames(state, traffic, 0, 2);
+    frames(state);
+    EXPECT_EQ(state.packets.size(), 2u);
+    ui::stopCapture(state);
+    EXPECT_EQ(state.packets.size(), 2u);
+}
+
+TEST_F(UiSmoke, CaptureThatEndsOnItsOwnIsFinishedWithTheErrorReported) {
+    ui::AppState state;
+    const auto traffic = liveTraffic();
+    ASSERT_TRUE(ui::startInjectedCapture(state, 1, 262144, "fake0"));
+    injectFrames(state, traffic, 0, 2);
+    frames(state);
+    ASSERT_EQ(state.packets.size(), 2u);
+
+#ifndef _WIN32
+    // the temp file cannot be written any more (process file size limit): the capture core stops and says why
+    auto previousHandler = std::signal(SIGXFSZ, SIG_IGN);
+    rlimit original{};
+    ASSERT_EQ(::getrlimit(RLIMIT_FSIZE, &original), 0);
+    rlimit limited = original;
+    limited.rlim_cur = 2500;
+    ASSERT_EQ(::setrlimit(RLIMIT_FSIZE, &limited), 0);
+    const std::vector<char> big(900, 'x');
+    for (int i = 0; i < 20 && state.live.device->running(); ++i) state.live.device->injectPacket(1700001000 + i, 1, big);
+    ASSERT_EQ(::setrlimit(RLIMIT_FSIZE, &original), 0);
+    std::signal(SIGXFSZ, previousHandler);
+    ASSERT_FALSE(state.live.device->running());
+
+    frames(state);                                           // pollCapture notices, takes over the packets, reports
+    EXPECT_FALSE(state.live.capturing());
+    EXPECT_TRUE(state.live.session);
+    EXPECT_FALSE(state.live.error.empty());
+    EXPECT_NE(state.live.error.find("Writing to the temporary capture file failed"), std::string::npos);
+    EXPECT_FALSE(state.live.openError) << "the error popup was shown";
+    EXPECT_GE(state.packets.size(), 2u);
+    EXPECT_EQ(state.packets.size(), state.live.device->packetCount());
+    EXPECT_EQ(state.currentFile, state.tempFile);
+    state.selectedPacket = 0;
+    frames(state);
+    EXPECT_TRUE(state.detailOk) << "the packets captured before the failure are readable";
+    EXPECT_NE(ui::captureStatusText(state).find("(stopped)"), std::string::npos);
+#endif
+}
+
+TEST_F(UiSmoke, DecodeAsIsRefusedWhileALiveCaptureIsOpen) {
+    ui::AppState state;
+    ASSERT_TRUE(ui::startInjectedCapture(state, 1, 262144, "fake0"));
+    EXPECT_FALSE(ui::applyDecodeAs(state, {}));
+    EXPECT_FALSE(state.decodeAs.error.empty());
+    ui::closeCapture(state);
+    EXPECT_TRUE(ui::applyDecodeAs(state, {}));
+}
+
+TEST_F(UiSmoke, PacketListCopiesOnWriteWhileABackgroundJobHoldsASnapshot) {
+    ui::PacketList list;
+    list.modify().emplace_back(1);
+    const auto snapshot = list.share();
+    ASSERT_EQ(snapshot->size(), 1u);
+    list.modify().emplace_back(2);                           // the snapshot's holder must not see this
+    EXPECT_EQ(snapshot->size(), 1u);
+    EXPECT_EQ(list.size(), 2u);
+    const auto *before = &list[0];
+    list.modify().emplace_back(3);                           // no snapshot taken since the last copy: in place
+    EXPECT_EQ(list.size(), 3u);
+    (void) before;
+}
+
+TEST_F(UiSmoke, BurstIsDissectedOverSeveralFramesAndTheIncrementalFilterEqualsAFullRefilter) {
+    ui::AppState state;
+    const auto traffic = liveTraffic();
+    ASSERT_TRUE(ui::startInjectedCapture(state, 1, 262144, "fake0"));
+    ASSERT_TRUE(ui::applyFilter(state, "tcp || info contains \"Reassembled\""));
+    constexpr size_t kBurst = 3000;
+    for (size_t i = 0; i < kBurst; ++i) {
+        ASSERT_TRUE(state.live.device->injectPacket(1700000000 + i / 1000, static_cast<uint32_t>((i % 1000) * 1000), traffic[i % traffic.size()]));
+    }
+    size_t frameCount = 0;
+    while (state.packets.size() < kBurst && frameCount < 2000) {
+        frame(state);
+        ++frameCount;
+        EXPECT_LE(state.packets.size(), kBurst);
+        EXPECT_EQ(state.order.size(), state.filter.visible.size()) << "the list follows the capture without lagging (frame " << frameCount << ")";
+    }
+    ASSERT_EQ(state.packets.size(), kBurst);
+    frames(state);
+    EXPECT_EQ(state.order, state.filter.visible) << "the incrementally extended list equals the filter result";
+
+    const auto incremental = state.filter.visible;
+    ui::refilter(state);
+    EXPECT_EQ(state.filter.visible, incremental) << "extendFilter / amended handling equals a full re-evaluation";
+    frames(state);
+    ui::stopCapture(state);
+}
+
+TEST_F(UiSmoke, LastCaptureOptionsArePersistedAndRestoredIntoTheDialog) {
+    const auto path = (std::filesystem::temp_directory_path() / "imshark_smoke_capture_settings/settings.ini").string();
+    std::filesystem::remove_all(std::filesystem::path(path).parent_path());
+    {
+        ui::AppState state;
+        ui::initSettings(state, path);
+        EXPECT_TRUE(state.live.options.interfaceName.empty());
+        EXPECT_EQ(state.live.options.snaplen, 262144u);
+        EXPECT_TRUE(state.live.options.promiscuous);
+        capture::CaptureOptions options;
+        options.interfaceName = "imshark-no-such-interface0";   // the start fails, the choice is remembered anyway
+        options.filter = "tcp port 443";
+        options.snaplen = 128;
+        options.promiscuous = false;
+        EXPECT_FALSE(ui::startCapture(state, options));
+        frames(state);
+        ui::saveSettingsIfDirty(state);
+    }
+    ui::AppState again;
+    ui::initSettings(again, path);
+    EXPECT_EQ(again.live.options.interfaceName, "imshark-no-such-interface0");
+    EXPECT_EQ(again.live.options.filter, "tcp port 443");
+    EXPECT_EQ(again.live.options.snaplen, 128u);
+    EXPECT_FALSE(again.live.options.promiscuous);
+    again.live.dialog.open = true;
+    frames(again);
+    EXPECT_EQ(again.live.options.filter, "tcp port 443") << "the dialog keeps the remembered options";
+    std::filesystem::remove_all(std::filesystem::path(path).parent_path());
 }

@@ -117,15 +117,15 @@ Hedef: desteklenen IP/TCP/UDP dissector'larına farklı kapsüllemeler üzerinde
 
 Kabul ölçütü: `stp.pcap`, `telecomitalia-pppoe.pcap`, `mpls-basic.cap` ve tünel örneklerinde dış/iç katmanlar ve iç IP adresleri görünür. Kırpık veya aşırı iç içe başlıklarda sınır ihlali olmaz. Gerçek `stp.pcap`, `telecomitalia-pppoe.pcap`, `mpls-basic.cap` ve tünel dosyaları bu makinede bulunmadığından çalıştırılmadı; zincirler sentetik testlerle (`test_llc_stp`, `test_pppoe_ppp`, `test_mpls`, `test_ipip_gre`, `test_lldp_lacp`, `test_hierarchy`, `test_encap_ranges`) kapsanır ve beklenen alanlar gerçek dosyalar `IMSHARK_CORPUS_DIR` ile bulunup corpus'a eklenirken doğrulanır.
 
-## v0.8 — Canlı yakalama
+## v0.8 — Canlı yakalama ✅ tamamlandı
 
 Ön koşul: v0.7.1–v0.7.3. Canlı gelen paketler de aynı okuyucu/dissector doğruluk ve kaynak sınırlarından yararlanır.
 
-- [ ] Canlı yakalama (libpcap/Npcap): arayüz seçimi, BPF yakalama filtresi, başlat/durdur — **L**
+- [x] Canlı yakalama (libpcap/Npcap): arayüz seçimi, BPF yakalama filtresi, başlat/durdur — **L** *(Yapıldı: `core/src/capture/` (libpcap arka plan iş parçacığı → geçici klasik pcap, `FileProcessor::appendLivePacket` ile artımlı özet) ve Capture menüsü (Interfaces…, Start/Stop Ctrl+E, Restart; yazarken doğrulanan BPF filtresi, snaplen, promiscuous, son seçimin ayarlarda saklanması); paket listesi her karede sınırlı iş yaparak büyür, görüntüleme filtresi/renk yeni ve sonradan değişen satırlara uygulanır, durdurunca dosya gibi davranır, kaydedilmemiş yakalama için dışa aktar/sil sorusu, yakalama yokken menü pasif. Gerçek aygıt yakalaması bu makinede ayrıcalık olmadığından denenmedi; enjeksiyon dikişiyle test edildi)*
 
 ## v0.9 — Yaygın protokoller (küçük teslimler)
 
-Durum: v0.7.2 tamamlandı — TCP mesaj birleştirme, DNS/HTTP/TLS mesaj çözümü, Decode As, checksum doğrulaması, ICMP/NTP/DHCP/DNS ayrıntıları. v0.7.3 tamamlandı — 802.3/LLC/SNAP/STP, PPP/PPPoE, MPLS, IP-in-IP/GRE/ERSPAN, LLDP/LACP/MAC Control ve kapsülleme katmanlarının protokol hiyerarşisi. v0.8 (canlı yakalama) henüz yapılmadı; bu bölümdeki iki bağımlılık v0.7.3'ten geliyordu (aşağıda işaretli) ve artık karşılanmıştır.
+Durum: v0.7.2 tamamlandı — TCP mesaj birleştirme, DNS/HTTP/TLS mesaj çözümü, Decode As, checksum doğrulaması, ICMP/NTP/DHCP/DNS ayrıntıları. v0.7.3 tamamlandı — 802.3/LLC/SNAP/STP, PPP/PPPoE, MPLS, IP-in-IP/GRE/ERSPAN, LLDP/LACP/MAC Control ve kapsülleme katmanlarının protokol hiyerarşisi. v0.8 (canlı yakalama) tamamlandı; bu bölümdeki iki bağımlılık v0.7.3'ten geliyordu (aşağıda işaretli) ve artık karşılanmıştır.
 
 ### Ortak teslim kuralları (her madde için)
 1. **Bir madde = bir commit** (gerekirse altyapı ayrı commit). Commit'ten önce `ctest` + ASan/UBSan paketi temiz olmalı.

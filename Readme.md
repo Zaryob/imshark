@@ -20,6 +20,7 @@ ImShark, [Dear ImGui](https://github.com/ocornut/imgui) ile yazılmış, Wiresha
 - Paket bulma (Ctrl+F, F3; özet metni, filtre, **hex bayt** ve **baytlarda metin** aramaları), renklendirme kuralları (düzenlenebilir), zaman görünümü (başlangıca göre / önceki paketten / UTC / epoch)
 - Sütuna göre sıralama, klavyeyle gezinme (↑ ↓ PgUp PgDn Home End), kopyalama menüleri (alan, bayt hex/ASCII, hex dump, satır)
 - **Dışa aktarma:** File > Export Packets (tümü / görüntülenen / seçili → pcapng, pcap, CSV, JSON), Follow Stream'de ham bayt olarak kaydetme; File > Capture File Properties (arayüzler, istatistikler, yorumlar, ad çözümleme)
+- **Canlı yakalama** (libpcap / Windows'ta Npcap): **Capture > Interfaces…** arayüzleri (ad, açıklama, adresler, bayraklar) listeler; yazarken doğrulanan BPF yakalama filtresi, snaplen ve promiscuous seçenekleri; Start/Stop (Ctrl+E), Restart (Ctrl+R), Interfaces (Ctrl+K). Yakalama sürerken paket listesi her karede sınırlı iş yapılarak büyür (otomatik kaydırma menüden açılıp kapanır), görüntüleme filtresi ve renklendirme yeni paketlere uygulanır, durum çubuğu "Capturing on en0 - N packets, D dropped" gösterir, seçilen paketin ayrıntısı geçici dosyadan okunur. Durdurulunca yakalama açılmış dosya gibi davranır (dışa aktarma, istatistikler, Follow Stream); kaydedilmemiş yakalama kapatılırken/çıkılırken dışa aktarma ya da silme sorulur ve geçici dosya silinince kaldırılır. Son arayüz, filtre, snaplen ve promiscuous seçimi ayar dosyasında saklanır. Yakalama olmadan derlendiğinde menü pasif olur ve araç ipucu nedenini söyler. Ayrıcalık gerekir: macOS'ta `/dev/bpf*` erişimi (ChmodBPF ya da `sudo`), Linux'ta `CAP_NET_RAW` (`sudo setcap cap_net_raw,cap_net_admin=eip ./build/imshark` ya da root), Windows'ta Npcap kurulu olmalı
 - Son açılan dosyalar, sürükle-bırak ile açma, koyu/açık tema; ayarlar kullanıcı yapılandırma klasöründe saklanır
 - Dosya açma penceresi (ImGuiFileDialog), Ctrl+O / Ctrl+W
 
@@ -73,7 +74,7 @@ cmake --build build
 ctest --test-dir build --output-on-failure
 ```
 
-Canlı yakalama çekirdeği `-DIMSHARK_LIVE_CAPTURE=ON` (varsayılan) ile libpcap bulunursa derlenir (macOS SDK'sında hazırdır; Linux'ta `libpcap-dev`; Windows'ta `-DNPCAP_SDK_DIR=...`). Kütüphane yoksa ya da `OFF` verilirse aynı arayüz "Live capture is not available in this build" diyen bir taslakla derlenir. Gerçek arayüz yakalaması ayrıcalık ister (macOS `/dev/bpf*`, Linux `CAP_NET_RAW`); testler bunu alamazsa ilgili testi atlar.
+Canlı yakalama çekirdeği `-DIMSHARK_LIVE_CAPTURE=ON` (varsayılan) ile libpcap bulunursa derlenir (macOS SDK'sında hazırdır; Linux'ta `libpcap-dev`; Windows'ta `-DNPCAP_SDK_DIR=...`). Kütüphane yoksa ya da `OFF` verilirse aynı arayüz "Live capture is not available in this build" diyen bir taslakla derlenir. Gerçek arayüz yakalaması ayrıcalık ister (macOS `/dev/bpf*`, Linux `CAP_NET_RAW`, Windows'ta Npcap kurulumu ve SDK); testler bunu alamazsa ilgili testi atlar. Arayüz duman testleri yakalama oturumunu aygıtsız enjeksiyon dikişiyle sürer.
 
 Testler GoogleTest ile yazılmıştır (`brew install googletest` / `apt install libgtest-dev`; vcpkg'de `tests` özelliği varsayılan açıktır). Ayrıştırıcı/okuyucu için birim ve mutasyon-fuzz testleri, arayüz için ise pencere açmadan çalışan ImGui duman testleri içerir. GoogleTest yoksa testler uyarıyla atlanır; `-DIMSHARK_BUILD_TESTS=OFF` ile kapatılabilir.
 

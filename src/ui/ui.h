@@ -10,7 +10,11 @@ namespace ui {
     /// visible until the new one is complete. A load that is already running is cancelled first.
     void startLoad(AppState &state, const std::string &path);
     /// Closes the open capture: stops background work, drops the packets and removes temporary files.
+    /// A running live capture is stopped and discarded.
     void closeCapture(AppState &state);
+    /// The part of closeCapture that clears the packet view and removes the temporary file; it leaves a live
+    /// capture device alone (a new capture is started before the old view is dropped).
+    void clearCapture(AppState &state);
     /// Call once per frame: publishes a finished load (packets, status, error popup request).
     void pollLoad(AppState &state);
     /// Asks the running load to stop; it is reported as "Cancelled" by the next pollLoad.
@@ -39,6 +43,10 @@ namespace ui {
     bool applyFilter(AppState &state, const std::string &text);
     /// Re-evaluates the active filter (after a capture was loaded).
     void refilter(AppState &state);
+    /// Live capture: evaluates the active filter for the rows appended since `from` and again for the earlier rows
+    /// in `amended` (their summaries were edited in place by reassembly), keeping `filter.visible` sorted. Returns
+    /// true if an earlier row appeared in or vanished from the visible set (the displayed order must be rebuilt).
+    bool extendFilter(AppState &state, size_t from, const std::vector<uint32_t> &amended);
     void drawFilterBar(AppState &state);
     void drawFilterHelp(AppState &state);
 
@@ -74,6 +82,40 @@ namespace ui {
     /// that is going away and releases the file (a temporary copy must be deleted, which Windows refuses
     /// while it is open).
     void cancelBackgroundJobs(AppState &state);
+
+    // live_capture.cpp: Capture menu, Interfaces dialog and the live session
+    /// Starts a live capture (the previous capture is replaced once the new one runs; a failure keeps it and is
+    /// reported through state.live.error + the error popup). Remembers the options in the settings. No confirmation:
+    /// see requestStartCapture for the interactive path.
+    bool startCapture(AppState &state, const capture::CaptureOptions &options);
+    /// Test seam: begins a session that is fed with state.live.device->injectPacket() instead of a device (works in
+    /// every build). Everything else (poll, stop, filter, details, export) is the real code path.
+    bool startInjectedCapture(AppState &state, uint32_t linkType, uint32_t snaplen, const std::string &name);
+    /// Stops the capture, takes over the packets that are still queued and keeps the capture open as a file.
+    void stopCapture(AppState &state);
+    /// Call once per frame: appends the packets that arrived (bounded work per call), keeps the filter and the list
+    /// up to date and finishes a capture that ended on its own (device or write error).
+    void pollCapture(AppState &state);
+    /// Stops a running capture and forgets the live session; the caller removes AppState::tempFile.
+    void discardLiveCapture(AppState &state);
+    /// A live capture whose packets were not exported yet (they would be lost by closing/replacing it).
+    bool liveUnsaved(const AppState &state);
+    /// Interactive entry points: ask first when an unsaved live capture would be lost.
+    void requestStartCapture(AppState &state);      // Capture > Start / Ctrl+E (opens the dialog if no interface is chosen)
+    void requestRestartCapture(AppState &state);
+    void requestOpen(AppState &state, const std::string &path);
+    void requestClose(AppState &state);
+    void requestQuit(AppState &state);
+    enum class UnsavedChoice { Export, Discard, Cancel };
+    /// The answer to the "unsaved capture" popup (exposed for tests).
+    void resolveUnsaved(AppState &state, UnsavedChoice choice);
+    /// "Capturing on en0 - 120 packets, 0 dropped" / "Live capture on en0 (stopped) | 120 packets"; empty without a session.
+    std::string captureStatusText(const AppState &state);
+    /// Why the Capture menu is disabled (empty if live capture works in this build).
+    std::string captureUnavailableReason();
+    void drawCaptureMenu(AppState &state);
+    void handleCaptureShortcuts(AppState &state);
+    void drawCaptureDialogs(AppState &state);
 
     // capture_info_window.cpp
     void drawCaptureInfoWindow(AppState &state);

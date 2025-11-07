@@ -202,7 +202,7 @@ namespace capture {
         while (!stopRequested_) {
             const int n = pcap_dispatch(h, -1, onPacket, reinterpret_cast<u_char *>(this));
             publish();
-            if (n == PCAP_ERROR_BREAK) break;
+            if (n == PCAP_ERROR_BREAK || writeFailed_) break;   // stop(), or the temp file cannot be written any more
             if (n < 0) {
                 setError("Capture stopped: " + std::string(pcap_geterr(h)));
                 break;

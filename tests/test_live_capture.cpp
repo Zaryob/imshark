@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -9,6 +10,8 @@
 
 #ifndef _WIN32
 #include <arpa/inet.h>
+#include <csignal>
+#include <sys/resource.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -392,6 +395,74 @@ TEST(LiveCaptureSeam, TempFileLifetime) {
 }
 
 // ---- a real capture on the loopback interface (skipped without the privilege) --------------------------------
+
+TEST(LiveCaptureSeam, BoundedBatchesReportTheAmendedEarlierRows) {
+    const auto frames = traffic();
+    capture::LiveCapture live;
+    ASSERT_TRUE(live.beginInjected(1, 262144)) << live.lastError();
+    inject(live, frames, 0, frames.size());
+
+    core::FileProcessor processor;
+    std::vector<packet::PacketInfo> packets;
+    std::vector<uint32_t> amended;
+    size_t rounds = 0;
+    while (true) {
+        const size_t before = packets.size();
+        const size_t n = capture::appendCapturedPackets(live, processor, packets, 3, &amended);
+        EXPECT_LE(n, 3u) << "the batch bound holds";
+        EXPECT_EQ(packets.size(), before + n);
+        if (n == 0) break;
+        ++rounds;
+    }
+    EXPECT_EQ(rounds, 4u) << "10 packets in batches of at most 3";
+    ASSERT_EQ(packets.size(), frames.size());
+
+    // The HTTP request completes with packet 6 (annotates segment 3), the DNS datagram with packet 8 (fragments 5 and 7)
+    std::sort(amended.begin(), amended.end());
+    EXPECT_EQ(amended, (std::vector<uint32_t>{2, 4, 6}));
+    for (uint32_t i: amended) EXPECT_NE(packets[i].info.find("[Reassembled in #"), std::string::npos) << packets[i].info;
+    for (size_t i = 0; i < packets.size(); ++i) {
+        if (i != 2 && i != 4 && i != 6) EXPECT_EQ(packets[i].info.find("[Reassembled in #"), std::string::npos) << packets[i].info;
+    }
+    live.stop();
+    expectMatchesFileLoad(live, processor, packets);
+}
+
+#ifndef _WIN32
+// A failed write to the temp file (here: the file size limit of the process) must end the capture: running() turns false,
+// lastError() says why, and no packet whose bytes did not reach the file is announced.
+TEST(LiveCaptureSeam, WriteFailureStopsTheCapture) {
+    capture::LiveCapture live;
+    ASSERT_TRUE(live.beginInjected(1, 262144)) << live.lastError();
+    EXPECT_TRUE(live.running());
+    const std::vector<char> frame(900, 'x');
+    ASSERT_TRUE(live.injectPacket(1700000000, 1, frame));
+
+    auto previousHandler = std::signal(SIGXFSZ, SIG_IGN);
+    rlimit original{};
+    ASSERT_EQ(::getrlimit(RLIMIT_FSIZE, &original), 0);
+    rlimit limited = original;
+    limited.rlim_cur = 3000;                       // header + two more records fit, the next ones do not
+    ASSERT_EQ(::setrlimit(RLIMIT_FSIZE, &limited), 0);
+    bool failed = false;
+    for (int i = 0; i < 20 && !failed; ++i) failed = !live.injectPacket(1700000001 + i, 2, frame);
+    ASSERT_EQ(::setrlimit(RLIMIT_FSIZE, &original), 0);
+    std::signal(SIGXFSZ, previousHandler);
+
+    EXPECT_TRUE(failed);
+    EXPECT_FALSE(live.running());
+    EXPECT_NE(live.lastError().find("Writing to the temporary capture file failed"), std::string::npos) << live.lastError();
+    EXPECT_FALSE(live.injectPacket(1700000100, 3, frame)) << "nothing is recorded after the failure";
+
+    live.stop();
+    const std::string file = slurp(live.tempPath());
+    std::vector<capture::CapturedPacket> queued;
+    const size_t n = live.takePackets(queued);
+    EXPECT_GE(n, 1u);
+    EXPECT_LE(n, 4u);
+    for (const auto &p: queued) EXPECT_LE(p.fileOffset + p.capturedLength, file.size()) << "announced packets are in the file";
+}
+#endif
 
 #ifndef _WIN32
 TEST(LiveCaptureDevice, LoopbackUdpDatagram) {

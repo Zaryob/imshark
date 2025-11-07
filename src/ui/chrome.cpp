@@ -1,6 +1,5 @@
 #include "ui.h"
 
-#include <cstdlib>
 #include <filesystem>
 
 #include <imgui.h>
@@ -16,6 +15,10 @@ void ui::initSettings(AppState &state, const std::string &path) {
     state.settingsPath = path;
     state.settings = path.empty() ? Settings() : loadSettings(path);
     state.listHeight = state.settings.listHeight;
+    state.live.options.interfaceName = state.settings.captureInterface;
+    state.live.options.filter = state.settings.captureFilter;
+    state.live.options.snaplen = state.settings.captureSnaplen;
+    state.live.options.promiscuous = state.settings.capturePromiscuous;
     state.settingsDirty = false;
     recompileColorRules(state);
 }
@@ -52,15 +55,16 @@ void ui::drawMenuAndDialogs(AppState &state) {
                     state.settingsDirty = true;
                 }
                 ImGui::EndMenu();
-                if (!chosen.empty()) startLoad(state, chosen);
+                if (!chosen.empty()) requestOpen(state, chosen);
             }
             ImGui::Separator();
             if (ImGui::MenuItem("Capture File Properties...", nullptr, false, !state.currentFile.empty())) state.showCaptureInfo = true;
             if (ImGui::MenuItem("Export Packets...", nullptr, false, !state.packets.empty())) state.exportDialog.openPopup = true;
-            if (ImGui::MenuItem("Close File", "Ctrl+W", false, !state.currentFile.empty())) closeCapture(state);
-            if (ImGui::MenuItem("Exit")) std::exit(0);
+            if (ImGui::MenuItem("Close File", "Ctrl+W", false, !state.currentFile.empty())) requestClose(state);
+            if (ImGui::MenuItem("Exit")) requestQuit(state);
             ImGui::EndMenu();
         }
+        drawCaptureMenu(state);
         if (ImGui::BeginMenu("Analyze")) {
             const packet::PacketInfo *sel = state.currentPacket();
             const bool isStream = sel && sel->ip_version != 0 && (sel->ip_protocol == 6 || sel->ip_protocol == 17);
@@ -110,7 +114,8 @@ void ui::drawMenuAndDialogs(AppState &state) {
         ImGui::EndMainMenuBar();
     }
 
-    if (ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_W, false) && !state.currentFile.empty()) closeCapture(state);
+    if (ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_W, false) && !state.currentFile.empty()) requestClose(state);
+    handleCaptureShortcuts(state);
 
     if (ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_O, false)) {
         ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", "Choose File", ".pcapng,.pcap,.cap,.gz,.*");
@@ -118,7 +123,7 @@ void ui::drawMenuAndDialogs(AppState &state) {
 
     if (ImGuiFileDialog::Instance()->Display("ChooseFileDlgKey")) {
         if (ImGuiFileDialog::Instance()->IsOk()) {
-            startLoad(state, ImGuiFileDialog::Instance()->GetFilePathName());
+            requestOpen(state, ImGuiFileDialog::Instance()->GetFilePathName());
         }
         ImGuiFileDialog::Instance()->Close();
     }
@@ -133,6 +138,8 @@ void ui::drawStatusBar(const AppState &state) {
     if (ImGui::Begin("##status", nullptr, flags)) {
         if (state.loading()) {
             ImGui::Text("Loading %s ...", loadingPath(state).c_str());
+        } else if (state.live.session) {
+            ImGui::TextUnformatted(captureStatusText(state).c_str());
         } else if (state.currentFile.empty()) {
             ImGui::TextUnformatted("No file loaded. Use File > Open.");
         } else {
@@ -141,6 +148,10 @@ void ui::drawStatusBar(const AppState &state) {
             } else {
                 ImGui::Text("%s  |  %zu packets", state.displayName.c_str(), state.packets.size());
             }
+        }
+        if (!state.live.error.empty()) {
+            ImGui::SameLine();
+            ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "  |  %s", state.live.error.c_str());
         }
         if (!state.loadMessage.empty()) {
             ImGui::SameLine();

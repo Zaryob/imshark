@@ -59,6 +59,7 @@ add_library(imshark_ui STATIC
     src/ui/follow_view.cpp
     src/ui/follow_window.cpp
     src/ui/filter_bar.cpp
+    src/ui/live_capture.cpp
     src/ui/loader.cpp
     src/ui/main_window.cpp
     src/ui/packet_list.cpp

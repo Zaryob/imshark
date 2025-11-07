@@ -56,6 +56,17 @@ ui::Settings ui::loadSettings(const std::string &path) {
                 const float h = std::stof(value);
                 if (h >= 50.0f && h <= 5000.0f) settings.listHeight = h;
             } catch (...) { /* damaged value: keep the default */ }
+        } else if (key == "capture_interface") {
+            settings.captureInterface = value;
+        } else if (key == "capture_filter") {
+            settings.captureFilter = value;
+        } else if (key == "capture_snaplen") {
+            try {
+                const unsigned long n = std::stoul(value);
+                if (n >= Settings::kMinSnaplen && n <= Settings::kMaxSnaplen) settings.captureSnaplen = static_cast<uint32_t>(n);
+            } catch (...) { /* damaged value: keep the default */ }
+        } else if (key == "capture_promiscuous") {
+            settings.capturePromiscuous = value != "0";
         } else if (key == "filter" && !value.empty() && settings.filterHistory.size() < Settings::kMaxFilterHistory) {
             settings.filterHistory.push_back(value);
         } else if (key == "recent" && !value.empty() && settings.recentFiles.size() < Settings::kMaxRecentFiles) {
@@ -76,6 +87,15 @@ bool ui::saveSettings(const Settings &settings, const std::string &path) {
     out << "time_format=" << timeFormatKey(settings.timeFormat) << "\n";
     out << "colorize=" << (settings.colorize ? 1 : 0) << "\n";
     out << "list_height=" << settings.listHeight << "\n";
+    // one line per value: a line break in the filter text would corrupt the file
+    auto oneLine = [](std::string text) {
+        for (char &c: text) if (c == '\n' || c == '\r') c = ' ';
+        return text;
+    };
+    if (!settings.captureInterface.empty()) out << "capture_interface=" << oneLine(settings.captureInterface) << "\n";
+    if (!settings.captureFilter.empty()) out << "capture_filter=" << oneLine(settings.captureFilter) << "\n";
+    out << "capture_snaplen=" << settings.captureSnaplen << "\n";
+    out << "capture_promiscuous=" << (settings.capturePromiscuous ? 1 : 0) << "\n";
     for (const auto &rule: settings.colorRules) out << "colorrule=" << serializeColorRule(rule) << "\n";
     for (const auto &recent: settings.recentFiles) out << "recent=" << recent << "\n";
     for (const auto &f: settings.filterHistory) out << "filter=" << f << "\n";

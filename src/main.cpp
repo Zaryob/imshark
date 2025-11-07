@@ -41,12 +41,17 @@ int main(int argc, char **argv) {
     // Dropping a file on the window opens it
     glfwSetWindowUserPointer(window, &state);
     glfwSetDropCallback(window, [](GLFWwindow *w, int count, const char **paths) {
-        if (count > 0) ui::startLoad(*static_cast<ui::AppState *>(glfwGetWindowUserPointer(w)), paths[0]);
+        if (count > 0) ui::requestOpen(*static_cast<ui::AppState *>(glfwGetWindowUserPointer(w)), paths[0]);
+    });
+    // Closing the window asks about an unsaved live capture first; the loop ends when state.quitRequested is set
+    glfwSetWindowCloseCallback(window, [](GLFWwindow *w) {
+        glfwSetWindowShouldClose(w, GLFW_FALSE);
+        ui::requestQuit(*static_cast<ui::AppState *>(glfwGetWindowUserPointer(w)));
     });
 
     if (argc > 1) ui::startLoad(state, argv[1]); // imshark <capture file>
 
-    while (!glfwWindowShouldClose(window)) {
+    while (!state.quitRequested) {
         glfwPollEvents();
 
         ImGui_ImplOpenGL3_NewFrame();
@@ -54,6 +59,7 @@ int main(int argc, char **argv) {
         ImGui::NewFrame();
 
         ui::pollLoad(state);
+        ui::pollCapture(state);
         ui::drawMenuAndDialogs(state);
         ui::drawMainWindow(state);
         ui::drawStatusBar(state);

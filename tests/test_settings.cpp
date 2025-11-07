@@ -103,3 +103,36 @@ TEST(Settings, TimeFormatRoundTrips) {
     EXPECT_EQ(ui::loadSettings(path).timeFormat, ui::TimeFormat::UtcDateTime);
     std::filesystem::remove_all(std::filesystem::path(path).parent_path());
 }
+
+TEST(Settings, CaptureOptionsRoundTripAndDefaults) {
+    const ui::Settings defaults;
+    EXPECT_TRUE(defaults.captureInterface.empty());
+    EXPECT_TRUE(defaults.captureFilter.empty());
+    EXPECT_EQ(defaults.captureSnaplen, 262144u);
+    EXPECT_TRUE(defaults.capturePromiscuous);
+
+    const auto path = tempPath("capture");
+    ui::Settings s;
+    s.captureInterface = "en0";
+    s.captureFilter = "tcp port 80 and host 10.0.0.1";
+    s.captureSnaplen = 1500;
+    s.capturePromiscuous = false;
+    ASSERT_TRUE(ui::saveSettings(s, path));
+    const auto loaded = ui::loadSettings(path);
+    EXPECT_EQ(loaded.captureInterface, "en0");
+    EXPECT_EQ(loaded.captureFilter, "tcp port 80 and host 10.0.0.1");
+    EXPECT_EQ(loaded.captureSnaplen, 1500u);
+    EXPECT_FALSE(loaded.capturePromiscuous);
+
+    // a line break in the filter must not corrupt the file (it is flattened); out-of-range snaplens are ignored
+    s.captureFilter = "udp\nport 53";
+    s.captureSnaplen = 1500;
+    ASSERT_TRUE(ui::saveSettings(s, path));
+    EXPECT_EQ(ui::loadSettings(path).captureFilter, "udp port 53");
+    {
+        std::ofstream f(path);
+        f << "capture_snaplen=10\ncapture_snaplen=abc\ncapture_snaplen=999999999\n";
+    }
+    EXPECT_EQ(ui::loadSettings(path).captureSnaplen, 262144u);
+    std::filesystem::remove_all(std::filesystem::path(path).parent_path());
+}

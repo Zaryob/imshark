@@ -22,6 +22,11 @@ std::shared_ptr<const dissect::Registry> ui::buildRegistry(const std::vector<Dec
 }
 
 bool ui::applyDecodeAs(AppState &state, const std::vector<DecodeAsRule> &rules) {
+    if (state.live.session) {
+        // the capture lives in a temporary file owned by the live session; reloading it would delete it
+        state.decodeAs.error = "Decode As cannot be applied to a live capture. Export the packets, then open the file.";
+        return false;
+    }
     std::string error;
     auto registry = buildRegistry(rules, error);
     state.decodeAs.error = error;

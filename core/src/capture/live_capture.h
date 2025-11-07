@@ -99,6 +99,8 @@ namespace capture {
         /// takePackets() and the temp file stays on disk.
         void stop();
 
+        /// true while the capture records packets; turns false after stop(), when the capture thread ended on its
+        /// own (device error) and when a write to the temp file failed (lastError() then says why).
         bool running() const { return running_; }
         uint64_t packetCount() const { return packetCount_; }     // packets written to the temp file
         uint64_t droppedCount() const { return dropped_; }        // pcap_stats ps_drop (kernel buffer overruns)
@@ -108,8 +110,10 @@ namespace capture {
         std::string tempPath() const;                             // classic pcap file in the system temp dir
 
         /// Moves the packets that arrived since the last call into `out` (appended, in capture order) and returns
-        /// how many. Their bytes are already flushed to the temp file.
-        size_t takePackets(std::vector<CapturedPacket> &out);
+        /// how many; `maxCount` (0 = all) bounds the batch, the rest stays queued for the next call. Their bytes
+        /// are already flushed to the temp file. start() drops what was not taken, so poll until this returns 0
+        /// after stop() before starting again.
+        size_t takePackets(std::vector<CapturedPacket> &out, size_t maxCount = 0);
 
         /// The file now belongs to the caller (e.g. the UI keeps it as the open capture); the destructor and the next
         /// start() leave it alone. Returns its path.
@@ -134,9 +138,11 @@ namespace capture {
         bool writeRecord(uint64_t tsSeconds, uint32_t tsMicros, const char *data, uint32_t capturedLength, uint32_t originalLength);
         void publish();                // flush the file, then make the pending records visible to takePackets()
         void setError(const std::string &text);
+        void failWrite(const std::string &text);   // error + end of the capture after a failed file write
         void removeTemp();
         void resetSession();
-        friend size_t appendCapturedPackets(LiveCapture &, core::FileProcessor &, std::vector<packet::PacketInfo> &);
+        friend size_t appendCapturedPackets(LiveCapture &, core::FileProcessor &, std::vector<packet::PacketInfo> &, size_t,
+                                            std::vector<uint32_t> *);
 
         mutable std::mutex mutex_;     // guards queue_, error_, path_
         std::vector<CapturedPacket> queue_;
@@ -149,6 +155,7 @@ namespace capture {
 
         std::atomic<bool> running_{false};
         std::atomic<bool> stopRequested_{false};
+        std::atomic<bool> writeFailed_{false};
         std::atomic<uint64_t> packetCount_{0};
         std::atomic<uint64_t> dropped_{0};
         std::atomic<uint32_t> linkType_{1};
@@ -162,6 +169,9 @@ namespace capture {
     /// `packets`, through core::FileProcessor::appendLivePacket - the same path as loading the temp file later,
     /// so live packets look identical to a file opened afterwards. The frame bytes are read back from the temp
     /// file. `processor` must be fresh for this capture (a new FileProcessor; the first call runs beginLive()).
-    /// Returns the number of packets appended. Call it from one thread, e.g. once per UI frame.
-    size_t appendCapturedPackets(LiveCapture &live, core::FileProcessor &processor, std::vector<packet::PacketInfo> &packets);
+    /// Returns the number of packets appended. Call it from one thread, e.g. once per UI frame. `maxPackets` (0 = all)
+    /// bounds the work of one call (the rest stays queued); `amended` (optional) receives the indices of earlier
+    /// summaries that were edited in place (see FileProcessor::appendLivePacket).
+    size_t appendCapturedPackets(LiveCapture &live, core::FileProcessor &processor, std::vector<packet::PacketInfo> &packets,
+                                 size_t maxPackets = 0, std::vector<uint32_t> *amended = nullptr);
 } // namespace capture

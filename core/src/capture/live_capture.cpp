@@ -74,6 +74,17 @@ namespace capture {
         fileSize_ = 0;
         packetCount_ = 0;
         dropped_ = 0;
+        writeFailed_ = false;
+    }
+
+    // A write to the temp file failed: nothing more can be recorded, so the capture ends here. The error text stays in
+    // lastError() and running() turns false (the capture thread notices stopRequested_ / the breakloop and exits).
+    void LiveCapture::failWrite(const std::string &text) {
+        setError(text);
+        writeFailed_ = true;
+        stopRequested_ = true;
+        running_ = false;
+        breakCapture();
     }
 
     bool LiveCapture::openFile(uint32_t linkType, uint32_t snaplen) {
@@ -116,7 +127,7 @@ namespace capture {
     // Called with the file open; takes the writer lock itself.
     bool LiveCapture::writeRecord(uint64_t tsSeconds, uint32_t tsMicros, const char *data, uint32_t capturedLength, uint32_t originalLength) {
         std::lock_guard<std::mutex> writer(writerMutex_);
-        if (!file_.is_open()) return false;
+        if (!file_.is_open() || writeFailed_) return false;
         std::string rec;
         rec.reserve(kRecordHeaderSize);
         put32(rec, static_cast<uint32_t>(tsSeconds));
@@ -126,7 +137,7 @@ namespace capture {
         file_.write(rec.data(), static_cast<std::streamsize>(rec.size()));
         file_.write(data, capturedLength);
         if (!file_) {
-            setError("Writing to the temporary capture file failed (disk full?)");
+            failWrite("Writing to the temporary capture file failed (disk full?)");
             return false;
         }
         CapturedPacket p;
@@ -146,16 +157,22 @@ namespace capture {
         std::lock_guard<std::mutex> writer(writerMutex_);
         if (pending_.empty()) return;
         file_.flush();   // the consumer reads the frames back from the file: they must be there before it hears of them
+        if (!file_) {
+            packetCount_ -= pending_.size();   // their bytes did not reach the file: they are neither announced nor counted
+            pending_.clear();
+            failWrite("Writing to the temporary capture file failed (disk full?)");
+            return;
+        }
         std::lock_guard<std::mutex> lock(mutex_);
         queue_.insert(queue_.end(), pending_.begin(), pending_.end());
         pending_.clear();
     }
 
-    size_t LiveCapture::takePackets(std::vector<CapturedPacket> &out) {
+    size_t LiveCapture::takePackets(std::vector<CapturedPacket> &out, size_t maxCount) {
         std::lock_guard<std::mutex> lock(mutex_);
-        const size_t n = queue_.size();
-        out.insert(out.end(), queue_.begin(), queue_.end());
-        queue_.clear();
+        const size_t n = maxCount ? std::min(maxCount, queue_.size()) : queue_.size();
+        out.insert(out.end(), queue_.begin(), queue_.begin() + static_cast<std::ptrdiff_t>(n));
+        queue_.erase(queue_.begin(), queue_.begin() + static_cast<std::ptrdiff_t>(n));
         return n;
     }
 
@@ -214,19 +231,23 @@ namespace capture {
         stop();
         removeTemp();
         resetSession();
-        return openFile(linkType, snaplen);
+        if (!openFile(linkType, snaplen)) return false;
+        stopRequested_ = false;
+        running_ = true;       // an injected session runs until stop() or a write failure, like a real capture
+        return true;
     }
 
     bool LiveCapture::injectPacket(uint64_t tsSeconds, uint32_t tsMicros, const std::vector<char> &frame, uint32_t originalLength) {
         const uint32_t captured = static_cast<uint32_t>(std::min<size_t>(frame.size(), snaplen_));
         const bool written = writeRecord(tsSeconds, tsMicros, frame.data(), captured, originalLength ? originalLength : static_cast<uint32_t>(frame.size()));
         publish();
-        return written;
+        return written && !writeFailed_;
     }
 
-    size_t appendCapturedPackets(LiveCapture &live, core::FileProcessor &processor, std::vector<packet::PacketInfo> &packets) {
+    size_t appendCapturedPackets(LiveCapture &live, core::FileProcessor &processor, std::vector<packet::PacketInfo> &packets,
+                                 size_t maxPackets, std::vector<uint32_t> *amended) {
         std::vector<CapturedPacket> batch;
-        if (live.takePackets(batch) == 0) return 0;
+        if (live.takePackets(batch, maxPackets) == 0) return 0;
         if (processor.captureInfo().interfaces.empty()) processor.beginLive(live.linkType(), live.snaplen());
 
         const std::string path = live.tempPath();
@@ -241,7 +262,7 @@ namespace capture {
                 live.setError("Cannot read captured packets back from " + path);
                 continue;
             }
-            processor.appendLivePacket(packets, p.tsSeconds, p.tsMicros, p.linkType, p.fileOffset, p.originalLength, frame);
+            processor.appendLivePacket(packets, p.tsSeconds, p.tsMicros, p.linkType, p.fileOffset, p.originalLength, frame, amended);
             ++appended;
         }
         return appended;

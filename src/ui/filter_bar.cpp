@@ -46,6 +46,36 @@ void ui::refilter(AppState &state) {
     state.stats.dirty = true; // statistics "limited to displayed packets" depend on the filter
 }
 
+bool ui::extendFilter(AppState &state, size_t from, const std::vector<uint32_t> &amended) {
+    auto &f = state.filter;
+    if (!f.active) return false;
+    filter::Context context;
+    context.captureStartEpoch = state.captureStartEpoch;
+    bool changed = false;
+    // earlier rows whose summary was edited in place: their result may differ now (rows >= from are evaluated below)
+    for (uint32_t i: amended) {
+        if (i >= from || i >= state.packets.size()) continue;
+        context.previous = i ? &state.packets[i - 1] : nullptr;
+        const bool matches = f.applied.matches(state.packets[i], context);
+        const auto it = std::lower_bound(f.visible.begin(), f.visible.end(), i);
+        const bool shown = it != f.visible.end() && *it == i;
+        if (matches && !shown) {
+            f.visible.insert(it, i);
+            changed = true;
+        } else if (!matches && shown) {
+            f.visible.erase(it);
+            changed = true;
+            if (state.selectedPacket == static_cast<int>(i)) state.clearSelection();   // as refilter(): only displayed rows stay selected
+        }
+    }
+    for (size_t i = from; i < state.packets.size(); ++i) {
+        context.previous = i ? &state.packets[i - 1] : nullptr;
+        if (f.applied.matches(state.packets[i], context)) f.visible.push_back(static_cast<uint32_t>(i));
+    }
+    if (from < state.packets.size() || changed) state.stats.dirty = true;
+    return changed;
+}
+
 void ui::drawFilterBar(AppState &state) {
     auto &f = state.filter;
 

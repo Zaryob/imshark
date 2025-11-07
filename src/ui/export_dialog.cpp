@@ -21,6 +21,7 @@ namespace ui {
         std::string error;
         std::string path;
         size_t count = 0;
+        exporter::Format format = exporter::Format::Pcapng;
         std::shared_ptr<const std::vector<packet::PacketInfo>> packets;   // snapshot of the capture
 
         ~ExportJob() {
@@ -68,6 +69,7 @@ bool ui::startExport(AppState &state, ExportState::Range range, Format format, c
     auto job = std::make_shared<ExportJob>();
     job->path = path;
     job->count = indices.size();
+    job->format = format;
     job->control.total = indices.size();
     const std::string capture = state.currentFile;
     job->packets = state.packets.share();
@@ -89,6 +91,10 @@ void ui::drawExportDialog(AppState &state) {
         e.job.reset();
         job->thread.join();
         if (job->ok) {
+            // a finished live capture that was saved completely (as a capture file) no longer asks to be discarded
+            if (state.live.session && !state.live.capturing() && exporter::isCaptureFormat(job->format) && job->count == state.packets.size()) {
+                state.live.unsaved = false;
+            }
             e.resultMessage = "Exported " + std::to_string(job->count) + " packets to\n" + job->path;
             e.resultIsError = false;
             e.showResult = true;
