@@ -11,6 +11,7 @@
 #endif
 
 #include <filesystem>
+#include <fstream>
 
 #include <imgui.h>
 
@@ -1104,6 +1105,67 @@ TEST_F(UiSmoke, DiscardingForAnOpenReplacesTheLiveCapture) {
     EXPECT_EQ(state.packets.size(), 16u);
     EXPECT_FALSE(state.live.session);
     EXPECT_FALSE(std::filesystem::exists(temp));
+}
+
+TEST_F(UiSmoke, FailedOpenAfterDiscardLeavesTheLiveCaptureIntact) {
+    ui::AppState state;
+    const auto traffic = liveTraffic();
+    ASSERT_TRUE(ui::startInjectedCapture(state, 1, 262144, "fake0"));
+    injectFrames(state, traffic, 0, 3);
+    frames(state);
+    const std::string temp = state.live.device->tempPath();
+
+    ui::requestOpen(state, "/no/such/capture.pcap");
+    ui::resolveUnsaved(state, ui::UnsavedChoice::Discard);
+    for (int i = 0; i < 2000 && state.loading(); ++i) { frame(state); std::this_thread::sleep_for(std::chrono::milliseconds(1)); }
+    EXPECT_TRUE(state.loadFailed);
+    EXPECT_TRUE(state.live.session) << "the capture is still open";
+    EXPECT_TRUE(state.live.capturing());
+    EXPECT_EQ(state.packets.size(), 3u);
+    EXPECT_TRUE(std::filesystem::exists(temp));
+    state.selectedPacket = 1;
+    frames(state);
+    EXPECT_TRUE(state.detailOk) << "details still read the temp file";
+    injectFrames(state, traffic, 3, 5);              // and it keeps capturing
+    frames(state);
+    EXPECT_EQ(state.packets.size(), 5u);
+    ui::stopCapture(state);
+    EXPECT_TRUE(std::filesystem::exists(state.tempFile));
+    EXPECT_EQ(state.packets.size(), 5u);
+
+    // a cancelled load is as harmless
+    ui::requestOpen(state, IMSHARK_TEST_DATA_DIR "/sample.pcap");
+    ui::resolveUnsaved(state, ui::UnsavedChoice::Discard);
+    ui::cancelLoad(state);
+    while (state.loading()) { ui::pollLoad(state); std::this_thread::sleep_for(std::chrono::milliseconds(1)); }
+    if (state.loadFailed) {                          // (a tiny file may finish before the cancel is noticed)
+        EXPECT_TRUE(state.live.session);
+        EXPECT_EQ(state.packets.size(), 5u);
+        EXPECT_TRUE(std::filesystem::exists(state.tempFile));
+    }
+}
+
+TEST_F(UiSmoke, LaterFileLoadsDoNotDeleteTheStalePathOfAnEarlierCapture) {
+    ui::AppState state;
+    ASSERT_TRUE(ui::startInjectedCapture(state, 1, 262144, "fake0"));
+    const std::string stale = state.live.device->tempPath();
+    ui::closeCapture(state);                         // discards the session and its file
+    ASSERT_FALSE(std::filesystem::exists(stale));
+    { std::ofstream bystander(stale); bystander << "not ours any more"; }
+    load(state);                                     // a successful load must not touch the stale path again
+    EXPECT_TRUE(std::filesystem::exists(stale));
+    std::remove(stale.c_str());
+}
+
+TEST_F(UiSmoke, InvalidCaptureFilterWarnsButDoesNotBlockStart) {
+    if (!capture::liveCaptureAvailable()) GTEST_SKIP() << "built without libpcap";
+    ui::AppState state;
+    state.live.dialog.open = true;
+    state.live.options.interfaceName = "imshark-no-such-interface0";
+    state.live.options.filter = "ether proto 0x0800 and (";
+    frames(state);
+    EXPECT_FALSE(state.live.dialog.filterCheck.ok);
+    EXPECT_TRUE(state.live.dialog.open);
 }
 
 TEST_F(UiSmoke, NewSessionTakesOverTheQueuedPacketsOfTheOldOneFirst) {

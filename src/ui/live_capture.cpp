@@ -140,7 +140,8 @@ namespace {
             case ui::PendingAction::Start: ui::startCapture(state, state.live.options); break;
             case ui::PendingAction::Restart: ui::startCapture(state, state.live.sessionOptions); break;
             case ui::PendingAction::Open:
-                ui::discardLiveCapture(state);
+                // the capture stays open (and keeps running) until the file has loaded: pollLoad discards it on success,
+                // a failed or cancelled load leaves it intact
                 ui::startLoad(state, action.path);
                 break;
             case ui::PendingAction::Close: ui::closeCapture(state); break;
@@ -243,7 +244,11 @@ namespace {
             const bool enter = ui::inputText("##capturefilter", "BPF filter, e.g.  tcp port 443 and host 10.0.0.1   (empty = everything)", l.options.filter,
                                              ImGuiInputTextFlags_EnterReturnsTrue);
             if (!filterEmpty) ImGui::PopStyleColor();
-            if (filterBad) ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.45f, 1.0f), "Invalid filter: %s", d.filterCheck.error.c_str());
+            // The check assumes Ethernet (loopback: NULL) because the real link type of the interface is only known once it
+            // is opened, which needs privileges. So it only warns: Start is not blocked, opening the interface compiles the
+            // filter for real and reports an error if it is invalid.
+            if (filterBad) ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.45f, 1.0f), "Invalid filter: %s  (checked as %s; Start verifies it on the interface)",
+                                              d.filterCheck.error.c_str(), linkType == 0 ? "loopback" : "Ethernet");
             else if (!filterEmpty) ImGui::TextColored(ImVec4(0.6f, 0.9f, 0.6f, 1.0f), "Valid filter");
             else ImGui::TextDisabled("No capture filter: all packets are captured.");
 
@@ -256,7 +261,7 @@ namespace {
             ImGui::SameLine();
             ImGui::Checkbox("Promiscuous mode", &l.options.promiscuous);
 
-            const bool canStart = available && !l.options.interfaceName.empty() && !filterBad;
+            const bool canStart = available && !l.options.interfaceName.empty();
             ImGui::BeginDisabled(!canStart);
             const bool start = ImGui::Button("Start", ImVec2(120, 0)) || (enter && canStart) || (!chosen.empty() && canStart);
             ImGui::EndDisabled();
@@ -362,10 +367,12 @@ void ui::discardLiveCapture(AppState &state) {
     auto &l = state.live;
     if (l.device) {
         l.device->stop();
-        const std::string path = l.device->releaseTempFile();
-        if (!path.empty()) {
-            std::error_code ec;
-            std::filesystem::remove(core::pathFromUtf8(path), ec);
+        if (l.session) {   // without a session the device's path is stale (an earlier, already removed capture)
+            const std::string path = l.device->releaseTempFile();
+            if (!path.empty()) {
+                std::error_code ec;
+                std::filesystem::remove(core::pathFromUtf8(path), ec);
+            }
         }
     }
     l.processor.reset();
