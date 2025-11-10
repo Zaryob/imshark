@@ -57,6 +57,7 @@ add_executable(imshark_tests
     test_lldp_lacp.cpp
     test_live_capture.cpp
     test_hierarchy.cpp
+    test_tls_keylog.cpp
 )
 if(IMSHARK_SANITIZE)
     target_sources(imshark_tests PRIVATE asan_options.cpp)

@@ -1,0 +1,58 @@
+{
+  "tls12": {
+    "change_cipher_spec": {
+      "c2s": [
+        2
+      ],
+      "s2c": [
+        5
+      ]
+    },
+    "cipher_suite": 49196,
+    "client_random": "9e1be11964eb861b9cd2c5d6cdf58d40da02549d3ee03eb305305f1455f47f73",
+    "hello_record": {
+      "c2s": 0,
+      "s2c": 0
+    },
+    "key_labels": [
+      "CLIENT_RANDOM"
+    ],
+    "negotiated_version": 771,
+    "packets": 11,
+    "records": {
+      "c2s": 6,
+      "s2c": 8
+    },
+    "server_random": "a2105c2cc0ce0f5fb1b293e719caff44218e1dd052571685deb4f6e6b010f285"
+  },
+  "tls13": {
+    "change_cipher_spec": {
+      "c2s": [
+        1
+      ],
+      "s2c": [
+        1
+      ]
+    },
+    "cipher_suite": 4866,
+    "client_random": "69ffdeb725d2e9fb27554ca4d472444e030e9cf9956d1768db05c009b3566ba6",
+    "hello_record": {
+      "c2s": 0,
+      "s2c": 0
+    },
+    "key_labels": [
+      "CLIENT_HANDSHAKE_TRAFFIC_SECRET",
+      "CLIENT_TRAFFIC_SECRET_0",
+      "EXPORTER_SECRET",
+      "SERVER_HANDSHAKE_TRAFFIC_SECRET",
+      "SERVER_TRAFFIC_SECRET_0"
+    ],
+    "negotiated_version": 772,
+    "packets": 18,
+    "records": {
+      "c2s": 5,
+      "s2c": 9
+    },
+    "server_random": "f8806ab2fefcda54666f1fe0ffbc62372d7034dc3ec4d87edf03c6ffcba72208"
+  }
+}

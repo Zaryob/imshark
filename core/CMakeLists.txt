@@ -49,6 +49,7 @@ add_library(imshark_core STATIC
     src/filter/filter.cpp
     src/stats/statistics.cpp
     src/stream/follow.cpp
+    src/tls/keylog.cpp
 )
 set_target_properties(imshark_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
