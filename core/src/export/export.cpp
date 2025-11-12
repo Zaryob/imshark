@@ -108,7 +108,8 @@ namespace exporter {
 
     bool exportPackets(const std::string &capturePath, const std::vector<packet::PacketInfo> &packets,
                        const std::vector<uint32_t> &indices, double captureStartEpoch, Format format,
-                       const std::string &outPath, std::string &error, core::ScanControl *control) {
+                       const std::string &outPath, std::string &error, core::ScanControl *control,
+                       const std::vector<core::DecryptionSecrets> *secrets) {
         error.clear();
         std::ofstream out(core::pathFromUtf8(outPath), std::ios::binary | std::ios::trunc);
         if (!out) {
@@ -165,6 +166,17 @@ namespace exporter {
                 std::string idb;
                 put16(idb, static_cast<uint16_t>(lt)); put16(idb, 0); put32(idb, 0); // linktype, reserved, snaplen (0 = no limit)
                 put32(head, 1); put32(head, static_cast<uint32_t>(idb.size() + 12)); head += idb; put32(head, static_cast<uint32_t>(idb.size() + 12));
+            }
+            // Decryption Secrets Blocks: secrets type, secrets length, the secrets padded to 4 bytes
+            if (secrets) {
+                for (const auto &dsb: *secrets) {
+                    std::string body;
+                    put32(body, dsb.type);
+                    put32(body, static_cast<uint32_t>(dsb.data.size()));
+                    body += dsb.data;
+                    body.append((4 - dsb.data.size() % 4) % 4, '\0');
+                    put32(head, 0x0A); put32(head, static_cast<uint32_t>(body.size() + 12)); head += body; put32(head, static_cast<uint32_t>(body.size() + 12));
+                }
             }
         }
         out.write(head.data(), static_cast<std::streamsize>(head.size()));

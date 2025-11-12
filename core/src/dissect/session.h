@@ -5,6 +5,8 @@
 #include <unordered_set>
 #include <vector>
 
+#include <tls/keylog.h>
+
 namespace dissect {
 
 struct TftpSession {
@@ -31,6 +33,7 @@ public:
         tftpSessions_.clear();
         ftpMemory_ = 0;
         tftpMemory_ = 0;
+        tlsCaptureKeys_.clear();   // the keys the user supplied (tlsExternalKeys) outlive a new capture
         stateLost_ = false;
         stateLostTables_.clear();
         frozen_ = false;
@@ -94,6 +97,27 @@ public:
     std::vector<TftpSession> &tftpSessions() { return tftpSessions_; }
     const std::vector<TftpSession> &tftpSessions() const { return tftpSessions_; }
 
+    // ---- TLS key material (see tls/keylog.h) ----------------------------------------------------
+    /// Secrets the user supplied (key log file / text). They stay when clear() starts a new capture.
+    tls::KeyStore &tlsExternalKeys() { return tlsExternalKeys_; }
+    const tls::KeyStore &tlsExternalKeys() const { return tlsExternalKeys_; }
+    /// Secrets that came with the capture (pcapng Decryption Secrets Blocks); cleared with the capture.
+    tls::KeyStore &tlsCaptureKeys() { return tlsCaptureKeys_; }
+    const tls::KeyStore &tlsCaptureKeys() const { return tlsCaptureKeys_; }
+
+    /// All secrets known for the connection whose ClientHello random is `clientRandom` (both sources merged).
+    /// Returns false if there are none.
+    bool findTlsKeys(const tls::ClientRandom &clientRandom, tls::KeyEntry &out) const {
+        const tls::KeyEntry *a = tlsExternalKeys_.find(clientRandom), *b = tlsCaptureKeys_.find(clientRandom);
+        if (!a && !b) return false;
+        out = tls::KeyEntry{};
+        for (const tls::KeyEntry *e: {b, a}) {   // the user's own keys win
+            if (!e) continue;
+            for (size_t i = 0; i < tls::kSecretKinds; ++i) if (e->secrets[i].present()) out.secrets[i] = e->secrets[i];
+        }
+        return true;
+    }
+
     size_t totalMemoryUsage() const { return ftpMemory_ + tftpMemory_; }
 
 private:
@@ -112,6 +136,9 @@ private:
 
     std::vector<TftpSession> tftpSessions_;
     size_t tftpMemory_ = 0;
+
+    tls::KeyStore tlsExternalKeys_;
+    tls::KeyStore tlsCaptureKeys_;
 };
 
 } // namespace dissect

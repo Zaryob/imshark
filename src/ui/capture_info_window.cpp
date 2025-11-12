@@ -82,6 +82,12 @@ void ui::drawCaptureInfoWindow(AppState &state) {
             }
         }
         keyValue("Sections", info.sections > 1 ? std::to_string(info.sections) : "");
+        if (!info.decryptionSecrets.empty()) {
+            std::string text = std::to_string(info.tlsKeyLogSecrets) + " TLS secrets in " + std::to_string(info.decryptionSecrets.size()) +
+                               " Decryption Secrets Block" + (info.decryptionSecrets.size() == 1 ? "" : "s");
+            if (info.tlsKeyLogMalformed > 0) text += ", " + std::to_string(info.tlsKeyLogMalformed) + " invalid line(s)";
+            keyValue("Decryption secrets", text);
+        }
         ImGui::EndTable();
     }
 

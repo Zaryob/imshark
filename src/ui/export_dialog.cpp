@@ -23,6 +23,7 @@ namespace ui {
         size_t count = 0;
         exporter::Format format = exporter::Format::Pcapng;
         std::shared_ptr<const std::vector<packet::PacketInfo>> packets;   // snapshot of the capture
+        std::vector<core::DecryptionSecrets> secrets;                     // pcapng Decryption Secrets Blocks of the capture
 
         ~ExportJob() {
             control.cancelRequested = true;
@@ -73,9 +74,10 @@ bool ui::startExport(AppState &state, ExportState::Range range, Format format, c
     job->control.total = indices.size();
     const std::string capture = state.currentFile;
     job->packets = state.packets.share();
+    job->secrets = state.captureInfo.decryptionSecrets;
     const double epoch = state.captureStartEpoch;
     job->thread = std::thread([raw = job.get(), capture, epoch, format, indices = std::move(indices)] {
-        raw->ok = exporter::exportPackets(capture, *raw->packets, indices, epoch, format, raw->path, raw->error, &raw->control);
+        raw->ok = exporter::exportPackets(capture, *raw->packets, indices, epoch, format, raw->path, raw->error, &raw->control, &raw->secrets);
         raw->finished = true;
     });
     e.job = std::move(job);

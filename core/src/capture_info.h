@@ -23,6 +23,15 @@ namespace core {
         std::string name;
     };
 
+    /// Secrets type of a pcapng Decryption Secrets Block that holds a TLS key log ("TLSK").
+    constexpr uint32_t kSecretsTypeTlsKeyLog = 0x544c534b;
+
+    /// One pcapng Decryption Secrets Block (block type 0x0000000A): the secrets as they are in the file.
+    struct DecryptionSecrets {
+        uint32_t type = 0;                   // secrets type (kSecretsTypeTlsKeyLog = NSS key log text)
+        std::string data;                    // the secrets, without padding
+    };
+
     /// Metadata of a capture file that is not part of any packet.
     struct CaptureInfo {
         std::string format;                  // "pcap" / "pcapng" with byte order and precision
@@ -34,5 +43,8 @@ namespace core {
         std::vector<InterfaceInfo> interfaces;
         std::vector<NameRecord> names;       // name resolution blocks (capped)
         std::unordered_map<uint32_t, std::string> packetComments; // by packet number
+        std::vector<DecryptionSecrets> decryptionSecrets;   // pcapng Decryption Secrets Blocks (kept to write them out again)
+        size_t tlsKeyLogSecrets = 0;         // secrets read from the TLS key log blocks (they are in the session tables' key store)
+        size_t tlsKeyLogMalformed = 0;       // lines of those blocks that were not valid key log lines
     };
 } // namespace core

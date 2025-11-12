@@ -24,6 +24,8 @@ namespace {
     constexpr uint32_t kBlockNRB = 0x00000004; // Name Resolution Block
     constexpr uint32_t kBlockISB = 0x00000005; // Interface Statistics Block
     constexpr uint32_t kBlockEPB = 0x00000006; // Enhanced Packet Block
+    constexpr uint32_t kBlockDSB = 0x0000000A; // Decryption Secrets Block
+    constexpr size_t kMaxStoredSecrets = 32u << 20; // bytes of Decryption Secrets Blocks kept in the capture info
     constexpr uint32_t kByteOrderMagic = 0x1A2B3C4D;
 
     constexpr uint16_t kOptEnd = 0;
@@ -320,6 +322,7 @@ bool core::FileProcessor::processPcapngFile(const std::string &filepath, std::ve
         if (undefinedInterfaceRefs++ == 0) firstUndefinedInterface = id;
         return nullptr;
     };
+    size_t storedSecretsBytes = 0; // size of the Decryption Secrets Blocks kept in info_
     size_t sectionBase = 0; // index of the section's first interface in info_.interfaces
     TimeBase timeBase;
     double lastTime = 0;
@@ -527,6 +530,21 @@ bool core::FileProcessor::processPcapngFile(const std::string &filepath, std::ve
                         (code == 4 ? itf.received : itf.dropped) = value;
                     }
                 });
+            } break;
+            case kBlockDSB: { // secrets type, secrets length, secrets (padded to 4), options
+                if (bodySize < 8) break;
+                const uint32_t secretsType = e.u32(body), secretsLength = e.u32(body + 4);
+                if (secretsLength > bodySize - 8) break;
+                std::string data(reinterpret_cast<const char *>(body + 8), secretsLength);
+                if (secretsType == core::kSecretsTypeTlsKeyLog) {
+                    const tls::KeyLogStats stats = parser.sessions().tlsCaptureKeys().parseText(data);
+                    info_.tlsKeyLogSecrets += stats.accepted;
+                    info_.tlsKeyLogMalformed += stats.malformed;
+                }
+                if (storedSecretsBytes + data.size() <= kMaxStoredSecrets) {
+                    storedSecretsBytes += data.size();
+                    info_.decryptionSecrets.push_back({secretsType, std::move(data)});
+                }
             } break;
             default:
                 break; // custom and unknown blocks carry nothing we display
