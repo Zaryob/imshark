@@ -1,13 +1,17 @@
 // TLS / SSL records, recognised by the record header (any port). Records are framed for TCP reassembly, so a record
 // (or a handshake message that spans several records, such as a long Certificate) is decoded as a whole. Handshake
 // messages are decoded to the message type, hello fields and extensions, and the certificates of a Certificate message;
-// encrypted content is only counted.
+// encrypted content is only counted. A message that TCP reassembly cut out of the stream is also registered in the TLS
+// session tables (randoms, version, cipher suite, record indices; see tls_session.h) and the detail tree says whether key
+// material for the connection is known.
 #include "protocols.h"
 
 #include "util.h"
 #include "x509.h"
 
 #include <algorithm>
+#include <array>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -195,7 +199,13 @@ namespace {
         uint16_t supportedVersion = 0;   // highest from the supported_versions extension
         uint16_t cipher = 0;             // ServerHello's chosen suite
         uint16_t version = 0;            // legacy version field
+        uint8_t helloType = 0;           // 1 / 2 when a plausible ClientHello / ServerHello was read (0 = none)
+        std::array<uint8_t, 32> random{};   // that hello's random
     };
+
+    // The random a HelloRetryRequest carries in the ServerHello (RFC 8446, 4.1.3): SHA-256 of "HelloRetryRequest"
+    constexpr uint8_t kHelloRetryRequestRandom[32] = {0xCF, 0x21, 0xAD, 0x74, 0xE5, 0x9A, 0x61, 0x11, 0xBE, 0x1D, 0x8C, 0x02, 0x1E, 0x65, 0xB8, 0x91,
+                                                      0xC2, 0xA2, 0x11, 0x16, 0x7A, 0xBB, 0x8C, 0x5E, 0x07, 0x9E, 0x09, 0xE2, 0xC8, 0xA8, 0x33, 0x9C};
 
     std::string join(const std::vector<std::string> &items, size_t limit = 24) {
         std::string out;
@@ -369,6 +379,12 @@ namespace {
             hello.version = be16(b);
             size_t i = 2 + 32;                                  // version + random
             const size_t sidLen = static_cast<uint8_t>(b[i]);
+            // a handshake record that is really encrypted (a TLS 1.2 Finished) can start with these bytes by chance: only a
+            // message that is complete and has a sane version and session id counts as a hello
+            if (hello.helloType == 0 && len + 4 <= n && (hello.version >> 8) == 3 && (hello.version & 0xff) <= 4 && sidLen <= 32 && 35 + sidLen <= avail) {
+                hello.helloType = type;
+                std::memcpy(hello.random.data(), b + 2, 32);
+            }
             if (hs) {
                 hs->add("Version: " + versionName(hello.version) + " (" + hexString(hello.version, 4) + ")", j.frame(base), 2);
                 hs->add("Random", j.frame(base + 2), 32);
@@ -409,6 +425,82 @@ namespace {
             hs->add("Session Ticket Lifetime Hint: " + std::to_string(be32(b)) + " seconds", j.frame(base), 4);
         }
         return name;
+    }
+
+    // The records of one complete TCP message: where each starts, which are ChangeCipherSpec.
+    struct RecordScan {
+        std::vector<size_t> starts;
+        std::vector<uint32_t> changeCipherSpecs;   // record positions
+    };
+
+    RecordScan scanRecords(const char *d, size_t n) {
+        RecordScan scan;
+        size_t pos = 0;
+        while (n - pos >= 5 && plausibleRecord(d + pos, n - pos)) {
+            if (static_cast<uint8_t>(d[pos]) == 20) scan.changeCipherSpecs.push_back(static_cast<uint32_t>(scan.starts.size()));
+            scan.starts.push_back(pos);
+            const size_t len = be16(d + pos + 3);
+            if (len > n - pos - 5) break;
+            pos += 5 + len;
+        }
+        return scan;
+    }
+
+    std::string roleText(const TlsSession &s, unsigned direction) {
+        switch (s.roleOf(direction)) {
+            case TlsRole::Client: return "client to server";
+            case TlsRole::Server: return "server to client";
+            default: return "direction not known";
+        }
+    }
+
+    // Load pass: puts the complete TCP message at `data` into the session tables. Then (both passes) adds the facts of the
+    // session to the TLS layer: the position of the message's records in their direction and the state of the key material.
+    void sessionInfo(Context &ctx, const char *data, size_t length, const Hello &hello, size_t helloGroupStart, Field *layer) {
+        if (!ctx.sessions) return;
+        const auto &pack = ctx.pack;
+        const bool stream = ctx.tcpStreamSeq >= 0 && pack.ip_protocol == 6;
+        const uint32_t startSeq = static_cast<uint32_t>(ctx.tcpStreamSeq);
+
+        if (stream && ctx.mode != ParseMode::Replay) {
+            const RecordScan scan = scanRecords(data, length);
+            TlsMessageFacts f;
+            f.packet = static_cast<uint32_t>(pack.number);
+            f.startSeq = startSeq;
+            f.length = static_cast<uint32_t>(length);
+            f.records = static_cast<uint32_t>(scan.starts.size());
+            f.changeCipherSpecs = scan.changeCipherSpecs;
+            // keys have changed behind a ChangeCipherSpec: what looks like a hello after it is encrypted data
+            unsigned direction = 0;
+            const TlsSession *known = ctx.sessions->findTlsSession(pack.source, pack.src_port, pack.destination, pack.dst_port, &direction);
+            const bool encrypted = known && !known->directions[direction].changeCipherSpecs.empty();
+            if (hello.helloType != 0 && !encrypted) {
+                f.clientHello = hello.helloType == 1;
+                f.serverHello = hello.helloType == 2;
+                f.random = hello.random;
+                const auto at = std::find(scan.starts.begin(), scan.starts.end(), helloGroupStart);
+                f.helloRecord = at == scan.starts.end() ? 0 : static_cast<uint32_t>(at - scan.starts.begin());
+                if (f.serverHello) {
+                    f.helloRetryRequest = std::memcmp(hello.random.data(), kHelloRetryRequestRandom, 32) == 0;
+                    f.version = hello.supportedVersion != 0 ? hello.supportedVersion : hello.version;
+                    f.cipherSuite = hello.cipher;
+                }
+            }
+            ctx.sessions->addTlsMessage(pack.source, pack.src_port, pack.destination, pack.dst_port, f);
+        }
+        if (!layer) return;
+
+        const TlsMessageRef *ref = stream ? ctx.sessions->findTlsMessage(static_cast<uint32_t>(pack.number), startSeq) : nullptr;
+        const TlsSession *session = ref ? ctx.sessions->tlsSession(ref->session)
+                                        : ctx.sessions->findTlsSession(pack.source, pack.src_port, pack.destination, pack.dst_port);
+        if (ref && session) {
+            const std::string first = std::to_string(ref->firstRecord);
+            const std::string index = ref->records > 1 ? first + "-" + std::to_string(ref->firstRecord + ref->records - 1) : first;
+            layer->add("[TLS record index: " + index + " (" + roleText(*session, ref->direction) + ")]");
+        }
+        tls::KeyEntry keys;
+        const bool found = session && session->hasClientRandom && ctx.sessions->findTlsKeys(session->clientRandom, keys);
+        layer->add(std::string("Key material: ") + tls::availabilityText(tls::classify(found ? &keys : nullptr, session ? session->version : uint16_t(0))));
     }
 } // namespace
 
@@ -453,7 +545,7 @@ bool dissect::dissectTls(Context &ctx, const char *data, size_t length) {
     Field *layer = ctx.wantFields() ? &ctx.addLayer("Transport Layer Security", o, length) : nullptr;
     std::string info;
     Hello hello;
-    size_t pos = 0;
+    size_t pos = 0, helloGroupStart = 0;   // helloGroupStart: where the record that holds the hello message starts
     int records = 0;
     while (length - pos >= 5 && records < 16) {
         if (!plausibleRecord(data + pos, length - pos)) break;
@@ -475,6 +567,7 @@ bool dissect::dissectTls(Context &ctx, const char *data, size_t length) {
         size_t consumed = 5 + recLen;   // bytes of the frame this group of records covers
 
         std::string part;
+        const uint8_t helloBefore = hello.helloType;
         if (type == 22) {
             // the handshake messages of consecutive records are read as one stream: a message may span records
             Joined joined;
@@ -524,6 +617,7 @@ bool dissect::dissectTls(Context &ctx, const char *data, size_t length) {
             part = contentTypeName(type);
         }
         if (partial) part += " [fragment]";
+        if (helloBefore == 0 && hello.helloType != 0) helloGroupStart = pos;
         info += (info.empty() ? "" : ", ") + part;
 
         if (!hello.serverName.empty()) pack.app_text = hello.serverName;
@@ -533,6 +627,7 @@ bool dissect::dissectTls(Context &ctx, const char *data, size_t length) {
         if (partial) break;
     }
     pack.info = info.empty() ? "TLS record" : info;
+    sessionInfo(ctx, data, length, hello, helloGroupStart, layer);
     if (hello.supportedVersion >= 0x0304 || hello.version == 0x0304) pack.protocol = "TLS";
     return true;
 }

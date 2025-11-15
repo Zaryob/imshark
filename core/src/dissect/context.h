@@ -52,6 +52,12 @@ namespace dissect {
 
         SessionTables *sessions = nullptr;
 
+        /// While a stream protocol decodes ONE complete message that the TCP reassembly cut out of the byte stream (all
+        /// three paths of tcp.cpp, load pass and Replay alike): the relative sequence number of the message's first
+        /// byte. -1 otherwise (a lone segment decoded by a port or heuristic dissector, other transports). Together with
+        /// `pack.number` it identifies the message, which is how the TLS session tables find it again.
+        int64_t tcpStreamSeq = -1;
+
         /// Addresses of the IP layer below (raw bytes), for the pseudo header of transport checksums.
         struct Addresses {
             bool valid = false;

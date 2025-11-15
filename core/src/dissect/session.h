@@ -7,6 +7,8 @@
 
 #include <tls/keylog.h>
 
+#include "tls_session.h"
+
 namespace dissect {
 
 struct TftpSession {
@@ -33,6 +35,7 @@ public:
         tftpSessions_.clear();
         ftpMemory_ = 0;
         tftpMemory_ = 0;
+        tls_.clear();
         tlsCaptureKeys_.clear();   // the keys the user supplied (tlsExternalKeys) outlive a new capture
         stateLost_ = false;
         stateLostTables_.clear();
@@ -97,6 +100,30 @@ public:
     std::vector<TftpSession> &tftpSessions() { return tftpSessions_; }
     const std::vector<TftpSession> &tftpSessions() const { return tftpSessions_; }
 
+    // ---- TLS connections (see tls_session.h) ------------------------------------------------
+    /// Registers one TCP message of a TLS connection (load pass only; `src` -> `dst` is the direction it travels).
+    /// Returns false if the tables are frozen or the memory budget is exhausted (then the "tls" table is state lost).
+    bool addTlsMessage(const std::string &srcIp, uint16_t srcPort, const std::string &dstIp, uint16_t dstPort,
+                       const TlsMessageFacts &facts) {
+        if (frozen_) return false;
+        if (!tls_.add(srcIp, srcPort, dstIp, dstPort, facts, maxMemoryPerTable_)) {
+            markStateLost("tls");
+            return false;
+        }
+        return true;
+    }
+
+    /// The message that the packet `packet` completed (or lies in) and that starts at relative sequence number `startSeq`.
+    const TlsMessageRef *findTlsMessage(uint32_t packet, uint32_t startSeq) const { return tls_.findMessage(packet, startSeq); }
+    const TlsSession *tlsSession(uint32_t id) const { return tls_.session(id); }
+    /// The newest TLS session between two endpoints; `direction` (optional) is the TlsSession::directions index of
+    /// the traffic from the first endpoint to the second.
+    const TlsSession *findTlsSession(const std::string &srcIp, uint16_t srcPort, const std::string &dstIp, uint16_t dstPort,
+                                     unsigned *direction = nullptr) const {
+        return tls_.find(srcIp, srcPort, dstIp, dstPort, direction);
+    }
+    const TlsSessionTable &tlsTable() const { return tls_; }
+
     // ---- TLS key material (see tls/keylog.h) ----------------------------------------------------
     /// Secrets the user supplied (key log file / text). They stay when clear() starts a new capture.
     tls::KeyStore &tlsExternalKeys() { return tlsExternalKeys_; }
@@ -118,7 +145,7 @@ public:
         return true;
     }
 
-    size_t totalMemoryUsage() const { return ftpMemory_ + tftpMemory_; }
+    size_t totalMemoryUsage() const { return ftpMemory_ + tftpMemory_ + tls_.memory(); }
 
 private:
     void markStateLost(const std::string &tableName) {
@@ -137,6 +164,7 @@ private:
     std::vector<TftpSession> tftpSessions_;
     size_t tftpMemory_ = 0;
 
+    TlsSessionTable tls_;
     tls::KeyStore tlsExternalKeys_;
     tls::KeyStore tlsCaptureKeys_;
 };

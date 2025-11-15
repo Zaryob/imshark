@@ -216,11 +216,14 @@ namespace {
     }
 
     // Decodes one reassembled message as if it had arrived in one piece and takes over what the dissector found.
-    void dissectPdu(Context &ctx, const std::string &data, const StreamProtocol &protocol, const std::vector<uint32_t> &packets) {
+    void dissectPdu(Context &ctx, const std::string &data, const StreamProtocol &protocol, const std::vector<uint32_t> &packets,
+                    uint32_t startSeq) {
         auto &pack = ctx.pack;
         packet::PacketInfo nested = pack;
         nested.fields.clear();
         Context nctx{nested, data.data(), data.size(), ctx.tcp, ctx.registry, ctx.mode};
+        nctx.sessions = ctx.sessions;
+        nctx.tcpStreamSeq = startSeq;
         protocol.dissect(nctx, data.data(), data.size());
 
         pack.protocol = nested.protocol;
@@ -242,7 +245,9 @@ namespace {
 
     // Messages that follow the first one inside the same segment (pipelined requests, several DNS answers in one
     // push): each is framed again from the payload and decoded in place, its Info appended to the first one's.
-    void dissectFollowing(Context &ctx, const char *payload, size_t payloadLen, size_t from, uint16_t srcPort, uint16_t dstPort) {
+    // `payloadSeq` is the relative sequence number of payload[0]: the message at payload + at starts at payloadSeq + at.
+    void dissectFollowing(Context &ctx, const char *payload, size_t payloadLen, size_t from, uint16_t srcPort, uint16_t dstPort,
+                          uint32_t payloadSeq) {
         auto &pack = ctx.pack;
         const auto appType = pack.app_type;
         const auto appFlags = pack.app_flags;
@@ -258,7 +263,9 @@ namespace {
             const StreamFrame f = protocol->frame(payload + at, payloadLen - at);
             if (f.kind != StreamFrame::Kind::Complete || f.length == 0 || f.length > payloadLen - at) break;
             const std::string before = pack.info;
+            ctx.tcpStreamSeq = static_cast<uint32_t>(payloadSeq + at);
             protocol->dissect(ctx, payload + at, f.length);
+            ctx.tcpStreamSeq = -1;
             pack.info = before + ", " + pack.info;
             at += f.length;
             ++count;
@@ -391,6 +398,7 @@ void dissect::dissectTcp(Context &ctx, const char *data, size_t length) {
         pack.info += segmentNote + (pack.tcp_reassembled_in ? " [Reassembled in #" + std::to_string(pack.tcp_reassembled_in) + "]" : "");
         if (ctx.wantFields() && !pack.fields.empty()) pack.fields.back().add("[TCP segment of a reassembled PDU]");
     };
+    const uint32_t payloadSeq = static_cast<uint32_t>(seq >= 0 ? seq : 0);   // relative sequence number of payload[0]
     bool handled = false, noteAfter = false;   // noteAfter: the first segment of a message is decoded as far as it goes, then marked
 
     if (ctx.mode == ParseMode::Replay) {
@@ -403,17 +411,19 @@ void dissect::dissectTcp(Context &ctx, const char *data, size_t length) {
             const int32_t skip = static_cast<int32_t>(pack.tcp_pdu_start - static_cast<uint32_t>(seq >= 0 ? seq : 0));
             if (skip >= 0 && static_cast<size_t>(skip) + pack.tcp_pdu_len <= payloadLen) {
                 if (const StreamProtocol *protocol = selectStreamProtocol(ctx, srcPort, dstPort, payload + skip, pack.tcp_pdu_len)) {
+                    ctx.tcpStreamSeq = pack.tcp_pdu_start;
                     protocol->dissect(ctx, payload + skip, pack.tcp_pdu_len);   // in this frame: the fields keep their real offsets
-                    dissectFollowing(ctx, payload, payloadLen, static_cast<size_t>(skip) + pack.tcp_pdu_len, srcPort, dstPort);
+                    ctx.tcpStreamSeq = -1;
+                    dissectFollowing(ctx, payload, payloadLen, static_cast<size_t>(skip) + pack.tcp_pdu_len, srcPort, dstPort, payloadSeq);
                     handled = true;
                 }
             }
         } else if (pack.tcp_pdu_state == 2 && ctx.tcpPdu) {
             const StreamProtocol *protocol = selectStreamProtocol(ctx, srcPort, dstPort, ctx.tcpPdu->data(), ctx.tcpPdu->size());
             if (protocol) {
-                dissectPdu(ctx, *ctx.tcpPdu, *protocol, ctx.tcpPduPackets ? *ctx.tcpPduPackets : std::vector<uint32_t>());
-                const int32_t end = static_cast<int32_t>(pack.tcp_pdu_start + pack.tcp_pdu_len - static_cast<uint32_t>(seq >= 0 ? seq : 0));
-                if (end > 0 && static_cast<size_t>(end) < payloadLen) dissectFollowing(ctx, payload, payloadLen, static_cast<size_t>(end), srcPort, dstPort);
+                dissectPdu(ctx, *ctx.tcpPdu, *protocol, ctx.tcpPduPackets ? *ctx.tcpPduPackets : std::vector<uint32_t>(), pack.tcp_pdu_start);
+                const int32_t end = static_cast<int32_t>(pack.tcp_pdu_start + pack.tcp_pdu_len - payloadSeq);
+                if (end > 0 && static_cast<size_t>(end) < payloadLen) dissectFollowing(ctx, payload, payloadLen, static_cast<size_t>(end), srcPort, dstPort, payloadSeq);
                 handled = true;
             }
         }
@@ -435,9 +445,21 @@ void dissect::dissectTcp(Context &ctx, const char *data, size_t length) {
             pack.tcp_pdu_state = 2;
             pack.tcp_pdu_start = pdu.startSeq;
             pack.tcp_pdu_len = static_cast<uint32_t>(pdu.data.size());
-            dissectPdu(ctx, pdu.data, *pdu.protocol, pdu.packets);
-            const int32_t end = static_cast<int32_t>(pdu.startSeq + pdu.data.size() - static_cast<uint32_t>(seq >= 0 ? seq : 0));
-            if (end > 0 && static_cast<size_t>(end) < payloadLen) dissectFollowing(ctx, payload, payloadLen, static_cast<size_t>(end), srcPort, dstPort);
+            dissectPdu(ctx, pdu.data, *pdu.protocol, pdu.packets, pdu.startSeq);
+            const int32_t end = static_cast<int32_t>(pdu.startSeq + pdu.data.size() - payloadSeq);
+            if (end > 0 && static_cast<size_t>(end) < payloadLen) dissectFollowing(ctx, payload, payloadLen, static_cast<size_t>(end), srcPort, dstPort, payloadSeq);
+            // Messages this segment completed besides the first are not shown anywhere, but TLS numbers its records
+            // through the stream and has to see them: decode what dissectFollowing did not, in stream order, into a
+            // scratch packet. A message that was registered before is ignored by the session tables.
+            for (size_t i = 1; i < result.pdus.size(); ++i) {
+                if (result.pdus[i].protocol->name != "TLS") continue;
+                packet::PacketInfo scratch = pack;
+                scratch.fields.clear();
+                Context sctx{scratch, result.pdus[i].data.data(), result.pdus[i].data.size(), ctx.tcp, ctx.registry, ParseMode::Summary};
+                sctx.sessions = ctx.sessions;
+                sctx.tcpStreamSeq = result.pdus[i].startSeq;
+                result.pdus[i].protocol->dissect(sctx, result.pdus[i].data.data(), result.pdus[i].data.size());
+            }
             handled = true;
         } else if (result.action == StreamFeedResult::Action::Whole) {
             const StreamPdu &pdu = result.pdus.front();
@@ -446,8 +468,10 @@ void dissect::dissectTcp(Context &ctx, const char *data, size_t length) {
             pack.tcp_pdu_len = static_cast<uint32_t>(pdu.data.size());
             const size_t skip = pdu.startSeq - static_cast<uint32_t>(seq >= 0 ? seq : 0);
             if (skip + pdu.data.size() <= payloadLen) {
+                ctx.tcpStreamSeq = pdu.startSeq;
                 pdu.protocol->dissect(ctx, payload + skip, pdu.data.size());
-                dissectFollowing(ctx, payload, payloadLen, skip + pdu.data.size(), srcPort, dstPort);
+                ctx.tcpStreamSeq = -1;
+                dissectFollowing(ctx, payload, payloadLen, skip + pdu.data.size(), srcPort, dstPort, payloadSeq);
                 handled = true;
             }
         }
