@@ -130,6 +130,29 @@ TEST(TlsDsb, BrokenBlocksAreIgnoredAndMalformedLinesCounted) {
     EXPECT_EQ(cap.fp.sessions().tlsCaptureKeys().entryCount(), 1u);
 }
 
+TEST(TlsDsb, SecretsBeyondTheKeyStoreLimitAreReported) {
+    std::string text;
+    char line[256];
+    for (size_t i = 0; i < tls::KeyStore::kMaxEntries + 3; ++i) {
+        std::snprintf(line, sizeof line, "CLIENT_RANDOM %056x%08zx %s\n", 0, i, std::string(96, 'a').c_str());
+        text += line;
+    }
+    std::vector<char> f;
+    append(f, shb(false));
+    append(f, idb(false));
+    append(f, dsb(false, core::kSecretsTypeTlsKeyLog, text));
+    append(f, epb(false));
+    Loaded cap(f, "dsb_limit.pcapng");
+    ASSERT_TRUE(cap.ok) << cap.message;
+    EXPECT_EQ(cap.packets.size(), 1u);
+    const auto &info = cap.fp.captureInfo();
+    EXPECT_EQ(info.tlsKeyLogSecrets, tls::KeyStore::kMaxEntries);
+    EXPECT_EQ(info.tlsKeyLogDropped, 3u);
+    EXPECT_NE(cap.message.find("3 TLS secret(s) ignored: key store limit"), std::string::npos) << cap.message;
+    EXPECT_EQ(cap.fp.sessions().tlsCaptureKeys().entryCount(), tls::KeyStore::kMaxEntries);
+    EXPECT_TRUE(info.decryptionSecrets.empty()) << "a block over the 32 MiB retention cap is parsed but its text is not kept";
+}
+
 TEST(TlsDsb, CaptureKeysEndWithTheCaptureButUserKeysStay) {
     std::vector<char> f;
     append(f, shb(false));

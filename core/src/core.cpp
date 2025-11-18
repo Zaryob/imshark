@@ -540,6 +540,7 @@ bool core::FileProcessor::processPcapngFile(const std::string &filepath, std::ve
                     const tls::KeyLogStats stats = parser.sessions().tlsCaptureKeys().parseText(data);
                     info_.tlsKeyLogSecrets += stats.accepted;
                     info_.tlsKeyLogMalformed += stats.malformed;
+                    info_.tlsKeyLogDropped += stats.dropped;
                 }
                 if (storedSecretsBytes + data.size() <= kMaxStoredSecrets) {
                     storedSecretsBytes += data.size();
@@ -561,6 +562,10 @@ bool core::FileProcessor::processPcapngFile(const std::string &filepath, std::ve
     if (undefinedInterfaceRefs > 0 && message.empty()) {
         message = std::to_string(undefinedInterfaceRefs) + " packet(s) refer to interface " + std::to_string(firstUndefinedInterface) +
                   ", which no Interface Description Block defines; they are shown without protocol decoding";
+    }
+    if (info_.tlsKeyLogDropped > 0) {
+        message += (message.empty() ? "" : "; ") + std::to_string(info_.tlsKeyLogDropped) + " TLS secret(s) ignored: key store limit (" +
+                   std::to_string(tls::KeyStore::kMaxEntries) + " connections)";
     }
     return true;
 }

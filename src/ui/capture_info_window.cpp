@@ -86,6 +86,7 @@ void ui::drawCaptureInfoWindow(AppState &state) {
             std::string text = std::to_string(info.tlsKeyLogSecrets) + " TLS secrets in " + std::to_string(info.decryptionSecrets.size()) +
                                " Decryption Secrets Block" + (info.decryptionSecrets.size() == 1 ? "" : "s");
             if (info.tlsKeyLogMalformed > 0) text += ", " + std::to_string(info.tlsKeyLogMalformed) + " invalid line(s)";
+            if (info.tlsKeyLogDropped > 0) text += ", " + std::to_string(info.tlsKeyLogDropped) + " ignored (key store limit)";
             keyValue("Decryption secrets", text);
         }
         ImGui::EndTable();
