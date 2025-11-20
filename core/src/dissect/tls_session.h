@@ -16,15 +16,17 @@
 // exactly that key (SessionTables::findTlsMessage), so a packet's details never depend on state outside the tables.
 //
 // Limits: a missing segment (capture loss) makes the indices of that direction unreliable from there on, which is
-// flagged in TlsDirection::gap. Connections that reuse the same four endpoints in one capture are told apart by their
-// hello randoms. Session data beyond the table's memory budget is dropped and reported through the "tls" entry of
+// flagged in TlsDirection::gap. Connections that reuse the same four endpoints in one capture are told apart by a SYN
+// (SessionTables::markTlsRestart), by a hello with another random, or by a restarted sequence space. Session data beyond the table's memory budget is dropped and reported through the "tls" entry of
 // SessionTables::stateLostTables().
 
+#include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace dissect {
@@ -102,11 +104,13 @@ namespace dissect {
 
             uint32_t id = 0;
             bool create = true;
+            const bool restart = restart_.erase(key) > 0;             // a SYN since the last message of these endpoints
+            if (restart) memory_ -= std::min(memory_, key.size() + 64);
             const auto latest = latest_.find(key);
             if (latest != latest_.end()) {
-                id = latest->second;
+                id = latest->second.id;
                 const TlsSession &s = sessions_[id];
-                create = (facts.clientHello && s.hasClientRandom && s.clientRandom != facts.random) ||
+                create = restart || (facts.clientHello && s.hasClientRandom && s.clientRandom != facts.random) ||
                          (facts.serverHello && !facts.helloRetryRequest && s.hasServerRandom && s.serverRandom != facts.random);
             }
             if (create) {
@@ -114,7 +118,8 @@ namespace dissect {
                 if (memory_ + cost > maxMemory) return false;
                 id = static_cast<uint32_t>(sessions_.size());
                 sessions_.emplace_back();
-                latest_[key] = id;
+                latest_[key].id = id;
+                ++latest_[key].count;
                 memory_ += cost;
             }
 
@@ -167,13 +172,48 @@ namespace dissect {
         const TlsSession *session(uint32_t id) const { return id < sessions_.size() ? &sessions_[id] : nullptr; }
 
         /// The most recent session between these endpoints; `direction` receives the index of the traffic that goes
-        /// from the first endpoint to the second.
+        /// from the first endpoint to the second. With `uniqueOnly` the answer is nullptr when several sessions used
+        /// these endpoints (a lone packet cannot tell which of them it belongs to).
         const TlsSession *find(const std::string &srcIp, uint16_t srcPort, const std::string &dstIp, uint16_t dstPort,
-                               unsigned *direction = nullptr) const {
+                               unsigned *direction = nullptr, bool uniqueOnly = false) const {
             unsigned d = 0;
             const auto it = latest_.find(connectionKey(srcIp, srcPort, dstIp, dstPort, d));
             if (direction) *direction = d;
-            return it == latest_.end() ? nullptr : &sessions_[it->second];
+            if (it == latest_.end() || (uniqueOnly && it->second.count > 1)) return nullptr;
+            return &sessions_[it->second.id];
+        }
+
+        /// How many sessions used these endpoints.
+        size_t sessionsBetween(const std::string &srcIp, uint16_t srcPort, const std::string &dstIp, uint16_t dstPort) const {
+            unsigned d = 0;
+            const auto it = latest_.find(connectionKey(srcIp, srcPort, dstIp, dstPort, d));
+            return it == latest_.end() ? 0 : it->second.count;
+        }
+
+        /// A SYN was seen between these endpoints: the next message belongs to a new connection.
+        bool markRestart(const std::string &srcIp, uint16_t srcPort, const std::string &dstIp, uint16_t dstPort, size_t maxMemory) {
+            unsigned d = 0;
+            const std::string key = connectionKey(srcIp, srcPort, dstIp, dstPort, d);
+            if (restart_.count(key)) return true;
+            const size_t cost = key.size() + 64;
+            if (memory_ + cost > maxMemory) return false;
+            restart_.insert(key);
+            memory_ += cost;
+            return true;
+        }
+
+        /// True if a message of this direction that starts at `startSeq` continues the stream of the latest session and
+        /// that direction has changed its keys (a ChangeCipherSpec went by), so a "handshake" record in it is encrypted
+        /// data. A restarted sequence space or a SYN means a new connection, whose hello is plain.
+        bool continuesEncrypted(const std::string &srcIp, uint16_t srcPort, const std::string &dstIp, uint16_t dstPort,
+                                uint32_t startSeq) const {
+            unsigned d = 0;
+            const std::string key = connectionKey(srcIp, srcPort, dstIp, dstPort, d);
+            const auto it = latest_.find(key);
+            if (it == latest_.end() || restart_.count(key)) return false;
+            const TlsDirection &dir = sessions_[it->second.id].directions[d];
+            if (dir.changeCipherSpecs.empty()) return false;
+            return !dir.haveNext || static_cast<int32_t>(startSeq - dir.nextSeq) >= 0;
         }
 
         size_t sessionCount() const { return sessions_.size(); }
@@ -183,6 +223,7 @@ namespace dissect {
         void clear() {
             sessions_.clear();
             latest_.clear();
+            restart_.clear();
             messages_.clear();
             memory_ = 0;
         }
@@ -198,7 +239,9 @@ namespace dissect {
         }
 
         std::vector<TlsSession> sessions_;
-        std::unordered_map<std::string, uint32_t> latest_;          // connection key -> newest session
+        struct Newest { uint32_t id = 0; uint32_t count = 0; };    // newest session and how many used the endpoints
+        std::unordered_map<std::string, Newest> latest_;            // connection key -> its sessions
+        std::unordered_set<std::string> restart_;                   // connections that saw a SYN since their last message
         std::unordered_map<uint64_t, TlsMessageRef> messages_;      // (packet, start sequence) -> where it sits
         size_t memory_ = 0;
     };

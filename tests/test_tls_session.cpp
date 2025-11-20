@@ -436,6 +436,49 @@ TEST(TlsSession, ASecondConnectionOnTheSameEndpointsGetsItsOwnSession) {
     EXPECT_EQ(tables.findTlsMessage(static_cast<uint32_t>(q.number), q.tcp_pdu_start)->session, 1u);
 }
 
+TEST(TlsSession, ASecondConnectionAfterOneThatChangedKeysIsStillRecognised) {
+    Flow f;
+    f.syn().synAck();
+    f.toServer(raw(clientHelloRecord(rnd('1'))));
+    f.toClient(raw(serverHelloRecord(rnd('2'), 0xc02f, false)));
+    f.toServer(raw(record(22, handshake(16, "00")) + record(20, "01")));       // ClientKeyExchange + ChangeCipherSpec
+    f.toClient(raw(record(20, "01")));
+    f.toServer(raw(record(23, std::string(20, 'a'))));
+    f.c = 1000; f.s = 5000;                                                  // the same ports again
+    f.syn().synAck();
+    const std::string hello = raw(clientHelloRecord(rnd('3')));
+    f.toServer(hello.substr(0, 20));                                         // a hello split over segments
+    f.toServer(hello.substr(20, 20));
+    f.toServer(hello.substr(40));
+    f.toClient(raw(serverHelloRecord(rnd('4'), 0xc030, false)));
+    FlowCapture cap(f);
+    ASSERT_TRUE(cap.ok) << cap.message;
+    const auto &tables = cap.fp.sessions();
+    ASSERT_EQ(tables.tlsTable().sessionCount(), 2u) << "the second hello must not be taken for encrypted data of the first connection";
+    EXPECT_FALSE(tables.hasStateLost());
+    const auto *first = tables.tlsSession(0), *second = tables.tlsSession(1);
+    ASSERT_NE(first, nullptr);
+    ASSERT_NE(second, nullptr);
+    EXPECT_EQ(hexOfRandom(first->clientRandom), rnd('1'));
+    EXPECT_EQ(first->client()->records, 4u);
+    EXPECT_EQ(first->client()->changeCipherSpecs, std::vector<uint32_t>{2});
+    EXPECT_EQ(hexOfRandom(second->clientRandom), rnd('3'));
+    EXPECT_EQ(hexOfRandom(second->serverRandom), rnd('4'));
+    EXPECT_EQ(second->cipherSuite, 0xc030);
+    EXPECT_EQ(second->client()->records, 1u) << "the records of the new connection are not appended to the old one";
+    EXPECT_TRUE(second->client()->changeCipherSpecs.empty());
+
+    // replay: the completed hello knows its session; a lone segment of it cannot tell the connections apart
+    size_t completing = 0;
+    for (size_t i = 0; i < cap.packets.size(); ++i) if (cap.packets[i].tcp_pdu_state == 2 && cap.packets[i].info.find("Client Hello") != std::string::npos) completing = i;
+    ASSERT_NE(completing, 0u);
+    EXPECT_EQ(textOfRecordIndex(cap.details(completing)), "[TLS record index: 0 (client to server)]");
+    EXPECT_NE(find(cap.details(completing).fields, "Key material: not found"), nullptr);
+    const auto part = cap.details(completing - 2);                            // the first segment of the split hello
+    EXPECT_EQ(find(part.fields, "Key material:"), nullptr) << "two connections used these endpoints: nothing is claimed for a lone segment";
+    EXPECT_EQ(find(part.fields, "[TLS record index:"), nullptr);
+}
+
 TEST(TlsSession, ServerSideOnlyCaptureStillNamesTheClientDirection) {
     Flow f;
     f.syn();
@@ -495,6 +538,28 @@ TEST(TlsSessionTable, GapDuplicatesAndFreeze) {
     EXPECT_EQ(t.tlsTable().sessionCount(), 0u);
     EXPECT_EQ(t.findTlsSession("1.1.1.1", 1, "2.2.2.2", 2), nullptr);
     EXPECT_EQ(t.totalMemoryUsage(), 0u);
+}
+
+TEST(TlsSessionTable, EncryptedRuleOnlyAppliesToTheSameStream) {
+    core::SessionTables t;
+    auto ccs = facts(5, 1, 100, 2);
+    ccs.changeCipherSpecs = {1};
+    ASSERT_TRUE(t.addTlsMessage("1.1.1.1", 1, "2.2.2.2", 2, ccs));       // direction 0 sent a ChangeCipherSpec, next byte is 101
+    EXPECT_FALSE(t.tlsDirectionEncrypted("2.2.2.2", 2, "1.1.1.1", 1, 101)) << "the other direction has not changed keys";
+    EXPECT_TRUE(t.tlsDirectionEncrypted("1.1.1.1", 1, "2.2.2.2", 2, 101)) << "the stream goes on: records are encrypted";
+    EXPECT_TRUE(t.tlsDirectionEncrypted("1.1.1.1", 1, "2.2.2.2", 2, 900));
+    EXPECT_FALSE(t.tlsDirectionEncrypted("1.1.1.1", 1, "2.2.2.2", 2, 1)) << "a restarted sequence space is a new connection";
+    EXPECT_FALSE(t.tlsDirectionEncrypted("3.3.3.3", 1, "2.2.2.2", 2, 101)) << "unknown endpoints";
+
+    EXPECT_TRUE(t.markTlsRestart("2.2.2.2", 2, "1.1.1.1", 1));            // a SYN (from either side)
+    EXPECT_FALSE(t.tlsDirectionEncrypted("1.1.1.1", 1, "2.2.2.2", 2, 101)) << "after a SYN the next hello is plain";
+    EXPECT_TRUE(t.addTlsMessage("1.1.1.1", 1, "2.2.2.2", 2, facts(8, 101, 50, 1)));
+    EXPECT_EQ(t.tlsSessionsBetween("1.1.1.1", 1, "2.2.2.2", 2), 2u) << "the SYN started a second session";
+    EXPECT_EQ(t.findTlsSession("1.1.1.1", 1, "2.2.2.2", 2)->directions[0].records, 1u);
+    EXPECT_EQ(t.findTlsSession("1.1.1.1", 1, "2.2.2.2", 2, nullptr, true), nullptr) << "ambiguous endpoints";
+    EXPECT_NE(t.findTlsSession("3.3.3.3", 1, "2.2.2.2", 2, nullptr, true), t.findTlsSession("1.1.1.1", 1, "2.2.2.2", 2));
+    t.freeze();
+    EXPECT_FALSE(t.markTlsRestart("1.1.1.1", 1, "2.2.2.2", 2));
 }
 
 TEST(TlsSessionTable, MemoryBoundMarksTheTableStateLost) {

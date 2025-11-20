@@ -471,9 +471,8 @@ namespace {
             f.records = static_cast<uint32_t>(scan.starts.size());
             f.changeCipherSpecs = scan.changeCipherSpecs;
             // keys have changed behind a ChangeCipherSpec: what looks like a hello after it is encrypted data
-            unsigned direction = 0;
-            const TlsSession *known = ctx.sessions->findTlsSession(pack.source, pack.src_port, pack.destination, pack.dst_port, &direction);
-            const bool encrypted = known && !known->directions[direction].changeCipherSpecs.empty();
+            // (only for a message that continues the stream: after a SYN or with a restarted sequence space this is a new connection)
+            const bool encrypted = ctx.sessions->tlsDirectionEncrypted(pack.source, pack.src_port, pack.destination, pack.dst_port, startSeq);
             if (hello.helloType != 0 && !encrypted) {
                 f.clientHello = hello.helloType == 1;
                 f.serverHello = hello.helloType == 2;
@@ -491,6 +490,9 @@ namespace {
         if (!layer) return;
 
         const TlsMessageRef *ref = stream ? ctx.sessions->findTlsMessage(static_cast<uint32_t>(pack.number), startSeq) : nullptr;
+        // a packet that is not a whole message cannot tell which of several connections on the same endpoints it belongs to:
+        // then it says nothing about keys rather than showing another connection's state
+        if (!ref && ctx.sessions->tlsSessionsBetween(pack.source, pack.src_port, pack.destination, pack.dst_port) > 1) return;
         const TlsSession *session = ref ? ctx.sessions->tlsSession(ref->session)
                                         : ctx.sessions->findTlsSession(pack.source, pack.src_port, pack.destination, pack.dst_port);
         if (ref && session) {
