@@ -45,7 +45,7 @@ namespace core {
         std::unordered_map<uint32_t, std::string> packetComments; // by packet number
         std::vector<DecryptionSecrets> decryptionSecrets;   // pcapng Decryption Secrets Blocks (kept to write them out again)
         size_t tlsKeyLogSecrets = 0;         // secrets read from the TLS key log blocks (they are in the session tables' key store)
-        size_t tlsKeyLogMalformed = 0;
-        size_t tlsKeyLogDropped = 0;         // valid secrets that were not stored because the key store is full       // lines of those blocks that were not valid key log lines
+        size_t tlsKeyLogMalformed = 0;       // lines of those blocks that were not valid key log lines
+        size_t tlsKeyLogDropped = 0;         // valid secrets that were not stored because the key store is full
     };
 } // namespace core
