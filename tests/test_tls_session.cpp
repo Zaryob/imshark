@@ -479,6 +479,47 @@ TEST(TlsSession, ASecondConnectionAfterOneThatChangedKeysIsStillRecognised) {
     EXPECT_EQ(find(part.fields, "[TLS record index:"), nullptr);
 }
 
+TEST(TlsSession, ARetransmittedSynAckAfterTheHelloDoesNotSplitTheConnection) {
+    Flow f;
+    f.syn().synAck();
+    f.toServer(raw(clientHelloRecord(rnd('1'))));
+    f.synAck();                                                              // the SYN-ACK is retransmitted late
+    f.toClient(raw(serverHelloRecord(rnd('2'), 0xc02f, false)));
+    f.toServer(raw(record(23, std::string(20, 'a'))));
+    f.toClient(raw(record(23, std::string(20, 'b'))));
+    f.toClient(raw(record(23, std::string(20, 'c'))));
+    FlowCapture cap(f);
+    ASSERT_TRUE(cap.ok) << cap.message;
+    const auto &tables = cap.fp.sessions();
+    ASSERT_EQ(tables.tlsTable().sessionCount(), 1u) << "one connection, however many SYN-ACKs were captured";
+    const auto *s = sessionOf(cap);
+    ASSERT_NE(s, nullptr);
+    EXPECT_EQ(hexOfRandom(s->clientRandom), rnd('1'));
+    EXPECT_EQ(hexOfRandom(s->serverRandom), rnd('2'));
+    EXPECT_EQ(s->client()->records, 2u);
+    EXPECT_EQ(s->server()->records, 3u);
+}
+
+TEST(TlsSession, ManyNonTlsConnectionsLeaveTheTlsTableAlone) {
+    Flow f;
+    f.syn().synAck();
+    f.toServer(raw(clientHelloRecord(rnd('1'))));
+    for (int i = 0; i < 300; ++i) {                                          // web traffic on other ports
+        char port[8];
+        std::snprintf(port, sizeof port, "%04x", 2000 + i);
+        f.frames.push_back(support::tcpPacket("0a000001", "0a000003", port, "0050", seqHex(77), "00000000", "02"));
+    }
+    FlowCapture cap(f);
+    ASSERT_TRUE(cap.ok) << cap.message;
+    Flow g;
+    g.syn().synAck();
+    g.toServer(raw(clientHelloRecord(rnd('1'))));
+    FlowCapture plain(g);
+    EXPECT_EQ(cap.fp.sessions().tlsTable().memory(), plain.fp.sessions().tlsTable().memory()) << "SYNs of other flows are not remembered";
+    EXPECT_EQ(cap.fp.sessions().tlsTable().sessionCount(), 1u);
+    EXPECT_FALSE(cap.fp.sessions().hasStateLost());
+}
+
 TEST(TlsSession, ServerSideOnlyCaptureStillNamesTheClientDirection) {
     Flow f;
     f.syn();
@@ -551,15 +592,42 @@ TEST(TlsSessionTable, EncryptedRuleOnlyAppliesToTheSameStream) {
     EXPECT_FALSE(t.tlsDirectionEncrypted("1.1.1.1", 1, "2.2.2.2", 2, 1)) << "a restarted sequence space is a new connection";
     EXPECT_FALSE(t.tlsDirectionEncrypted("3.3.3.3", 1, "2.2.2.2", 2, 101)) << "unknown endpoints";
 
-    EXPECT_TRUE(t.markTlsRestart("2.2.2.2", 2, "1.1.1.1", 1));            // a SYN (from either side)
-    EXPECT_FALSE(t.tlsDirectionEncrypted("1.1.1.1", 1, "2.2.2.2", 2, 101)) << "after a SYN the next hello is plain";
-    EXPECT_TRUE(t.addTlsMessage("1.1.1.1", 1, "2.2.2.2", 2, facts(8, 101, 50, 1)));
+    const size_t memoryBefore = t.totalMemoryUsage();
+    EXPECT_TRUE(t.markTlsRestart("5.5.5.5", 7, "6.6.6.6", 8, 1)) << "a SYN of endpoints without a session needs no marker";
+    EXPECT_EQ(t.totalMemoryUsage(), memoryBefore);
+
+    EXPECT_TRUE(t.markTlsRestart("1.1.1.1", 1, "2.2.2.2", 2, 1));          // a SYN from the client side; its data would start at 1
+    EXPECT_GT(t.totalMemoryUsage(), memoryBefore);
+    EXPECT_FALSE(t.tlsDirectionEncrypted("1.1.1.1", 1, "2.2.2.2", 2, 1)) << "after a SYN the next hello is plain";
+    EXPECT_TRUE(t.addTlsMessage("1.1.1.1", 1, "2.2.2.2", 2, facts(8, 1, 50, 1)));
+    EXPECT_EQ(t.totalMemoryUsage(), memoryBefore + sizeof(dissect::TlsSession) + 19 + 64 + 72) << "the marker is gone, a session and a message were added";
     EXPECT_EQ(t.tlsSessionsBetween("1.1.1.1", 1, "2.2.2.2", 2), 2u) << "the SYN started a second session";
     EXPECT_EQ(t.findTlsSession("1.1.1.1", 1, "2.2.2.2", 2)->directions[0].records, 1u);
-    EXPECT_EQ(t.findTlsSession("1.1.1.1", 1, "2.2.2.2", 2, nullptr, true), nullptr) << "ambiguous endpoints";
-    EXPECT_NE(t.findTlsSession("3.3.3.3", 1, "2.2.2.2", 2, nullptr, true), t.findTlsSession("1.1.1.1", 1, "2.2.2.2", 2));
+
+    // a SYN that is retransmitted after the hello: the next message is further along in the stream, so it does not restart
+    EXPECT_TRUE(t.markTlsRestart("1.1.1.1", 1, "2.2.2.2", 2, 1));
+    EXPECT_TRUE(t.addTlsMessage("1.1.1.1", 1, "2.2.2.2", 2, facts(9, 51, 40, 1)));
+    EXPECT_EQ(t.tlsSessionsBetween("1.1.1.1", 1, "2.2.2.2"  , 2), 2u);
+    EXPECT_EQ(t.findTlsSession("1.1.1.1", 1, "2.2.2.2", 2)->directions[0].records, 2u);
+    // ... and a marker is not used up by traffic of the other direction
+    EXPECT_TRUE(t.markTlsRestart("1.1.1.1", 1, "2.2.2.2", 2, 91));
+    EXPECT_TRUE(t.addTlsMessage("2.2.2.2", 2, "1.1.1.1", 1, facts(10, 1, 30, 1)));
+    EXPECT_TRUE(t.addTlsMessage("1.1.1.1", 1, "2.2.2.2", 2, facts(11, 91, 20, 1)));
+    EXPECT_EQ(t.tlsSessionsBetween("1.1.1.1", 1, "2.2.2.2", 2), 3u);
     t.freeze();
-    EXPECT_FALSE(t.markTlsRestart("1.1.1.1", 1, "2.2.2.2", 2));
+    EXPECT_FALSE(t.markTlsRestart("1.1.1.1", 1, "2.2.2.2", 2, 1));
+}
+
+TEST(TlsSessionTable, SynsOfOtherProtocolsDoNotUseTheTlsBudget) {
+    // thousands of connections that never carry TLS (the SYN of each is seen by the TCP dissector)
+    core::SessionTables t(2000);
+    for (uint32_t i = 0; i < 5000; ++i) {
+        EXPECT_TRUE(t.markTlsRestart("10.0.0." + std::to_string(i % 250), static_cast<uint16_t>(1024 + i), "10.9.9.9", 80, 1));
+    }
+    EXPECT_EQ(t.totalMemoryUsage(), 0u);
+    EXPECT_FALSE(t.hasStateLost());
+    EXPECT_TRUE(t.addTlsMessage("10.1.1.1", 1, "10.2.2.2", 443, facts(1, 1, 50, 1))) << "a TLS session still fits";
+    EXPECT_FALSE(t.isTableStateLost("tls"));
 }
 
 TEST(TlsSessionTable, MemoryBoundMarksTheTableStateLost) {

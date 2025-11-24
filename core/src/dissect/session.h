@@ -118,17 +118,23 @@ public:
     const TlsSession *tlsSession(uint32_t id) const { return tls_.session(id); }
     /// The newest TLS session between two endpoints; `direction` (optional) is the TlsSession::directions index of
     /// the traffic from the first endpoint to the second.
-    /// With `uniqueOnly`, nullptr if several sessions used the endpoints.
     const TlsSession *findTlsSession(const std::string &srcIp, uint16_t srcPort, const std::string &dstIp, uint16_t dstPort,
-                                     unsigned *direction = nullptr, bool uniqueOnly = false) const {
-        return tls_.find(srcIp, srcPort, dstIp, dstPort, direction, uniqueOnly);
+                                     unsigned *direction = nullptr) const {
+        return tls_.find(srcIp, srcPort, dstIp, dstPort, direction);
     }
     size_t tlsSessionsBetween(const std::string &srcIp, uint16_t srcPort, const std::string &dstIp, uint16_t dstPort) const {
         return tls_.sessionsBetween(srcIp, srcPort, dstIp, dstPort);
     }
-    /// Load pass: a SYN went by between these endpoints, so the next TLS message starts a new connection. (Frozen tables ignore it.)
-    bool markTlsRestart(const std::string &srcIp, uint16_t srcPort, const std::string &dstIp, uint16_t dstPort) {
-        return !frozen_ && tls_.markRestart(srcIp, srcPort, dstIp, dstPort, maxMemoryPerTable_);
+    /// Load pass: a SYN (without ACK) from src to dst went by. Endpoints that already have a TLS session expect a new
+    /// connection whose first message starts at `firstSeq` (relative sequence number behind the SYN). Frozen tables
+    /// ignore it; a marker that does not fit the budget marks the "tls" table state lost.
+    bool markTlsRestart(const std::string &srcIp, uint16_t srcPort, const std::string &dstIp, uint16_t dstPort, uint32_t firstSeq) {
+        if (frozen_) return false;
+        if (!tls_.markRestart(srcIp, srcPort, dstIp, dstPort, firstSeq, maxMemoryPerTable_)) {
+            markStateLost("tls");
+            return false;
+        }
+        return true;
     }
     /// True if a message starting at `startSeq` continues the latest session and its direction already changed keys.
     bool tlsDirectionEncrypted(const std::string &srcIp, uint16_t srcPort, const std::string &dstIp, uint16_t dstPort,

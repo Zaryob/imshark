@@ -17,8 +17,8 @@
 //
 // Limits: a missing segment (capture loss) makes the indices of that direction unreliable from there on, which is
 // flagged in TlsDirection::gap. Connections that reuse the same four endpoints in one capture are told apart by a SYN
-// (SessionTables::markTlsRestart), by a hello with another random, or by a restarted sequence space. Session data beyond the table's memory budget is dropped and reported through the "tls" entry of
-// SessionTables::stateLostTables().
+// (SessionTables::markTlsRestart), by a hello with another random, or by a restarted sequence space. Session data beyond
+// the table's memory budget is dropped and reported through the "tls" entry of SessionTables::stateLostTables().
 
 #include <algorithm>
 #include <array>
@@ -26,7 +26,6 @@
 #include <cstdint>
 #include <string>
 #include <unordered_map>
-#include <unordered_set>
 #include <vector>
 
 namespace dissect {
@@ -104,8 +103,7 @@ namespace dissect {
 
             uint32_t id = 0;
             bool create = true;
-            const bool restart = restart_.erase(key) > 0;             // a SYN since the last message of these endpoints
-            if (restart) memory_ -= std::min(memory_, key.size() + 64);
+            const bool restart = takeRestart(key, direction, facts.startSeq);   // the first message after a SYN of these endpoints
             const auto latest = latest_.find(key);
             if (latest != latest_.end()) {
                 id = latest->second.id;
@@ -172,14 +170,13 @@ namespace dissect {
         const TlsSession *session(uint32_t id) const { return id < sessions_.size() ? &sessions_[id] : nullptr; }
 
         /// The most recent session between these endpoints; `direction` receives the index of the traffic that goes
-        /// from the first endpoint to the second. With `uniqueOnly` the answer is nullptr when several sessions used
-        /// these endpoints (a lone packet cannot tell which of them it belongs to).
+        /// from the first endpoint to the second.
         const TlsSession *find(const std::string &srcIp, uint16_t srcPort, const std::string &dstIp, uint16_t dstPort,
-                               unsigned *direction = nullptr, bool uniqueOnly = false) const {
+                               unsigned *direction = nullptr) const {
             unsigned d = 0;
             const auto it = latest_.find(connectionKey(srcIp, srcPort, dstIp, dstPort, d));
             if (direction) *direction = d;
-            if (it == latest_.end() || (uniqueOnly && it->second.count > 1)) return nullptr;
+            if (it == latest_.end()) return nullptr;
             return &sessions_[it->second.id];
         }
 
@@ -190,14 +187,20 @@ namespace dissect {
             return it == latest_.end() ? 0 : it->second.count;
         }
 
-        /// A SYN was seen between these endpoints: the next message belongs to a new connection.
-        bool markRestart(const std::string &srcIp, uint16_t srcPort, const std::string &dstIp, uint16_t dstPort, size_t maxMemory) {
+        /// A SYN (without ACK) from src to dst was seen: if these endpoints already have a session, the first message
+        /// the SYN's sender sends next, starting at `firstSeq` (the relative sequence number behind the SYN), belongs to
+        /// a new connection. Endpoints without a session need no marker, so flows of other protocols cost nothing.
+        /// Returns false if the budget `maxMemory` did not allow storing the marker.
+        bool markRestart(const std::string &srcIp, uint16_t srcPort, const std::string &dstIp, uint16_t dstPort, uint32_t firstSeq,
+                         size_t maxMemory) {
             unsigned d = 0;
             const std::string key = connectionKey(srcIp, srcPort, dstIp, dstPort, d);
-            if (restart_.count(key)) return true;
+            if (latest_.find(key) == latest_.end()) return true;
+            const auto it = restart_.find(key);
+            if (it != restart_.end()) { it->second = {firstSeq, d}; return true; }
             const size_t cost = key.size() + 64;
             if (memory_ + cost > maxMemory) return false;
-            restart_.insert(key);
+            restart_.emplace(key, Restart{firstSeq, d});
             memory_ += cost;
             return true;
         }
@@ -210,7 +213,7 @@ namespace dissect {
             unsigned d = 0;
             const std::string key = connectionKey(srcIp, srcPort, dstIp, dstPort, d);
             const auto it = latest_.find(key);
-            if (it == latest_.end() || restart_.count(key)) return false;
+            if (it == latest_.end() || restartPending(key, d, startSeq)) return false;
             const TlsDirection &dir = sessions_[it->second.id].directions[d];
             if (dir.changeCipherSpecs.empty()) return false;
             return !dir.haveNext || static_cast<int32_t>(startSeq - dir.nextSeq) >= 0;
@@ -229,6 +232,25 @@ namespace dissect {
         }
 
     private:
+        struct Restart { uint32_t firstSeq = 0; unsigned direction = 0; };
+
+        // A marker applies to the first message of the SYN sender's direction, and only if that message starts right
+        // behind the SYN: a retransmitted SYN captured later (the stream is further along) is not a new connection.
+        bool restartPending(const std::string &key, unsigned direction, uint32_t startSeq) const {
+            const auto it = restart_.find(key);
+            return it != restart_.end() && it->second.direction == direction && it->second.firstSeq == startSeq;
+        }
+
+        // Like restartPending, and consumes the marker once a message of the SYN sender's direction has passed.
+        bool takeRestart(const std::string &key, unsigned direction, uint32_t startSeq) {
+            const auto it = restart_.find(key);
+            if (it == restart_.end() || it->second.direction != direction) return false;
+            const bool applies = it->second.firstSeq == startSeq;
+            restart_.erase(it);
+            memory_ -= std::min(memory_, key.size() + 64);
+            return applies;
+        }
+
         // Both endpoints in a fixed order, so both directions of a connection share one key; `direction` is 0 when
         // the source is the endpoint that sorts first.
         static std::string connectionKey(const std::string &srcIp, uint16_t srcPort, const std::string &dstIp, uint16_t dstPort,
@@ -241,7 +263,7 @@ namespace dissect {
         std::vector<TlsSession> sessions_;
         struct Newest { uint32_t id = 0; uint32_t count = 0; };    // newest session and how many used the endpoints
         std::unordered_map<std::string, Newest> latest_;            // connection key -> its sessions
-        std::unordered_set<std::string> restart_;                   // connections that saw a SYN since their last message
+        std::unordered_map<std::string, Restart> restart_;          // endpoints with a session that saw a new SYN
         std::unordered_map<uint64_t, TlsMessageRef> messages_;      // (packet, start sequence) -> where it sits
         size_t memory_ = 0;
     };

@@ -432,7 +432,9 @@ void dissect::dissectTcp(Context &ctx, const char *data, size_t length) {
         const auto result = ctx.streams->feed(key, static_cast<uint32_t>(pack.number), static_cast<uint32_t>(seq >= 0 ? seq : 0), payload,
                                               payloadLen, syn, fin || rst,
                                               [&](const char *d, size_t n) { return selectStreamProtocol(ctx, srcPort, dstPort, d, n); });
-        if (syn && ctx.sessions) ctx.sessions->markTlsRestart(pack.source, srcPort, pack.destination, dstPort);   // a new connection: a later TLS hello starts a new session
+        if (syn && !(tcpHeader.flags & 0x10) && ctx.sessions) {   // a new connection on endpoints that had a TLS session: its hello starts a new one
+            ctx.sessions->markTlsRestart(pack.source, srcPort, pack.destination, dstPort, payloadSeq + 1);
+        }
         if (ctx.completedTcp) {
             for (uint32_t earlier: result.earlier) ctx.completedTcp->push_back({earlier, static_cast<uint32_t>(pack.number)});
         }
