@@ -21,11 +21,11 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake pkg-config libglfw3-dev libgl1-mesa-dev libgtest-dev libpcap-dev
+          sudo apt-get install -y cmake pkg-config libglfw3-dev libgl1-mesa-dev libgtest-dev libpcap-dev libssl-dev
 
       - name: Install dependencies (macOS)
         if: runner.os == 'macOS'
-        run: brew install glfw googletest pkg-config
+        run: brew install glfw googletest pkg-config openssl@3
 
       # ASan + UBSan catch memory errors in the parser and readers.
       - name: Configure
@@ -40,12 +40,12 @@ jobs:
         if: runner.os != 'Windows'
         run: ctest --test-dir build --output-on-failure
 
-      # Windows: MSVC with the dependencies (GLFW, GoogleTest) from the vcpkg manifest. Live capture is built as
-      # the "not available" stub: the Npcap SDK is not installed on the runner.
+      # Windows: MSVC with the dependencies (GLFW, GoogleTest) from the vcpkg manifest. Live capture and TLS decryption
+      # are built as the "not available" stubs: the Npcap SDK and OpenSSL 3 are not installed on the runner.
       - name: Configure (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: cmake -S . -B build -DIMSHARK_LIVE_CAPTURE=OFF "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+        run: cmake -S . -B build -DIMSHARK_LIVE_CAPTURE=OFF -DIMSHARK_TLS_DECRYPT=OFF "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
 
       - name: Build (Windows)
         if: runner.os == 'Windows'

@@ -49,6 +49,7 @@ add_library(imshark_core STATIC
     src/filter/filter.cpp
     src/stats/statistics.cpp
     src/stream/follow.cpp
+    src/tls/crypto.cpp
     src/tls/keylog.cpp
 )
 set_target_properties(imshark_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
@@ -89,6 +90,33 @@ if(_imshark_pcap_found)
     target_compile_definitions(imshark_core PUBLIC IMSHARK_HAVE_LIVE_CAPTURE=1)
 else()
     target_sources(imshark_core PRIVATE src/capture/live_capture_stub.cpp)
+endif()
+
+# TLS decryption (OpenSSL 3 libcrypto: HMAC, AES-GCM, ChaCha20-Poly1305). Optional: without the library (or with the option
+# off) the same API is built as a stub that says "TLS decryption is not available in this build". OpenSSL 3 is
+# Apache-2.0, which GPL-3.0 can use; it is linked dynamically unless OPENSSL_USE_STATIC_LIBS is set.
+option(IMSHARK_TLS_DECRYPT "Build TLS decryption (needs OpenSSL 3 libcrypto)" ON)
+set(_imshark_tls_crypto OFF)
+if(IMSHARK_TLS_DECRYPT)
+    if(APPLE AND NOT OPENSSL_ROOT_DIR AND NOT DEFINED ENV{OPENSSL_ROOT_DIR})
+        foreach(_prefix /opt/homebrew/opt/openssl@3 /usr/local/opt/openssl@3)   # Homebrew (Apple silicon / Intel)
+            if(EXISTS "${_prefix}/include/openssl/evp.h")
+                set(OPENSSL_ROOT_DIR "${_prefix}")
+                break()
+            endif()
+        endforeach()
+    endif()
+    find_package(OpenSSL 3 QUIET COMPONENTS Crypto)
+    if(OPENSSL_FOUND)
+        set(_imshark_tls_crypto ON)
+    else()
+        message(STATUS "OpenSSL 3 not found - TLS decryption is built as a stub")
+    endif()
+endif()
+if(_imshark_tls_crypto)
+    message(STATUS "TLS decryption: OpenSSL ${OPENSSL_VERSION} (${OPENSSL_CRYPTO_LIBRARY})")
+    target_link_libraries(imshark_core PRIVATE OpenSSL::Crypto)
+    target_compile_definitions(imshark_core PUBLIC IMSHARK_HAVE_TLS_DECRYPT=1)
 endif()
 
 find_package(Threads REQUIRED)  # the capture thread
