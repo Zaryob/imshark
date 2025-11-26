@@ -1,0 +1,218 @@
+#include "tls/record_decryptor.h"
+
+#include <algorithm>
+
+namespace tls {
+    namespace {
+        constexpr uint16_t kTls13 = 0x0304;
+        constexpr uint8_t kApplicationData = 23;
+        constexpr uint8_t kHandshake = 22;
+        constexpr uint8_t kHandshakeFinished = 20;
+        constexpr uint8_t kHandshakeKeyUpdate = 24;
+        constexpr size_t kMaxTls13Fragment = 16384 + 256;   // RFC 8446 section 5.2: TLSCiphertext.length
+
+        // TLS 1.3 suites (RFC 8446 appendix B.4)
+        constexpr CipherSuite kSuites[] = {
+            {0x1301, true, crypto::Aead::Aes128Gcm, crypto::Hash::Sha256, "TLS_AES_128_GCM_SHA256"},
+            {0x1302, true, crypto::Aead::Aes256Gcm, crypto::Hash::Sha384, "TLS_AES_256_GCM_SHA384"},
+            {0x1303, true, crypto::Aead::ChaCha20Poly1305, crypto::Hash::Sha256, "TLS_CHACHA20_POLY1305_SHA256"},
+        };
+
+        // per-record nonce: the 64-bit sequence number, big endian, left padded to 12 bytes and XORed into the IV
+        // (RFC 8446 section 5.3; RFC 7905 uses the same rule for the TLS 1.2 ChaCha suites)
+        std::array<uint8_t, 12> xorNonce(const std::array<uint8_t, 12> &iv, uint64_t sequence) {
+            std::array<uint8_t, 12> nonce = iv;
+            for (size_t i = 0; i < 8; ++i) nonce[4 + i] ^= static_cast<uint8_t>(sequence >> (56 - 8 * i));
+            return nonce;
+        }
+    } // namespace
+
+    const char *decryptStatusText(DecryptStatus status) {
+        switch (status) {
+            case DecryptStatus::Decrypted: return "decrypted";
+            case DecryptStatus::TagFailure: return "tag failure (wrong key?)";
+            case DecryptStatus::NoKey: return "no key";
+            case DecryptStatus::UnsupportedSuite: return "unsupported cipher suite";
+            case DecryptStatus::Malformed: return "malformed record";
+            case DecryptStatus::NoBackend: return "decryption not available in this build";
+        }
+        return "";
+    }
+
+    const CipherSuite *findCipherSuite(uint16_t version, uint16_t id) {
+        for (const CipherSuite &s: kSuites) {
+            if (s.id == id && s.tls13 == (version == kTls13)) return &s;
+        }
+        return nullptr;
+    }
+
+    // ---- handshake message walker -----------------------------------------------------------------------------
+
+    void RecordDecryptor::HandshakeScanner::feed(std::span<const uint8_t> data) {
+        size_t pos = 0;
+        while (pos < data.size()) {
+            if (remaining > 0) {                                   // inside a message body (possibly begun in an earlier record)
+                const size_t skip = std::min<size_t>(remaining, data.size() - pos);
+                pos += skip;
+                remaining -= static_cast<uint32_t>(skip);
+                continue;
+            }
+            header[have++] = data[pos++];
+            if (have < header.size()) continue;
+            have = 0;
+            remaining = (static_cast<uint32_t>(header[1]) << 16) | (static_cast<uint32_t>(header[2]) << 8) | header[3];
+            if (header[0] == kHandshakeFinished) sawFinished = true;
+            if (header[0] == kHandshakeKeyUpdate) sawKeyUpdate = true;
+        }
+    }
+
+    // ---- setup ------------------------------------------------------------------------------------------------
+
+    RecordDecryptor::RecordDecryptor(uint16_t version, uint16_t cipherSuite, const ClientRandom &, const ClientRandom &,
+                                     const KeyEntry *keys) {
+        suite_ = findCipherSuite(version, cipherSuite);
+        if (!suite_) {
+            availability_ = DecryptStatus::UnsupportedSuite;
+            return;
+        }
+        if (!crypto::available()) {
+            availability_ = DecryptStatus::NoBackend;
+            return;
+        }
+        availability_ = DecryptStatus::NoKey;
+        if (!keys) return;
+
+        const size_t hashLen = crypto::hashLength(suite_->hash);
+        auto usable = [&](SecretKind kind) {
+            const Secret &s = keys->get(kind);
+            return s.length == hashLen ? crypto::Bytes(s.bytes.begin(), s.bytes.begin() + s.length) : crypto::Bytes();
+        };
+        const SecretKind handshake[2] = {SecretKind::ClientHandshakeTraffic, SecretKind::ServerHandshakeTraffic};
+        const SecretKind application[2] = {SecretKind::ClientTraffic0, SecretKind::ServerTraffic0};
+        for (size_t i = 0; i < 2; ++i) {
+            DirectionState &d = dir_[i];
+            d.applicationSecret = usable(application[i]);
+            const crypto::Bytes hs = usable(handshake[i]);
+            if (!hs.empty()) installKeys(d, hs);
+            if (d.keys.valid || !d.applicationSecret.empty()) availability_ = DecryptStatus::Decrypted;
+        }
+    }
+
+    bool RecordDecryptor::installKeys(DirectionState &d, const crypto::Bytes &secret) {
+        d.keys = Keys{};
+        d.secret = secret;
+        d.sequence = 0;
+        const auto key = crypto::hkdfExpandLabel(suite_->hash, secret, "key", {}, crypto::aeadKeyLength(suite_->aead));
+        const auto iv = crypto::hkdfExpandLabel(suite_->hash, secret, "iv", {}, crypto::kAeadNonceLength);
+        if (!key || !iv || iv->size() != d.keys.iv.size()) return false;
+        d.keys.key = *key;
+        std::copy(iv->begin(), iv->end(), d.keys.iv.begin());
+        d.keys.valid = true;
+        return true;
+    }
+
+    // ---- decryption -------------------------------------------------------------------------------------------
+
+    DecryptedRecord RecordDecryptor::decrypt(Direction direction, uint8_t type, uint16_t recordVersion, std::span<const uint8_t> fragment) {
+        DecryptedRecord r;
+        if (availability_ == DecryptStatus::UnsupportedSuite || availability_ == DecryptStatus::NoBackend) {
+            r.status = availability_;
+            return r;
+        }
+        return decrypt13(dir_[static_cast<size_t>(direction)], type, recordVersion, fragment);
+    }
+
+    crypto::AeadStatus RecordDecryptor::open13(const Keys &keys, uint64_t sequence, uint16_t recordVersion, std::span<const uint8_t> fragment,
+                                               crypto::Bytes &inner) const {
+        // additional data = the record header: opaque_type (23), legacy_record_version, length (RFC 8446 section 5.2)
+        const uint8_t aad[5] = {kApplicationData, static_cast<uint8_t>(recordVersion >> 8), static_cast<uint8_t>(recordVersion),
+                                static_cast<uint8_t>(fragment.size() >> 8), static_cast<uint8_t>(fragment.size())};
+        const auto nonce = xorNonce(keys.iv, sequence);
+        return crypto::aeadOpen(suite_->aead, keys.key, nonce, aad, fragment, inner);
+    }
+
+    DecryptedRecord RecordDecryptor::decrypt13(DirectionState &d, uint8_t type, uint16_t recordVersion, std::span<const uint8_t> fragment) {
+        DecryptedRecord r;
+        r.sequence = d.sequence;
+        r.epoch = d.epoch;
+        r.keyUpdates = d.keyUpdates;
+        if (type != kApplicationData || fragment.size() < crypto::kAeadTagLength + 1 || fragment.size() > kMaxTls13Fragment) {
+            r.status = DecryptStatus::Malformed;
+            return r;
+        }
+        if (!d.keys.valid && (d.epoch != KeyEpoch::Handshake || d.applicationSecret.empty())) {
+            r.status = DecryptStatus::NoKey;
+            return r;
+        }
+
+        crypto::Bytes inner;
+        crypto::AeadStatus status = d.keys.valid ? open13(d.keys, d.sequence, recordVersion, fragment, inner) : crypto::AeadStatus::TagFailure;
+        if (status != crypto::AeadStatus::Ok && d.epoch == KeyEpoch::Handshake && !d.applicationSecret.empty()) {
+            // no handshake secret, or the record of the Finished message was missed: try the first application key once
+            DirectionState probe;
+            probe.sequence = 0;
+            if (installKeys(probe, d.applicationSecret)) {
+                crypto::Bytes opened;
+                if (open13(probe.keys, 0, recordVersion, fragment, opened) == crypto::AeadStatus::Ok) {
+                    d.keys = probe.keys;
+                    d.secret = d.applicationSecret;
+                    d.sequence = 0;
+                    d.epoch = KeyEpoch::Application;
+                    d.keyUpdates = 0;
+                    d.scanner = HandshakeScanner{};
+                    inner = std::move(opened);
+                    status = crypto::AeadStatus::Ok;
+                    r.sequence = 0;
+                    r.epoch = KeyEpoch::Application;
+                    r.keyUpdates = 0;
+                }
+            }
+        }
+        if (status == crypto::AeadStatus::Unavailable) {
+            r.status = DecryptStatus::NoBackend;
+            return r;
+        }
+        if (!d.keys.valid && status != crypto::AeadStatus::Ok) {
+            r.status = DecryptStatus::NoKey;
+            return r;
+        }
+        ++d.sequence;
+        if (status == crypto::AeadStatus::TagFailure) {
+            r.status = DecryptStatus::TagFailure;
+            return r;
+        }
+        if (status != crypto::AeadStatus::Ok) {
+            r.status = DecryptStatus::Malformed;
+            return r;
+        }
+
+        // TLSInnerPlaintext = content || content type || zero padding: the type is the last non-zero byte
+        size_t end = inner.size();
+        while (end > 0 && inner[end - 1] == 0) --end;
+        if (end == 0) {
+            r.status = DecryptStatus::Malformed;
+            return r;
+        }
+        r.contentType = inner[end - 1];
+        inner.resize(end - 1);
+        r.plaintext = std::move(inner);
+        r.status = DecryptStatus::Decrypted;
+
+        if (r.contentType == kHandshake) {
+            d.scanner.feed(r.plaintext);
+            if (d.epoch == KeyEpoch::Handshake && d.scanner.sawFinished) {
+                // this direction's Finished: from the next record on the application traffic keys protect it
+                d.epoch = KeyEpoch::Application;
+                d.keyUpdates = 0;
+                if (d.applicationSecret.empty() || !installKeys(d, d.applicationSecret)) d.keys = Keys{};
+            } else if (d.epoch == KeyEpoch::Application && d.scanner.sawKeyUpdate) {
+                // traffic_secret_N+1 = HKDF-Expand-Label(traffic_secret_N, "traffic upd", "", Hash.length)
+                const auto next = crypto::hkdfExpandLabel(suite_->hash, d.secret, "traffic upd", {}, crypto::hashLength(suite_->hash));
+                ++d.keyUpdates;
+                if (!next || !installKeys(d, *next)) d.keys = Keys{};
+            }
+            d.scanner.sawFinished = d.scanner.sawKeyUpdate = false;
+        }
+        return r;
+    }
+} // namespace tls

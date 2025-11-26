@@ -12,15 +12,31 @@ against the key log lines OpenSSL wrote, so the C++ session mapping is compared 
 The certificate and keys are random, so running this again produces different (equally valid) files; the tests do not
 depend on any particular value because they read the expectations from the files they load (see tests/test_tls_session.cpp).
 
-Usage: python3 tools/make_tls_fixtures.py [output directory]
+With --decrypt it writes the fixtures of the record decryptor instead (tests/test_tls_decrypt.cpp): decrypt_tls13.json /
+decrypt_tls12.json, one case per supported cipher suite. Each case is a real connection between `openssl s_client` and
+`openssl s_server` (OpenSSL 3, loopback, a small relay in between records the bytes of both directions) that
+  - negotiated exactly that suite (checked against the hellos on the wire),
+  - requested a page with a known body; the plaintext the tests expect is what the client sent (known by construction)
+    and what s_client printed after OpenSSL decrypted the response (so OpenSSL is the oracle, not the C++ code),
+  - wrote the key log (-keylogfile) the decryptor gets its secrets from, and
+  - for TLS 1.3 sent a KeyUpdate (s_client command "K": both directions update); the key log lines OpenSSL writes for
+    the updated secrets are stored too (`update_secrets`) as an independent check of traffic_secret_N+1.
+Only the protected records are stored (TLS 1.3: every record with outer type 23; TLS 1.2: the records after the
+ChangeCipherSpec of each direction), as hex of the bytes after the 5 byte record header.
+
+Usage: python3 tools/make_tls_fixtures.py [output directory]               (the session fixtures)
+       python3 tools/make_tls_fixtures.py --decrypt [13|12|all] [output directory]
 """
 import json
 import os
 import ssl
+import socket
 import struct
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 
 OPENSSL = "/opt/homebrew/opt/openssl@3/bin/openssl"
 MSS = 400
@@ -203,8 +219,181 @@ def build(version, cert, key, outdir):
     }
 
 
+# ---- decryptor fixtures (openssl s_client / s_server through a recording relay) ---------------------------------
+
+# (IANA id, OpenSSL name, certificate type) per version; the TLS 1.3 names are -ciphersuites values
+SUITES_13 = [
+    (0x1301, "TLS_AES_128_GCM_SHA256", "ec"),
+    (0x1302, "TLS_AES_256_GCM_SHA384", "ec"),
+    (0x1303, "TLS_CHACHA20_POLY1305_SHA256", "ec"),
+]
+SUITES_12 = [
+]
+PAGE_BODY = b"imshark decrypt fixture page\n" * 12
+REQUEST = b"GET /index.html HTTP/1.0\r\n\r\n"
+
+
+def free_port():
+    s = socket.socket()
+    s.bind(("127.0.0.1", 0))
+    port = s.getsockname()[1]
+    s.close()
+    return port
+
+
+def make_cert(directory, kind):
+    key, cert = os.path.join(directory, kind + ".key"), os.path.join(directory, kind + ".crt")
+    newkey = ["-newkey", "ec", "-pkeyopt", "ec_paramgen_curve:prime256v1"] if kind == "ec" else ["-newkey", "rsa:2048"]
+    subprocess.run([OPENSSL, "req", "-x509"] + newkey + ["-nodes", "-subj", "/CN=imshark.test", "-days", "36500", "-keyout", key,
+                                                          "-out", cert], check=True, capture_output=True)
+    return cert, key
+
+
+def openssl_connection(version, suite, cert, key, workdir):
+    """One HTTP/1.0 request through s_client / s_server for `suite`. Returns (flights, client stdout, key log text)."""
+    with open(os.path.join(workdir, "index.html"), "wb") as f:
+        f.write(PAGE_BODY)
+    keylog = os.path.join(workdir, "keys.log")
+    if os.path.exists(keylog):
+        os.remove(keylog)
+    if version == 13:
+        proto, select = "-tls1_3", ["-ciphersuites", suite]
+    else:
+        proto, select = "-tls1_2", ["-cipher", suite]
+    server_port = free_port()
+    server = subprocess.Popen([OPENSSL, "s_server", "-accept", str(server_port), "-cert", cert, "-key", key, "-WWW", "-no_ticket", proto]
+                              + select, cwd=workdir, stdout=open(os.path.join(workdir, "server.log"), "wb"), stderr=subprocess.STDOUT)
+    time.sleep(1.0)
+    listener = socket.socket()
+    listener.bind(("127.0.0.1", 0))
+    listener.listen(1)
+    listener.settimeout(20)
+    relay_port = listener.getsockname()[1]
+    flights, lock = [], threading.Lock()
+
+    def relay():
+        client, _ = listener.accept()
+        upstream = socket.create_connection(("127.0.0.1", server_port))
+
+        def pump(src, dst, name):
+            while True:
+                try:
+                    data = src.recv(65536)
+                except OSError:
+                    break
+                if not data:
+                    break
+                with lock:
+                    flights.append((name, data))
+                try:
+                    dst.sendall(data)
+                except OSError:
+                    break
+            try:
+                dst.shutdown(socket.SHUT_WR)
+            except OSError:
+                pass
+
+        threads = [threading.Thread(target=pump, args=(client, upstream, "c2s")), threading.Thread(target=pump, args=(upstream, client, "s2c"))]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+    thread = threading.Thread(target=relay)
+    thread.start()
+    # -no_ign_eof makes s_client act on the command letters at the start of a line: "K" = KeyUpdate that asks the peer to update too
+    commands = [b"K\n"] if version == 13 else []
+    client = subprocess.Popen([OPENSSL, "s_client", "-connect", "127.0.0.1:%d" % relay_port, "-quiet", "-no_ign_eof", "-crlf", proto,
+                               "-keylogfile", keylog] + select, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    time.sleep(0.8)
+    for line in commands + [REQUEST.replace(b"\r\n", b"\n")]:
+        client.stdin.write(line)
+        client.stdin.flush()
+        time.sleep(0.5)
+    thread.join(15)
+    try:
+        client.stdin.close()
+    except OSError:
+        pass
+    try:
+        out, err = client.communicate(timeout=5)
+    except subprocess.TimeoutExpired:
+        client.kill()
+        out, err = client.communicate()
+    server.kill()
+    listener.close()
+    assert out.endswith(PAGE_BODY), "s_client did not receive the page: %r %r" % (out[:200], err[-300:])
+    return flights, out, open(keylog).read()
+
+
+def decrypt_case(version, ident, suite, cert_kind, certs, workdir):
+    flights, client_out, keylog_text = openssl_connection(version, suite, certs[cert_kind][0], certs[cert_kind][1], workdir)
+    streams = {"c2s": b"", "s2c": b""}
+    for direction, data in flights:
+        streams[direction] += data
+    records = {d: parse_records(s) for d, s in streams.items()}
+    for d, s in streams.items():
+        assert sum(5 + len(r[2]) for r in records[d]) == len(s), "relay cut a record"
+    client_hello, server_hello = hello_facts(records["c2s"]), hello_facts(records["s2c"])
+    assert client_hello and server_hello
+    assert server_hello["cipher"] == ident, "negotiated %04x, wanted %04x" % (server_hello["cipher"], ident)
+    assert server_hello["negotiated"] == (0x0304 if version == 13 else 0x0303)
+    lines = [l.split() for l in keylog_text.splitlines() if l and not l.startswith("#")]
+    assert lines and all(l[1] == client_hello["random"] for l in lines), "key log random differs from the wire"
+
+    protected = {}
+    for d, rs in records.items():
+        if version == 13:
+            protected[d] = [r for r in rs if r[0] == 23]
+        else:
+            ccs = [i for i, r in enumerate(rs) if r[0] == 20]
+            assert len(ccs) == 1, "expected one ChangeCipherSpec per direction"
+            protected[d] = rs[ccs[0] + 1:]
+    case = {
+        "name": suite,
+        "version": 0x0304 if version == 13 else 0x0303,
+        "cipher": ident,
+        "client_random": client_hello["random"],
+        "server_random": server_hello["random"],
+        "keylog": keylog_text,
+        "c2s": [{"type": r[0], "version": r[1], "fragment": r[2].hex()} for r in protected["c2s"]],
+        "s2c": [{"type": r[0], "version": r[1], "fragment": r[2].hex()} for r in protected["s2c"]],
+        # known plaintext of the application_data records: what the client sent, what s_client printed after decrypting
+        "c2s_application_data": REQUEST.hex(),
+        "s2c_application_data": client_out.hex(),
+    }
+    if version == 13:
+        update = {l[0]: l[2] for l in lines if l[0] in ("CLIENT_TRAFFIC_SECRET_N", "SERVER_TRAFFIC_SECRET_N")}
+        assert len(update) == 2, "no KeyUpdate secrets were logged"
+        case["update_secrets"] = {"c2s": update["CLIENT_TRAFFIC_SECRET_N"], "s2c": update["SERVER_TRAFFIC_SECRET_N"]}
+    return case
+
+
+def make_decrypt_fixtures(which, outdir):
+    os.makedirs(outdir, exist_ok=True)
+    workdir = tempfile.mkdtemp()
+    certs = {"ec": make_cert(workdir, "ec"), "rsa": make_cert(workdir, "rsa")}
+    for version, table in ((13, SUITES_13), (12, SUITES_12)):
+        if which not in ("all", str(version)) or not table:
+            continue
+        cases = [decrypt_case(version, ident, name, kind, certs, workdir) for ident, name, kind in table]
+        path = os.path.join(outdir, "decrypt_tls%d.json" % version)
+        with open(path, "w") as f:
+            json.dump({"cases": cases}, f, indent=1)
+            f.write("\n")
+        print("%s: %d cases, %d bytes" % (path, len(cases), os.path.getsize(path)))
+
+
 def main():
-    outdir = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tests", "data", "tls")
+    args = sys.argv[1:]
+    default_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tests", "data", "tls")
+    if args and args[0] == "--decrypt":
+        which = args[1] if len(args) > 1 and args[1] in ("13", "12", "all") else "all"
+        rest = [a for a in args[1:] if a not in ("13", "12", "all")]
+        make_decrypt_fixtures(which, rest[0] if rest else default_dir)
+        return
+    outdir = args[0] if args else default_dir
     os.makedirs(outdir, exist_ok=True)
     cert, key = make_certificate(tempfile.mkdtemp())
     expected = {"tls%d" % v: build(v, cert, key, outdir) for v in (12, 13)}

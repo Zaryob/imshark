@@ -58,6 +58,7 @@ add_executable(imshark_tests
     test_live_capture.cpp
     test_hierarchy.cpp
     test_tls_crypto.cpp
+    test_tls_decrypt.cpp
     test_tls_keylog.cpp
     test_tls_dsb.cpp
     test_tls_session.cpp

@@ -51,6 +51,7 @@ add_library(imshark_core STATIC
     src/stream/follow.cpp
     src/tls/crypto.cpp
     src/tls/keylog.cpp
+    src/tls/record_decryptor.cpp
 )
 set_target_properties(imshark_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
