@@ -20,8 +20,21 @@
 //                     application_data, no content type in the padding)
 //   NoBackend         the build has no OpenSSL (tls::crypto::available() is false)
 //
-// Supported: TLS 1.3 TLS_AES_128_GCM_SHA256, TLS_AES_256_GCM_SHA384, TLS_CHACHA20_POLY1305_SHA256 (RFC 8446).
-// Everything else (CCM suites, TLS 1.2 and older, DTLS, QUIC) is UnsupportedSuite.
+// Supported cipher suites (everything else is UnsupportedSuite: CBC and CCM suites, TLS 1.1 and older, DTLS, QUIC):
+//   TLS 1.3 (RFC 8446)  TLS_AES_128_GCM_SHA256, TLS_AES_256_GCM_SHA384, TLS_CHACHA20_POLY1305_SHA256
+//   TLS 1.2 (RFC 5246)  AES-128-GCM-SHA256, AES-256-GCM-SHA384 (RFC 5288) and CHACHA20-POLY1305-SHA256 (RFC 7905) with
+//                       RSA, DHE_RSA, ECDHE_RSA and ECDHE_ECDSA key exchange: 0x009C 0x009D 0x009E 0x009F 0xC02B 0xC02C
+//                       0xC02F 0xC030 0xCCA8 0xCCA9 0xCCAA
+//
+// TLS 1.2 keys: the CLIENT_RANDOM master secret (48 bytes) is expanded with the PRF of the suite (SHA-256, or SHA-384 for
+// the AES-256 suite): key_block = PRF(master_secret, "key expansion", server_random + client_random) split into
+// client_write_key, server_write_key, client_write_IV, server_write_IV (AEAD suites have no MAC keys; the GCM IV is the
+// 4 byte implicit salt, the ChaCha IV 12 bytes). Per record:
+//   GCM       nonce = salt + the 8 byte explicit nonce at the start of the record; record = explicit nonce, ciphertext, tag
+//   ChaCha    nonce = IV xor sequence number (as in TLS 1.3); record = ciphertext, tag
+//   AAD       sequence number (8) + content type + record version + plaintext length (2)
+// Feed the records that follow that direction's ChangeCipherSpec (the encrypted Finished first, sequence number 0); the
+// content type of the result is the record's own type. Renegotiation (a second key block) is not followed.
 //
 // Sequence numbers: every direction has a 64-bit record sequence number that starts at 0 when keys are installed and
 // advances with each record that was tried with a key (Decrypted, TagFailure, or Malformed because of the padding;
@@ -127,8 +140,11 @@ namespace tls {
         DecryptedRecord decrypt13(DirectionState &d, uint8_t type, uint16_t recordVersion, std::span<const uint8_t> fragment);
         crypto::AeadStatus open13(const Keys &keys, uint64_t sequence, uint16_t recordVersion, std::span<const uint8_t> fragment,
                                   crypto::Bytes &inner) const;
+        DecryptedRecord decrypt12(DirectionState &d, uint8_t type, uint16_t recordVersion, std::span<const uint8_t> fragment);
+        void deriveTls12Keys(const Secret &master, const ClientRandom &clientRandom, const ClientRandom &serverRandom);
 
         const CipherSuite *suite_ = nullptr;
+        bool tls13_ = false;
         DecryptStatus availability_ = DecryptStatus::UnsupportedSuite;
         std::array<DirectionState, 2> dir_;
     };

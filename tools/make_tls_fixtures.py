@@ -197,8 +197,9 @@ def build(version, cert, key, outdir):
     assert client_hello and client_hello["kind"] == 1 and server_hello and server_hello["kind"] == 2
 
     # cross-check against what OpenSSL logged: the key log is keyed by the ClientHello random
-    lines = [l.split() for l in keylog_text.splitlines() if l and not l.startswith("#")]
-    assert lines and all(l[1] == client_hello["random"] for l in lines), "key log random differs from the wire"
+    # static RSA key exchange also logs an "RSA <encrypted pre-master prefix> <pre-master>" line, which has no client random
+    lines = [l.split() for l in keylog_text.splitlines() if l and not l.startswith("#") and not l.startswith("RSA ")]
+    assert lines and all(l[1] == client_hello["random"] for l in lines), "key log random differs from the wire (%s)" % suite
     labels = sorted(l[0] for l in lines)
 
     name = "tls%d" % version
@@ -228,6 +229,17 @@ SUITES_13 = [
     (0x1303, "TLS_CHACHA20_POLY1305_SHA256", "ec"),
 ]
 SUITES_12 = [
+    (0xC02F, "ECDHE-RSA-AES128-GCM-SHA256", "rsa"),
+    (0xC030, "ECDHE-RSA-AES256-GCM-SHA384", "rsa"),
+    (0xC02B, "ECDHE-ECDSA-AES128-GCM-SHA256", "ec"),
+    (0xC02C, "ECDHE-ECDSA-AES256-GCM-SHA384", "ec"),
+    (0x009E, "DHE-RSA-AES128-GCM-SHA256", "rsa"),
+    (0x009F, "DHE-RSA-AES256-GCM-SHA384", "rsa"),
+    (0x009C, "AES128-GCM-SHA256", "rsa"),
+    (0x009D, "AES256-GCM-SHA384", "rsa"),
+    (0xCCA8, "ECDHE-RSA-CHACHA20-POLY1305", "rsa"),
+    (0xCCA9, "ECDHE-ECDSA-CHACHA20-POLY1305", "ec"),
+    (0xCCAA, "DHE-RSA-CHACHA20-POLY1305", "rsa"),
 ]
 PAGE_BODY = b"imshark decrypt fixture page\n" * 12
 REQUEST = b"GET /index.html HTTP/1.0\r\n\r\n"
@@ -339,8 +351,9 @@ def decrypt_case(version, ident, suite, cert_kind, certs, workdir):
     assert client_hello and server_hello
     assert server_hello["cipher"] == ident, "negotiated %04x, wanted %04x" % (server_hello["cipher"], ident)
     assert server_hello["negotiated"] == (0x0304 if version == 13 else 0x0303)
-    lines = [l.split() for l in keylog_text.splitlines() if l and not l.startswith("#")]
-    assert lines and all(l[1] == client_hello["random"] for l in lines), "key log random differs from the wire"
+    # static RSA key exchange also logs an "RSA <encrypted pre-master prefix> <pre-master>" line, which has no client random
+    lines = [l.split() for l in keylog_text.splitlines() if l and not l.startswith("#") and not l.startswith("RSA ")]
+    assert lines and all(l[1] == client_hello["random"] for l in lines), "key log random differs from the wire (%s)" % suite
 
     protected = {}
     for d, rs in records.items():

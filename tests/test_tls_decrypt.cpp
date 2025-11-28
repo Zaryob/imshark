@@ -544,3 +544,202 @@ TEST_F(TlsDecrypt, OpenSslTls13WithoutHandshakeSecretsStillOpensTheApplicationDa
         EXPECT_EQ(run.status.front(), DecryptStatus::NoKey);   // the handshake records have no secret
     }
 }
+
+// ---- TLS 1.2 ----------------------------------------------------------------------------------------------------
+
+TEST(TlsDecryptSuites, Tls12AeadSuitesAreSupportedAndOthersAreNot) {
+    struct Expect {
+        uint16_t id;
+        tls::crypto::Aead aead;
+        tls::crypto::Hash hash;
+    };
+    const Expect supported[] = {
+        {0x009C, tls::crypto::Aead::Aes128Gcm, tls::crypto::Hash::Sha256}, {0x009D, tls::crypto::Aead::Aes256Gcm, tls::crypto::Hash::Sha384},
+        {0x009E, tls::crypto::Aead::Aes128Gcm, tls::crypto::Hash::Sha256}, {0x009F, tls::crypto::Aead::Aes256Gcm, tls::crypto::Hash::Sha384},
+        {0xC02B, tls::crypto::Aead::Aes128Gcm, tls::crypto::Hash::Sha256}, {0xC02C, tls::crypto::Aead::Aes256Gcm, tls::crypto::Hash::Sha384},
+        {0xC02F, tls::crypto::Aead::Aes128Gcm, tls::crypto::Hash::Sha256}, {0xC030, tls::crypto::Aead::Aes256Gcm, tls::crypto::Hash::Sha384},
+        {0xCCA8, tls::crypto::Aead::ChaCha20Poly1305, tls::crypto::Hash::Sha256}, {0xCCA9, tls::crypto::Aead::ChaCha20Poly1305, tls::crypto::Hash::Sha256},
+        {0xCCAA, tls::crypto::Aead::ChaCha20Poly1305, tls::crypto::Hash::Sha256},
+    };
+    for (const Expect &e: supported) {
+        const tls::CipherSuite *s = tls::findCipherSuite(0x0303, e.id);
+        ASSERT_NE(s, nullptr) << std::hex << e.id;
+        EXPECT_FALSE(s->tls13);
+        EXPECT_EQ(s->aead, e.aead) << std::hex << e.id;
+        EXPECT_EQ(s->hash, e.hash) << std::hex << e.id;
+        EXPECT_EQ(tls::findCipherSuite(0x0304, e.id), nullptr) << "a TLS 1.2 suite is not valid under TLS 1.3";
+        EXPECT_EQ(tls::findCipherSuite(0x0302, e.id), nullptr) << "TLS 1.1 and older are not supported";
+    }
+    EXPECT_EQ(tls::findCipherSuite(0x0303, 0xC013), nullptr);   // TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA
+    EXPECT_EQ(tls::findCipherSuite(0x0303, 0x002F), nullptr);   // TLS_RSA_WITH_AES_128_CBC_SHA
+    EXPECT_EQ(tls::findCipherSuite(0x0303, 0xCCAB), nullptr);   // TLS_PSK_WITH_CHACHA20_POLY1305_SHA256
+    EXPECT_EQ(tls::findCipherSuite(0x0303, 0xC0AC), nullptr);   // TLS_ECDHE_ECDSA_WITH_AES_128_CCM
+    EXPECT_EQ(tls::findCipherSuite(0x0303, 0x1301), nullptr);   // a TLS 1.3 suite under TLS 1.2
+    EXPECT_EQ(tls::findCipherSuite(0x0303, 0x0000), nullptr);
+}
+
+TEST_F(TlsDecrypt, OpenSslTls12ConnectionsDecryptToTheKnownPlaintext) {
+    const auto cases = loadCases("decrypt_tls12.json");
+    ASSERT_EQ(cases.size(), 11u);   // every supported suite
+    std::vector<uint16_t> seen;
+    for (const Case &c: cases) {
+        SCOPED_TRACE(c.name);
+        seen.push_back(c.cipher);
+        Prepared p(c);
+        ASSERT_EQ(p.dec.availability(), DecryptStatus::Decrypted);
+        for (Direction d: {Direction::ClientToServer, Direction::ServerToClient}) {
+            const DirRun run = runDirection(p.dec, c, d);
+            ASSERT_EQ(run.status.size(), 3u);   // Finished, application data, close_notify
+            for (size_t i = 0; i < run.status.size(); ++i) EXPECT_EQ(run.status[i], DecryptStatus::Decrypted) << "record " << i;
+            EXPECT_EQ(run.application, c.application[static_cast<size_t>(d)]);
+            EXPECT_EQ(run.records[0].contentType, 22);          // the encrypted Finished: type 20, length 12, verify_data
+            ASSERT_EQ(run.records[0].plaintext.size(), 16u);
+            EXPECT_EQ(run.records[0].plaintext[0], 20);
+            EXPECT_EQ(run.records[0].plaintext[3], 12);
+            EXPECT_EQ(run.records[2].contentType, 21);          // alert: warning, close_notify
+            EXPECT_EQ(hexOf(run.records[2].plaintext), "0100");
+            for (size_t i = 0; i < run.records.size(); ++i) {
+                EXPECT_EQ(run.records[i].sequence, i);          // sequence numbers start at 0 after the ChangeCipherSpec
+                EXPECT_EQ(run.records[i].epoch, KeyEpoch::Application);
+            }
+            EXPECT_EQ(p.dec.sequence(d), 3u);
+        }
+    }
+    std::sort(seen.begin(), seen.end());
+    EXPECT_EQ(std::adjacent_find(seen.begin(), seen.end()), seen.end()) << "each suite once";
+}
+
+TEST_F(TlsDecrypt, Tls12WrongMasterSecretFailsEveryTag) {
+    for (const Case &c: loadCases("decrypt_tls12.json")) {
+        SCOPED_TRACE(c.name);
+        std::string log = c.keylog;
+        const size_t at = log.find("CLIENT_RANDOM ") + 14 + 64 + 1;   // first digit of the master secret
+        log[at] = log[at] == '0' ? '1' : '0';
+        Prepared p(c, log);
+        for (Direction d: {Direction::ClientToServer, Direction::ServerToClient}) {
+            const DirRun run = runDirection(p.dec, c, d);
+            for (auto status: run.status) EXPECT_EQ(status, DecryptStatus::TagFailure);
+            EXPECT_TRUE(run.application.empty());
+        }
+    }
+}
+
+TEST_F(TlsDecrypt, Tls12KeyBlockNeedsTheRightRandomsInTheRightOrder) {
+    const Case c = loadCases("decrypt_tls12.json").front();
+    Prepared ok(c);
+    EXPECT_EQ(runDirection(ok.dec, c, Direction::ServerToClient).application, c.application[1]);
+    tls::KeyStore store;
+    store.parseText(c.keylog);
+    tls::RecordDecryptor swapped(c.version, c.cipher, c.serverRandom, c.clientRandom, store.find(c.clientRandom));   // randoms exchanged
+    for (auto status: runDirection(swapped, c, Direction::ServerToClient).status) EXPECT_EQ(status, DecryptStatus::TagFailure);
+    tls::RecordDecryptor wrongServer(c.version, c.cipher, c.clientRandom, c.clientRandom, store.find(c.clientRandom));
+    for (auto status: runDirection(wrongServer, c, Direction::ServerToClient).status) EXPECT_EQ(status, DecryptStatus::TagFailure);
+}
+
+TEST_F(TlsDecrypt, Tls12DirectionsUseTheirOwnKeys) {
+    for (const char *file: {"decrypt_tls12.json"}) {
+        for (const Case &c: loadCases(file)) {
+            SCOPED_TRACE(c.name);
+            Prepared p(c);
+            const Rec &fromClient = c.records[0].front();
+            auto r = p.dec.decrypt(Direction::ServerToClient, fromClient.type, fromClient.version, fromClient.fragment);   // client record, server keys
+            EXPECT_EQ(r.status, DecryptStatus::TagFailure);
+            EXPECT_TRUE(r.plaintext.empty());
+        }
+    }
+}
+
+TEST_F(TlsDecrypt, Tls12SequenceNumberIsPartOfTheAdditionalData) {
+    for (const Case &c: loadCases("decrypt_tls12.json")) {
+        SCOPED_TRACE(c.name);
+        {   // the application data record is sequence number 1: opened as number 0 it fails (AAD for GCM, nonce and AAD for ChaCha)
+            Prepared p(c);
+            const Rec &data = c.records[0][1];
+            EXPECT_EQ(p.dec.decrypt(Direction::ClientToServer, data.type, data.version, data.fragment).status, DecryptStatus::TagFailure);
+            EXPECT_EQ(p.dec.sequence(Direction::ClientToServer), 1u);
+            // the failed try used number 0, so the record now meets number 1, which is its own
+            EXPECT_EQ(p.dec.decrypt(Direction::ClientToServer, data.type, data.version, data.fragment).status, DecryptStatus::Decrypted);
+        }
+        {   // setSequence puts a direction back on the right number
+            Prepared p(c);
+            p.dec.setSequence(Direction::ClientToServer, 1);
+            const Rec &data = c.records[0][1];
+            auto r = p.dec.decrypt(Direction::ClientToServer, data.type, data.version, data.fragment);
+            EXPECT_EQ(r.status, DecryptStatus::Decrypted);
+            EXPECT_EQ(r.contentType, 23);
+        }
+        {   // type and version are in the additional data too
+            Prepared p(c);
+            const Rec &fin = c.records[0][0];
+            EXPECT_EQ(p.dec.decrypt(Direction::ClientToServer, 23, fin.version, fin.fragment).status, DecryptStatus::TagFailure);
+            Prepared q(c);
+            EXPECT_EQ(q.dec.decrypt(Direction::ClientToServer, fin.type, 0x0301, fin.fragment).status, DecryptStatus::TagFailure);
+        }
+    }
+}
+
+TEST_F(TlsDecrypt, Tls12NoKeyAndMalformed) {
+    const Case c = loadCases("decrypt_tls12.json").front();
+    const Rec &fin = c.records[0][0];
+    {   // no entry
+        tls::RecordDecryptor dec(c.version, c.cipher, c.clientRandom, c.serverRandom, nullptr);
+        EXPECT_EQ(dec.availability(), DecryptStatus::NoKey);
+        EXPECT_EQ(dec.decrypt(Direction::ClientToServer, fin.type, fin.version, fin.fragment).status, DecryptStatus::NoKey);
+    }
+    {   // only TLS 1.3 secrets
+        tls::KeyStore store;
+        store.parseText(logLine("CLIENT_TRAFFIC_SECRET_0", kClientAp) + logLine("SERVER_TRAFFIC_SECRET_0", kServerAp));
+        tls::RecordDecryptor dec(c.version, c.cipher, c.clientRandom, c.serverRandom, store.find(randomA()));
+        EXPECT_EQ(dec.availability(), DecryptStatus::NoKey);
+        EXPECT_EQ(dec.decrypt(Direction::ServerToClient, fin.type, fin.version, fin.fragment).status, DecryptStatus::NoKey);
+    }
+    Prepared p(c);
+    EXPECT_EQ(p.dec.decrypt(Direction::ClientToServer, fin.type, fin.version, {}).status, DecryptStatus::Malformed);
+    EXPECT_EQ(p.dec.decrypt(Direction::ClientToServer, fin.type, fin.version, std::span<const uint8_t>(fin.fragment).first(15)).status, DecryptStatus::Malformed);
+    EXPECT_EQ(p.dec.decrypt(Direction::ClientToServer, fin.type, fin.version, Bytes(16384 + 2048 + 1, 0)).status, DecryptStatus::Malformed);
+    EXPECT_EQ(p.dec.sequence(Direction::ClientToServer), 0u);
+    EXPECT_EQ(p.dec.decrypt(Direction::ClientToServer, fin.type, fin.version, fin.fragment).status, DecryptStatus::Decrypted);
+}
+
+TEST_F(TlsDecrypt, Tls12EveryDamagedOrCutRecordIsRejected) {
+    for (const Case &c: loadCases("decrypt_tls12.json")) {
+        SCOPED_TRACE(c.name);
+        const Rec &fin = c.records[1][0];   // the server Finished (sequence 0, the first record of its direction)
+        for (size_t i = 0; i < fin.fragment.size(); ++i) {
+            Bytes bad = fin.fragment;
+            bad[i] ^= 0x40;
+            Prepared p(c);
+            auto r = p.dec.decrypt(Direction::ServerToClient, fin.type, fin.version, bad);
+            EXPECT_EQ(r.status, DecryptStatus::TagFailure) << i;
+            EXPECT_TRUE(r.plaintext.empty());
+        }
+        for (size_t len = 0; len < fin.fragment.size(); ++len) {
+            Prepared p(c);
+            auto r = p.dec.decrypt(Direction::ServerToClient, fin.type, fin.version, std::span<const uint8_t>(fin.fragment).first(len));
+            EXPECT_TRUE(r.status == DecryptStatus::Malformed || r.status == DecryptStatus::TagFailure) << len;
+            EXPECT_TRUE(r.plaintext.empty());
+        }
+    }
+}
+
+TEST_F(TlsDecrypt, StaticRsaKeyLogLineDoesNotDisturbTheLookup) {
+    // OpenSSL writes an "RSA <8 bytes> <pre-master>" line for static RSA key exchange next to CLIENT_RANDOM
+    const auto cases = loadCases("decrypt_tls12.json");
+    const auto rsa = std::find_if(cases.begin(), cases.end(), [](const Case &c) { return c.cipher == 0x009C; });
+    ASSERT_NE(rsa, cases.end());
+    ASSERT_NE(rsa->keylog.find("\nRSA "), std::string::npos);
+    Prepared p(*rsa);
+    EXPECT_EQ(runDirection(p.dec, *rsa, Direction::ServerToClient).application, rsa->application[1]);
+}
+
+TEST(TlsDecryptBackend, BuildsWithoutOpenSslReportItInsteadOfFailingSilently) {
+    if (tls::crypto::available()) GTEST_SKIP() << "this build has OpenSSL; the stub is covered by IMSHARK_TLS_DECRYPT=OFF builds";
+    Keys keys(rfc8448Log());
+    tls::RecordDecryptor dec(0x0304, 0x1301, randomA(), randomB(), keys.entry());
+    EXPECT_EQ(dec.availability(), DecryptStatus::NoBackend);
+    auto r = open(dec, Direction::ClientToServer, kClientFinishedRecord);
+    EXPECT_EQ(r.status, DecryptStatus::NoBackend);
+    EXPECT_TRUE(r.plaintext.empty());
+    tls::RecordDecryptor unsupported(0x0304, 0x1304, randomA(), randomB(), keys.entry());
+    EXPECT_EQ(unsupported.availability(), DecryptStatus::UnsupportedSuite);   // still decided without the backend
+}

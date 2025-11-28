@@ -11,8 +11,25 @@ namespace tls {
         constexpr uint8_t kHandshakeKeyUpdate = 24;
         constexpr size_t kMaxTls13Fragment = 16384 + 256;   // RFC 8446 section 5.2: TLSCiphertext.length
 
-        // TLS 1.3 suites (RFC 8446 appendix B.4)
+        constexpr uint16_t kTls12 = 0x0303;
+        constexpr size_t kGcmExplicitNonce = 8;   // RFC 5288 section 3: the nonce_explicit that starts each GCM record
+        constexpr size_t kGcmSalt = 4;            // fixed_iv_length of the GCM suites
+        constexpr size_t kMaxTls12Fragment = 16384 + 2048;   // RFC 5246 section 6.2.3
+
         constexpr CipherSuite kSuites[] = {
+            // TLS 1.2: AEAD suites of RFC 5288 (GCM) and RFC 7905 (ChaCha20-Poly1305); the hash is the PRF hash
+            {0x009C, false, crypto::Aead::Aes128Gcm, crypto::Hash::Sha256, "TLS_RSA_WITH_AES_128_GCM_SHA256"},
+            {0x009D, false, crypto::Aead::Aes256Gcm, crypto::Hash::Sha384, "TLS_RSA_WITH_AES_256_GCM_SHA384"},
+            {0x009E, false, crypto::Aead::Aes128Gcm, crypto::Hash::Sha256, "TLS_DHE_RSA_WITH_AES_128_GCM_SHA256"},
+            {0x009F, false, crypto::Aead::Aes256Gcm, crypto::Hash::Sha384, "TLS_DHE_RSA_WITH_AES_256_GCM_SHA384"},
+            {0xC02B, false, crypto::Aead::Aes128Gcm, crypto::Hash::Sha256, "TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256"},
+            {0xC02C, false, crypto::Aead::Aes256Gcm, crypto::Hash::Sha384, "TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384"},
+            {0xC02F, false, crypto::Aead::Aes128Gcm, crypto::Hash::Sha256, "TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256"},
+            {0xC030, false, crypto::Aead::Aes256Gcm, crypto::Hash::Sha384, "TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384"},
+            {0xCCA8, false, crypto::Aead::ChaCha20Poly1305, crypto::Hash::Sha256, "TLS_ECDHE_RSA_WITH_CHACHA20_POLY1305_SHA256"},
+            {0xCCA9, false, crypto::Aead::ChaCha20Poly1305, crypto::Hash::Sha256, "TLS_ECDHE_ECDSA_WITH_CHACHA20_POLY1305_SHA256"},
+            {0xCCAA, false, crypto::Aead::ChaCha20Poly1305, crypto::Hash::Sha256, "TLS_DHE_RSA_WITH_CHACHA20_POLY1305_SHA256"},
+            // TLS 1.3 suites (RFC 8446 appendix B.4)
             {0x1301, true, crypto::Aead::Aes128Gcm, crypto::Hash::Sha256, "TLS_AES_128_GCM_SHA256"},
             {0x1302, true, crypto::Aead::Aes256Gcm, crypto::Hash::Sha384, "TLS_AES_256_GCM_SHA384"},
             {0x1303, true, crypto::Aead::ChaCha20Poly1305, crypto::Hash::Sha256, "TLS_CHACHA20_POLY1305_SHA256"},
@@ -40,6 +57,7 @@ namespace tls {
     }
 
     const CipherSuite *findCipherSuite(uint16_t version, uint16_t id) {
+        if (version != kTls13 && version != kTls12) return nullptr;
         for (const CipherSuite &s: kSuites) {
             if (s.id == id && s.tls13 == (version == kTls13)) return &s;
         }
@@ -68,8 +86,8 @@ namespace tls {
 
     // ---- setup ------------------------------------------------------------------------------------------------
 
-    RecordDecryptor::RecordDecryptor(uint16_t version, uint16_t cipherSuite, const ClientRandom &, const ClientRandom &,
-                                     const KeyEntry *keys) {
+    RecordDecryptor::RecordDecryptor(uint16_t version, uint16_t cipherSuite, const ClientRandom &clientRandom,
+                                     const ClientRandom &serverRandom, const KeyEntry *keys) {
         suite_ = findCipherSuite(version, cipherSuite);
         if (!suite_) {
             availability_ = DecryptStatus::UnsupportedSuite;
@@ -80,7 +98,12 @@ namespace tls {
             return;
         }
         availability_ = DecryptStatus::NoKey;
+        tls13_ = suite_->tls13;
         if (!keys) return;
+        if (!tls13_) {
+            deriveTls12Keys(keys->get(SecretKind::MasterSecret), clientRandom, serverRandom);
+            return;
+        }
 
         const size_t hashLen = crypto::hashLength(suite_->hash);
         auto usable = [&](SecretKind kind) {
@@ -96,6 +119,26 @@ namespace tls {
             if (!hs.empty()) installKeys(d, hs);
             if (d.keys.valid || !d.applicationSecret.empty()) availability_ = DecryptStatus::Decrypted;
         }
+    }
+
+    void RecordDecryptor::deriveTls12Keys(const Secret &master, const ClientRandom &clientRandom, const ClientRandom &serverRandom) {
+        if (master.length != 48) return;
+        const size_t keyLen = crypto::aeadKeyLength(suite_->aead);
+        const size_t ivLen = suite_->aead == crypto::Aead::ChaCha20Poly1305 ? crypto::kAeadNonceLength : kGcmSalt;
+        // seed = server_random + client_random (the order differs from the master secret derivation)
+        crypto::Bytes seed(serverRandom.begin(), serverRandom.end());
+        seed.insert(seed.end(), clientRandom.begin(), clientRandom.end());
+        const auto block = crypto::prf(suite_->hash, std::span<const uint8_t>(master.bytes.data(), master.length), "key expansion", seed,
+                                       2 * keyLen + 2 * ivLen);
+        if (!block) return;
+        for (size_t i = 0; i < 2; ++i) {   // client_write_key, server_write_key, client_write_IV, server_write_IV
+            Keys &k = dir_[i].keys;
+            k.key.assign(block->begin() + i * keyLen, block->begin() + (i + 1) * keyLen);
+            std::copy_n(block->begin() + 2 * keyLen + i * ivLen, ivLen, k.iv.begin());
+            k.valid = true;
+            dir_[i].epoch = KeyEpoch::Application;
+        }
+        availability_ = DecryptStatus::Decrypted;
     }
 
     bool RecordDecryptor::installKeys(DirectionState &d, const crypto::Bytes &secret) {
@@ -119,7 +162,54 @@ namespace tls {
             r.status = availability_;
             return r;
         }
-        return decrypt13(dir_[static_cast<size_t>(direction)], type, recordVersion, fragment);
+        DirectionState &d = dir_[static_cast<size_t>(direction)];
+        return tls13_ ? decrypt13(d, type, recordVersion, fragment) : decrypt12(d, type, recordVersion, fragment);
+    }
+
+    DecryptedRecord RecordDecryptor::decrypt12(DirectionState &d, uint8_t type, uint16_t recordVersion, std::span<const uint8_t> fragment) {
+        DecryptedRecord r;
+        r.sequence = d.sequence;
+        r.epoch = KeyEpoch::Application;
+        const bool gcm = suite_->aead != crypto::Aead::ChaCha20Poly1305;
+        const size_t overhead = (gcm ? kGcmExplicitNonce : 0) + crypto::kAeadTagLength;
+        if (fragment.size() < overhead || fragment.size() > kMaxTls12Fragment) {
+            r.status = DecryptStatus::Malformed;
+            return r;
+        }
+        if (!d.keys.valid) {
+            r.status = DecryptStatus::NoKey;
+            return r;
+        }
+
+        std::array<uint8_t, 12> nonce;
+        std::span<const uint8_t> sealed = fragment;
+        if (gcm) {   // nonce = fixed IV (salt) + the explicit nonce carried in the record
+            std::copy_n(d.keys.iv.begin(), kGcmSalt, nonce.begin());
+            std::copy_n(fragment.begin(), kGcmExplicitNonce, nonce.begin() + kGcmSalt);
+            sealed = fragment.subspan(kGcmExplicitNonce);
+        } else {
+            nonce = xorNonce(d.keys.iv, d.sequence);
+        }
+        // additional data = seq_num + type + version + length of the plaintext (RFC 5246 section 6.2.3.3)
+        const size_t plainLength = fragment.size() - overhead;
+        uint8_t aad[13];
+        for (size_t i = 0; i < 8; ++i) aad[i] = static_cast<uint8_t>(d.sequence >> (56 - 8 * i));
+        aad[8] = type;
+        aad[9] = static_cast<uint8_t>(recordVersion >> 8);
+        aad[10] = static_cast<uint8_t>(recordVersion);
+        aad[11] = static_cast<uint8_t>(plainLength >> 8);
+        aad[12] = static_cast<uint8_t>(plainLength);
+
+        const crypto::AeadStatus status = crypto::aeadOpen(suite_->aead, d.keys.key, nonce, aad, sealed, r.plaintext);
+        if (status == crypto::AeadStatus::Unavailable) {
+            r.status = DecryptStatus::NoBackend;
+            return r;
+        }
+        ++d.sequence;
+        r.status = status == crypto::AeadStatus::Ok ? DecryptStatus::Decrypted
+                   : status == crypto::AeadStatus::TagFailure ? DecryptStatus::TagFailure : DecryptStatus::Malformed;
+        if (r.status == DecryptStatus::Decrypted) r.contentType = type;
+        return r;
     }
 
     crypto::AeadStatus RecordDecryptor::open13(const Keys &keys, uint64_t sequence, uint16_t recordVersion, std::span<const uint8_t> fragment,
