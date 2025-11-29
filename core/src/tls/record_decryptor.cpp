@@ -79,8 +79,8 @@ namespace tls {
             if (have < header.size()) continue;
             have = 0;
             remaining = (static_cast<uint32_t>(header[1]) << 16) | (static_cast<uint32_t>(header[2]) << 8) | header[3];
-            if (header[0] == kHandshakeFinished) sawFinished = true;
-            if (header[0] == kHandshakeKeyUpdate) sawKeyUpdate = true;
+            if (header[0] == kHandshakeFinished) finishedSeen = true;
+            if (header[0] == kHandshakeKeyUpdate) keyUpdateSeen = true;
         }
     }
 
@@ -290,18 +290,19 @@ namespace tls {
 
         if (r.contentType == kHandshake) {
             d.scanner.feed(r.plaintext);
-            if (d.epoch == KeyEpoch::Handshake && d.scanner.sawFinished) {
-                // this direction's Finished: from the next record on the application traffic keys protect it
+            if (d.epoch == KeyEpoch::Handshake && d.scanner.finishedComplete()) {
+                // this direction's Finished is complete: from the next record on the application traffic keys protect it
                 d.epoch = KeyEpoch::Application;
                 d.keyUpdates = 0;
+                d.scanner = HandshakeScanner{};
                 if (d.applicationSecret.empty() || !installKeys(d, d.applicationSecret)) d.keys = Keys{};
-            } else if (d.epoch == KeyEpoch::Application && d.scanner.sawKeyUpdate) {
+            } else if (d.epoch == KeyEpoch::Application && d.scanner.keyUpdateComplete()) {
                 // traffic_secret_N+1 = HKDF-Expand-Label(traffic_secret_N, "traffic upd", "", Hash.length)
                 const auto next = crypto::hkdfExpandLabel(suite_->hash, d.secret, "traffic upd", {}, crypto::hashLength(suite_->hash));
                 ++d.keyUpdates;
+                d.scanner.keyUpdateSeen = false;
                 if (!next || !installKeys(d, *next)) d.keys = Keys{};
             }
-            d.scanner.sawFinished = d.scanner.sawKeyUpdate = false;
         }
         return r;
     }

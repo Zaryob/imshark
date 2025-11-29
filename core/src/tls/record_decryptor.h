@@ -43,10 +43,11 @@
 //
 // TLS 1.3 key epochs (RFC 8446 section 7.2 / 4.6.3), tracked per direction from the decrypted plaintext:
 //   handshake epoch     keys from CLIENT_/SERVER_HANDSHAKE_TRAFFIC_SECRET
-//   application epoch   keys from CLIENT_/SERVER_TRAFFIC_SECRET_0, entered after the record that carries that direction's
+//   application epoch   keys from CLIENT_/SERVER_TRAFFIC_SECRET_0, entered after the record that completes that direction's
 //                       Finished message; sequence number restarts at 0
-//   KeyUpdate           after a record that carries a KeyUpdate message, that direction's secret becomes
+//   KeyUpdate           after the record that completes a KeyUpdate message, that direction's secret becomes
 //                       HKDF-Expand-Label(secret, "traffic upd", "", Hash.length) (traffic_secret_N+1), sequence restarts
+// A message may span records under the same keys (the switch waits for its last byte); it cannot span a key change.
 // The key log carries only the *_0 secrets, later generations are derived here. When a record of the handshake epoch
 // cannot be opened (no handshake secret in the log, or the Finished record was missed) but a CLIENT_/SERVER_TRAFFIC_SECRET_0
 // exists, the decryptor tries the first application key once; if that opens the record the direction moves to the
@@ -115,9 +116,12 @@ namespace tls {
             std::array<uint8_t, 4> header{};
             size_t have = 0;
             uint32_t remaining = 0;
-            bool sawFinished = false;
-            bool sawKeyUpdate = false;
+            bool finishedSeen = false;     // the header of a Finished / KeyUpdate message has been read ...
+            bool keyUpdateSeen = false;
             void feed(std::span<const uint8_t> data);
+            // ... and the message is complete once its body has been read too (it may continue in the next record)
+            bool finishedComplete() const { return finishedSeen && remaining == 0; }
+            bool keyUpdateComplete() const { return keyUpdateSeen && remaining == 0; }
         };
 
         struct Keys {
