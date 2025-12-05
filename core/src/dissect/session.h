@@ -1,12 +1,15 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
+#include <span>
 #include <string>
 #include <unordered_set>
 #include <vector>
 
 #include <tls/keylog.h>
 
+#include "tls_decrypt.h"
 #include "tls_session.h"
 
 namespace dissect {
@@ -36,6 +39,7 @@ public:
         ftpMemory_ = 0;
         tftpMemory_ = 0;
         tls_.clear();
+        tlsDecrypt_.clear();
         tlsCaptureKeys_.clear();   // the keys the user supplied (tlsExternalKeys) outlive a new capture
         stateLost_ = false;
         stateLostTables_.clear();
@@ -103,15 +107,55 @@ public:
     // ---- TLS connections (see tls_session.h) ------------------------------------------------
     /// Registers one TCP message of a TLS connection (load pass only; `src` -> `dst` is the direction it travels).
     /// Returns false if the tables are frozen or the memory budget is exhausted (then the "tls" table is state lost).
+    /// `result` (optional) says where the message went, for decryptTlsMessage().
     bool addTlsMessage(const std::string &srcIp, uint16_t srcPort, const std::string &dstIp, uint16_t dstPort,
-                       const TlsMessageFacts &facts) {
+                       const TlsMessageFacts &facts, TlsAddResult *result = nullptr) {
+        if (result) *result = TlsAddResult{};
         if (frozen_) return false;
-        if (!tls_.add(srcIp, srcPort, dstIp, dstPort, facts, maxMemoryPerTable_)) {
+        const size_t decryptMemory = std::min(tlsDecrypt_.memory(), maxMemoryPerTable_);   // the "tls" budget covers the outcomes too
+        if (!tls_.add(srcIp, srcPort, dstIp, dstPort, facts, maxMemoryPerTable_ - decryptMemory, result)) {
             markStateLost("tls");
             return false;
         }
         return true;
     }
+
+    /// Load pass, right after addTlsMessage() registered a message: opens its `records` (in stream order, per direction)
+    /// when key material for the connection is known, records one outcome per record and fills `out` with the outcomes and
+    /// the plaintext of the decrypted ones. Without key material nothing is stored and `out` holds the states derived from
+    /// the session tables. Returns false (and marks "tls" state lost) if the budget is exceeded; `out` is then empty.
+    bool decryptTlsMessage(const TlsAddResult &added, uint32_t packet, uint32_t startSeq, std::span<const TlsRecordInput> records,
+                           TlsMessageDecryption &out) {
+        out = TlsMessageDecryption{};
+        if (frozen_ || !added.registered) return false;
+        TlsSession *session = tls_.mutableSession(added.session);
+        if (!session) return false;
+        tls::KeyEntry entry;
+        if (!(session->hasClientRandom && findTlsKeys(session->clientRandom, entry))) {
+            readTlsMessage(TlsMessageRef{added.session, added.direction, added.firstRecord, static_cast<uint32_t>(records.size()), kTlsNoRecord}, records, out);
+            return true;
+        }
+        uint32_t first = kTlsNoRecord;
+        const size_t room = maxMemoryPerTable_ > tls_.memory() ? maxMemoryPerTable_ - tls_.memory() : 0;
+        if (!tlsDecrypt_.process(*session, added.session, added.direction, added.firstRecord, added.gapBefore, records, &entry, room, first, out)) {
+            out = TlsMessageDecryption{};
+            markStateLost("tls");
+            return false;
+        }
+        tls_.setFirstOutcome(packet, startSeq, first);
+        return true;
+    }
+
+    /// Detail building: the outcomes of the `records` of a registered message and the re-opened plaintext of the decrypted ones.
+    void readTlsMessage(const TlsMessageRef &ref, std::span<const TlsRecordInput> records, TlsMessageDecryption &out) const {
+        out = TlsMessageDecryption{};
+        const TlsSession *session = tls_.session(ref.session);
+        if (!session) return;
+        tls::KeyEntry entry;
+        const bool found = session->hasClientRandom && findTlsKeys(session->clientRandom, entry);
+        tlsDecrypt_.read(*session, ref, records, found ? &entry : nullptr, out);
+    }
+    const TlsDecryptTable &tlsDecryptTable() const { return tlsDecrypt_; }
 
     /// The message that the packet `packet` completed (or lies in) and that starts at relative sequence number `startSeq`.
     const TlsMessageRef *findTlsMessage(uint32_t packet, uint32_t startSeq) const { return tls_.findMessage(packet, startSeq); }
@@ -164,7 +208,7 @@ public:
         return true;
     }
 
-    size_t totalMemoryUsage() const { return ftpMemory_ + tftpMemory_ + tls_.memory(); }
+    size_t totalMemoryUsage() const { return ftpMemory_ + tftpMemory_ + tls_.memory() + tlsDecrypt_.memory(); }
 
 private:
     void markStateLost(const std::string &tableName) {
@@ -184,6 +228,7 @@ private:
     size_t tftpMemory_ = 0;
 
     TlsSessionTable tls_;
+    TlsDecryptTable tlsDecrypt_;
     tls::KeyStore tlsExternalKeys_;
     tls::KeyStore tlsCaptureKeys_;
 };

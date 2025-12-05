@@ -68,7 +68,8 @@ namespace packet {
         uint32_t tcp_reassembled_in = 0; // tcp_pdu_state == 1: number of the packet that completed the message this segment belongs to
         uint32_t app_stream = 0;     // HTTP/2: stream identifier of the first frame
         uint32_t tcp_len = 0;        // TCP payload length on the wire (from the IP length, not the captured bytes)
-        uint32_t reassembled_in = 0; // for a fragment (ip_frag == 1): number of the frame that completed the datagram
+        uint32_t reassembled_in = 0; // for a fragment (ip_frag == 1): number of the frame that completed the datagram;
+                                     // for a TCP packet: the TLS decryption summary (dissect/tls_summary.h)
         uint32_t payload_offset = 0; // TCP/UDP payload position (0/0 if there is none). Relative to the captured frame -
                                      // except when ip_frag == 2: then relative to the reassembled IP payload (see core::reassembleIpPayload)
         uint32_t payload_length = 0;

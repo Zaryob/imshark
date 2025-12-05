@@ -21,6 +21,7 @@ add_library(imshark_core STATIC
     src/dissect/ntp.cpp
     src/dissect/snmp.cpp
     src/dissect/tls.cpp
+    src/dissect/tls_decrypt.cpp
     src/dissect/dhcp.cpp
     src/dissect/bgp.cpp
     src/dissect/telnet.cpp

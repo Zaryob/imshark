@@ -28,6 +28,8 @@
 #include <unordered_map>
 #include <vector>
 
+#include "tls_summary.h"
+
 namespace dissect {
     using TlsRandom = std::array<uint8_t, 32>;           // ClientHello.random / ServerHello.random
     constexpr uint32_t kTlsNoRecord = 0xFFFFFFFFu;
@@ -54,6 +56,9 @@ namespace dissect {
         uint16_t cipherSuite = 0;                 // ServerHello's choice (0 = none seen)
         bool helloRetryRequest = false;           // the server answered with a HelloRetryRequest first (TLS 1.3)
         int8_t clientDirection = -1;              // index into `directions` of the client's traffic (-1 = not known)
+        bool earlyData = false;                   // the ClientHello offered early data (TLS 1.3 0-RTT)
+        TlsInner inner = TlsInner::Unknown;       // what the decrypted application data is dissected as (decided on the first data)
+        std::string alpn;                         // the protocol the server selected: ServerHello (TLS 1.2) or EncryptedExtensions (TLS 1.3)
         TlsDirection directions[2];
 
         TlsRole roleOf(unsigned direction) const {
@@ -71,6 +76,16 @@ namespace dissect {
         uint8_t direction = 0;                    // index into TlsSession::directions
         uint32_t firstRecord = 0;
         uint32_t records = 0;
+        uint32_t firstOutcome = kTlsNoRecord;     // index of the first of `records` decryption outcomes (tls_decrypt.h), if any
+    };
+
+    /// Where SessionTables::addTlsMessage put one message (filled for the decryption step that follows it).
+    struct TlsAddResult {
+        bool registered = false;                  // false: a repeat of a message seen before, frozen tables or no room
+        uint32_t session = 0;
+        uint8_t direction = 0;
+        uint32_t firstRecord = 0;
+        bool gapBefore = false;                   // data of this direction is missing right before this message
     };
 
     /// What the TLS dissector found in one TCP message (input of SessionTables::addTlsMessage).
@@ -86,6 +101,8 @@ namespace dissect {
         uint16_t version = 0;                     // ServerHello: negotiated version
         uint16_t cipherSuite = 0;                 // ServerHello: chosen suite
         bool helloRetryRequest = false;           // ServerHello that is a HelloRetryRequest
+        bool earlyData = false;                   // ClientHello with the early_data extension
+        std::string alpn;                         // ServerHello: the selected application protocol (TLS 1.2)
     };
 
     /// The sessions and the message index. Memory is accounted by the owner (SessionTables).
@@ -95,7 +112,8 @@ namespace dissect {
         /// per-direction counters still advance when only the message reference did not fit). A message that was
         /// registered before (same packet and start) is ignored.
         bool add(const std::string &srcIp, uint16_t srcPort, const std::string &dstIp, uint16_t dstPort,
-                 const TlsMessageFacts &facts, size_t maxMemory) {
+                 const TlsMessageFacts &facts, size_t maxMemory, TlsAddResult *result = nullptr) {
+            if (result) *result = TlsAddResult{};
             unsigned direction = 0;
             const std::string key = connectionKey(srcIp, srcPort, dstIp, dstPort, direction);
             const uint64_t messageKey = (static_cast<uint64_t>(facts.packet) << 32) | facts.startSeq;
@@ -123,10 +141,11 @@ namespace dissect {
 
             TlsSession &s = sessions_[id];
             TlsDirection &d = s.directions[direction];
+            bool gapBefore = false;
             if (d.haveNext) {
                 const int32_t ahead = static_cast<int32_t>(facts.startSeq - d.nextSeq);
                 if (ahead < 0) return true;           // bytes of this message were registered already
-                if (ahead > 0) d.gap = true;          // a message in between never completed
+                if (ahead > 0) d.gap = gapBefore = true;   // a message in between never completed
             }
             const uint32_t first = d.records;
             d.records += facts.records;
@@ -139,6 +158,7 @@ namespace dissect {
             }
             if (facts.clientHello) {
                 if (!s.hasClientRandom) { s.clientRandom = facts.random; s.hasClientRandom = true; }
+                if (facts.earlyData) s.earlyData = true;
                 s.clientDirection = static_cast<int8_t>(direction);
                 if (d.helloRecord == kTlsNoRecord) d.helloRecord = first + facts.helloRecord;
             } else if (facts.serverHello) {
@@ -151,15 +171,23 @@ namespace dissect {
                 }
                 s.version = facts.version;
                 s.cipherSuite = facts.cipherSuite;
+                if (!facts.alpn.empty()) s.alpn = facts.alpn.substr(0, 32);
                 // the ServerHello proper (not the HelloRetryRequest before it) is where the handshake keys start
                 if (d.helloRecord == kTlsNoRecord || !facts.helloRetryRequest) d.helloRecord = first + facts.helloRecord;
             }
 
             constexpr size_t kMessageCost = sizeof(uint64_t) + sizeof(TlsMessageRef) + 48;   // map node overhead
             if (memory_ + kMessageCost > maxMemory) return false;
-            messages_[messageKey] = TlsMessageRef{id, static_cast<uint8_t>(direction), first, facts.records};
+            messages_[messageKey] = TlsMessageRef{id, static_cast<uint8_t>(direction), first, facts.records, kTlsNoRecord};
             memory_ += kMessageCost;
+            if (result) *result = TlsAddResult{true, id, static_cast<uint8_t>(direction), first, gapBefore};
             return true;
+        }
+
+        /// Remembers where the decryption outcomes of a registered message start (see tls_decrypt.h).
+        void setFirstOutcome(uint32_t packet, uint32_t startSeq, uint32_t first) {
+            const auto it = messages_.find((static_cast<uint64_t>(packet) << 32) | startSeq);
+            if (it != messages_.end()) it->second.firstOutcome = first;
         }
 
         const TlsMessageRef *findMessage(uint32_t packet, uint32_t startSeq) const {
@@ -168,6 +196,7 @@ namespace dissect {
         }
 
         const TlsSession *session(uint32_t id) const { return id < sessions_.size() ? &sessions_[id] : nullptr; }
+        TlsSession *mutableSession(uint32_t id) { return id < sessions_.size() ? &sessions_[id] : nullptr; }
 
         /// The most recent session between these endpoints; `direction` receives the index of the traffic that goes
         /// from the first endpoint to the second.

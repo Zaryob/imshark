@@ -600,7 +600,7 @@ TEST(TlsSessionTable, EncryptedRuleOnlyAppliesToTheSameStream) {
     EXPECT_GT(t.totalMemoryUsage(), memoryBefore);
     EXPECT_FALSE(t.tlsDirectionEncrypted("1.1.1.1", 1, "2.2.2.2", 2, 1)) << "after a SYN the next hello is plain";
     EXPECT_TRUE(t.addTlsMessage("1.1.1.1", 1, "2.2.2.2", 2, facts(8, 1, 50, 1)));
-    EXPECT_EQ(t.totalMemoryUsage(), memoryBefore + sizeof(dissect::TlsSession) + 19 + 64 + 72) << "the marker is gone, a session and a message were added";
+    EXPECT_EQ(t.totalMemoryUsage(), memoryBefore + sizeof(dissect::TlsSession) + 19 + 64 + sizeof(uint64_t) + sizeof(dissect::TlsMessageRef) + 48) << "the marker is gone, a session and a message were added";
     EXPECT_EQ(t.tlsSessionsBetween("1.1.1.1", 1, "2.2.2.2", 2), 2u) << "the SYN started a second session";
     EXPECT_EQ(t.findTlsSession("1.1.1.1", 1, "2.2.2.2", 2)->directions[0].records, 1u);
 
