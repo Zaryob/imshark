@@ -146,7 +146,9 @@ public:
         return true;
     }
 
-    /// Detail building: the outcomes of the `records` of a registered message and the re-opened plaintext of the decrypted ones.
+    /// Detail building (and the load pass for a message whose decryption it could not record): the outcomes of the `records`
+    /// of a registered message and the re-opened plaintext of the decrypted ones. A message of a keyed connection that was
+    /// not recorded (the "tls" budget ran out) reads as state lost.
     void readTlsMessage(const TlsMessageRef &ref, std::span<const TlsRecordInput> records, TlsMessageDecryption &out) const {
         out = TlsMessageDecryption{};
         const TlsSession *session = tls_.session(ref.session);

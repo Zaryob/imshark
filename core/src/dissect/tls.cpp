@@ -3,9 +3,13 @@
 // messages are decoded to the message type, hello fields and extensions, and the certificates of a Certificate message;
 // encrypted content is only counted. A message that TCP reassembly cut out of the stream is also registered in the TLS
 // session tables (randoms, version, cipher suite, record indices; see tls_session.h) and the detail tree says whether key
-// material for the connection is known.
+// material for the connection is known. When it is, the protected records of that message are decrypted in the load pass
+// (tls_decrypt.h): the packet shows what happened to each record (decrypted, wrong key, missing key, ...), a "Decrypted TLS"
+// layer with the plaintext, and the application data is dissected as HTTP/1.x or HTTP/2 (ALPN, else sniffed), so the Protocol
+// and Info columns of such a packet show the inner protocol.
 #include "protocols.h"
 
+#include "tls_decrypt.h"
 #include "util.h"
 #include "x509.h"
 
@@ -199,6 +203,7 @@ namespace {
         uint16_t supportedVersion = 0;   // highest from the supported_versions extension
         uint16_t cipher = 0;             // ServerHello's chosen suite
         uint16_t version = 0;            // legacy version field
+        bool earlyData = false;          // ClientHello with the early_data extension (0-RTT)
         uint8_t helloType = 0;           // 1 / 2 when a plausible ClientHello / ServerHello was read (0 = none)
         std::array<uint8_t, 32> random{};   // that hello's random
     };
@@ -286,6 +291,9 @@ namespace {
             } else if (type == 45 && len >= 2) { // psk_key_exchange_modes
                 note = "psk_key_exchange_modes";
                 for (size_t k = 1; k < len; ++k) details.push_back(std::string("PSK Key Exchange Mode: ") + (d[k] == 1 ? "psk_dhe_ke" : d[k] == 0 ? "psk_ke" : "unknown") + " (" + std::to_string(static_cast<uint8_t>(d[k])) + ")");
+            } else if (type == 42) {
+                if (client) h.earlyData = true;
+                note = "early_data";
             } else if (type == 35) {
                 note = "session_ticket";
                 details.push_back("Session Ticket: " + std::to_string(len) + " bytes");
@@ -454,16 +462,168 @@ namespace {
         }
     }
 
-    // Load pass: puts the complete TCP message at `data` into the session tables. Then (both passes) adds the facts of the
-    // session to the TLS layer: the position of the message's records in their direction and the state of the key material.
+    void zeroRanges(Field &f) {
+        f.offset = 0;
+        f.length = 0;
+        for (auto &c: f.children) zeroRanges(c);
+    }
+
+    const char *innerName(TlsInner k) { return k == TlsInner::Http2 ? "HTTP/2" : k == TlsInner::Http1 ? "HTTP/1.x" : "unknown"; }
+
+    // The records of one complete message as the decryptor wants them; false if the last one is cut (then nothing is decrypted).
+    bool recordInputs(const char *data, size_t length, const RecordScan &scan, std::vector<TlsRecordInput> &out) {
+        out.clear();
+        for (size_t start: scan.starts) {
+            const size_t len = be16(data + start + 3);
+            if (len > length - start - 5) return false;
+            out.push_back({static_cast<uint8_t>(data[start]), be16(data + start + 1),
+                           std::span<const uint8_t>(reinterpret_cast<const uint8_t *>(data) + start + 5, len)});
+        }
+        return true;
+    }
+
+    // What the application data of a message was dissected as, if it was.
+    struct InnerResult {
+        bool dissected = false;
+        std::string protocol, info, text, text2;
+        uint16_t type = 0, flags = 0, code = 0;
+        uint32_t stream = 0;
+        std::vector<Field> fields;
+    };
+
+    // Dissects decrypted application data as the protocol the load pass settled on for it. A chunk that does not start a
+    // message (the rest of a body, a frame cut across records) is not a message: `dissected` stays false.
+    InnerResult dissectInner(Context &ctx, TlsInner kind, const std::string &plain) {
+        InnerResult r;
+        if (kind == TlsInner::Unknown || plain.empty()) return r;
+        packet::PacketInfo nested(ctx.pack.number);
+        nested.link_type = ctx.pack.link_type;
+        Context nctx{nested, plain.data(), plain.size(), ctx.tcp, ctx.registry, ctx.mode};
+        nctx.sessions = ctx.sessions;
+        if (kind == TlsInner::Http2) {
+            if (frameHttp2(plain.data(), plain.size()).kind == StreamFrame::Kind::Reject) return r;
+            dissectHttp2(nctx, plain.data(), plain.size());
+        } else if (!dissectHttp(nctx, plain.data(), plain.size())) {
+            return r;
+        }
+        r.dissected = true;
+        r.protocol = nested.protocol;
+        r.info = nested.info;
+        r.text = nested.app_text;
+        r.text2 = nested.app_text2;
+        r.type = nested.app_type;
+        r.flags = nested.app_flags;
+        r.code = nested.app_code;
+        r.stream = nested.app_stream;
+        r.fields = std::move(nested.fields);
+        for (auto &f: r.fields) zeroRanges(f);   // offsets inside the plaintext do not map to bytes of this frame
+        return r;
+    }
+
+    // Adds the "Decrypted TLS" layer for the decrypted records of a message and takes over what the inner protocol found.
+    void showDecryption(Context &ctx, const TlsMessageDecryption &md) {
+        auto &pack = ctx.pack;
+        size_t total = 0, decrypted = 0;
+        std::string appData;                 // the application data of the message, in record order
+        TlsInner inner = TlsInner::Unknown;
+        for (size_t i = 0; i < md.outcomes.size(); ++i) {
+            if (md.outcomes[i].recordState() != TlsRecordState::Decrypted) continue;
+            ++decrypted;
+            total += md.plaintext[i].size();
+            if (md.outcomes[i].contentType == 23) {
+                appData.append(reinterpret_cast<const char *>(md.plaintext[i].data()), md.plaintext[i].size());
+                if (inner == TlsInner::Unknown) inner = md.outcomes[i].innerProtocol();
+            }
+        }
+        if (decrypted == 0) return;
+
+        Field *layer = ctx.wantFields() ? &ctx.addLayer("Decrypted TLS (" + std::to_string(total) + " bytes)", 0, 0) : nullptr;
+        std::string info;                    // what the decrypted records are, for the Info column
+        for (size_t i = 0; i < md.outcomes.size(); ++i) {
+            const TlsRecordOutcome &o = md.outcomes[i];
+            if (o.recordState() != TlsRecordState::Decrypted) continue;
+            const std::vector<uint8_t> &pt = md.plaintext[i];
+            const std::string sizeText = std::to_string(pt.size()) + " bytes";
+            std::string part;
+            if (o.contentType == 22) {
+                Field *node = layer ? &layer->add("Decrypted Handshake Protocol (" + sizeText + ")") : nullptr;
+                Joined joined;
+                joined.append(reinterpret_cast<const char *>(pt.data()), pt.size(), 0);
+                Hello scratch;
+                size_t hp = 0;
+                for (int messages = 0; joined.bytes.size() - hp >= 4 && messages < 8; ++messages) {
+                    const char *m = joined.bytes.data() + hp;
+                    const size_t mlen = (static_cast<size_t>(static_cast<uint8_t>(m[1])) << 16) | be16(m + 2);
+                    const std::string w = handshake(joined, hp, scratch, node);
+                    part += (part.empty() ? "" : ", ") + w;
+                    if (mlen >= joined.bytes.size() - hp - 4) break;
+                    hp += 4 + mlen;
+                }
+                if (part.empty()) part = "Handshake";
+            } else if (o.contentType == 21) {
+                part = "Alert";
+                Field *node = layer ? &layer->add("Decrypted Alert (" + sizeText + ")") : nullptr;
+                if (pt.size() >= 2) {
+                    const char *name = alertName(pt[1]);
+                    part += std::string(" (") + (name ? name : "unknown") + ")";
+                    if (node) {
+                        node->add(std::string("Level: ") + (pt[0] == 1 ? "Warning" : pt[0] == 2 ? "Fatal" : "Unknown") + " (" + std::to_string(pt[0]) + ")");
+                        node->add(std::string("Description: ") + (name ? name : "Unknown") + " (" + std::to_string(pt[1]) + ")");
+                    }
+                }
+            } else if (o.contentType == 23) {
+                part = "Application Data (decrypted, " + sizeText + ")";
+                if (layer) {
+                    Field &node = layer->add("Decrypted Application Data (" + sizeText + ")");
+                    node.add("Record sequence number: " + std::to_string(o.sequence) + (o.keyUpdates ? " (after " + std::to_string(o.keyUpdates) + " KeyUpdate(s))" : ""));
+                    node.add(std::string("Protocol: ") + innerName(o.innerProtocol()));
+                    node.add("Data (" + sizeText + ")");
+                }
+            } else {
+                part = std::string(contentTypeName(o.contentType)) + " (decrypted)";
+                if (layer) layer->add(std::string("Decrypted ") + contentTypeName(o.contentType) + " (" + sizeText + ")");
+            }
+            info += (info.empty() ? "" : ", ") + part;
+        }
+
+        const InnerResult r = dissectInner(ctx, inner, appData);
+        if (r.dissected) {
+            pack.protocol = r.protocol;
+            pack.info = r.info;
+            pack.app_text = r.text;
+            pack.app_text2 = r.text2;
+            pack.app_type = r.type;
+            pack.app_flags = r.flags;
+            pack.app_code = r.code;
+            pack.app_stream = r.stream;
+            if (ctx.wantFields()) for (const Field &f: r.fields) pack.fields.push_back(f);
+        } else if (decrypted == md.outcomes.size() || md.outcomes.size() == 1) {
+            // nothing of HTTP in it: the Info column says what the decrypted records are (the TLS records of a message
+            // that mixes decrypted and other records keep the text the record loop gave them)
+            pack.info = info;
+        }
+    }
+
+    // Load pass: puts the complete TCP message at `data` into the session tables and decrypts its records. Then (both
+    // passes) adds the facts of the session to the TLS layer: the position of the message's records in their direction,
+    // the state of the key material and what became of each protected record.
     void sessionInfo(Context &ctx, const char *data, size_t length, const Hello &hello, size_t helloGroupStart, Field *layer) {
         if (!ctx.sessions) return;
-        const auto &pack = ctx.pack;
+        auto &pack = ctx.pack;
         const bool stream = ctx.tcpStreamSeq >= 0 && pack.ip_protocol == 6;
         const uint32_t startSeq = static_cast<uint32_t>(ctx.tcpStreamSeq);
+        const size_t recordNodes = layer ? layer->children.size() : 0;   // the record nodes the record loop added, in record order
 
+        RecordScan scan;
+        std::vector<TlsRecordInput> inputs;
+        bool inputsOk = false;
+        TlsMessageDecryption md;
+        bool haveDecryption = false;
+        if (stream) {
+            scan = scanRecords(data, length);
+            inputsOk = recordInputs(data, length, scan, inputs);
+        }
         if (stream && ctx.mode != ParseMode::Replay) {
-            const RecordScan scan = scanRecords(data, length);
             TlsMessageFacts f;
             f.packet = static_cast<uint32_t>(pack.number);
             f.startSeq = startSeq;
@@ -477,32 +637,79 @@ namespace {
                 f.clientHello = hello.helloType == 1;
                 f.serverHello = hello.helloType == 2;
                 f.random = hello.random;
+                f.earlyData = f.clientHello && hello.earlyData;
                 const auto at = std::find(scan.starts.begin(), scan.starts.end(), helloGroupStart);
                 f.helloRecord = at == scan.starts.end() ? 0 : static_cast<uint32_t>(at - scan.starts.begin());
                 if (f.serverHello) {
                     f.helloRetryRequest = std::memcmp(hello.random.data(), kHelloRetryRequestRandom, 32) == 0;
                     f.version = hello.supportedVersion != 0 ? hello.supportedVersion : hello.version;
                     f.cipherSuite = hello.cipher;
+                    f.alpn = hello.alpn;
                 }
             }
-            ctx.sessions->addTlsMessage(pack.source, pack.src_port, pack.destination, pack.dst_port, f);
+            TlsAddResult added;
+            const bool registered = ctx.sessions->addTlsMessage(pack.source, pack.src_port, pack.destination, pack.dst_port, f, &added);
+            if (registered && added.registered && inputsOk) {
+                haveDecryption = ctx.sessions->decryptTlsMessage(added, f.packet, startSeq, inputs, md);
+            } else if (!registered && ctx.sessions->isTableStateLost("tls") &&
+                       std::any_of(inputs.begin(), inputs.end(), [](const TlsRecordInput &r) { return r.type == 23; })) {
+                // no room to keep what decryption needs: say so rather than showing nothing
+                pack.reassembled_in = mergeTlsSummary(pack.reassembled_in, tlsSummaryOf(TlsRecordState::StateLost));
+            }
         }
-        if (!layer) return;
 
         const TlsMessageRef *ref = stream ? ctx.sessions->findTlsMessage(static_cast<uint32_t>(pack.number), startSeq) : nullptr;
-        // a packet that is not a whole message cannot tell which of several connections on the same endpoints it belongs to:
-        // then it says nothing about keys rather than showing another connection's state
-        if (!ref && ctx.sessions->tlsSessionsBetween(pack.source, pack.src_port, pack.destination, pack.dst_port) > 1) return;
-        const TlsSession *session = ref ? ctx.sessions->tlsSession(ref->session)
-                                        : ctx.sessions->findTlsSession(pack.source, pack.src_port, pack.destination, pack.dst_port);
-        if (ref && session) {
-            const std::string first = std::to_string(ref->firstRecord);
-            const std::string index = ref->records > 1 ? first + "-" + std::to_string(ref->firstRecord + ref->records - 1) : first;
-            layer->add("[TLS record index: " + index + " (" + roleText(*session, ref->direction) + ")]");
+        if (ref && inputsOk && !haveDecryption) {   // Replay (or a message that was registered before): the stored outcomes
+            ctx.sessions->readTlsMessage(*ref, inputs, md);
+            haveDecryption = md.outcomes.size() == inputs.size();
         }
-        tls::KeyEntry keys;
-        const bool found = session && session->hasClientRandom && ctx.sessions->findTlsKeys(session->clientRandom, keys);
-        layer->add(std::string("Key material: ") + tls::availabilityText(tls::classify(found ? &keys : nullptr, session ? session->version : uint16_t(0))));
+        if (haveDecryption) {
+            for (const TlsRecordOutcome &o: md.outcomes) pack.reassembled_in = mergeTlsSummary(pack.reassembled_in, tlsSummaryOf(o.recordState()));
+        }
+        const TlsSession *session = ref ? ctx.sessions->tlsSession(ref->session) : nullptr;
+
+        if (layer) {
+            // a packet that is not a whole message cannot tell which of several connections on the same endpoints it belongs to:
+            // then it says nothing about keys rather than showing another connection's state
+            if (!ref && ctx.sessions->tlsSessionsBetween(pack.source, pack.src_port, pack.destination, pack.dst_port) > 1) return;
+            if (!session) session = ctx.sessions->findTlsSession(pack.source, pack.src_port, pack.destination, pack.dst_port);
+            if (ref && session) {
+                const std::string first = std::to_string(ref->firstRecord);
+                const std::string index = ref->records > 1 ? first + "-" + std::to_string(ref->firstRecord + ref->records - 1) : first;
+                layer->add("[TLS record index: " + index + " (" + roleText(*session, ref->direction) + ")]");
+            }
+            tls::KeyEntry keys;
+            const bool found = session && session->hasClientRandom && ctx.sessions->findTlsKeys(session->clientRandom, keys);
+            layer->add(std::string("Key material: ") + tls::availabilityText(tls::classify(found ? &keys : nullptr, session ? session->version : uint16_t(0))));
+            if (!ref && stream && ctx.sessions->isTableStateLost("tls") && (tlsSummaryState(pack) == TlsRecordState::StateLost)) {
+                layer->add(std::string("Decryption status: ") + tlsStateText(TlsRecordState::StateLost));
+            }
+        }
+
+        if (!haveDecryption) return;
+        // what became of each protected record, under its record node; and the packet's overall state
+        TlsRecordState overall = TlsRecordState::Clear;
+        for (size_t i = 0; i < md.outcomes.size(); ++i) {
+            const TlsRecordOutcome &o = md.outcomes[i];
+            if (o.recordState() == TlsRecordState::Clear) continue;
+            if (overall == TlsRecordState::Clear || o.recordState() == TlsRecordState::Decrypted) overall = o.recordState();
+            if (layer && i < recordNodes) {
+                Field &rec = layer->children[i];
+                rec.add(std::string("[Decryption: ") + tlsStateText(o.recordState()) + "]");
+                if (o.recordState() == TlsRecordState::Decrypted) {
+                    rec.add(std::string("[Inner content type: ") + contentTypeName(o.contentType) + " (" + std::to_string(o.contentType) + "), " +
+                            std::to_string(o.plainLength) + " bytes]");
+                }
+            }
+        }
+        if (layer && overall != TlsRecordState::Clear) {
+            layer->add(std::string("Decryption status: ") + tlsStateText(overall));
+            const bool good = overall == TlsRecordState::Decrypted;
+            const bool warn = overall == TlsRecordState::TagFailure || overall == TlsRecordState::Malformed || overall == TlsRecordState::StateLost;
+            layer->add(std::string("[Expert Info (") + (good ? "Chat" : warn ? "Warning" : "Note") + "/Decryption): " +
+                       (good ? "TLS records decrypted with the key log" : tlsStateText(overall)) + "]");
+        }
+        showDecryption(ctx, md);
     }
 } // namespace
 

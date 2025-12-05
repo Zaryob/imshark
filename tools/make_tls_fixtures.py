@@ -24,8 +24,20 @@ decrypt_tls12.json, one case per supported cipher suite. Each case is a real con
 Only the protected records are stored (TLS 1.3: every record with outer type 23; TLS 1.2: the records after the
 ChangeCipherSpec of each direction), as hex of the bytes after the 5 byte record header.
 
+With --h2 it writes tls13_h2.pcapng / tls13_h2.keys and h2.json: a TLS 1.3 connection that negotiated ALPN "h2" and
+carries a small HTTP/2 exchange (client preface, SETTINGS, a GET request on stream 1, SETTINGS ACK; server SETTINGS,
+SETTINGS ACK, the response HEADERS and a DATA frame), each written by the application as its own TLS record. h2.json
+holds the plaintext of both directions exactly as the two ends wrote it (known by construction: that is the oracle for
+the decrypted bytes), the frames it is made of and the key log text.
+
+With --raw it writes tls12_raw / tls13_raw (.pcapng, .keys) and raw.json: connections whose application data is not HTTP at
+all (a made-up binary protocol, no ALPN), to show that the decrypted bytes are displayed without guessing a protocol;
+raw.json holds the plaintext of each direction as the two ends wrote it.
+
 Usage: python3 tools/make_tls_fixtures.py [output directory]               (the session fixtures)
+       python3 tools/make_tls_fixtures.py --raw [output directory]
        python3 tools/make_tls_fixtures.py --decrypt [13|12|all] [output directory]
+       python3 tools/make_tls_fixtures.py --h2 [output directory]
 """
 import json
 import os
@@ -61,7 +73,11 @@ def make_certificate(directory):
     return cert, key
 
 
-def handshake_flights(version, cert, key, keylog_path):
+RAW_CLIENT = b"\x00\x01BINARY-PING\xff\xfe\x00\x00 not http"
+RAW_SERVER = b"\x00\x02BINARY-PONG\x80\x81" + bytes(range(32))
+
+
+def handshake_flights(version, cert, key, keylog_path, request=None, response=None):
     """Runs a TLS connection in memory and returns [(direction, bytes)] in the order the bytes were produced."""
     wanted = ssl.TLSVersion.TLSv1_2 if version == 12 else ssl.TLSVersion.TLSv1_3
     cctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
@@ -99,10 +115,10 @@ def handshake_flights(version, cert, key, keylog_path):
         pump()
         step(server.do_handshake)
         pump()
-    client.write(b"GET /index.html HTTP/1.1\r\nHost: imshark.test\r\n\r\n")
+    client.write(request or b"GET /index.html HTTP/1.1\r\nHost: imshark.test\r\n\r\n")
     pump()
     step(server.read, 4096)
-    server.write(b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello")
+    server.write(response or b"HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nhello")
     pump()
     step(client.read, 4096)
     step(client.unwrap)
@@ -169,9 +185,9 @@ def pcapng(packets, keylog_text):
     return out
 
 
-def build(version, cert, key, outdir):
+def build(version, cert, key, outdir, name=None, flights_fn=None):
     keylog = os.path.join(tempfile.mkdtemp(), "keys.log")
-    flights = handshake_flights(version, cert, key, keylog)
+    flights = (flights_fn or handshake_flights)(version, cert, key, keylog)
     keylog_text = open(keylog).read()
 
     # the TCP connection: three-way handshake, then every flight cut into segments
@@ -202,7 +218,7 @@ def build(version, cert, key, outdir):
     assert lines and all(l[1] == client_hello["random"] for l in lines), "key log random differs from the wire (%s)" % suite
     labels = sorted(l[0] for l in lines)
 
-    name = "tls%d" % version
+    name = name or "tls%d" % version
     with open(os.path.join(outdir, name + ".pcapng"), "wb") as f:
         f.write(pcapng(packets, keylog_text))
     with open(os.path.join(outdir, name + ".keys"), "w") as f:
@@ -398,6 +414,114 @@ def make_decrypt_fixtures(which, outdir):
         print("%s: %d cases, %d bytes" % (path, len(cases), os.path.getsize(path)))
 
 
+# ---- HTTP/2 over TLS 1.3 (ALPN h2) -------------------------------------------------------------------------------
+
+def h2_frame(ftype, flags, stream, payload=b""):
+    return struct.pack(">I", len(payload))[1:] + bytes([ftype, flags]) + struct.pack(">I", stream) + payload
+
+
+H2_PREFACE = b"PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n"
+
+
+def h2_script():
+    """[(who, bytes)]: what each end writes, one TLS record per entry. HPACK blocks use the static table only."""
+    # :method GET (2), :scheme https (7), :path / (4), :authority literal without indexing (name index 1)
+    request = bytes([0x82, 0x87, 0x84, 0x01, len(b"imshark.test")]) + b"imshark.test"
+    # :status 200 (8), content-type literal without indexing (name index 31) text/plain
+    response = bytes([0x88, 0x0F, 0x10, len(b"text/plain")]) + b"text/plain"
+    return [
+        ("c", H2_PREFACE + h2_frame(4, 0, 0)),
+        ("c", h2_frame(1, 0x05, 1, request)),
+        ("s", h2_frame(4, 0, 0)),
+        ("s", h2_frame(4, 0x01, 0)),
+        ("s", h2_frame(1, 0x04, 1, response)),
+        ("s", h2_frame(0, 0x01, 1, b"hello h2")),
+        ("c", h2_frame(4, 0x01, 0)),
+    ]
+
+
+def h2_flights(version, cert, key, keylog_path):
+    """Like handshake_flights, but with ALPN h2 and the HTTP/2 exchange of h2_script()."""
+    cctx = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    cctx.check_hostname = False
+    cctx.verify_mode = ssl.CERT_NONE
+    cctx.minimum_version = cctx.maximum_version = ssl.TLSVersion.TLSv1_3
+    cctx.keylog_filename = keylog_path
+    cctx.set_alpn_protocols(["h2", "http/1.1"])
+    sctx = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+    sctx.load_cert_chain(cert, key)
+    sctx.minimum_version = sctx.maximum_version = ssl.TLSVersion.TLSv1_3
+    sctx.set_alpn_protocols(["h2"])
+    c_in, c_out, s_in, s_out = ssl.MemoryBIO(), ssl.MemoryBIO(), ssl.MemoryBIO(), ssl.MemoryBIO()
+    client = cctx.wrap_bio(c_in, c_out, server_hostname="imshark.test")
+    server = sctx.wrap_bio(s_in, s_out, server_side=True)
+    flights = []
+
+    def pump():
+        moved = True
+        while moved:
+            moved = False
+            data = c_out.read()
+            if data:
+                flights.append(("c2s", data)); s_in.write(data); moved = True
+            data = s_out.read()
+            if data:
+                flights.append(("s2c", data)); c_in.write(data); moved = True
+
+    def step(fn, *args):
+        try:
+            return fn(*args)
+        except (ssl.SSLWantReadError, ssl.SSLWantWriteError):
+            return None
+
+    for _ in range(20):
+        step(client.do_handshake)
+        pump()
+        step(server.do_handshake)
+        pump()
+    assert client.selected_alpn_protocol() == "h2" and server.selected_alpn_protocol() == "h2"
+    sent = {"c": b"", "s": b""}
+    for who, data in h2_script():
+        (client if who == "c" else server).write(data)
+        sent[who] += data
+        pump()
+        (server if who == "c" else client).read(65536)
+    step(client.unwrap)
+    pump()
+    return flights
+
+
+def make_raw_fixtures(outdir):
+    os.makedirs(outdir, exist_ok=True)
+    cert, key = make_certificate(tempfile.mkdtemp())
+    doc = {"client": RAW_CLIENT.hex(), "server": RAW_SERVER.hex()}
+    for version in (12, 13):
+        name = "tls%d_raw" % version
+        doc[name] = build(version, cert, key, outdir, name=name,
+                          flights_fn=lambda v, c, k, path: handshake_flights(v, c, k, path, RAW_CLIENT, RAW_SERVER))
+        doc[name]["keylog"] = open(os.path.join(outdir, name + ".keys")).read()
+    with open(os.path.join(outdir, "raw.json"), "w") as f:
+        json.dump(doc, f, indent=1, sort_keys=True)
+        f.write("\n")
+    print(json.dumps({k: v for k, v in doc.items()}, indent=1, sort_keys=True)[:1500])
+
+
+def make_h2_fixture(outdir):
+    os.makedirs(outdir, exist_ok=True)
+    cert, key = make_certificate(tempfile.mkdtemp())
+    facts = build(13, cert, key, outdir, name="tls13_h2", flights_fn=h2_flights)
+    script = h2_script()
+    facts["alpn"] = "h2"
+    facts["client_stream"] = b"".join(d for w, d in script if w == "c").hex()
+    facts["server_stream"] = b"".join(d for w, d in script if w == "s").hex()
+    facts["writes"] = [{"who": w, "bytes": d.hex()} for w, d in script]
+    facts["keylog"] = open(os.path.join(outdir, "tls13_h2.keys")).read()
+    with open(os.path.join(outdir, "h2.json"), "w") as f:
+        json.dump(facts, f, indent=1, sort_keys=True)
+        f.write("\n")
+    print(json.dumps({k: v for k, v in facts.items() if k not in ("keylog",)}, indent=1, sort_keys=True))
+
+
 def main():
     args = sys.argv[1:]
     default_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tests", "data", "tls")
@@ -405,6 +529,12 @@ def main():
         which = args[1] if len(args) > 1 and args[1] in ("13", "12", "all") else "all"
         rest = [a for a in args[1:] if a not in ("13", "12", "all")]
         make_decrypt_fixtures(which, rest[0] if rest else default_dir)
+        return
+    if args and args[0] == "--raw":
+        make_raw_fixtures(args[1] if len(args) > 1 else default_dir)
+        return
+    if args and args[0] == "--h2":
+        make_h2_fixture(args[1] if len(args) > 1 else default_dir)
         return
     outdir = args[0] if args else default_dir
     os.makedirs(outdir, exist_ok=True)

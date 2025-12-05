@@ -193,6 +193,12 @@ namespace dissect {
                                             : outcomeOf(unkeyedState(session, ref.direction, ref.firstRecord + static_cast<uint32_t>(i), records[i].type),
                                                         records[i].type));
         }
+        if (!recorded && keys && session.hasClientRandom) {
+            // the connection has key material but the load pass did not record this message (no room left): not "no key"
+            for (TlsRecordOutcome &o: out.outcomes) {
+                if (o.recordState() == TlsRecordState::NoKey) o.state = static_cast<uint8_t>(TlsRecordState::StateLost);
+            }
+        }
         if (!recorded || !keys || !session.hasClientRandom) return;
 
         std::optional<tls::RecordDecryptor> decryptor;

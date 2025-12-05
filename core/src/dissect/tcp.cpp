@@ -234,6 +234,7 @@ namespace {
         pack.app_text = nested.app_text;
         pack.app_text2 = nested.app_text2;
         pack.app_stream = nested.app_stream;
+        pack.reassembled_in = nested.reassembled_in;   // TCP packets: the TLS decryption summary (tls_summary.h)
         if (ctx.wantFields()) {
             std::string from;
             for (uint32_t n: packets) from += (from.empty() ? "#" : ", #") + std::to_string(n);
@@ -249,6 +250,7 @@ namespace {
     void dissectFollowing(Context &ctx, const char *payload, size_t payloadLen, size_t from, uint16_t srcPort, uint16_t dstPort,
                           uint32_t payloadSeq) {
         auto &pack = ctx.pack;
+        const auto protocolName = pack.protocol;
         const auto appType = pack.app_type;
         const auto appFlags = pack.app_flags;
         const auto appCode = pack.app_code;
@@ -270,6 +272,7 @@ namespace {
             at += f.length;
             ++count;
         }
+        pack.protocol = protocolName;   // the first message names the packet (a later one may be a different protocol)
         pack.app_type = appType;
         pack.app_flags = appFlags;
         pack.app_code = appCode;
