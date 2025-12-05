@@ -106,6 +106,14 @@ namespace tls {
         /// contentType.
         DecryptedRecord decrypt(Direction direction, uint8_t type, uint16_t recordVersion, std::span<const uint8_t> fragment);
 
+        /// Opens one record at an explicit key position, without reading or changing the tracked state: `epoch`,
+        /// `keyUpdates` and `sequence` are what a DecryptedRecord of an earlier sequential decrypt() reported for it, so a
+        /// record that was opened once (the load pass) can be opened again alone (detail building) without feeding the
+        /// whole connection again. TLS 1.3 keys come from the handshake or application secret advanced by `keyUpdates`
+        /// KeyUpdates; TLS 1.2 uses the one key block and only the sequence number. A TagFailure leaves no plaintext.
+        DecryptedRecord decryptAt(Direction direction, KeyEpoch epoch, uint32_t keyUpdates, uint64_t sequence, uint8_t type,
+                                  uint16_t recordVersion, std::span<const uint8_t> fragment) const;
+
         uint64_t sequence(Direction direction) const { return dir_[static_cast<size_t>(direction)].sequence; }
         void setSequence(Direction direction, uint64_t sequence) { dir_[static_cast<size_t>(direction)].sequence = sequence; }
         KeyEpoch epoch(Direction direction) const { return dir_[static_cast<size_t>(direction)].epoch; }
@@ -133,6 +141,7 @@ namespace tls {
         struct DirectionState {
             Keys keys;
             crypto::Bytes secret;              // TLS 1.3: the secret the keys came from
+            crypto::Bytes handshakeSecret;     // TLS 1.3: *_HANDSHAKE_TRAFFIC_SECRET (empty = not known), for decryptAt()
             crypto::Bytes applicationSecret;   // TLS 1.3: *_TRAFFIC_SECRET_0 (empty = not known)
             uint64_t sequence = 0;
             KeyEpoch epoch = KeyEpoch::Handshake;
@@ -141,10 +150,16 @@ namespace tls {
         };
 
         bool installKeys(DirectionState &d, const crypto::Bytes &secret);   // TLS 1.3: key / iv from a traffic secret
+        bool deriveKeys(const crypto::Bytes &secret, Keys &out) const;       // the same, into `out`
         DecryptedRecord decrypt13(DirectionState &d, uint8_t type, uint16_t recordVersion, std::span<const uint8_t> fragment);
         crypto::AeadStatus open13(const Keys &keys, uint64_t sequence, uint16_t recordVersion, std::span<const uint8_t> fragment,
                                   crypto::Bytes &inner) const;
         DecryptedRecord decrypt12(DirectionState &d, uint8_t type, uint16_t recordVersion, std::span<const uint8_t> fragment);
+        // TLS 1.2 record with `keys` at `sequence`: Malformed / NoKey by size and key checks, else the AEAD result (no state change)
+        DecryptedRecord open12(const Keys &keys, uint64_t sequence, uint8_t type, uint16_t recordVersion, std::span<const uint8_t> fragment,
+                               bool &sequenceUsed) const;
+        // TLS 1.3 plaintext handling shared by decrypt13 and decryptAt: strips the padding and the inner content type
+        static void finishInner13(crypto::Bytes &inner, DecryptedRecord &r);
         void deriveTls12Keys(const Secret &master, const ClientRandom &clientRandom, const ClientRandom &serverRandom);
 
         const CipherSuite *suite_ = nullptr;

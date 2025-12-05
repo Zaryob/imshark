@@ -862,6 +862,100 @@ TEST_F(TlsDecrypt, StaticRsaKeyLogLineDoesNotDisturbTheLookup) {
     EXPECT_EQ(runDirection(p.dec, *rsa, Direction::ServerToClient).application, rsa->application[1]);
 }
 
+// ---- decryptAt: one record at an explicit key position ----------------------------------------------------------------
+
+TEST_F(TlsDecrypt, DecryptAtReproducesEverySequentialResultOfTheOpenSslConnections) {
+    // The load pass opens the records in order and remembers (epoch, key updates, sequence); detail building opens one of
+    // them alone from that. Every record of every suite, KeyUpdate generations included, must come out the same way.
+    for (const char *file: {"decrypt_tls13.json", "decrypt_tls12.json"}) {
+        for (const Case &c: loadCases(file)) {
+            SCOPED_TRACE(c.name);
+            Prepared sequential(c), alone(c);
+            size_t maxUpdates = 0;
+            for (int d = 0; d < 2; ++d) {
+                const Direction dir = static_cast<Direction>(d);
+                for (const Rec &r: c.records[d]) {
+                    const auto first = sequential.dec.decrypt(dir, r.type, r.version, r.fragment);
+                    ASSERT_EQ(first.status, DecryptStatus::Decrypted);
+                    const auto again = alone.dec.decryptAt(dir, first.epoch, first.keyUpdates, first.sequence, r.type, r.version, r.fragment);
+                    ASSERT_EQ(again.status, DecryptStatus::Decrypted) << d << " seq " << first.sequence;
+                    EXPECT_EQ(again.plaintext, first.plaintext);
+                    EXPECT_EQ(again.contentType, first.contentType);
+                    maxUpdates = std::max<size_t>(maxUpdates, first.keyUpdates);
+                }
+                EXPECT_EQ(alone.dec.sequence(dir), 0u) << "decryptAt must not move the tracked sequence number";
+                EXPECT_EQ(alone.dec.epoch(dir), c.version == 0x0304 ? KeyEpoch::Handshake : KeyEpoch::Application);
+            }
+            if (c.version == 0x0304) EXPECT_GE(maxUpdates, 1u) << "the fixtures contain a KeyUpdate";
+        }
+    }
+}
+
+TEST_F(TlsDecrypt, DecryptAtOpensTheRfc8448RecordsAtTheirPositions) {
+    Keys keys(rfc8448Log());
+    tls::RecordDecryptor dec(0x0304, 0x1301, randomA(), randomB(), keys.entry());
+    auto at = [&](Direction d, KeyEpoch e, uint64_t seq, const std::string &fragment) {
+        const Bytes f = bytesOf(fragment);
+        return dec.decryptAt(d, e, 0, seq, 23, 0x0303, f);
+    };
+    auto r = at(Direction::ServerToClient, KeyEpoch::Handshake, 0, kServerHandshakeRecord);
+    ASSERT_EQ(r.status, DecryptStatus::Decrypted);
+    EXPECT_EQ(hexOf(r.plaintext), kServerHandshakePlaintext);
+    EXPECT_EQ(r.contentType, 22);
+    r = at(Direction::ServerToClient, KeyEpoch::Application, 1, kServerApplicationRecord);
+    ASSERT_EQ(r.status, DecryptStatus::Decrypted);
+    EXPECT_EQ(r.plaintext, zeroToFortyNine());
+    EXPECT_EQ(r.sequence, 1u);
+    // any other position is a tag failure with no plaintext: the position is part of the key and the nonce
+    r = at(Direction::ServerToClient, KeyEpoch::Application, 0, kServerApplicationRecord);
+    EXPECT_EQ(r.status, DecryptStatus::TagFailure);
+    EXPECT_TRUE(r.plaintext.empty());
+    r = at(Direction::ServerToClient, KeyEpoch::Handshake, 1, kServerApplicationRecord);
+    EXPECT_EQ(r.status, DecryptStatus::TagFailure);
+    r = at(Direction::ClientToServer, KeyEpoch::Application, 1, kServerApplicationRecord);
+    EXPECT_EQ(r.status, DecryptStatus::TagFailure) << "the other direction's key";
+    // a record that cannot be protected data
+    const Bytes tiny(3, 0);
+    EXPECT_EQ(dec.decryptAt(Direction::ClientToServer, KeyEpoch::Application, 0, 0, 23, 0x0303, tiny).status, DecryptStatus::Malformed);
+    EXPECT_EQ(dec.decryptAt(Direction::ClientToServer, KeyEpoch::Application, 0, 0, 22, 0x0303, bytesOf(kClientApplicationRecord)).status,
+              DecryptStatus::Malformed);
+}
+
+TEST_F(TlsDecrypt, DecryptAtReportsNoKeyAndUnsupportedLikeDecrypt) {
+    Keys onlyClientHandshake(logLine("CLIENT_HANDSHAKE_TRAFFIC_SECRET", kClientHs));
+    tls::RecordDecryptor dec(0x0304, 0x1301, randomA(), randomB(), onlyClientHandshake.entry());
+    const Bytes f = bytesOf(kServerHandshakeRecord);
+    EXPECT_EQ(dec.decryptAt(Direction::ServerToClient, KeyEpoch::Handshake, 0, 0, 23, 0x0303, f).status, DecryptStatus::NoKey);
+    EXPECT_EQ(dec.decryptAt(Direction::ClientToServer, KeyEpoch::Application, 0, 0, 23, 0x0303, bytesOf(kClientApplicationRecord)).status,
+              DecryptStatus::NoKey) << "no application secret";
+    EXPECT_EQ(dec.decryptAt(Direction::ClientToServer, KeyEpoch::Handshake, 0, 0, 23, 0x0303, bytesOf(kClientFinishedRecord)).status,
+              DecryptStatus::Decrypted);
+    Keys all(rfc8448Log());
+    tls::RecordDecryptor unsupported(0x0304, 0x1304, randomA(), randomB(), all.entry());
+    EXPECT_EQ(unsupported.decryptAt(Direction::ServerToClient, KeyEpoch::Handshake, 0, 0, 23, 0x0303, f).status, DecryptStatus::UnsupportedSuite);
+}
+
+TEST_F(TlsDecrypt, DecryptAtWithTheSealedKeyUpdateGenerations) {
+    Keys keys(rfc8448Log());
+    tls::RecordDecryptor sequential(0x0304, 0x1301, randomA(), randomB(), keys.entry());
+    tls::RecordDecryptor alone(0x0304, 0x1301, randomA(), randomB(), keys.entry());
+    const Direction s = Direction::ServerToClient;
+    std::vector<uint32_t> generations;
+    for (const std::string *record: {&kSealedKeyUpdate0, &kSealedKeyUpdate1, &kSealedKeyUpdate2, &kSealedKeyUpdate3, &kSealedKeyUpdate4}) {
+        const Bytes f = bytesOf(*record);
+        const auto first = sequential.decrypt(s, 23, 0x0303, f);
+        ASSERT_EQ(first.status, DecryptStatus::Decrypted);
+        const auto again = alone.decryptAt(s, first.epoch, first.keyUpdates, first.sequence, 23, 0x0303, f);
+        EXPECT_EQ(again.status, DecryptStatus::Decrypted);
+        EXPECT_EQ(again.plaintext, first.plaintext);
+        EXPECT_EQ(again.contentType, first.contentType);
+        generations.push_back(first.keyUpdates);
+    }
+    EXPECT_EQ(generations, (std::vector<uint32_t>{0, 0, 1, 1, 2}));
+    // a generation is part of the key: the right sequence number under the wrong generation fails the tag
+    EXPECT_EQ(alone.decryptAt(s, KeyEpoch::Application, 0, 0, 23, 0x0303, bytesOf(kSealedKeyUpdate2)).status, DecryptStatus::TagFailure);
+}
+
 TEST(TlsDecryptBackend, BuildsWithoutOpenSslReportItInsteadOfFailingSilently) {
     if (tls::crypto::available()) GTEST_SKIP() << "this build has OpenSSL; the stub is covered by IMSHARK_TLS_DECRYPT=OFF builds";
     Keys keys(rfc8448Log());
