@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <unordered_map>
 
+#include <dissect/tls_summary.h>
 #include <filter/filter.h>
 
 namespace stats {
@@ -157,11 +158,21 @@ namespace stats {
             {Severity::Warn, "TCP: out-of-order segment", "tcp.analysis.out_of_order"},
             {Severity::Warn, "TCP: zero window", "tcp.analysis.zero_window"},
             {Severity::Warn, "TCP: connection reset (RST)", "tcp.flags.rst"},
+            {Severity::Warn, "TLS: wrong key (the authentication tag of a record does not match)", "tls.decryption_status == \"tag_failure\""},
+            {Severity::Warn, "TLS: records not decrypted because TCP data is missing before them", "tls.decryption_status == \"capture_gap\""},
+            {Severity::Warn, "TLS: malformed protected record", "tls.decryption_status == \"malformed\""},
+            {Severity::Warn, "TLS: decryption state lost (too many TLS records for the session table)", "tls.decryption_status == \"state_lost\""},
+            {Severity::Note, "TLS: no key material for the connection", "tls.decryption_status == \"no_key\""},
+            {Severity::Note, "TLS: unsupported cipher suite or version", "tls.decryption_status == \"unsupported_suite\""},
+            {Severity::Note, "TLS: ServerHello not captured (cipher suite unknown)", "tls.decryption_status == \"no_handshake\""},
+            {Severity::Note, "TLS: 1.3 early data (0-RTT) is not decrypted", "tls.decryption_status == \"early_data\""},
+            {Severity::Note, "TLS: decryption is not available in this build (no OpenSSL)", "tls.decryption_status == \"unavailable\""},
             {Severity::Note, "TCP: duplicate ACK", "tcp.analysis.duplicate_ack"},
             {Severity::Note, "TCP: keep-alive", "tcp.analysis.keep_alive"},
             {Severity::Note, "TCP: window update", "tcp.analysis.window_update"},
             {Severity::Chat, "Checksum not verified (capture cut short, or checksum offload)",
              "ip.checksum.status == 2 || tcp.checksum.status == 2 || udp.checksum.status == 2 || icmp.checksum.status == 2 || icmpv6.checksum.status == 2"},
+            {Severity::Chat, "TLS: records decrypted with the key log", "tls.decryption_status == \"decrypted\""},
             {Severity::Chat, "TCP: connection request (SYN)", "tcp.flags.syn && !tcp.flags.ack"},
             {Severity::Chat, "TCP: connection finished (FIN)", "tcp.flags.fin"},
         };
@@ -262,6 +273,8 @@ namespace stats {
             else if (p.ip_protocol == 1) c.push_back("Internet Control Message Protocol");
             else if (p.ip_protocol == 58) c.push_back("Internet Control Message Protocol v6");
             else if (p.ip_version != 0 && p.ip_protocol != 4 && p.ip_protocol != 41 && p.ip_protocol != 47 && !p.has_gre && !p.has_ipip) c.push_back("Other IP protocol");
+            // HTTP that was decrypted from TLS sits below the TLS layer
+            if (p.ip_protocol == 6 && p.protocol != "TLS" && dissect::tlsSummaryState(p) == dissect::TlsRecordState::Decrypted) c.push_back(applicationName("TLS"));
             if (auto a = applicationName(p.protocol); !a.empty()) c.push_back(a);
             return c;
         }

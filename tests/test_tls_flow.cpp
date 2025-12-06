@@ -10,11 +10,15 @@
 #include <algorithm>
 #include <cstring>
 #include <fstream>
+#include <functional>
+#include <sstream>
 #include <string>
 #include <vector>
 
 #include <core.h>
 #include <dissect/tls_decrypt.h>
+#include <filter/filter.h>
+#include <stats/statistics.h>
 #include <tls/crypto.h>
 
 #include "tls_support.h"
@@ -560,4 +564,112 @@ TEST_F(TlsFlow, KeysThatChangeBetweenLoadsApplyToTheNextLoadOnly) {
     ASSERT_TRUE(fp.processPcapFile(path, packets, message));
     EXPECT_EQ(std::count_if(packets.begin(), packets.end(), [](const auto &p) { return p.protocol == "HTTP"; }), 0);
     std::remove(path.c_str());
+}
+
+// ---- display filter, protocol hierarchy, expert information ---------------------------------------------------------
+
+namespace {
+    size_t countMatches(const std::vector<packet::PacketInfo> &packets, const std::string &expression) {
+        const auto compiled = filter::Filter::compile(expression);
+        EXPECT_TRUE(compiled.ok) << expression << ": " << compiled.error.message;
+        size_t n = 0;
+        for (const auto &p: packets) if (compiled.ok && compiled.filter.matches(p)) ++n;
+        return n;
+    }
+
+    const stats::HierarchyNode *child(const stats::HierarchyNode &n, const std::string &name) {
+        for (const auto &c: n.children) if (c.name == name) return &c;
+        return nullptr;
+    }
+}
+
+TEST_F(TlsFlow, DecryptionFiltersWorkOnTheInnerAndTheOuterProtocol) {
+    Loaded cap(kDir + "tls13.pcapng");
+    ASSERT_TRUE(cap.ok);
+    const auto &packets = cap.packets;
+    const size_t decrypted = countMatches(packets, "tls.decryption_status == \"decrypted\"");
+    EXPECT_EQ(decrypted, 8u) << "EncryptedExtensions ... Finished, both tickets, the request, the response and the alert";
+    EXPECT_EQ(countMatches(packets, "tls.decrypted"), countMatches(packets, "tls.decrypted == 1"));
+    EXPECT_EQ(countMatches(packets, "tls.decrypted && http"), 2u) << "the decrypted HTTP packets are still TLS packets";
+    EXPECT_EQ(countMatches(packets, "http.request.method == \"GET\" && tls.decrypted"), 1u);
+    EXPECT_EQ(countMatches(packets, "http.response.code == 200"), 1u);
+    EXPECT_EQ(countMatches(packets, "http.host == \"imshark.test\""), 1u);
+    EXPECT_EQ(countMatches(packets, "http.request.uri contains \"index\""), 1u);
+    EXPECT_EQ(countMatches(packets, "tls.decrypted == 0 && tls"), countMatches(packets, "tls") - countMatches(packets, "tls.decrypted")) << "hellos are TLS without being decrypted";
+    EXPECT_EQ(countMatches(packets, "tls.handshake.type == 1"), 2u) << "the outer TLS fields still work on TLS packets (the first segment of the hello and the reassembled message)";
+    EXPECT_EQ(countMatches(packets, "tls.decryption_status == \"no_key\""), 0u);
+    EXPECT_EQ(countMatches(packets, "tls.decryption_status"), countMatches(packets, "tls.decryption_status == \"decrypted\"")) << "every protected record was decrypted";
+    EXPECT_EQ(countMatches(packets, "tls && !tls.decryption_status"), countMatches(packets, "tls") - decrypted) << "no status on the packets without protected records";
+    EXPECT_EQ(countMatches(packets, "ip.fragment"), 0u);
+    EXPECT_EQ(countMatches(packets, "ip.reassembled"), 0u);
+}
+
+TEST_F(TlsFlow, StatusFilterNamesTheOtherStates) {
+    Loaded loaded(kDir + "tls13.pcapng");
+    ASSERT_TRUE(loaded.ok);
+    Cap none(pcapOf(loaded), "flow_f_nokeys.pcap", false);
+    ASSERT_TRUE(none.ok);
+    EXPECT_EQ(countMatches(none.packets, "tls.decryption_status == \"no_key\""), 8u) << "every packet with protected records of the connection";
+    EXPECT_EQ(countMatches(none.packets, "tls.decryption_status"), 8u);
+    EXPECT_EQ(countMatches(none.packets, "tls.decrypted == 1"), 0u);
+    EXPECT_EQ(countMatches(none.packets, "http"), 0u);
+
+    const auto want = expected("tls13");
+    const auto doc = testutil::JsonParser(slurp(kDir + "decrypt_tls13.json")).parse();
+    std::string other, otherRandom;
+    for (const auto &c: doc.at("cases").items) if (c.num("cipher") == 0x1302) { other = c.str("keylog"); otherRandom = c.str("client_random"); }
+    Cap wrong(pcapOf(loaded), "flow_f_wrong.pcap", false, userKeysFrom(other, otherRandom, want.str("client_random")));
+    ASSERT_TRUE(wrong.ok);
+    EXPECT_EQ(countMatches(wrong.packets, "tls.decryption_status == \"tag_failure\""), 8u);
+    EXPECT_EQ(countMatches(wrong.packets, "tls.decrypted == 1"), 0u);
+    EXPECT_GE(countMatches(wrong.packets, "tls.record.content_type == 23"), 6u);
+    EXPECT_EQ(countMatches(wrong.packets, "tls.record.content_type == 23"), countMatches(none.packets, "tls.record.content_type == 23"))
+        << "still ordinary TLS application data records, whatever the keys say";
+}
+
+TEST_F(TlsFlow, ProtocolHierarchyShowsTlsThenHttp) {
+    Loaded cap(kDir + "tls13_h2.pcapng");
+    ASSERT_TRUE(cap.ok);
+    const auto root = stats::protocolHierarchy(cap.packets, nullptr);
+    const auto *eth = child(root, "Ethernet");
+    ASSERT_NE(eth, nullptr);
+    const auto *ip = child(*eth, "Internet Protocol Version 4");
+    ASSERT_NE(ip, nullptr);
+    const auto *tcp = child(*ip, "Transmission Control Protocol");
+    ASSERT_NE(tcp, nullptr);
+    const auto *tlsNode = child(*tcp, "Transport Layer Security");
+    ASSERT_NE(tlsNode, nullptr);
+    const auto *http2 = child(*tlsNode, "Hypertext Transfer Protocol 2");
+    ASSERT_NE(http2, nullptr) << "HTTP/2 sits below TLS";
+    EXPECT_EQ(http2->packets, 7u);
+    EXPECT_EQ(child(*tcp, "Hypertext Transfer Protocol 2"), nullptr) << "not directly below TCP";
+    EXPECT_GT(tlsNode->packets, http2->packets);
+
+    Loaded plain(kDir + "tls12.pcapng");
+    const auto root1 = stats::protocolHierarchy(plain.packets, nullptr);
+    const auto *tls12 = child(*child(*child(*child(root1, "Ethernet"), "Internet Protocol Version 4"), "Transmission Control Protocol"), "Transport Layer Security");
+    ASSERT_NE(tls12, nullptr);
+    EXPECT_NE(child(*tls12, "Hypertext Transfer Protocol"), nullptr);
+}
+
+TEST_F(TlsFlow, ExpertInformationCountsTheDecryptionStates) {
+    Loaded loaded(kDir + "tls13.pcapng");
+    ASSERT_TRUE(loaded.ok);
+    auto countOf = [](const std::vector<stats::ExpertItem> &items, const std::string &needle) -> size_t {
+        for (const auto &i: items) if (i.summary.find(needle) != std::string::npos) return i.count;
+        return 0;
+    };
+    const auto good = stats::expertInfo(loaded.packets, nullptr);
+    EXPECT_EQ(countOf(good, "records decrypted with the key log"), 8u);
+    EXPECT_EQ(countOf(good, "wrong key"), 0u);
+    Cap none(pcapOf(loaded), "flow_e_nokeys.pcap", false);
+    EXPECT_EQ(countOf(stats::expertInfo(none.packets, nullptr), "no key material"), 8u);
+    const auto want = expected("tls13");
+    const auto doc = testutil::JsonParser(slurp(kDir + "decrypt_tls13.json")).parse();
+    std::string other, otherRandom;
+    for (const auto &c: doc.at("cases").items) if (c.num("cipher") == 0x1302) { other = c.str("keylog"); otherRandom = c.str("client_random"); }
+    Cap wrong(pcapOf(loaded), "flow_e_wrong.pcap", false, userKeysFrom(other, otherRandom, want.str("client_random")));
+    const auto items = stats::expertInfo(wrong.packets, nullptr);
+    EXPECT_EQ(countOf(items, "wrong key"), 8u);
+    for (const auto &i: items) if (i.summary.find("wrong key") != std::string::npos) EXPECT_EQ(i.severity, stats::Severity::Warn);
 }

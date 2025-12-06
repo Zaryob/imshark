@@ -3,6 +3,7 @@
 #include <algorithm>
 
 #include <dissect/checksum.h>
+#include <dissect/tls_summary.h>
 
 namespace filter {
     namespace {
@@ -161,7 +162,9 @@ namespace filter {
                 {"http2.headers.method", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "HTTP2") && !p.app_text.empty()) o.addS(p.app_text); }, "HTTP/2 request method"},
                 {"http2.headers.path", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "HTTP2") && !p.app_text2.empty()) o.addS(p.app_text2); }, "HTTP/2 request path"},
                 {"http2.headers.status", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "HTTP2") && p.app_code != 0) o.addU(p.app_code); }, "HTTP/2 response status code"},
-                {"tls", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "TLS")) o.addU(1); }, "TLS / SSL"},
+                {"tls", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "TLS") || dissect::hasTlsSummary(p)) o.addU(1); }, "TLS / SSL (also HTTP packets that were decrypted from TLS)"},
+                {"tls.decrypted", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "TLS") || dissect::hasTlsSummary(p)) o.addU(dissect::tlsSummaryState(p) == dissect::TlsRecordState::Decrypted); }, "The packet carries TLS records that were decrypted with a key log"},
+                {"tls.decryption_status", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (dissect::hasTlsSummary(p)) o.addS(dissect::tlsStateName(dissect::tlsSummaryState(p))); }, "What became of the protected TLS records of the packet: decrypted, tag_failure (wrong key), no_key, unsupported_suite, malformed, unavailable (no OpenSSL), capture_gap, no_handshake, early_data, state_lost"},
                 {"tls.record.content_type", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "TLS")) o.addU(p.app_code); }, "Content type of the first TLS record (22 = handshake, 23 = application data)"},
                 {"tls.record.version", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "TLS")) o.addU(p.app_flags); }, "Version of the first TLS record (0x0303 = TLS 1.2)"},
                 {"tls.handshake.type", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "TLS") && p.app_type != 0) o.addU(p.app_type); }, "First handshake message type (1 = ClientHello, 2 = ServerHello ...)"},
