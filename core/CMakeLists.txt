@@ -50,6 +50,7 @@ add_library(imshark_core STATIC
     src/filter/filter.cpp
     src/stats/statistics.cpp
     src/stream/follow.cpp
+    src/stream/follow_tls.cpp
     src/tls/crypto.cpp
     src/tls/keylog.cpp
     src/tls/record_decryptor.cpp

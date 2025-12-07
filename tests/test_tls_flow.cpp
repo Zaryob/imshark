@@ -19,6 +19,7 @@
 #include <dissect/tls_decrypt.h>
 #include <filter/filter.h>
 #include <stats/statistics.h>
+#include <stream/follow.h>
 #include <tls/crypto.h>
 
 #include "tls_support.h"
@@ -672,4 +673,145 @@ TEST_F(TlsFlow, ExpertInformationCountsTheDecryptionStates) {
     const auto items = stats::expertInfo(wrong.packets, nullptr);
     EXPECT_EQ(countOf(items, "wrong key"), 8u);
     for (const auto &i: items) if (i.summary.find("wrong key") != std::string::npos) EXPECT_EQ(i.severity, stats::Severity::Warn);
+}
+
+// ---- Follow Stream: TLS (decrypted) -----------------------------------------------------------------------------------
+
+namespace {
+    // the followed conversation of a capture as the UI reads it: reassembled raw, then decrypted
+    struct Followed {
+        stream::Stream raw, plain;
+        stream::TlsStreamResult result;
+        bool ok = false;
+    };
+
+    template<typename C>
+    Followed follow(C &cap, size_t packetIndex = 3) {
+        Followed f;
+        const auto indices = stream::conversationPackets(cap.packets, static_cast<uint32_t>(packetIndex));
+        EXPECT_FALSE(indices.empty());
+        EXPECT_TRUE(stream::reassemble(cap.path, cap.packets, indices, f.raw));
+        const auto setup = stream::tlsStreamSetup(cap.fp.sessions(), f.raw.addressA, f.raw.portA, f.raw.addressB, f.raw.portB);
+        f.ok = stream::decryptTlsStream(f.raw, setup, f.plain, f.result);
+        return f;
+    }
+
+    std::string bytesOfDirection(const stream::Stream &s, stream::Direction d) {
+        std::string out;
+        for (const auto &c: s.chunks) if (c.direction == d) out += c.data;
+        return out;
+    }
+}
+
+TEST_F(TlsFlow, FollowTlsGivesTheApplicationDataOfBothDirectionsInOrder) {
+    for (const char *name: {"tls12", "tls13"}) {
+        SCOPED_TRACE(name);
+        Loaded cap(kDir + std::string(name) + ".pcapng");
+        ASSERT_TRUE(cap.ok);
+        const auto f = follow(cap);
+        ASSERT_TRUE(f.ok) << f.result.note;
+        EXPECT_EQ(bytesOfDirection(f.plain, stream::Direction::AtoB), kRequest);
+        EXPECT_EQ(bytesOfDirection(f.plain, stream::Direction::BtoA), kResponse);
+        ASSERT_EQ(f.plain.chunks.size(), 2u);
+        EXPECT_EQ(f.plain.chunks[0].direction, stream::Direction::AtoB) << "interleaved the way the records were sent";
+        EXPECT_EQ(f.plain.bytesAtoB, kRequest.size());
+        EXPECT_EQ(f.plain.bytesBtoA, kResponse.size());
+        EXPECT_EQ(f.plain.addressA, "10.0.0.1");
+        EXPECT_EQ(f.plain.portB, 443);
+        EXPECT_GT(f.raw.bytesAtoB + f.raw.bytesBtoA, f.plain.bytesAtoB + f.plain.bytesBtoA - 1) << "the raw stream holds the encrypted records";
+        EXPECT_EQ(f.result.failed, 0u);
+        EXPECT_EQ(f.result.skipped, 0u);
+        EXPECT_GE(f.result.decrypted, 4u) << "handshake records and tickets count as decrypted too, only application data is shown";
+    }
+}
+
+TEST_F(TlsFlow, FollowTlsIsTheBytesTheWriterSentForHttp2AndForNonHttp) {
+    {
+        const auto doc = testutil::JsonParser(slurp(kDir + "h2.json")).parse();
+        Loaded cap(kDir + "tls13_h2.pcapng");
+        const auto f = follow(cap);
+        ASSERT_TRUE(f.ok) << f.result.note;
+        EXPECT_EQ(support::hexOf(bytesOfDirection(f.plain, stream::Direction::AtoB)), doc.str("client_stream"));
+        EXPECT_EQ(support::hexOf(bytesOfDirection(f.plain, stream::Direction::BtoA)), doc.str("server_stream"));
+    }
+    const auto doc = testutil::JsonParser(slurp(kDir + "raw.json")).parse();
+    for (const char *name: {"tls12_raw", "tls13_raw"}) {
+        Loaded cap(kDir + std::string(name) + ".pcapng");
+        const auto f = follow(cap);
+        ASSERT_TRUE(f.ok) << f.result.note;
+        EXPECT_EQ(support::hexOf(bytesOfDirection(f.plain, stream::Direction::AtoB)), doc.str("client")) << name;
+        EXPECT_EQ(support::hexOf(bytesOfDirection(f.plain, stream::Direction::BtoA)), doc.str("server")) << name;
+    }
+}
+
+TEST_F(TlsFlow, FollowTlsExplainsWhyThereIsNothingToShow) {
+    Loaded loaded(kDir + "tls13.pcapng");
+    ASSERT_TRUE(loaded.ok);
+    {   // no key material
+        Cap none(pcapOf(loaded), "flow_follow_nokeys.pcap", false);
+        const auto f = follow(none);
+        EXPECT_FALSE(f.ok);
+        EXPECT_NE(f.result.note.find("no key material"), std::string::npos) << f.result.note;
+        EXPECT_TRUE(f.plain.chunks.empty());
+    }
+    {   // the secrets of another connection: every protected record fails its tag
+        const auto want = expected("tls13");
+        const auto doc = testutil::JsonParser(slurp(kDir + "decrypt_tls13.json")).parse();
+        std::string other, otherRandom;
+        for (const auto &c: doc.at("cases").items) if (c.num("cipher") == 0x1302) { other = c.str("keylog"); otherRandom = c.str("client_random"); }
+        Cap wrong(pcapOf(loaded), "flow_follow_wrong.pcap", false, userKeysFrom(other, otherRandom, want.str("client_random")));
+        const auto f = follow(wrong);
+        EXPECT_FALSE(f.ok);
+        EXPECT_NE(f.result.note.find("wrong key"), std::string::npos) << f.result.note;
+        EXPECT_GE(f.result.failed, 6u);
+        EXPECT_EQ(f.result.decrypted, 0u);
+        EXPECT_TRUE(f.plain.chunks.empty()) << "no plaintext without a verified tag";
+    }
+    {   // not a TLS conversation at all
+        std::vector<std::vector<char>> frames = {support::tcpPacket("0a000001", "0a000002", "1234", "0050", "00000001", "00000000", "18", "GET / HTTP/1.1\r\n\r\n")};
+        Cap plain(support::pcapBytes(frames), "flow_follow_http.pcap", false);
+        const auto f = follow(plain, 0);
+        EXPECT_FALSE(f.ok);
+        EXPECT_NE(f.result.note.find("no TLS handshake"), std::string::npos) << f.result.note;
+    }
+}
+
+TEST_F(TlsFlow, FollowTlsAfterAHoleDoesNotCallItAWrongKey) {
+    Loaded loaded(kDir + "tls13_h2.pcapng");
+    ASSERT_TRUE(loaded.ok);
+    auto frames = framesOf(loaded);
+    const auto h2 = indicesWhere(loaded.packets, [](const auto &p) { return p.protocol == "HTTP2"; });
+    ASSERT_EQ(h2.size(), 7u);
+    frames.erase(frames.begin() + static_cast<std::ptrdiff_t>(h2[1]));   // the client's HEADERS record is not in the capture
+    Cap cap(support::pcapBytes(frames), "flow_follow_hole.pcap", false, slurp(kDir + "tls13_h2.keys"));
+    ASSERT_TRUE(cap.ok);
+    const auto f = follow(cap);
+    ASSERT_TRUE(f.ok) << f.result.note;
+    EXPECT_EQ(f.result.failed, 0u) << "records after a hole are skipped, not failed";
+    EXPECT_GE(f.result.skipped, 1u);
+    EXPECT_NE(f.result.note.find("follow missing TCP data"), std::string::npos) << f.result.note;
+    const auto doc = testutil::JsonParser(slurp(kDir + "h2.json")).parse();
+    EXPECT_EQ(support::hexOf(bytesOfDirection(f.plain, stream::Direction::BtoA)), doc.str("server_stream")) << "the server direction is intact";
+    EXPECT_LT(bytesOfDirection(f.plain, stream::Direction::AtoB).size(), doc.str("client_stream").size() / 2);
+    bool gapMarked = false;
+    for (const auto &c: f.plain.chunks) gapMarked = gapMarked || c.missingBefore > 0;
+    EXPECT_TRUE(gapMarked);
+}
+
+TEST_F(TlsFlow, FollowTlsOfEveryCutOfARecordNeverShowsUnverifiedBytes) {
+    Loaded loaded(kDir + "tls13.pcapng");
+    ASSERT_TRUE(loaded.ok);
+    const auto frames = framesOf(loaded);
+    const auto requests = indicesWhere(loaded.packets, [](const auto &p) { return p.info == "GET /index.html HTTP/1.1"; });
+    ASSERT_EQ(requests.size(), 1u);
+    const std::string keys = slurp(kDir + "tls13.keys");
+    for (size_t cut = 0; cut <= frames[requests[0]].size(); ++cut) {
+        Cap cap(pcapWithCut(frames, requests[0], cut), "flow_follow_cut.pcap", false, keys);
+        ASSERT_TRUE(cap.ok) << cut;
+        const auto f = follow(cap);
+        const std::string client = bytesOfDirection(f.plain, stream::Direction::AtoB);
+        EXPECT_TRUE(client.empty() || client == kRequest) << cut;   // all of it or nothing: never part of a record
+        EXPECT_EQ(f.result.failed, 0u) << cut;
+        if (cut == frames[requests[0]].size()) EXPECT_EQ(client, kRequest);
+    }
 }
