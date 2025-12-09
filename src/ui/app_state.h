@@ -17,6 +17,8 @@
 
 #include "color_rules.h"
 #include "find.h"
+#include <tls/keylog.h>
+
 #include "follow_view.h"
 #include "settings.h"
 
@@ -80,8 +82,19 @@ namespace ui {
         std::string error;
         FollowView view = FollowView::Ascii;
         FollowDirection direction = FollowDirection::Both;
+        FollowStreamMode mode = FollowStreamMode::Tcp;   // the encrypted stream as captured, or its decrypted TLS application data
+        stream::Stream plain;              // TCP: the decrypted application data (valid when `tlsOk`)
+        stream::TlsStreamResult tls;       // what the decryption found (its note explains an empty `plain`)
+        bool tlsOk = false;
         std::vector<FollowLine> lines;     // what is drawn (rebuilt when stream/direction/view change)
         bool linesDirty = true;
+    };
+
+    /// The Preferences window (Edit > Preferences...).
+    struct PreferencesState {
+        bool open = false;
+        bool wasOpen = false;              // to detect "just opened"
+        std::string tlsKeyLogEdit;         // the text field of the TLS key log file
     };
 
     /// The Export Packets dialog.
@@ -247,6 +260,7 @@ namespace ui {
         FindState find;
         StatsState stats;
         FollowState follow;
+        PreferencesState preferences;
         ExportState exportDialog;
         DecodeAsState decodeAs;
         LiveState live;
@@ -255,6 +269,12 @@ namespace ui {
         double captureStartEpoch = 0;       // UTC epoch seconds of the first packet
         core::CaptureInfo captureInfo;      // file level metadata of the open capture
         core::SessionTables sessions;       // dynamic protocol session tables
+        // The user's TLS keys (settings.tlsKeyLogFile, read by setTlsKeyLogFile). Owned by the UI thread: a load takes a copy
+        // when it starts, so replacing the keys never races with the load pass or with detail building, which only see
+        // the copy inside their own session tables.
+        tls::KeyStore tlsKeys;
+        std::string tlsKeyStatus;           // what the last read of the key log file found, or why it failed
+        bool tlsKeyStatusIsError = false;
         bool showCaptureInfo = false;       // the Capture File Properties window
         bool orderDirty = true;             // `order` must be rebuilt (new capture or new filter)
         std::vector<uint32_t> order;        // displayed order: indices into `packets` (rebuilt by the list)

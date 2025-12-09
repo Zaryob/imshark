@@ -63,6 +63,7 @@ add_library(imshark_ui STATIC
     src/ui/loader.cpp
     src/ui/main_window.cpp
     src/ui/packet_list.cpp
+    src/ui/preferences.cpp
     src/ui/settings.cpp
     src/ui/stats_windows.cpp
     src/ui/time_format.cpp

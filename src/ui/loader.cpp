@@ -28,6 +28,7 @@ namespace ui {
         double startEpoch = 0;
         core::CaptureInfo info;
         core::SessionTables sessions;
+        tls::KeyStore tlsKeys;              // the user's TLS keys as they were when the load started (a copy: see AppState::tlsKeys)
 
         // .gz input: decompressed to a temporary file first
         std::string dataPath;               // what the packets were read from (== path unless decompressed)
@@ -65,6 +66,7 @@ namespace {
 
     void runJob(ui::LoadJob &job) {
         core::FileProcessor processor(job.registry ? *job.registry : dissect::Registry::builtin());
+        processor.sessions().tlsExternalKeys() = job.tlsKeys;
         if (!std::filesystem::is_regular_file(core::pathFromUtf8(job.path))) {
             job.message = "Not a regular file: " + job.path;
             job.finished = true;
@@ -118,6 +120,7 @@ void ui::startLoad(AppState &state, const std::string &path) {
     auto job = std::make_shared<LoadJob>();
     job->path = absoluteUtf8(path);
     job->registry = state.registry;
+    job->tlsKeys = state.tlsKeys;
     job->thread = std::thread([raw = job.get()] { runJob(*raw); });
     state.loadJob = std::move(job);
 }

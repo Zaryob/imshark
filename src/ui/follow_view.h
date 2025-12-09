@@ -8,6 +8,8 @@
 namespace ui {
     enum class FollowView : int { Ascii = 0, HexDump = 1 };
     enum class FollowDirection : int { Both = 0, AtoB = 1, BtoA = 2 };
+    /// What a TCP stream shows: the bytes as captured, or the application data of its TLS records decrypted with the key log.
+    enum class FollowStreamMode : int { Tcp = 0, TlsDecrypted = 1 };
 
     /// One display line of the stream window.
     struct FollowLine {

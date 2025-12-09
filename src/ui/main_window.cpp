@@ -39,6 +39,7 @@ void ui::drawMainWindow(AppState &state) {
     drawColorRulesWindow(state);
     drawStatsWindows(state);
     drawDecodeAsWindow(state);
+    drawPreferencesWindow(state);
     drawFollowWindow(state);
     drawExportDialog(state);
     drawCaptureInfoWindow(state);

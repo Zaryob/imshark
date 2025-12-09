@@ -29,6 +29,17 @@ namespace ui {
     void saveSettingsIfDirty(AppState &state);
     void applyTheme(bool dark);
 
+    // preferences.cpp: the TLS key log setting and the Preferences window
+    /// Reads the key log file of the settings (start-up; no reload). A file that cannot be read leaves the keys empty and
+    /// says why in state.tlsKeyStatus.
+    void loadTlsKeyLog(AppState &state);
+    /// Makes `path` the TLS key log file ("" = none): the file is read (malformed lines are counted, not fatal), the setting is
+    /// remembered and the open capture is loaded again with the new keys. A live capture keeps what it decoded: the keys
+    /// apply to the packets that arrive after the change. Returns false if the file could not be read (the keys are then empty
+    /// and state.tlsKeyStatus says why).
+    bool setTlsKeyLogFile(AppState &state, const std::string &path);
+    void drawPreferencesWindow(AppState &state);
+
     // chrome.cpp: menu bar, file dialog, status bar and the load error popup
     void drawMenuAndDialogs(AppState &state);
     void drawStatusBar(const AppState &state);

@@ -56,6 +56,8 @@ ui::Settings ui::loadSettings(const std::string &path) {
                 const float h = std::stof(value);
                 if (h >= 50.0f && h <= 5000.0f) settings.listHeight = h;
             } catch (...) { /* damaged value: keep the default */ }
+        } else if (key == "tls_keylog") {
+            settings.tlsKeyLogFile = value;
         } else if (key == "capture_interface") {
             settings.captureInterface = value;
         } else if (key == "capture_filter") {
@@ -92,6 +94,7 @@ bool ui::saveSettings(const Settings &settings, const std::string &path) {
         for (char &c: text) if (c == '\n' || c == '\r') c = ' ';
         return text;
     };
+    if (!settings.tlsKeyLogFile.empty()) out << "tls_keylog=" << oneLine(settings.tlsKeyLogFile) << "\n";
     if (!settings.captureInterface.empty()) out << "capture_interface=" << oneLine(settings.captureInterface) << "\n";
     if (!settings.captureFilter.empty()) out << "capture_filter=" << oneLine(settings.captureFilter) << "\n";
     out << "capture_snaplen=" << settings.captureSnaplen << "\n";

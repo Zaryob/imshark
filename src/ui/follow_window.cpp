@@ -22,6 +22,10 @@ namespace ui {
         bool ok = false;
         stream::Stream stream;
         std::shared_ptr<const std::vector<packet::PacketInfo>> packets;   // snapshot of the capture
+        stream::TlsStreamSetup tlsSetup;    // what decrypting the conversation needs (a copy: the job never reads the session tables)
+        stream::Stream plain;               // the decrypted application data (TCP)
+        stream::TlsStreamResult tlsResult;
+        bool tlsOk = false;
 
         ~FollowJob() {
             control.cancelRequested = true;
@@ -47,6 +51,10 @@ bool ui::startFollow(AppState &state, int packetIndex) {
     f.valid = false;
     f.error.clear();
     f.lines.clear();
+    f.mode = FollowStreamMode::Tcp;
+    f.plain = stream::Stream();
+    f.tls = stream::TlsStreamResult();
+    f.tlsOk = false;
 
     const auto &p = state.packets[packetIndex];
     f.title = std::string("Follow ") + (p.ip_protocol == 6 ? "TCP" : "UDP") + " Stream (" + p.source + ":" + std::to_string(p.src_port) +
@@ -54,10 +62,17 @@ bool ui::startFollow(AppState &state, int packetIndex) {
 
     auto job = std::make_shared<FollowJob>();
     job->control.total = indices.size();
+    if (p.ip_protocol == 6) {
+        // the key material of the conversation, taken now on the UI thread (the endpoints are those of its first packet, like Stream::addressA)
+        const auto &firstPacket = state.packets[indices.front()];
+        const dissect::SessionTables &sessions = state.live.processor ? state.live.processor->sessions() : state.sessions;
+        job->tlsSetup = stream::tlsStreamSetup(sessions, firstPacket.source, firstPacket.src_port, firstPacket.destination, firstPacket.dst_port);
+    }
     const std::string path = state.currentFile;
     job->packets = state.packets.share();
     job->thread = std::thread([raw = job.get(), path, indices = std::move(indices)] {
         raw->ok = stream::reassemble(path, *raw->packets, indices, raw->stream, &raw->control);
+        if (raw->ok && raw->stream.tcp) raw->tlsOk = stream::decryptTlsStream(raw->stream, raw->tlsSetup, raw->plain, raw->tlsResult);
         raw->finished = true;
     });
     f.job = std::move(job);
@@ -73,6 +88,9 @@ namespace {
         job->thread.join();
         if (job->ok) {
             f.stream = std::move(job->stream);
+            f.plain = std::move(job->plain);
+            f.tls = job->tlsResult;
+            f.tlsOk = job->tlsOk;
             f.valid = true;
             f.linesDirty = true;
         } else {
@@ -110,12 +128,26 @@ void ui::drawFollowWindow(AppState &state) {
         return;
     }
 
-    const auto &s = f.stream;
+    const bool tlsView = f.mode == FollowStreamMode::TlsDecrypted && f.stream.tcp;
+    const auto &s = tlsView ? f.plain : f.stream;   // addresses and ports are the same in both
     const std::string a = s.addressA + ":" + std::to_string(s.portA), b = s.addressB + ":" + std::to_string(s.portB);
     ImGui::TextColored(ImVec4(1.0f, 0.55f, 0.55f, 1.0f), "%s -> %s: %s", a.c_str(), b.c_str(), sizeText(s.bytesAtoB).c_str());
     ImGui::SameLine();
     ImGui::TextColored(ImVec4(0.55f, 0.7f, 1.0f, 1.0f), "%s -> %s: %s", b.c_str(), a.c_str(), sizeText(s.bytesBtoA).c_str());
     ImGui::Text("%d packets", s.packets);
+    if (f.stream.tcp) {
+        int mode = static_cast<int>(f.mode);
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(190);
+        if (ImGui::Combo("##streammode", &mode, "TCP stream\0TLS (decrypted)\0")) {
+            f.mode = static_cast<FollowStreamMode>(mode);
+            f.linesDirty = true;
+        }
+    }
+    if (tlsView) {
+        if (!f.tls.note.empty()) ImGui::TextColored(f.tlsOk ? ImVec4(1.0f, 0.8f, 0.3f, 1.0f) : ImVec4(1.0f, 0.45f, 0.45f, 1.0f), "%s", f.tls.note.c_str());
+        else ImGui::TextDisabled("%zu of %zu protected TLS records decrypted", f.tls.decrypted, f.tls.records);
+    }
     if (s.missingBytes > 0) {
         ImGui::SameLine();
         ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), " |  %s were not captured", sizeText(s.missingBytes).c_str());
@@ -155,7 +187,7 @@ void ui::drawFollowWindow(AppState &state) {
         if (ImGuiFileDialog::Instance()->IsOk()) {
             // the shown direction is what gets saved, as raw bytes
             std::ofstream file(core::pathFromUtf8(ImGuiFileDialog::Instance()->GetFilePathName()), std::ios::binary | std::ios::trunc);
-            const std::string bytes = followRawBytes(s, f.direction);
+            const std::string bytes = followRawBytes(s, f.direction);   // the shown stream: decrypted data when the TLS view is selected
             file.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
             f.error = file ? "" : "Could not write the file";
         }

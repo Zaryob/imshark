@@ -21,6 +21,8 @@ void ui::initSettings(AppState &state, const std::string &path) {
     state.live.options.promiscuous = state.settings.capturePromiscuous;
     state.settingsDirty = false;
     recompileColorRules(state);
+    state.preferences.tlsKeyLogEdit = state.settings.tlsKeyLogFile;
+    loadTlsKeyLog(state);
 }
 
 void ui::saveSettingsIfDirty(AppState &state) {
@@ -62,6 +64,10 @@ void ui::drawMenuAndDialogs(AppState &state) {
             if (ImGui::MenuItem("Export Packets...", nullptr, false, !state.packets.empty())) state.exportDialog.openPopup = true;
             if (ImGui::MenuItem("Close File", "Ctrl+W", false, !state.currentFile.empty())) requestClose(state);
             if (ImGui::MenuItem("Exit")) requestQuit(state);
+            ImGui::EndMenu();
+        }
+        if (ImGui::BeginMenu("Edit")) {
+            if (ImGui::MenuItem("Preferences...")) state.preferences.open = true;
             ImGui::EndMenu();
         }
         drawCaptureMenu(state);
