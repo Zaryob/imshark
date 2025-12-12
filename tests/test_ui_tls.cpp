@@ -40,7 +40,8 @@ namespace {
                 core::readPacketBytes(loaded.path, p, bytes);
                 frames.push_back(std::move(bytes));
             }
-            capture = support::writeTemp("ui_tls13.pcap", support::pcapBytes(frames));
+            // a name of its own: tests run as separate processes at the same time
+            capture = support::writeTemp(std::string("ui_tls13_") + ::testing::UnitTest::GetInstance()->current_test_info()->name() + ".pcap", support::pcapBytes(frames));
             keyLog = kDir + "tls13.keys";
         }
         void TearDown() override {
