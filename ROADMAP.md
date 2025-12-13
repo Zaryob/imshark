@@ -198,7 +198,7 @@ Kabul ölçütü: `http_PPI.cap` içindeki 140 paketin tamamının `Unknown` kal
   - Çerçeve türleri: DATA, HEADERS (+PRIORITY), PRIORITY, RST_STREAM, SETTINGS, PUSH_PROMISE, PING, GOAWAY, WINDOW_UPDATE, CONTINUATION. HEADERS/CONTINUATION blok birleştirme.
   - HPACK (RFC 7541): statik tablo (61 giriş), Huffman kod çözücü (257 sembol), dinamik tablo (boyut güncellemesi, kovma). Bağlantı yönü başına sıralı durum; Replay'de blok taze çözücüden geçer.
   - Filtre: `http2.type`, `http2.streamid`, `http2.flags`, `http2.headers.method/path/status/authority`, `http2.header.name/value`.
-- [ ] **5.3: TLS anahtar günlüğü ve şifre çözme (0.9.3-c)** — **L**
+- [x] **5.3: TLS anahtar günlüğü ve şifre çözme (0.9.3-c)** — **L** *(1. kısım: anahtar günlüğü, DSB ve oturum eşlemesi; 2. kısım: OpenSSL kripto sarmalayıcı ve kayıt çözücü; 3. kısım: yükleme geçişi, ayrıntı ağacı, HTTP/1.x ve HTTP/2, filtre alanları, hiyerarşi, Expert Information, Follow Stream "TLS (decrypted)" ve Edit > Preferences anahtar günlüğü ayarı. Sınırlar docs/KNOWN_ISSUES.md'de: 0-RTT çözülmez, yeniden müzakere izlenmez, HPACK durumu mesajlar arası tutulmaz)*
   - Kripto: İsteğe bağlı CMake özelliği `IMSHARK_TLS_DECRYPT` ile OpenSSL 3 / libcrypto (AES-GCM, ChaCha20-Poly1305, HKDF/HMAC). Kapalıysa "şifre çözme bu derlemede yok" notu.
   - Anahtar kaynakları: `SSLKEYLOGFILE` metni (CLIENT_RANDOM, TLS 1.3 secrets) ve pcapng Decryption Secrets Block (DSB, tip `0x544c534b`). UI'da keylog dosyası yolu ayarı.
   - ClientHello random → oturum tablosu eşleme, kayıt sıra no sayımı, KeyUpdate takibi.
