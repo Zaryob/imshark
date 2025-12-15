@@ -815,3 +815,26 @@ TEST_F(TlsFlow, FollowTlsOfEveryCutOfARecordNeverShowsUnverifiedBytes) {
         if (cut == frames[requests[0]].size()) EXPECT_EQ(client, kRequest);
     }
 }
+
+// ---- a build without OpenSSL ------------------------------------------------------------------------------------------
+
+TEST(TlsFlowNoBackend, WithoutOpenSslTheKeysAreThereButEveryRecordSaysDecryptionIsNotAvailable) {
+    if (tls::crypto::available()) GTEST_SKIP() << "this build has OpenSSL; the stub is covered by IMSHARK_TLS_DECRYPT=OFF builds";
+    Loaded cap(kDir + "tls13.pcapng");
+    ASSERT_TRUE(cap.ok) << cap.message;
+    size_t unavailable = 0;
+    for (size_t i = 0; i < cap.packets.size(); ++i) {
+        EXPECT_NE(cap.packets[i].protocol, "HTTP");
+        EXPECT_NE(stateOf(cap.packets[i]), TlsRecordState::Decrypted);
+        if (stateOf(cap.packets[i]) == TlsRecordState::NoBackend) {
+            ++unavailable;
+            EXPECT_NE(find(cap.details(i).fields, "[Decryption: decryption is not available in this build"), nullptr);
+        }
+    }
+    EXPECT_GE(unavailable, 6u);
+    EXPECT_EQ(countMatches(cap.packets, "tls.decryption_status == \"unavailable\""), unavailable);
+    expectReplayEqualsLoad(cap);
+    const auto f = follow(cap);
+    EXPECT_FALSE(f.ok);
+    EXPECT_NE(f.result.note.find("not available in this build"), std::string::npos) << f.result.note;
+}
