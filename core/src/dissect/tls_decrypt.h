@@ -93,10 +93,12 @@ namespace dissect {
     private:
         struct Runtime {
             std::optional<tls::RecordDecryptor> decryptor;
+            std::optional<tls::KeyEntry> keys;   // the key entry the load pass used: detail building opens records with it, so
+                                                 // keys that change afterwards (live capture) cannot make Replay differ
             bool built = false;
             bool desync[2] = {false, false};     // per direction: records are missing, later ones cannot be numbered
         };
-        static constexpr size_t kRuntimeCost = 768;   // a map node and a decryptor with two directions of keys and secrets
+        static constexpr size_t kRuntimeCost = 1152;   // a map node and a decryptor with two directions of keys and secrets
 
         static tls::Direction directionOf(const TlsSession &session, unsigned direction);
 

@@ -53,6 +53,7 @@ namespace {
             ImGui::GetIO().DeltaTime = 1.0f / 60.0f;
             ImGui::NewFrame();
             ui::pollLoad(state);
+            ui::pollCapture(state);
             ui::drawMenuAndDialogs(state);
             ui::drawMainWindow(state);
             ui::drawStatusBar(state);
@@ -247,4 +248,70 @@ TEST_F(UiTls, PreferencesWindowAndEditMenuDraw) {
     EXPECT_EQ(state.preferences.tlsKeyLogEdit, state.settings.tlsKeyLogFile);
     state.preferences.open = false;
     frame(state);
+}
+
+TEST_F(UiTls, KeysChangedWhileAnotherFileLoadsRestartThatLoad) {
+    if (!tls::crypto::available()) GTEST_SKIP() << tls::crypto::backendName();
+    const std::string other = tempFile("ui_tls_other.pcap", tlstest::slurp(capture));
+    ui::AppState state;
+    ui::loadCapture(state, capture);
+    const std::string shown = state.displayName;
+    ui::startLoad(state, other);                       // B loads while A is displayed
+    ASSERT_TRUE(state.loading());
+    EXPECT_TRUE(ui::setTlsKeyLogFile(state, keyLog));
+    waitLoaded(state);
+    EXPECT_NE(state.displayName, shown) << "B was restarted, A was not reloaded in its place";
+    EXPECT_EQ(std::filesystem::path(state.displayName).filename(), std::filesystem::path(other).filename());
+    EXPECT_EQ(httpPackets(state), 2u) << "and it ran with the new keys";
+}
+
+TEST_F(UiTls, KeysChangedDuringTheFirstLoadReachThatLoad) {
+    if (!tls::crypto::available()) GTEST_SKIP() << tls::crypto::backendName();
+    ui::AppState state;
+    ui::startLoad(state, capture);                     // nothing is displayed yet
+    ASSERT_TRUE(state.loading());
+    EXPECT_TRUE(state.displayName.empty());
+    EXPECT_TRUE(ui::setTlsKeyLogFile(state, keyLog));
+    EXPECT_TRUE(state.loading());
+    waitLoaded(state);
+    EXPECT_EQ(httpPackets(state), 2u) << "the status line and the capture agree";
+}
+
+TEST_F(UiTls, LiveCaptureKeepsWhatItDecryptedWhenTheKeysAreCleared) {
+    if (!tls::crypto::available()) GTEST_SKIP() << tls::crypto::backendName();
+    tlstest::Loaded loaded(kDir + "tls13.pcapng");
+    ui::AppState state;
+    ASSERT_TRUE(ui::setTlsKeyLogFile(state, keyLog));
+    ASSERT_TRUE(ui::startInjectedCapture(state, 1, 262144, "fake0"));
+    for (size_t i = 0; i < loaded.packets.size(); ++i) {
+        std::vector<char> bytes;
+        ASSERT_TRUE(core::readPacketBytes(loaded.path, loaded.packets[i], bytes));
+        ASSERT_TRUE(state.live.device->injectPacket(1700000000 + i, static_cast<uint32_t>(i * 1000), bytes));
+    }
+    frame(state);
+    frame(state);
+    ASSERT_EQ(state.packets.size(), loaded.packets.size());
+    ASSERT_EQ(httpPackets(state), 2u);
+    const auto request = std::find_if(state.packets.begin(), state.packets.end(), [](const auto &p) { return p.info == "GET /index.html HTTP/1.1"; });
+    ASSERT_NE(request, state.packets.end());
+    const int index = static_cast<int>(request - state.packets.begin());
+
+    state.selectedPacket = index;
+    frame(state);
+    ASSERT_TRUE(state.detailOk);
+    const std::string before = tlstest::find(state.detail.fields, "Decrypted TLS (") ? tlstest::find(state.detail.fields, "Decrypted TLS (")->text : "";
+    EXPECT_FALSE(before.empty());
+
+    EXPECT_TRUE(ui::setTlsKeyLogFile(state, ""));      // the keys go away while the capture runs
+    state.detailIndex = -1;                            // build the details again
+    frame(state);
+    ASSERT_TRUE(state.detailOk);
+    EXPECT_EQ(state.packets[index].info, "GET /index.html HTTP/1.1") << "the list still says what it decoded";
+    const auto *layer = tlstest::find(state.detail.fields, "Decrypted TLS (");
+    ASSERT_NE(layer, nullptr) << "the details agree with the list";
+    EXPECT_EQ(layer->text, before);
+    EXPECT_EQ(state.detail.protocol, "HTTP");
+    EXPECT_EQ(state.detail.info, state.packets[index].info);
+    EXPECT_NE(tlstest::find(state.detail.fields, "Request Method: GET"), nullptr);
+    ui::discardLiveCapture(state);
 }

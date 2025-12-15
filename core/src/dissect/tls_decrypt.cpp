@@ -116,6 +116,7 @@ namespace dissect {
             if (o.recordState() == TlsRecordState::NoKey) {   // a protected record, and there is key material to try
                 if (!rt.built) {
                     rt.built = true;
+                    if (keys) rt.keys = *keys;
                     if (keys && session.hasClientRandom) {
                         rt.decryptor.emplace(session.version, session.cipherSuite, session.clientRandom, session.serverRandom, keys);
                     }
@@ -199,6 +200,9 @@ namespace dissect {
                 if (o.recordState() == TlsRecordState::NoKey) o.state = static_cast<uint8_t>(TlsRecordState::StateLost);
             }
         }
+        // records recorded as decrypted are opened with the keys the load pass used, not whatever the store holds now
+        const auto runtime = runtimes_.find(ref.session);
+        if (recorded && runtime != runtimes_.end() && runtime->second.keys) keys = &*runtime->second.keys;
         if (!recorded || !keys || !session.hasClientRandom) return;
 
         std::optional<tls::RecordDecryptor> decryptor;

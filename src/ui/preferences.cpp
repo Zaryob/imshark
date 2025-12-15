@@ -53,6 +53,9 @@ bool ui::setTlsKeyLogFile(AppState &state, const std::string &path) {
         // a live capture cannot decode what it already dissected again: the new keys count from the next packet on
         state.live.processor->sessions().tlsExternalKeys() = state.tlsKeys;
         if (ok && !state.tlsKeyStatus.empty()) state.tlsKeyStatus += " (applies to the packets captured from now on)";
+    } else if (state.loading()) {
+        // a load is in flight (it took a copy of the old keys): start it again, not the capture on screen
+        startLoad(state, loadingPath(state));
     } else if (!state.displayName.empty() && !state.currentFile.empty()) {
         startLoad(state, state.displayName);   // the decryption is decided while loading: load the open capture again
     }
