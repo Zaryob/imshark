@@ -24,6 +24,7 @@ add_executable(imshark_tests
     test_hpack.cpp
     test_http2.cpp
     test_ip_reassembly.cpp
+    test_datagram_reassembly.cpp
     test_follow_view.cpp
     test_misc_protocols.cpp
     test_parser.cpp
