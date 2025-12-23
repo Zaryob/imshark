@@ -15,6 +15,20 @@ void network::DatagramReassembler::evictOldest(const std::string *keep) {
     ++evicted_;
 }
 
+namespace {
+    // How many bytes of [begin, end) the stored pieces do not hold yet (the pieces are disjoint)
+    uint64_t uncovered(const std::map<uint32_t, std::vector<char>> &segments, uint64_t begin, uint64_t end) {
+        uint64_t covered = 0;
+        auto seg = segments.upper_bound(static_cast<uint32_t>(begin));
+        if (seg != segments.begin()) --seg;
+        for (; seg != segments.end() && seg->first < end; ++seg) {
+            const uint64_t from = std::max<uint64_t>(seg->first, begin), to = std::min<uint64_t>(seg->first + seg->second.size(), end);
+            if (to > from) covered += to - from;
+        }
+        return end - begin - covered;
+    }
+} // namespace
+
 network::DatagramReassembler::Result network::DatagramReassembler::add(const std::string &key, const DatagramFragment &fragment) {
     Result result;
 
@@ -53,8 +67,9 @@ network::DatagramReassembler::Result network::DatagramReassembler::add(const std
         it->second.order = counter_++;
         it->second.firstTime = fragment.time;
     } else {
-        // the new bytes of an existing message may not push the total over the budget either
-        while (sets_.size() > 1 && totalBytes_ + fragment.data.size() > kMaxPendingBytes)
+        // the new bytes of an existing message may not push the total over the budget either (bytes it holds already cost nothing)
+        const uint64_t added = uncovered(it->second.segments, begin, end);
+        while (sets_.size() > 1 && totalBytes_ + added > kMaxPendingBytes)
             evictOldest(&key);
     }
 
@@ -85,8 +100,7 @@ network::DatagramReassembler::Result network::DatagramReassembler::add(const std
             pos = gapEnd;
         }
     }
-    if (std::find(set.packets.begin(), set.packets.end(), fragment.packetNumber) == set.packets.end())
-        set.packets.push_back(fragment.packetNumber);
+    if (set.packetSet.insert(fragment.packetNumber).second) set.packets.push_back(fragment.packetNumber);
 
     if (set.bytes == set.total) {
         result.complete = true;

@@ -338,3 +338,29 @@ TEST(DatagramReassembly, FuzzGarbageNeverCrashesOrBreaksTheBudget) {
         EXPECT_LE(r.pendingMessages(), DatagramReassembler::kMaxPending);
     }
 }
+
+TEST(DatagramReassembly, ARetransmittedFragmentAddsNothingAndEvictsNobody) {
+    DatagramReassembler r(1e9);
+    const uint32_t part = 8u << 20, total = DatagramReassembler::kMaxMessageBytes;
+    const std::string chunk(part, 'x');
+    for (int i = 0; i < 7; ++i) r.add("m" + std::to_string(i), frag(0, chunk, total, static_cast<uint32_t>(i)));
+    r.add("grow", frag(0, chunk, total, 50));
+    ASSERT_EQ(r.pendingMessages(), 8u);
+    ASSERT_EQ(r.evictedMessages(), 0u);
+    // the same 8 MiB again, and a piece inside it: nothing is new, so the budget is not touched
+    r.add("grow", frag(0, chunk, total, 51));
+    r.add("grow", frag(1000, std::string(4096, 'x'), total, 52));
+    EXPECT_EQ(r.pendingMessages(), 8u);
+    EXPECT_EQ(r.evictedMessages(), 0u);
+    EXPECT_EQ(r.pendingBytes(), 8u * part);
+}
+
+TEST(DatagramReassembly, PacketNumbersAreListedOnceInArrivalOrderWhateverTheirOrder) {
+    DatagramReassembler r;
+    r.add("k", frag(0, "AA", 6, 9));
+    r.add("k", frag(0, "AA", 6, 3));    // a retransmission from an earlier-numbered packet
+    r.add("k", frag(2, "BB", 6, 9));    // another fragment of packet 9 (several records in one datagram)
+    auto done = r.add("k", frag(4, "CC", 6, 5));
+    ASSERT_TRUE(done.complete);
+    EXPECT_EQ(done.packetNumbers, (std::vector<uint32_t>{9, 3, 5}));
+}

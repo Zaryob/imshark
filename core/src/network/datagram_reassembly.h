@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <map>
 #include <string>
+#include <unordered_set>
 #include <vector>
 
 namespace network {
@@ -61,6 +62,7 @@ namespace network {
             uint32_t total = 0;
             std::map<uint32_t, std::vector<char>> segments;   // disjoint pieces by offset, first copy of each byte
             std::vector<uint32_t> packets;                    // arrival order, no repeats
+            std::unordered_set<uint32_t> packetSet;           // the same numbers, for the repeat check
             uint64_t bytes = 0;                               // sum of the segment sizes
             uint64_t order = 0;                               // insertion order, for evicting the oldest
             double firstTime = 0;                             // capture time of the first fragment
