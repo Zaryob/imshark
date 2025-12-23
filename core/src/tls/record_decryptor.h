@@ -55,6 +55,7 @@
 
 #include <array>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <vector>
 
@@ -78,6 +79,21 @@ namespace tls {
     };
     /// The suite `id` as negotiated under `version` (0x0304 = TLS 1.3); nullptr when it is not supported.
     const CipherSuite *findCipherSuite(uint16_t version, uint16_t id);
+
+    /// The keys of one direction of a TLS 1.2 key block. For the GCM suites `iv` starts with the 4 byte implicit salt (the
+    /// rest is zero); for ChaCha20-Poly1305 it is the whole 12 byte IV.
+    struct Tls12WriteKeys {
+        crypto::Bytes key;
+        std::array<uint8_t, 12> iv{};
+    };
+
+    /// TLS 1.2 key expansion (RFC 5246 section 6.3): key_block = PRF(master_secret, "key expansion", server_random +
+    /// client_random) split into the client and the server write key and IV. Index 0 is client_write (traffic from the
+    /// client), index 1 server_write. `suite` must be a TLS 1.2 AEAD suite of findCipherSuite(). DTLS 1.2 uses the same
+    /// expansion (RFC 6347 section 4.2.1), so the DTLS record opener takes its keys from here too. Returns std::nullopt when
+    /// the master secret is not 48 bytes or the backend cannot do the PRF.
+    std::optional<std::array<Tls12WriteKeys, 2>> deriveTls12KeyBlock(const CipherSuite &suite, const Secret &master, const ClientRandom &clientRandom,
+                                                                     const ClientRandom &serverRandom);
 
     enum class KeyEpoch : uint8_t { Handshake, Application };
 

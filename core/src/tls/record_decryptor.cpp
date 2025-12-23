@@ -122,20 +122,32 @@ namespace tls {
         }
     }
 
-    void RecordDecryptor::deriveTls12Keys(const Secret &master, const ClientRandom &clientRandom, const ClientRandom &serverRandom) {
-        if (master.length != 48) return;
-        const size_t keyLen = crypto::aeadKeyLength(suite_->aead);
-        const size_t ivLen = suite_->aead == crypto::Aead::ChaCha20Poly1305 ? crypto::kAeadNonceLength : kGcmSalt;
+    std::optional<std::array<Tls12WriteKeys, 2>> deriveTls12KeyBlock(const CipherSuite &suite, const Secret &master, const ClientRandom &clientRandom,
+                                                                     const ClientRandom &serverRandom) {
+        if (master.length != 48 || suite.tls13) return std::nullopt;
+        const size_t keyLen = crypto::aeadKeyLength(suite.aead);
+        const size_t ivLen = suite.aead == crypto::Aead::ChaCha20Poly1305 ? crypto::kAeadNonceLength : kGcmSalt;
         // seed = server_random + client_random (the order differs from the master secret derivation)
         crypto::Bytes seed(serverRandom.begin(), serverRandom.end());
         seed.insert(seed.end(), clientRandom.begin(), clientRandom.end());
-        const auto block = crypto::prf(suite_->hash, std::span<const uint8_t>(master.bytes.data(), master.length), "key expansion", seed,
+        const auto block = crypto::prf(suite.hash, std::span<const uint8_t>(master.bytes.data(), master.length), "key expansion", seed,
                                        2 * keyLen + 2 * ivLen);
-        if (!block) return;
+        if (!block) return std::nullopt;
+        std::array<Tls12WriteKeys, 2> out;
         for (size_t i = 0; i < 2; ++i) {   // client_write_key, server_write_key, client_write_IV, server_write_IV
+            out[i].key.assign(block->begin() + i * keyLen, block->begin() + (i + 1) * keyLen);
+            std::copy_n(block->begin() + 2 * keyLen + i * ivLen, ivLen, out[i].iv.begin());
+        }
+        return out;
+    }
+
+    void RecordDecryptor::deriveTls12Keys(const Secret &master, const ClientRandom &clientRandom, const ClientRandom &serverRandom) {
+        const auto block = deriveTls12KeyBlock(*suite_, master, clientRandom, serverRandom);
+        if (!block) return;
+        for (size_t i = 0; i < 2; ++i) {
             Keys &k = dir_[i].keys;
-            k.key.assign(block->begin() + i * keyLen, block->begin() + (i + 1) * keyLen);
-            std::copy_n(block->begin() + 2 * keyLen + i * ivLen, ivLen, k.iv.begin());
+            k.key = (*block)[i].key;
+            k.iv = (*block)[i].iv;
             k.valid = true;
             dir_[i].epoch = KeyEpoch::Application;
         }

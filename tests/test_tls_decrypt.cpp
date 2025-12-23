@@ -967,3 +967,43 @@ TEST(TlsDecryptBackend, BuildsWithoutOpenSslReportItInsteadOfFailingSilently) {
     tls::RecordDecryptor unsupported(0x0304, 0x1304, randomA(), randomB(), keys.entry());
     EXPECT_EQ(unsupported.availability(), DecryptStatus::UnsupportedSuite);   // still decided without the backend
 }
+
+// The TLS 1.2 key block of tls::deriveTls12KeyBlock (also what DTLS 1.2 uses). Oracle: `openssl kdf -keylen N -kdfopt
+// digest:SHA256 -kdfopt hexsecret:<master> -kdfopt hexseed:<hex("key expansion") || server_random || client_random> TLS1-PRF`
+// (OpenSSL 3 CLI), master secret 30..5f, client random 00..1f, server random 80..9f:
+//   SHA256, 40 bytes: 209aeacd2c307bf9f9ddde7ac0419d4744efe4076d093f2e64e7d85bc543628f7d5ade5556aba964
+//   SHA384, 72 bytes: 779fafd5949a5d61fe8c2bcf05d62c5cf1bb46cc6a808b98fe76f626331f795feaac9ee73d8211fb339978c2362bfa8ebc22640960f03780682f575debb18b3268615c9c1858aa30
+TEST(TlsKeyBlock, SplitsTheKeyExpansionIntoTheClientAndServerWriteKeys) {
+    if (!tls::crypto::available()) GTEST_SKIP() << tls::crypto::backendName();
+    tls::Secret master;
+    master.length = 48;
+    for (size_t i = 0; i < 48; ++i) master.bytes[i] = static_cast<uint8_t>(0x30 + i);
+    tls::ClientRandom client, server;
+    for (size_t i = 0; i < 32; ++i) { client[i] = static_cast<uint8_t>(i); server[i] = static_cast<uint8_t>(0x80 + i); }
+
+    const auto *aes128 = tls::findCipherSuite(0x0303, 0xC02F);
+    ASSERT_NE(aes128, nullptr);
+    const auto a = tls::deriveTls12KeyBlock(*aes128, master, client, server);
+    ASSERT_TRUE(a.has_value());
+    const std::string block128 = "209aeacd2c307bf9f9ddde7ac0419d4744efe4076d093f2e64e7d85bc543628f7d5ade5556aba964";
+    EXPECT_EQ(support::hexOf(std::string((*a)[0].key.begin(), (*a)[0].key.end())), block128.substr(0, 32)) << "client_write_key";
+    EXPECT_EQ(support::hexOf(std::string((*a)[1].key.begin(), (*a)[1].key.end())), block128.substr(32, 32)) << "server_write_key";
+    EXPECT_EQ(support::hexOf(std::string((*a)[0].iv.begin(), (*a)[0].iv.begin() + 4)), block128.substr(64, 8)) << "client_write_IV (salt)";
+    EXPECT_EQ(support::hexOf(std::string((*a)[1].iv.begin(), (*a)[1].iv.begin() + 4)), block128.substr(72, 8)) << "server_write_IV (salt)";
+
+    const auto *aes256 = tls::findCipherSuite(0x0303, 0xC030);
+    ASSERT_NE(aes256, nullptr);
+    const auto b = tls::deriveTls12KeyBlock(*aes256, master, client, server);
+    ASSERT_TRUE(b.has_value());
+    const std::string block256 = "779fafd5949a5d61fe8c2bcf05d62c5cf1bb46cc6a808b98fe76f626331f795feaac9ee73d8211fb339978c2362bfa8ebc22640960f03780682f575debb18b3268615c9c1858aa30";
+    EXPECT_EQ(support::hexOf(std::string((*b)[0].key.begin(), (*b)[0].key.end())), block256.substr(0, 64));
+    EXPECT_EQ(support::hexOf(std::string((*b)[1].key.begin(), (*b)[1].key.end())), block256.substr(64, 64));
+    EXPECT_EQ(support::hexOf(std::string((*b)[0].iv.begin(), (*b)[0].iv.begin() + 4)), block256.substr(128, 8));
+    EXPECT_EQ(support::hexOf(std::string((*b)[1].iv.begin(), (*b)[1].iv.begin() + 4)), block256.substr(136, 8));
+
+    // not a master secret, and not a TLS 1.2 suite: nothing is derived
+    tls::Secret shortSecret = master;
+    shortSecret.length = 32;
+    EXPECT_FALSE(tls::deriveTls12KeyBlock(*aes128, shortSecret, client, server).has_value());
+    EXPECT_FALSE(tls::deriveTls12KeyBlock(*tls::findCipherSuite(0x0304, 0x1301), master, client, server).has_value());
+}
