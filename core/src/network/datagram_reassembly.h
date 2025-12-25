@@ -47,6 +47,8 @@ namespace network {
         Result add(const std::string &key, const DatagramFragment &fragment);
 
         size_t pendingMessages() const { return sets_.size(); }
+        /// True while a message is pending under `key` (one whose timeout ran out is only forgotten at the next add()).
+        bool pending(const std::string &key) const { return sets_.count(key) > 0; }
         size_t pendingBytes() const { return static_cast<size_t>(totalBytes_); }
         /// Messages dropped because their timeout ran out.
         size_t timedOutMessages() const { return timedOut_; }

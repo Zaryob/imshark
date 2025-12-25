@@ -364,3 +364,13 @@ TEST(DatagramReassembly, PacketNumbersAreListedOnceInArrivalOrderWhateverTheirOr
     ASSERT_TRUE(done.complete);
     EXPECT_EQ(done.packetNumbers, (std::vector<uint32_t>{9, 3, 5}));
 }
+
+TEST(DatagramReassembly, PendingSaysWhetherAMessageIsWaiting) {
+    DatagramReassembler r;
+    EXPECT_FALSE(r.pending("k"));
+    r.add("k", frag(0, "AA", 4, 1));
+    EXPECT_TRUE(r.pending("k"));
+    EXPECT_FALSE(r.pending("other"));
+    r.add("k", frag(2, "BB", 4, 2));
+    EXPECT_FALSE(r.pending("k")) << "completed messages are gone";
+}

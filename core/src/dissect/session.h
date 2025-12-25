@@ -9,6 +9,7 @@
 
 #include <tls/keylog.h>
 
+#include "dtls_decrypt.h"
 #include "tls_decrypt.h"
 #include "tls_session.h"
 
@@ -40,6 +41,7 @@ public:
         tftpMemory_ = 0;
         tls_.clear();
         tlsDecrypt_.clear();
+        dtls_.clear();
         tlsCaptureKeys_.clear();   // the keys the user supplied (tlsExternalKeys) outlive a new capture
         stateLost_ = false;
         stateLostTables_.clear();
@@ -189,6 +191,96 @@ public:
     }
     const TlsSessionTable &tlsTable() const { return tls_; }
 
+    // ---- DTLS connections (see dtls_session.h) -----------------------------------------------
+    /// Load pass: a complete ClientHello / ServerHello went by from src to dst. Returns false if the tables are frozen or
+    /// the budget is exhausted (then the "dtls" table is state lost).
+    bool addDtlsHello(const std::string &srcIp, uint16_t srcPort, const std::string &dstIp, uint16_t dstPort, const DtlsHelloFacts &facts) {
+        if (frozen_) return false;
+        if (!dtls_.addHello(srcIp, srcPort, dstIp, dstPort, facts, maxMemoryPerTable_)) {
+            markStateLost("dtls");
+            return false;
+        }
+        return true;
+    }
+
+    /// Load pass: one handshake fragment (of the packet and position in `fragment`). `earlierPackets` receives, when the
+    /// fragment completes a message, the other packets that carried its fragments. Returns false if frozen or out of room.
+    bool addDtlsFragment(const std::string &srcIp, uint16_t srcPort, const std::string &dstIp, uint16_t dstPort, const DtlsFragment &fragment,
+                         std::vector<uint32_t> &earlierPackets) {
+        earlierPackets.clear();
+        if (frozen_) return false;
+        if (!dtls_.addFragment(srcIp, srcPort, dstIp, dstPort, fragment, maxMemoryPerTable_, earlierPackets)) {
+            markStateLost("dtls");
+            return false;
+        }
+        return true;
+    }
+    const DtlsFragmentRef *dtlsFragment(uint32_t packet, uint16_t position) const { return dtls_.fragment(packet, position); }
+    const DtlsMessage *dtlsMessage(uint32_t index) const { return dtls_.message(index); }
+    const DtlsSession *dtlsSession(uint32_t id) const { return dtls_.session(id); }
+    /// The latest DTLS session between two endpoints (kDtlsNone: none); `direction` as in DtlsTable::find().
+    uint32_t findDtlsSession(const std::string &srcIp, uint16_t srcPort, const std::string &dstIp, uint16_t dstPort, unsigned *direction = nullptr) const {
+        return dtls_.find(srcIp, srcPort, dstIp, dstPort, direction);
+    }
+
+    /// What became of one protected DTLS record.
+    struct DtlsRecordResult {
+        TlsRecordState state = TlsRecordState::NoKey;
+        uint32_t session = kDtlsNone;
+        std::vector<uint8_t> plaintext;          // only when Decrypted
+    };
+
+    /// Load pass: opens the protected record `in` of the packet (at `position` in the UDP payload) travelling src -> dst with
+    /// the keys of the latest session of those endpoints, and records the outcome. Returns false (and marks "dtls" state
+    /// lost, `out.state` = StateLost) if the outcome did not fit the budget or the tables are frozen.
+    bool decryptDtlsRecord(uint32_t packet, uint16_t position, const std::string &srcIp, uint16_t srcPort, const std::string &dstIp, uint16_t dstPort,
+                           const DtlsRecordInput &in, DtlsRecordResult &out) {
+        out = DtlsRecordResult{};
+        if (frozen_) return false;
+        unsigned direction = 0;
+        const uint32_t id = dtls_.find(srcIp, srcPort, dstIp, dstPort, &direction);
+        DtlsRecordOutcome o;
+        o.session = id;
+        TlsRecordState state = TlsRecordState::NoKey;
+        if (DtlsSession *s = dtls_.mutableSession(id)) {
+            o.fromClient = s->clientDirection >= 0 && static_cast<unsigned>(s->clientDirection) == direction;
+            tls::KeyEntry entry;
+            const bool found = s->hasClientRandom && findTlsKeys(s->clientRandom, entry);
+            if (const auto why = prepareDtlsKeys(*s, found ? &entry : nullptr)) state = *why;
+            else state = openDtlsRecord(*s, o.fromClient, in, out.plaintext);
+        }
+        o.state = static_cast<uint8_t>(state);
+        o.plainLength = static_cast<uint32_t>(out.plaintext.size());
+        out.state = state;
+        out.session = id;
+        if (!dtls_.addOutcome(packet, position, o, maxMemoryPerTable_)) {
+            markStateLost("dtls");
+            out = DtlsRecordResult{};
+            out.state = TlsRecordState::StateLost;
+            return false;
+        }
+        return true;
+    }
+
+    /// Detail building: the recorded outcome of that record, and the plaintext re-opened with the session's keys when it was
+    /// decrypted. A record without an outcome reads as state lost when the table lost state, otherwise as missing key.
+    void readDtlsRecord(uint32_t packet, uint16_t position, const DtlsRecordInput &in, DtlsRecordResult &out) const {
+        out = DtlsRecordResult{};
+        const DtlsRecordOutcome *o = dtls_.outcome(packet, position);
+        if (!o) {
+            out.state = isTableStateLost("dtls") ? TlsRecordState::StateLost : TlsRecordState::NoKey;
+            return;
+        }
+        out.state = o->recordState();
+        out.session = o->session;
+        const DtlsSession *s = dtls_.session(o->session);
+        if (out.state == TlsRecordState::Decrypted && (!s || openDtlsRecord(*s, o->fromClient, in, out.plaintext) != TlsRecordState::Decrypted)) {
+            out.state = TlsRecordState::Malformed;   // cannot happen: the load pass opened this record with these keys
+            out.plaintext.clear();
+        }
+    }
+    const DtlsTable &dtlsTable() const { return dtls_; }
+
     // ---- TLS key material (see tls/keylog.h) ----------------------------------------------------
     /// Secrets the user supplied (key log file / text). They stay when clear() starts a new capture.
     tls::KeyStore &tlsExternalKeys() { return tlsExternalKeys_; }
@@ -210,7 +302,7 @@ public:
         return true;
     }
 
-    size_t totalMemoryUsage() const { return ftpMemory_ + tftpMemory_ + tls_.memory() + tlsDecrypt_.memory(); }
+    size_t totalMemoryUsage() const { return ftpMemory_ + tftpMemory_ + tls_.memory() + tlsDecrypt_.memory() + dtls_.memory(); }
 
 private:
     void markStateLost(const std::string &tableName) {
@@ -231,6 +323,7 @@ private:
 
     TlsSessionTable tls_;
     TlsDecryptTable tlsDecrypt_;
+    DtlsTable dtls_;
     tls::KeyStore tlsExternalKeys_;
     tls::KeyStore tlsCaptureKeys_;
 };

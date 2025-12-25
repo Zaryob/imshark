@@ -23,6 +23,8 @@ add_library(imshark_core STATIC
     src/dissect/snmp.cpp
     src/dissect/tls.cpp
     src/dissect/tls_handshake.cpp
+    src/dissect/dtls_session.cpp
+    src/dissect/dtls_decrypt.cpp
     src/dissect/tls_decrypt.cpp
     src/dissect/dhcp.cpp
     src/dissect/bgp.cpp
