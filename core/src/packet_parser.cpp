@@ -112,6 +112,7 @@ void packet::PacketParser::parsePacket(packet::PacketInfo &pack, const std::vect
         ctx.completed = &completed_;
         ctx.streams = &tcpStreams_;
         ctx.completedTcp = &completedTcp_;
+        ctx.completedDatagrams = &completedDatagrams_;
     } else {
         ctx.reassembledPayload = reassembledPayload_;
         ctx.fragmentNumbers = fragmentNumbers_;

@@ -43,6 +43,7 @@ const dissect::Registry &dissect::Registry::builtin() {
         r.registerTcpHeuristic(dissectHttp2Heuristic);
         r.registerTcpStreamHeuristic({"DNS", frameDnsTcpHeuristic, dissectDnsTcp});   // after HTTP and TLS: it only claims streams that parse as DNS
         r.registerUdpHeuristic(dissectDnsHeuristic);
+        r.registerUdpHeuristic(dissectDtlsHeuristic);   // 3478 / 5349 (TURN) and every other port: only a datagram that is nothing but valid DTLS records
 
         // application layer, by well-known port
         r.registerTcpPort(20, dissectFtpData);
@@ -63,6 +64,8 @@ const dissect::Registry &dissect::Registry::builtin() {
         r.registerUdpPort(123, dissectNtp);
         r.registerUdpPort(161, dissectSnmp);
         r.registerUdpPort(162, dissectSnmp);
+        r.registerUdpPort(4433, dissectDtlsPort);
+        r.registerUdpPort(5684, dissectDtlsPort);   // CoAPs
         // names for Decode As
         auto both = [&](const char *name, Dissector udp, Dissector tcp, std::shared_ptr<StreamProtocol> stream = nullptr) { r.registerProtocolName(name, {std::move(udp), std::move(tcp), std::move(stream)}); };
         both("DNS", dissectDns, dissectDnsTcp, std::make_shared<StreamProtocol>(StreamProtocol{"DNS", frameDnsTcp, dissectDnsTcp}));
@@ -70,6 +73,7 @@ const dissect::Registry &dissect::Registry::builtin() {
         both("DHCP", dissectDhcp, nullptr);
         both("NTP", dissectNtp, nullptr);
         both("SNMP", dissectSnmp, nullptr);
+        both("DTLS", dissectDtlsPort, nullptr);
         both("HTTP", nullptr, nullptr, std::make_shared<StreamProtocol>(StreamProtocol{"HTTP", frameHttp, [](Context &c, const char *d, size_t n) { dissectHttp(c, d, n); }}));
         both("HTTP2", nullptr, dissectHttp2, std::make_shared<StreamProtocol>(StreamProtocol{"HTTP2", frameHttp2, dissectHttp2}));
         both("TLS", nullptr, nullptr, std::make_shared<StreamProtocol>(StreamProtocol{"TLS", frameTls, [](Context &c, const char *d, size_t n) { dissectTls(c, d, n); }}));

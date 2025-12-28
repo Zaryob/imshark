@@ -1,6 +1,6 @@
 #pragma once
 
-// What the load pass concluded about the decryption of TLS records, in the few bytes that fit into a packet summary.
+// What the load pass concluded about the decryption of TLS (and DTLS) records, in the few bytes that fit into a packet summary.
 //
 // TlsRecordState is the outcome for one TLS record (stored per record in the session tables, see tls_decrypt.h) and,
 // merged over the records of a packet, the value of the "tls.decryption_status" display filter field. The packet summary
@@ -83,5 +83,15 @@ namespace dissect {
 
     inline TlsRecordState tlsSummaryState(const packet::PacketInfo &p) {
         return hasTlsSummary(p) ? static_cast<TlsRecordState>(p.reassembled_in & 0xff) : TlsRecordState::Clear;
+    }
+
+    // DTLS keeps the same summary in the same field of its UDP packets (a datagram that is a fragment, ip_frag == 1, is
+    // never decoded as UDP, so the field is free; the last fragment of a reassembled datagram takes it from the nested decode).
+    inline bool hasDtlsSummary(const packet::PacketInfo &p) {
+        return p.ip_version != 0 && p.ip_protocol == 17 && p.ip_frag != 1 && p.protocol == "DTLS" && (p.reassembled_in & kTlsSummaryPresent) != 0;
+    }
+
+    inline TlsRecordState dtlsSummaryState(const packet::PacketInfo &p) {
+        return hasDtlsSummary(p) ? static_cast<TlsRecordState>(p.reassembled_in & 0xff) : TlsRecordState::Clear;
     }
 } // namespace dissect

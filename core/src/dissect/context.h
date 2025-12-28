@@ -3,6 +3,8 @@
 #include <cstddef>
 #include <functional>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include <network/ip_reassembly.h>
 #include <network/tcp_connection.h>
@@ -46,6 +48,10 @@ namespace dissect {
         // `completedTcp` receives (earlier segment packet, completing packet) pairs. In Replay mode of a completing packet
         // `tcpPdu` (and `tcpPduPackets`) hold the message and the packets it is made of instead.
         TcpStreams *streams = nullptr;
+
+        // Datagram message reassembly (DTLS handshake fragments). While a capture is read in order, `completedDatagrams`
+        // receives (earlier fragment packet, completing packet) pairs; the session tables keep the rest (dtls_session.h).
+        std::vector<std::pair<uint32_t, uint32_t>> *completedDatagrams = nullptr;
         std::vector<std::pair<uint32_t, uint32_t>> *completedTcp = nullptr;
         const std::string *tcpPdu = nullptr;
         const std::vector<uint32_t> *tcpPduPackets = nullptr;

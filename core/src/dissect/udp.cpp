@@ -52,10 +52,16 @@ void dissect::dissectUdp(Context &ctx, const char *data, size_t length) {
         if (payloadLen > 0) l.add("UDP payload (" + std::to_string(payloadLen) + " bytes)", o + 8, payloadLen);
     }
 
+    auto rawUdp = [&] {
+        pack.protocol = "UDP";
+        pack.info = std::to_string(srcPort) + " -> " + std::to_string(dstPort) +
+                    " Len=" + std::to_string(udpLen - sizeof(network::UDPHeader));
+    };
     if (pack.protocol == "TFTP") {
         dissectTftp(ctx, payload, payloadLen);
     } else if (const Dissector *app = ctx.registry.findUdpPort(srcPort, dstPort)) {
         (*app)(ctx, payload, payloadLen);
+        if (pack.protocol.empty()) rawUdp();   // the port's dissector declined: the content is not its protocol (DTLS ports)
     } else if (payloadLen > 0 && [&] {
         if (ctx.sessions && ctx.sessions->matchOrUpdateTftpSession(srcPort, dstPort)) {
             dissectTftp(ctx, payload, payloadLen);
@@ -66,8 +72,6 @@ void dissect::dissectUdp(Context &ctx, const char *data, size_t length) {
     }()) {
         // recognised by its content on a port nobody registered
     } else {
-        pack.protocol = "UDP";
-        pack.info = std::to_string(srcPort) + " -> " + std::to_string(dstPort) +
-                    " Len=" + std::to_string(udpLen - sizeof(network::UDPHeader));
+        rawUdp();
     }
 }

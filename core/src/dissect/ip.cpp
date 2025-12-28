@@ -96,6 +96,8 @@ namespace {
         Context nctx{nested, whole.data(), whole.size(), ctx.tcp, ctx.registry, ctx.mode};
         nctx.streams = ctx.streams;
         nctx.completedTcp = ctx.completedTcp;
+        nctx.completedDatagrams = ctx.completedDatagrams;
+        nctx.sessions = ctx.sessions;
         nctx.tcpPdu = ctx.tcpPdu;
         nctx.tcpPduPackets = ctx.tcpPduPackets;
         nctx.addrs = ctx.addrs;
@@ -129,6 +131,7 @@ namespace {
         pack.app_text = nested.app_text;
         pack.app_text2 = nested.app_text2;
         pack.app_stream = nested.app_stream;
+        pack.reassembled_in = nested.reassembled_in;   // unused by a last fragment: carries the DTLS decryption summary
         pack.payload_offset = nested.payload_offset; // relative to the reassembled data, not to this frame (ip_frag == 2)
         pack.payload_length = nested.payload_length;
         setTransportChecksumState(pack, transportChecksumState(nested));

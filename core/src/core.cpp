@@ -141,6 +141,13 @@ namespace {
                 if (amended) amended->push_back(static_cast<uint32_t>(segment - 1));
             }
         }
+        // this packet completed a message that was split into datagram fragments: the earlier fragments say where
+        for (const auto &[earlier, completing]: parser.takeCompletedDatagramMessages()) {
+            if (earlier >= 1 && earlier <= packets.size()) {
+                packets[earlier - 1].info += " [Reassembled in #" + std::to_string(completing) + "]";
+                if (amended) amended->push_back(static_cast<uint32_t>(earlier - 1));
+            }
+        }
         packets.emplace_back(std::move(pack));
     }
 

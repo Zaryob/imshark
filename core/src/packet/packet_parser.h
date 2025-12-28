@@ -36,6 +36,10 @@ namespace packet {
         /// (earlier segment packet number, packet number that completed its TCP message) pairs found since the last call.
         std::vector<std::pair<uint32_t, uint32_t>> takeCompletedTcpPdus() { return std::move(completedTcp_); }
 
+        /// (earlier packet number, packet number that completed its datagram message) pairs found since the last call (DTLS
+        /// handshake fragments).
+        std::vector<std::pair<uint32_t, uint32_t>> takeCompletedDatagramMessages() { return std::move(completedDatagrams_); }
+
         /// For Replay mode of a packet that completes a reassembled TCP message: the message bytes and the packets
         /// they came from (the pointers must stay valid during parsePacket).
         void setTcpPdu(const std::string *pdu, const std::vector<uint32_t> *packets) {
@@ -65,6 +69,7 @@ namespace packet {
         uint8_t reassembledProtocol_ = 0;
         dissect::TcpStreams tcpStreams_;
         std::vector<std::pair<uint32_t, uint32_t>> completedTcp_;
+        std::vector<std::pair<uint32_t, uint32_t>> completedDatagrams_;
         const std::string *tcpPdu_ = nullptr;
         const std::vector<uint32_t> *tcpPduPackets_ = nullptr;
         dissect::SessionTables *sessions_ = nullptr;
