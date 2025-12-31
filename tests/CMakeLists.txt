@@ -26,6 +26,7 @@ add_executable(imshark_tests
     test_ip_reassembly.cpp
     test_datagram_reassembly.cpp
     test_dtls.cpp
+    test_dtls_decrypt.cpp
     test_dtls_session.cpp
     test_follow_view.cpp
     test_misc_protocols.cpp
