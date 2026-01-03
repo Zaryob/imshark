@@ -167,12 +167,20 @@ namespace stats {
             {Severity::Note, "TLS: ServerHello not captured (cipher suite unknown)", "tls.decryption_status == \"no_handshake\""},
             {Severity::Note, "TLS: 1.3 early data (0-RTT) is not decrypted", "tls.decryption_status == \"early_data\""},
             {Severity::Note, "TLS: decryption is not available in this build (no OpenSSL)", "tls.decryption_status == \"unavailable\""},
+            {Severity::Warn, "DTLS: wrong key (the authentication tag of a record does not match)", "dtls.decryption_status == \"tag_failure\""},
+            {Severity::Warn, "DTLS: malformed protected record", "dtls.decryption_status == \"malformed\""},
+            {Severity::Warn, "DTLS: decryption state lost (too many DTLS fragments or records for the session table)", "dtls.decryption_status == \"state_lost\""},
+            {Severity::Note, "DTLS: no key material for the connection", "dtls.decryption_status == \"no_key\""},
+            {Severity::Note, "DTLS: unsupported cipher suite or version (only DTLS 1.2 AES-GCM is decrypted)", "dtls.decryption_status == \"unsupported_suite\""},
+            {Severity::Note, "DTLS: ServerHello not captured (cipher suite unknown)", "dtls.decryption_status == \"no_handshake\""},
+            {Severity::Note, "DTLS: decryption is not available in this build (no OpenSSL)", "dtls.decryption_status == \"unavailable\""},
             {Severity::Note, "TCP: duplicate ACK", "tcp.analysis.duplicate_ack"},
             {Severity::Note, "TCP: keep-alive", "tcp.analysis.keep_alive"},
             {Severity::Note, "TCP: window update", "tcp.analysis.window_update"},
             {Severity::Chat, "Checksum not verified (capture cut short, or checksum offload)",
              "ip.checksum.status == 2 || tcp.checksum.status == 2 || udp.checksum.status == 2 || icmp.checksum.status == 2 || icmpv6.checksum.status == 2"},
             {Severity::Chat, "TLS: records decrypted with the key log", "tls.decryption_status == \"decrypted\""},
+            {Severity::Chat, "DTLS: records decrypted with the key log", "dtls.decryption_status == \"decrypted\""},
             {Severity::Chat, "TCP: connection request (SYN)", "tcp.flags.syn && !tcp.flags.ack"},
             {Severity::Chat, "TCP: connection finished (FIN)", "tcp.flags.fin"},
         };
@@ -220,6 +228,7 @@ namespace stats {
             if (protocol == "HTTP") return "Hypertext Transfer Protocol";
             if (protocol == "HTTP2") return "Hypertext Transfer Protocol 2";
             if (protocol == "TLS") return "Transport Layer Security";
+            if (protocol == "DTLS") return "Datagram Transport Layer Security";
             if (protocol == "NTP") return "Network Time Protocol";
             if (protocol == "MDNS") return "Multicast Domain Name System";
             if (protocol == "FTP") return "File Transfer Protocol";

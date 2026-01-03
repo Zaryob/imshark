@@ -14,6 +14,8 @@
 #include <vector>
 
 #include <core.h>
+#include <filter/filter.h>
+#include <stats/statistics.h>
 #include <dissect/tls_summary.h>
 #include <tls/crypto.h>
 
@@ -263,6 +265,59 @@ TEST_F(DtlsFlow, EveryCutAndEveryDamagedByteOfASealedRecordNeverShowsWrongPlaint
             }
             EXPECT_EQ(textOf(d.fields).find("hello dtls") == std::string::npos || decrypted, true);
         }
+    }
+}
+
+namespace {
+    size_t countMatching(const std::vector<packet::PacketInfo> &packets, const std::string &expression) {
+        auto compiled = filter::Filter::compile(expression);
+        EXPECT_TRUE(compiled.ok) << expression << ": " << compiled.error.message;
+        size_t n = 0;
+        if (compiled.ok) for (const auto &p: packets) if (compiled.filter.matches(p)) ++n;
+        return n;
+    }
+
+    uint64_t expertCount(const std::vector<packet::PacketInfo> &packets, const std::string &summary) {
+        for (const auto &item: stats::expertInfo(packets, nullptr)) if (item.summary == summary) return item.count;
+        return 0;
+    }
+} // namespace
+
+TEST_F(DtlsFlow, TheDecryptionFieldsAndTheExpertInformationFollowTheStates) {
+    {
+        Cap cap(flow(), "fields");
+        ASSERT_TRUE(cap.ok);
+        EXPECT_EQ(countMatching(cap.packets, "dtls.decrypted"), 4u) << "dtls.decrypted is false for the hellos and true for the four sealed records";
+        EXPECT_EQ(countMatching(cap.packets, "dtls.decrypted == 1"), 4u);
+        EXPECT_EQ(countMatching(cap.packets, "dtls.decryption_status == \"decrypted\""), 4u);
+        EXPECT_EQ(countMatching(cap.packets, "dtls.decryption_status"), 4u) << "only packets with protected records have a status";
+        EXPECT_EQ(countMatching(cap.packets, "dtls.record.epoch == 1"), 4u);
+        EXPECT_EQ(countMatching(cap.packets, "dtls.record.sequence_number == 5"), 1u);
+        EXPECT_EQ(expertCount(cap.packets, "DTLS: records decrypted with the key log"), 4u);
+        // the hierarchy is UDP -> DTLS for these packets (no inner protocol is dissected)
+        const stats::HierarchyNode root = stats::protocolHierarchy(cap.packets, nullptr);
+        bool found = false;
+        std::vector<const stats::HierarchyNode *> stack = {&root};
+        while (!stack.empty()) {
+            const auto *n = stack.back();
+            stack.pop_back();
+            if (n->name == "Datagram Transport Layer Security") { found = true; EXPECT_EQ(n->packets, 6u); }
+            for (const auto &c: n->children) stack.push_back(&c);
+        }
+        EXPECT_TRUE(found);
+    }
+    {
+        Cap cap(flow(), "fieldswrong", kWrongKeyLog);
+        ASSERT_TRUE(cap.ok);
+        EXPECT_EQ(countMatching(cap.packets, "dtls.decryption_status == \"tag_failure\""), 4u);
+        EXPECT_EQ(countMatching(cap.packets, "dtls.decrypted == 1"), 0u);
+        EXPECT_EQ(expertCount(cap.packets, "DTLS: wrong key (the authentication tag of a record does not match)"), 4u);
+    }
+    {
+        Cap cap(flow(), "fieldsnokey", "");
+        ASSERT_TRUE(cap.ok);
+        EXPECT_EQ(countMatching(cap.packets, "dtls.decryption_status == \"no_key\""), 4u);
+        EXPECT_EQ(expertCount(cap.packets, "DTLS: no key material for the connection"), 4u);
     }
 }
 

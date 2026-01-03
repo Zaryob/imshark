@@ -16,6 +16,8 @@
 #include <vector>
 
 #include <core.h>
+#include <filter/filter.h>
+#include <stats/statistics.h>
 
 #include "dtls_support.h"
 #include "tls_support.h"
@@ -450,5 +452,68 @@ TEST(DtlsSweeps, EveryCutAndEveryFlippedByteOfEveryDatagramStaysInsideTheFrame) 
             EXPECT_EQ(d.info, cap.packets[i].info) << i;
             EXPECT_EQ(d.protocol, cap.packets[i].protocol) << i;
         }
+    }
+}
+
+// ---- filter fields, hierarchy ----------------------------------------------------------------------------------------------------
+
+namespace {
+    size_t countMatching(const std::vector<packet::PacketInfo> &packets, const std::string &expression) {
+        auto compiled = filter::Filter::compile(expression);
+        EXPECT_TRUE(compiled.ok) << expression << ": " << compiled.error.message;
+        size_t n = 0;
+        if (compiled.ok) for (const auto &p: packets) if (compiled.filter.matches(p)) ++n;
+        return n;
+    }
+} // namespace
+
+TEST(DtlsFilter, TheFieldsAnswerFromTheFirstRecordAndHandshakeMessage) {
+    const std::string cookie = "0123456789abcdefghij";
+    Cap c;
+    c.frames = {toServer(hsRecord(0x0100000007ull, handshake(1, 0, clientHelloBody("", "sni.example.test")))),                // epoch 0, seq 0x0100000007
+                toClient(hsRecord(1, handshake(3, 0, helloVerifyBody(cookie)), 0xfeff)),
+                toServer(hsRecord(2, handshake(1, 1, clientHelloBody(cookie, "sni.example.test")))),
+                toClient(hsRecord(3, handshake(2, 1, serverHelloBody())) + hsRecord(4, handshake(11, 2, certificateBody()))),
+                toServer(record(23, 0xfefd, 1, 9, std::string(40, 'x'))),
+                toServer("not dtls at all", 12345)};
+    const Loaded &cap = c.load("filter");
+    const auto &p = cap.packets;
+    EXPECT_EQ(countMatching(p, "dtls"), 5u);
+    EXPECT_EQ(countMatching(p, "tls"), 0u) << "DTLS is not TLS";
+    EXPECT_EQ(countMatching(p, "dtls.record.content_type == 22"), 4u);
+    EXPECT_EQ(countMatching(p, "dtls.record.content_type == 23"), 1u);
+    EXPECT_EQ(countMatching(p, "dtls.record.version == 0xfeff"), 1u);
+    EXPECT_EQ(countMatching(p, "dtls.record.version == 0xfefd"), 4u);
+    EXPECT_EQ(countMatching(p, "dtls.record.epoch == 0"), 4u);
+    EXPECT_EQ(countMatching(p, "dtls.record.epoch == 1"), 1u);
+    EXPECT_EQ(countMatching(p, "dtls.record.sequence_number == 4294967303"), 1u) << "0x0100000007: more than 32 bits";
+    EXPECT_EQ(countMatching(p, "dtls.record.sequence_number == 9"), 1u);
+    EXPECT_EQ(countMatching(p, "dtls.handshake.type == 1"), 2u);
+    EXPECT_EQ(countMatching(p, "dtls.handshake.type == 3"), 1u);
+    EXPECT_EQ(countMatching(p, "dtls.handshake.cookie_length == 0"), 1u) << "the first ClientHello has no cookie yet";
+    EXPECT_EQ(countMatching(p, "dtls.handshake.cookie_length == 20"), 2u) << "HelloVerifyRequest and the ClientHello that repeats it";
+    EXPECT_EQ(countMatching(p, "dtls.handshake.cookie_length"), 3u);
+    EXPECT_EQ(countMatching(p, "dtls.handshake.extensions_server_name == \"sni.example.test\""), 2u);
+    EXPECT_EQ(countMatching(p, "dtls.handshake.certificate_subject == \"dtls.example.test\""), 1u);
+    EXPECT_EQ(countMatching(p, "dtls && udp.port == 4433"), 5u);
+    EXPECT_EQ(countMatching(p, "dtls.decrypted"), 0u);
+}
+
+TEST(DtlsFilter, TheProtocolHierarchyShowsUdpThenDtls) {
+    Cap c;
+    c.frames = {toServer(hsRecord(0, handshake(1, 0, clientHelloBody("", "")))), toClient(hsRecord(0, handshake(2, 1, serverHelloBody())))};
+    const Loaded &cap = c.load("hierarchy");
+    const stats::HierarchyNode root = stats::protocolHierarchy(cap.packets, nullptr);
+    const stats::HierarchyNode *node = &root;
+    for (const char *name: {"Internet Protocol Version 4", "User Datagram Protocol", "Datagram Transport Layer Security"}) {
+        const stats::HierarchyNode *next = nullptr;
+        for (const auto &child: node->children) {
+            // the layers below Frame: Ethernet first
+            if (child.name == name) next = &child;
+            for (const auto &grand: child.children) if (grand.name == name) next = &grand;
+        }
+        ASSERT_NE(next, nullptr) << name;
+        EXPECT_EQ(next->packets, 2u) << name;
+        node = next;
     }
 }
