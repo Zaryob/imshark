@@ -33,7 +33,7 @@ namespace {
         return f;
     }
 
-    // `data` outlives the call: the table copies what it keeps
+    // the fragment points at `data` (not a copy): the caller keeps it alive while the fragment is used
     DtlsFragment fragment(uint32_t packet, uint16_t epoch, uint16_t seq, uint32_t length, uint32_t offset, const std::string &data, uint16_t position = 13 + 12) {
         DtlsFragment f;
         f.packet = packet;
@@ -253,9 +253,10 @@ TEST(DtlsFragments, AFragmentOfAKnownPacketAndPositionIsIgnored) {
 
 TEST(DtlsFragments, ForgottenMessagesDoNotKeepTheirRefsForever) {
     core::SessionTables t;
-    auto f = fragment(1, 0, 1, 8, 0, "AAAA");
+    const std::string a = "AAAA", b = "BBBB";       // the fragment points at its bytes: they must outlive it
+    auto f = fragment(1, 0, 1, 8, 0, a);
     ASSERT_TRUE(add(t, f));
-    auto late = fragment(2, 0, 1, 8, 4, "BBBB");
+    auto late = fragment(2, 0, 1, 8, 4, b);
     late.time = 1000;                         // far beyond the 60 s reassembly timeout: the first fragment is forgotten
     ASSERT_TRUE(add(t, late));
     EXPECT_EQ(t.dtlsFragment(1, 25)->completedIn, 0u);
