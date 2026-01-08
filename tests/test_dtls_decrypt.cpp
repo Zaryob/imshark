@@ -321,6 +321,39 @@ TEST_F(DtlsFlow, TheDecryptionFieldsAndTheExpertInformationFollowTheStates) {
     }
 }
 
+namespace {
+    // Ethernet + IPv4 fragment of payload[offset, offset + len) (the offset field counts 8 byte units)
+    std::vector<char> ipFragment(const std::string &payload, size_t offset, size_t len, uint16_t id, bool more) {
+        char head[160];
+        const uint16_t field = static_cast<uint16_t>((more ? 0x2000 : 0) | (offset / 8));
+        std::snprintf(head, sizeof head, "001122334455 aabbccddeeff 0800 4500%04zx %04x %04x 40110000 0a000001 0a000002", 20 + len, id, field);
+        auto frame = support::hex(head);
+        frame.insert(frame.end(), payload.begin() + static_cast<long>(offset), payload.begin() + static_cast<long>(offset + len));
+        return frame;
+    }
+} // namespace
+
+TEST_F(DtlsFlow, ASealedRecordInAnIpFragmentedDatagramIsDecryptedAtTheLastFragment) {
+    auto frames = flow();
+    const std::string record = bytes(kClientData);                     // 13 + 34 bytes
+    const std::string datagram = be(kClientPort, 2) + be(kServerPort, 2) + be(8 + record.size(), 2) + be(0, 2) + record;   // UDP header + DTLS
+    ASSERT_GT(datagram.size(), 40u);
+    frames[4] = ipFragment(datagram, 0, 24, 0x4242, true);
+    frames.insert(frames.begin() + 5, ipFragment(datagram, 24, datagram.size() - 24, 0x4242, false));
+    Cap cap(frames, "ipfrag");
+    ASSERT_TRUE(cap.ok) << cap.message;
+    ASSERT_EQ(cap.packets.size(), 7u);
+    EXPECT_EQ(cap.packets[4].ip_frag, 1u);
+    EXPECT_EQ(cap.packets[5].ip_frag, 2u);
+    EXPECT_EQ(cap.packets[5].protocol, "DTLS");
+    EXPECT_EQ(cap.packets[5].info, "Application Data (decrypted, 10 bytes)");
+    EXPECT_EQ(dissect::dtlsSummaryState(cap.packets[5]), TlsRecordState::Decrypted);
+    const auto d = cap.details(5);
+    EXPECT_EQ(d.info, cap.packets[5].info);
+    EXPECT_EQ(d.reassembled_in, cap.packets[5].reassembled_in);
+    EXPECT_NE(textOf(d.fields).find("Decrypted Application Data (10 bytes)"), std::string::npos);
+}
+
 TEST(DtlsFlowNoBackend, WithoutOpenSslTheStateSaysDecryptionIsNotAvailable) {
     if (tls::crypto::available()) GTEST_SKIP() << "this build has OpenSSL";
     Cap cap(flow(), "nobackend");
