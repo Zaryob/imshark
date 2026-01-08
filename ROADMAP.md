@@ -204,9 +204,9 @@ Kabul ölçütü: `http_PPI.cap` içindeki 140 paketin tamamının `Unknown` kal
   - ClientHello random → oturum tablosu eşleme, kayıt sıra no sayımı, KeyUpdate takibi.
   - Destek matrisi: TLS 1.2/1.3 × {AES-128/256-GCM, ChaCha20-Poly1305}. Çözülmüş yük sanal TCP akışı olarak HTTP/1.x veya HTTP/2 dissector'ına verilir; Follow Stream "TLS (çözülmüş)" sekmesi.
   - Doğru/yanlış/eksik anahtar ayrımı: etiket doğrulanmadan açık metin gösterilmez.
-- [ ] **5.4: DTLS ve datagram birleştirme (0.9.3-d)** — **L**
+- [x] **5.4: DTLS ve datagram birleştirme (0.9.3-d)** — **L** *(1. kısım: datagram birleştirici; 2. kısım: DTLS dissector'ı, yükleme geçişinde el sıkışma birleştirme, DTLS 1.2 AES-GCM şifre çözme, `dtls.*` filtre alanları, hiyerarşi ve Expert Information. Sınırlar docs/KNOWN_ISSUES.md'de: DTLS 1.3 yalnızca tanınır, ChaCha20/CBC/DTLS 1.0 çözülmez, yeniden müzakere izlenmez)*
   - Datagram mesaj birleştirme altyapısı: UDP üzerinde `(bağlantı, epoch, message_seq)` parçalarını birleştiren sınırlı bellekli yapı (SCTP için de ortak). *(Yapıldı: `network::DatagramReassembler`, bkz. B2; DTLS kaydı ve el sıkışma ayrıştırması sonraki parçalarda)*
-  - Kayıt başlığı (tür, sürüm, epoch, 48-bit sıra no, uzunluk), el sıkışma (msg_type, fragment_offset/length), HelloVerifyRequest + cookie, ClientHello/ServerHello/Certificate alanları. DTLS 1.2 AES-GCM şifre çözme.
+  - Kayıt başlığı (tür, sürüm, epoch, 48-bit sıra no, uzunluk), el sıkışma (msg_type, fragment_offset/length), HelloVerifyRequest + cookie, ClientHello/ServerHello/Certificate alanları. DTLS 1.2 AES-GCM şifre çözme. *(Yapıldı: `core/src/dissect/dtls.cpp`; içerikle (kayıt başlığı doğrulaması, her kayıt geçerli ve datagramı doldurur) ve 4433/5684 portları ile Decode As `DTLS` ile tanıma, 3478/5349 yalnızca içerik uyunca; DTLS 1.3 birleşik başlığı tanınıp işaretlenir. El sıkışma parçaları yükleme geçişinde `DatagramReassembler` ile birleştirilir, tamamlayan paket mesajı TLS ayrıştırıcılarıyla çözer ve kaynak paketleri listeler, önceki parçalar `[Reassembled in #N]` der; yeniden iletim, çelişen çakışma ve uzunluk uyuşmazlığı işaretlenir. Ortak TLS ayrıştırıcıları `tls_handshake.{h,cpp}` dosyasına çıkarıldı. DTLS 1.2 AES-128/256-GCM `CLIENT_RANDOM` ile çözülür, durumlar TLS ile aynı)*
 
 Kabul ölçütü: anahtar olmayan yakalamada şifreli veri açık metin gibi yorumlanmaz; doğru/yanlış/eksik anahtar örnekleri ayrılır. Kripto ve HPACK bağımlılıkları seçilip lisans/paketleme etkileri belgelenir.
 
@@ -235,7 +235,7 @@ Kabul ölçütü: anahtar olmayan yakalamada şifreli veri açık metin gibi yor
 
 ### Ortak altyapı geriçizelgesi
 - [x] **B1: Oturum tabloları** (`core::SessionTables`, v0.9.3-a) — Durumlu çözümde Replay eşitliği (TLS, SMB, SQL, SIP/RTP) — **M**
-- [x] **B2: Datagram/mesaj birleştirme** (`network::DatagramReassembler`, v0.9.3-d) — UDP üzerinde parça birleştirme, sınırlı bellek + zaman aşımı (SCTP, DTLS) — **M** *(Yapıldı: opak anahtar, ilk kopya kazanır + çelişen çakışma bayrağı, farklı toplam uzunlukta mesaj atılır, 1024 mesaj / 64 MiB / mesaj başına 16 MiB sınırı ve en eski önce çıkarma, yakalama zamanıyla 60 sn zaman aşımı; henüz hiçbir protokol kullanmıyor)*
+- [x] **B2: Datagram/mesaj birleştirme** (`network::DatagramReassembler`, v0.9.3-d) — UDP üzerinde parça birleştirme, sınırlı bellek + zaman aşımı (SCTP, DTLS) — **M** *(Yapıldı: opak anahtar, ilk kopya kazanır + çelişen çakışma bayrağı, farklı toplam uzunlukta mesaj atılır, 1024 mesaj / 64 MiB / mesaj başına 16 MiB sınırı ve en eski önce çıkarma, yakalama zamanıyla 60 sn zaman aşımı; DTLS 5.4'te kullanıyor, SCTP henüz kullanmıyor)*
 - **B3: Bayt okuyucu + BER/ASN.1** (v0.9.1-a) ve **XDR okuyucu** (4 bayt hizalı, uzunluk önekli) (LDAP, Kerberos, RPC/NFS) — **M + S**
 - **B4: Dissector başına filtre alanı kaydı** — Alanların merkezi `fields.cpp` yerine dissector tarafından kaydedilmesi — **M**
 - **B5: Dosya okuyucu kaydı** — Sihirli sayıyla biçim tanıma, `CaptureReader` arayüzü, "desteklenmeyen biçim" teşhisi — **M**
