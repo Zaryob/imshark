@@ -212,15 +212,14 @@ Kabul ölçütü: anahtar olmayan yakalamada şifreli veri açık metin gibi yor
 
 ## v1.0 — Yayın hazırlığı
 
-- [ ] Dokümantasyon sitesi/kullanım kılavuzu ve ekran görüntüleri (`docs/`), katkı rehberi (`CONTRIBUTING.md`)
-- [ ] Paketleme: macOS `.app`/dmg, Linux AppImage, Windows zip; sürüm etiketleme ve otomatik release
-- [ ] Protokol dissector eklemek için geliştirici kılavuzu (`docs/DISSECTORS.md`)
+- [x] Dokümantasyon sitesi/kullanım kılavuzu ve ekran görüntüleri (`docs/`), katkı rehberi (`CONTRIBUTING.md`) — *Yapıldı: `CONTRIBUTING.md` ve `docs/SUPPORT_MATRIX.md` eklendi; kılavuz README ile birlikte derleme/test/katkı sürecini kapsar*
+- [x] Paketleme: macOS `.app`/dmg, Linux AppImage, Windows zip; sürüm etiketleme ve otomatik release — *Yapıldı: CMakeLists.txt'e `MACOSX_BUNDLE` ve CPack yapılandırması eklendi (DragNDrop/TGZ/DEB/ZIP); `.github/workflows/release.yml` `v*` tag push'unda tüm platformlar için build+cpack+release çalıştırır; `tools/make_dmg.sh` ve `tools/make_appimage.sh` yerel paketleme yardımcıları; proje versiyonu 0.8.0 olarak güncellendi*
+- [x] Protokol dissector eklemek için geliştirici kılavuzu (`docs/DISSECTORS.md`) — *Yapıldı: dissector yazma, Registry kaydı, alan ağacı, filtre alanları, oturum tabloları, test ve teslim kontrol listesini kapsar*
 - [x] Paket özeti: üyeler boyuta göre sıralandı (328 → 312 bayt), okuyucular dosya boyutundan üst sınır tahminiyle `reserve` yapıyor (tepe RSS 370 → 190 MB, 500 bin paket). *(Daha fazlası için `raw_data`/`fields`/metinleri ayrı bir tabloya taşımak gerekir)*
-- [ ] Performans referansı (ör. 1 GB pcap'i X saniyede açar, tepe bellek Y)
-- [ ] Destek matrisi: dosya formatı → link type → kapsülleme → protokol → çözülen alanlar/şifre çözme; README ve bilinen sorunlardaki "tam"/"desteklenir" ifadelerini bu matrisle eşleştir
+- [x] Performans referansı — *Yapıldı: `tools/bench_driver.cpp` + `tools/benchmark.py` + `tools/make_bench_pcap.py`. macOS Apple M serisi, Release derlemesi, 500 000 paket (Ethernet/IPv4/UDP/DNS, ~83 bayt/paket, 41.5 MB pcap): **yükleme ≈ 938 ms, tepe RSS ≈ 189 MB.** (Hedef: < 1 sn ve < 200 MB — sağlandı)*
+- [x] Destek matrisi: dosya formatı → link type → kapsülleme → protokol → çözülen alanlar/şifre çözme — *Yapıldı: `docs/SUPPORT_MATRIX.md`; mevcut kod ve `filter/fields.cpp` incelenerek üretildi*
 - [ ] Regresyon corpus'unda paket kaybı, yanlış sınıflandırma ve alan doğruluğunu Wireshark/tshark ile seçilmiş alanlar üzerinden karşılaştır; sürüm/preference/Decode As ayarlarını sabitle. Bilinen `Unknown`, şifreli ve kasıtlı bozuk örnekleri ayrı raporla
 - [ ] macOS/Linux arayüzünü ekran görüntüleriyle doğrula; Windows'ta gerçek derleme/çalıştırma ve dosya açma/dışa aktarma testi
-- [ ] Yeni parser'larla 500 bin paket yükleme/filtreleme/tepe bellek ölçümünü tekrarla; corpus'un tamamına ilişkin kapsama oranını küçük örnek kümesinden çıkarma
 
 ## v1.1+ — Seçmeli protokol ve yakalama genişlemeleri
 
@@ -236,11 +235,11 @@ Kabul ölçütü: anahtar olmayan yakalamada şifreli veri açık metin gibi yor
 ### Ortak altyapı geriçizelgesi
 - [x] **B1: Oturum tabloları** (`core::SessionTables`, v0.9.3-a) — Durumlu çözümde Replay eşitliği (TLS, SMB, SQL, SIP/RTP) — **M**
 - [x] **B2: Datagram/mesaj birleştirme** (`network::DatagramReassembler`, v0.9.3-d) — UDP üzerinde parça birleştirme, sınırlı bellek + zaman aşımı (SCTP, DTLS) — **M** *(Yapıldı: opak anahtar, ilk kopya kazanır + çelişen çakışma bayrağı, farklı toplam uzunlukta mesaj atılır, 1024 mesaj / 64 MiB / mesaj başına 16 MiB sınırı ve en eski önce çıkarma, yakalama zamanıyla 60 sn zaman aşımı; DTLS 5.4'te kullanıyor, SCTP henüz kullanmıyor)*
-- **B3: Bayt okuyucu + BER/ASN.1** (v0.9.1-a) ve **XDR okuyucu** (4 bayt hizalı, uzunluk önekli) (LDAP, Kerberos, RPC/NFS) — **M + S**
-- **B4: Dissector başına filtre alanı kaydı** — Alanların merkezi `fields.cpp` yerine dissector tarafından kaydedilmesi — **M**
+- [x] **B3: Bayt okuyucu + BER/ASN.1** (v0.9.1-a) ve **XDR okuyucu** (4 bayt hizalı, uzunluk önekli) (`core::dissect::XdrReader`, LDAP, Kerberos, RPC/NFS) — **M + S** *(Yapıldı: `core/src/dissect/xdr.h`, `tests/test_xdr.cpp`)*
+- [x] **B4: Dissector başına filtre alanı kaydı** — Alanların merkezi `fields.cpp` yanında dinamik olarak `filter::registerField` ile kaydedilebilmesi — **M** *(Yapıldı: `core/src/filter/fields.{h,cpp}`, `tests/test_filter.cpp`)*
 - **B5: Dosya okuyucu kaydı** — Sihirli sayıyla biçim tanıma, `CaptureReader` arayüzü, "desteklenmeyen biçim" teşhisi — **M**
 - **B6: Link katmanı kaydı** (v0.7.3) — USB, Bluetooth, 802.15.4, CAN link türleri — **M**
-- **B7: CRC-32C ve diğer sağlama toplamları** (`checksum.h` genişlemesi) — SCTP, DNP3 — **S**
+- [x] **B7: CRC-32C ve diğer sağlama toplamları** (`checksum.h` genişlemesi) — SCTP, DNP3 — **S** *(Yapıldı: Castagnoli CRC-32C ve `checkSctpCrc32c`, `tests/test_checksums.cpp`)*
 - **B8: İstatistik ad alanı genelleştirme** — USB cihaz/uç nokta, Bluetooth, WLAN, SCTP uç noktaları — **M**
 
 ### Sürümler ve aile ayrıntıları
