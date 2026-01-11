@@ -345,11 +345,31 @@ namespace filter {
             std::sort(t.begin(), t.end(), [](const FieldDef &a, const FieldDef &b) { return std::string_view(a.name) < b.name; });
             return t;
         }
+
+        std::vector<FieldDef> &customFields() {
+            static std::vector<FieldDef> dynamicList;
+            return dynamicList;
+        }
+
+        std::vector<FieldDef> combinedFields() {
+            static const std::vector<FieldDef> base = buildTable();
+            std::vector<FieldDef> all = base;
+            const auto &extra = customFields();
+            all.insert(all.end(), extra.begin(), extra.end());
+            std::sort(all.begin(), all.end(), [](const FieldDef &a, const FieldDef &b) { return std::string_view(a.name) < b.name; });
+            return all;
+        }
     } // namespace
 
     const std::vector<FieldDef> &allFields() {
-        static const std::vector<FieldDef> table = buildTable();
+        static std::vector<FieldDef> table = combinedFields();
         return table;
+    }
+
+    void registerField(FieldDef field) {
+        customFields().push_back(field);
+        // Refresh combined table
+        const_cast<std::vector<FieldDef>&>(allFields()) = combinedFields();
     }
 
     const FieldDef *findField(std::string_view lowerName) {

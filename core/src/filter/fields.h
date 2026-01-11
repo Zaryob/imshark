@@ -39,4 +39,7 @@ namespace filter {
     /// nullptr if unknown. Names are matched case-insensitively (the table is lower case).
     const FieldDef *findField(std::string_view lowerName);
     const std::vector<FieldDef> &allFields();
+
+    /// Register a custom / protocol-specific filter field dynamically.
+    void registerField(FieldDef field);
 } // namespace filter

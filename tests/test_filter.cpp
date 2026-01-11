@@ -6,6 +6,7 @@
 
 #include <core.h>
 #include <filter/filter.h>
+#include <filter/fields.h>
 
 #include "support.h"
 
@@ -286,3 +287,24 @@ TEST(Filter, WorksOnTheSampleCapture) {
     for (int i = 1; i < 16; ++i) allButFirst.push_back(i);
     EXPECT_EQ(indices("frame.time_delta > 0.2 && frame.time_delta < 0.3"), allButFirst);
 }
+
+TEST(Filter, DynamicFieldRegistration) {
+    const auto tcp = parse(hex(kTcpSyn));
+    EXPECT_EQ(filter::findField("myproto.magic"), nullptr);
+
+    filter::registerField({
+        "myproto.magic",
+        filter::FieldType::Unsigned,
+        [](const packet::PacketInfo &p, const filter::Context &, filter::Values &out) {
+            if (p.src_port == 8080) out.addU(42);
+        },
+        "My custom protocol magic field"
+    });
+
+    const auto *def = filter::findField("myproto.magic");
+    ASSERT_NE(def, nullptr);
+    EXPECT_EQ(std::string(def->name), "myproto.magic");
+    EXPECT_TRUE(match("myproto.magic == 42", tcp));
+    EXPECT_FALSE(match("myproto.magic == 99", tcp));
+}
+

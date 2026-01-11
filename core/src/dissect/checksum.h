@@ -96,4 +96,62 @@ namespace dissect {
             default: return "Not present";
         }
     }
+
+    /// Castagnoli CRC-32 (CRC-32C, polynomial 0x1EDC6F41 reversed 0x82F63B78), used by SCTP (RFC 4960).
+    inline uint32_t crc32c(const char *data, size_t n, uint32_t initial = 0xFFFFFFFFU) {
+        static constexpr uint32_t table[16] = {
+            0x00000000, 0x105ec76f, 0x20bd8ede, 0x30e349b1,
+            0x417b1dbc, 0x5125dad3, 0x61c69362, 0x7198540d,
+            0x82f63b78, 0x92a8fc17, 0xa24bb5a6, 0xb21572c9,
+            0xc38d26c4, 0xd3d3e1ab, 0xe330a81a, 0xf36e6f75
+        };
+        uint32_t crc = initial;
+        const auto *p = reinterpret_cast<const uint8_t *>(data);
+        for (size_t i = 0; i < n; ++i) {
+            crc ^= p[i];
+            crc = (crc >> 4) ^ table[crc & 0x0f];
+            crc = (crc >> 4) ^ table[crc & 0x0f];
+        }
+        return crc ^ 0xFFFFFFFFU;
+    }
+
+    /// SCTP CRC-32C verification: checksum field is at offset 8..11, calculated with checksum bytes replaced by zeros.
+    inline bool checkSctpCrc32c(const char *packet, size_t n, uint32_t *outStored = nullptr, uint32_t *outCalculated = nullptr) {
+        if (n < 12) return false;
+        const auto *p = reinterpret_cast<const uint8_t *>(packet);
+        // SCTP stores CRC-32C in little-endian byte order (RFC 4960 section 3.1)
+        uint32_t stored = static_cast<uint32_t>(p[8]) |
+                         (static_cast<uint32_t>(p[9]) << 8) |
+                         (static_cast<uint32_t>(p[10]) << 16) |
+                         (static_cast<uint32_t>(p[11]) << 24);
+        if (outStored) *outStored = stored;
+
+        // Compute over prefix (first 8 bytes: src port, dst port, verification tag)
+        uint32_t crc = 0xFFFFFFFFU;
+        static constexpr uint32_t table[16] = {
+            0x00000000, 0x105ec76f, 0x20bd8ede, 0x30e349b1,
+            0x417b1dbc, 0x5125dad3, 0x61c69362, 0x7198540d,
+            0x82f63b78, 0x92a8fc17, 0xa24bb5a6, 0xb21572c9,
+            0xc38d26c4, 0xd3d3e1ab, 0xe330a81a, 0xf36e6f75
+        };
+        for (size_t i = 0; i < 8; ++i) {
+            crc ^= p[i];
+            crc = (crc >> 4) ^ table[crc & 0x0f];
+            crc = (crc >> 4) ^ table[crc & 0x0f];
+        }
+        // 4 zero bytes in place of the checksum field
+        for (size_t i = 0; i < 4; ++i) {
+            crc = (crc >> 4) ^ table[crc & 0x0f];
+            crc = (crc >> 4) ^ table[crc & 0x0f];
+        }
+        // Rest of the packet
+        for (size_t i = 12; i < n; ++i) {
+            crc ^= p[i];
+            crc = (crc >> 4) ^ table[crc & 0x0f];
+            crc = (crc >> 4) ^ table[crc & 0x0f];
+        }
+        uint32_t calculated = crc ^ 0xFFFFFFFFU;
+        if (outCalculated) *outCalculated = calculated;
+        return stored == calculated;
+    }
 } // namespace dissect

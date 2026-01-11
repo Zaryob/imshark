@@ -7,6 +7,7 @@
 #include <random>
 
 #include <core.h>
+#include <dissect/checksum.h>
 #include <filter/filter.h>
 #include <stats/statistics.h>
 
@@ -259,4 +260,50 @@ TEST(Checksum, SurviveRandomCorruption) {
         };
         for (const auto &l: info.fields) check(l);
     }
+}
+
+TEST(Checksum, Crc32cStandardVectors) {
+    // Standard test vector for CRC-32C (RFC 3720 / RFC 4960)
+    // 32 bytes of zeroes:
+    std::string zeros(32, '\0');
+    EXPECT_EQ(dissect::crc32c(zeros.data(), zeros.size()), 0x8a9136aaU);
+
+    // 32 bytes of 0xFF:
+    std::string ones(32, '\xff');
+    EXPECT_EQ(dissect::crc32c(ones.data(), ones.size()), 0x62a8ab43U);
+
+    // 32 bytes counting from 0x00 to 0x1f:
+    std::string count(32, '\0');
+    for (int i = 0; i < 32; ++i) count[i] = static_cast<char>(i);
+    EXPECT_EQ(dissect::crc32c(count.data(), count.size()), 0x46dd794eU);
+}
+
+TEST(Checksum, SctpCrc32cVerification) {
+    // Minimal SCTP packet with valid CRC-32C
+    // Ports: 5000 (0x1388) -> 5000 (0x1388)
+    // Verification Tag: 0x12345678
+    // Checksum placeholder: 0x00000000
+    // Chunk: SHUTDOWN_COMPLETE (Type 14, Flags 0, Length 4)
+    std::vector<char> sctpPkt = {
+        0x13, static_cast<char>(0x88), 0x13, static_cast<char>(0x88),
+        0x12, 0x34, 0x56, 0x78,
+        0, 0, 0, 0,
+        14, 0, 0, 4
+    };
+    uint32_t calc = 0;
+    dissect::checkSctpCrc32c(sctpPkt.data(), sctpPkt.size(), nullptr, &calc);
+    // Put calculated checksum into packet (little-endian per RFC 4960)
+    sctpPkt[8] = static_cast<char>(calc & 0xFF);
+    sctpPkt[9] = static_cast<char>((calc >> 8) & 0xFF);
+    sctpPkt[10] = static_cast<char>((calc >> 16) & 0xFF);
+    sctpPkt[11] = static_cast<char>((calc >> 24) & 0xFF);
+
+    uint32_t stored = 0, calculated = 0;
+    EXPECT_TRUE(dissect::checkSctpCrc32c(sctpPkt.data(), sctpPkt.size(), &stored, &calculated));
+    EXPECT_EQ(stored, calculated);
+
+    // Corrupt one byte
+    sctpPkt[15] ^= 0x01;
+    EXPECT_FALSE(dissect::checkSctpCrc32c(sctpPkt.data(), sctpPkt.size(), &stored, &calculated));
+    EXPECT_NE(stored, calculated);
 }
