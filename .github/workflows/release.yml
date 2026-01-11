@@ -1,0 +1,98 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact_name: imshark-linux
+          - os: macos-latest
+            artifact_name: imshark-macos
+          - os: windows-latest
+            artifact_name: imshark-windows
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake pkg-config libglfw3-dev libgl1-mesa-dev libgtest-dev libpcap-dev libssl-dev
+
+      - name: Install dependencies (macOS)
+        if: runner.os == 'macOS'
+        run: brew install glfw googletest pkg-config openssl@3 create-dmg
+
+      - name: Configure (non-Windows)
+        if: runner.os != 'Windows'
+        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DIMSHARK_BUILD_TESTS=ON
+
+      - name: Configure (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release `
+            -DIMSHARK_LIVE_CAPTURE=OFF -DIMSHARK_TLS_DECRYPT=OFF `
+            "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Test (non-Windows)
+        if: runner.os != 'Windows'
+        run: ctest --test-dir build --output-on-failure
+
+      - name: Test (Windows)
+        if: runner.os == 'Windows'
+        run: ctest --test-dir build -C Release --output-on-failure
+
+      - name: Package (non-Windows)
+        if: runner.os != 'Windows'
+        run: |
+          cd build
+          cpack -C Release
+
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        run: |
+          cd build
+          cpack -C Release
+
+      - name: Create macOS DMG
+        if: runner.os == 'macOS'
+        run: |
+          APP_PATH="build/imshark.app"
+          if [ -d "$APP_PATH" ]; then
+            create-dmg \
+              --volname "ImShark" \
+              --window-pos 200 120 \
+              --window-size 600 300 \
+              --icon-size 100 \
+              --app-drop-link 425 120 \
+              "imshark-macos.dmg" \
+              "$APP_PATH" || true
+          fi
+          # Fallback: TGZ from CPack
+          ls build/*.dmg build/*.tar.gz 2>/dev/null || true
+
+      - name: Upload release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            build/*.dmg
+            build/*.tar.gz
+            build/*.deb
+            build/*.zip
+            imshark-macos.dmg
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

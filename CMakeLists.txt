@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.21)
 
-project(imshark VERSION 0.2.0 LANGUAGES CXX)
+project(imshark VERSION 0.8.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -83,3 +83,35 @@ if(IMSHARK_BUILD_TESTS)
 endif()
 
 install(TARGETS imshark RUNTIME DESTINATION bin)
+
+# macOS .app bundle
+if(APPLE)
+    set_target_properties(imshark PROPERTIES
+        MACOSX_BUNDLE TRUE
+        MACOSX_BUNDLE_BUNDLE_NAME "ImShark"
+        MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
+        MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
+        MACOSX_BUNDLE_IDENTIFIER "com.imshark.app"
+        MACOSX_BUNDLE_COPYRIGHT "GPL-3.0"
+    )
+endif()
+
+# CPack packaging
+set(CPACK_PACKAGE_NAME "imshark")
+set(CPACK_PACKAGE_VERSION "${PROJECT_VERSION}")
+set(CPACK_PACKAGE_DESCRIPTION_SUMMARY "ImShark - Network Packet Analyzer")
+set(CPACK_PACKAGE_VENDOR "imshark contributors")
+set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_SOURCE_DIR}/LICENSE")
+set(CPACK_PACKAGE_INSTALL_DIRECTORY "ImShark")
+
+if(APPLE)
+    set(CPACK_GENERATOR "DragNDrop")
+elseif(WIN32)
+    set(CPACK_GENERATOR "ZIP")
+else()
+    set(CPACK_GENERATOR "TGZ;DEB")
+    set(CPACK_DEBIAN_PACKAGE_MAINTAINER "imshark contributors")
+    set(CPACK_DEBIAN_PACKAGE_DEPENDS "libgl1, libglfw3")
+endif()
+
+include(CPack)
