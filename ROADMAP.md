@@ -244,7 +244,7 @@ Kabul ölçütü: anahtar olmayan yakalamada şifreli veri açık metin gibi yor
 
 ### Sürümler ve aile ayrıntıları
 
-- [ ] **v1.1 — Ağ ve taşıma:** IGMP (v1/v2/v3, MLD deseniyle grup/kaynak listeleri), OSPF (v2/v3 ortak başlık, Hello, DD, LSA türleri 1-5/7, Fletcher checksum), SCTP (CRC-32C, chunk'lar, DATA parça birleştirme B2, çoklu akış, payload protocol ID), UDP-Lite (checksum kapsamı). (Ön koşul: B2, B4, B7) — **L**
+- [ ] **v1.1 — Ağ ve taşıma:** IGMP (v1/v2/v3 yapıldı: `dissect/igmp.cpp`), SCTP (CRC-32C, chunk'lar, DATA alanları yapıldı: `dissect/sctp.cpp`), UDP-Lite (checksum kapsamı yapıldı: `dissect/udp.cpp`); OSPF (v2/v3 ortak başlık, Hello, DD, LSA türleri, Fletcher checksum devam ediyor). (Ön koşul: B2, B4, B7) — **L**
 - [ ] **v1.2 — IPsec:** AH (IPv4/IPv6 SPI, sıra no, iç protokol), ESP (SPI, sıra no, ESP-NULL yük sezgisi veya şifreli göstergesi), IKEv1/IKEv2 (ISAKMP başlığı, SA/KE/ID/CERT/AUTH payload zinciri, 500/4500 NAT-T, IKE parçalama). (Ön koşul: B4) — **L**
 - [ ] **v1.3 — Kurumsal dosya ve kimlik (LDAP → Kerberos → SMB2/3 → DCE/RPC → NFS):**
   - LDAP (B3 BER): Bind/Search/Modify, filtre ağacı, StartTLS geçişi.

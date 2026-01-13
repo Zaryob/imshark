@@ -13,10 +13,12 @@ add_library(imshark_core STATIC
     src/dissect/ip.cpp
     src/dissect/arp.cpp
     src/dissect/icmp.cpp
+    src/dissect/igmp.cpp
     src/dissect/tcp.cpp
     src/dissect/tcp_streams.cpp
     src/dissect/x509.cpp
     src/dissect/udp.cpp
+    src/dissect/sctp.cpp
     src/dissect/dns.cpp
     src/dissect/http.cpp
     src/dissect/ntp.cpp

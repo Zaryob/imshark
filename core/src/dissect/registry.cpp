@@ -1,6 +1,8 @@
 #include "registry.h"
 
 #include "protocols.h"
+#include "igmp.h"
+#include "sctp.h"
 
 const dissect::Registry &dissect::Registry::builtin() {
     static const Registry registry = [] {
@@ -27,9 +29,12 @@ const dissect::Registry &dissect::Registry::builtin() {
 
         // transport layer, by IP protocol number
         r.registerIpProtocol(1, [](Context &c, const char *d, size_t n) { dissectIcmp(c, d, n, false); });
+        r.registerIpProtocol(2, dissectIgmp);
         r.registerIpProtocol(58, [](Context &c, const char *d, size_t n) { dissectIcmp(c, d, n, true); });
         r.registerIpProtocol(6, dissectTcp);
         r.registerIpProtocol(17, dissectUdp);
+        r.registerIpProtocol(132, dissectSctp);
+        r.registerIpProtocol(136, dissectUdpLite);
         r.registerIpProtocol(4, dissectIpInIp);
         r.registerIpProtocol(41, dissectIpInIp);
         r.registerIpProtocol(47, dissectGre);

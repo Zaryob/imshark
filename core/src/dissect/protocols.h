@@ -10,6 +10,7 @@ namespace dissect {
     void dissectIcmp(Context &ctx, const char *data, size_t length, bool v6);
     void dissectTcp(Context &ctx, const char *data, size_t length);
     void dissectUdp(Context &ctx, const char *data, size_t length);
+    void dissectUdpLite(Context &ctx, const char *data, size_t length);
     void dissectDns(Context &ctx, const char *data, size_t length);        // DNS over UDP
     void dissectDnsTcp(Context &ctx, const char *data, size_t length);     // DNS over TCP (2-byte length prefix)
     StreamFrame frameDnsTcp(const char *data, size_t length);              // message boundary of DNS over TCP

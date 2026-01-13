@@ -108,6 +108,7 @@ namespace filter {
                 // ---- transport layer
                 {"tcp", FieldType::Boolean, proto<hasTcp>, "TCP"},
                 {"udp", FieldType::Boolean, proto<hasUdp>, "UDP"},
+                {"udplite", FieldType::Boolean, proto<[](const PacketInfo &p) { return p.ip_protocol == 136 || p.protocol == "UDP-Lite"; }>, "Lightweight User Datagram Protocol"},
                 {"icmp", FieldType::Boolean, proto<[](const PacketInfo &p) { return ipv4(p) && p.ip_protocol == 1; }>, "ICMP"},
                 {"icmpv6", FieldType::Boolean, proto<[](const PacketInfo &p) { return ipv6(p) && p.ip_protocol == 58; }>, "ICMPv6"},
                 {"tcp.srcport", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (hasTcp(p)) o.addU(p.src_port); }, "TCP source port"},
