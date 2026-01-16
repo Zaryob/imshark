@@ -154,4 +154,17 @@ namespace dissect {
         if (outCalculated) *outCalculated = calculated;
         return stored == calculated;
     }
+
+    /// Fletcher-16 checksum (RFC 905 / RFC 2328 / Annex B of ISO 8473), modulo 255.
+    /// Used for OSPF LSA checksum verification.
+    inline uint16_t fletcher16(const char *data, size_t n, size_t skipOffset = 0, size_t skipLen = 0) {
+        uint32_t c0 = 0, c1 = 0;
+        const auto *p = reinterpret_cast<const uint8_t *>(data);
+        for (size_t i = 0; i < n; ++i) {
+            uint32_t byteVal = (i >= skipOffset && i < skipOffset + skipLen) ? 0 : p[i];
+            c0 = (c0 + byteVal) % 255;
+            c1 = (c1 + c0) % 255;
+        }
+        return static_cast<uint16_t>((c0 << 8) | c1);
+    }
 } // namespace dissect

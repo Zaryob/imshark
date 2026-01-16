@@ -3,6 +3,7 @@
 #include "protocols.h"
 #include "igmp.h"
 #include "sctp.h"
+#include "ospf.h"
 
 const dissect::Registry &dissect::Registry::builtin() {
     static const Registry registry = [] {
@@ -33,6 +34,7 @@ const dissect::Registry &dissect::Registry::builtin() {
         r.registerIpProtocol(58, [](Context &c, const char *d, size_t n) { dissectIcmp(c, d, n, true); });
         r.registerIpProtocol(6, dissectTcp);
         r.registerIpProtocol(17, dissectUdp);
+        r.registerIpProtocol(89, dissectOspf);
         r.registerIpProtocol(132, dissectSctp);
         r.registerIpProtocol(136, dissectUdpLite);
         r.registerIpProtocol(4, dissectIpInIp);
