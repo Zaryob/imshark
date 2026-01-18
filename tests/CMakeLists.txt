@@ -74,6 +74,7 @@ add_executable(imshark_tests
     test_udplite.cpp
     test_sctp.cpp
     test_ospf.cpp
+    test_ipsec.cpp
 )
 if(IMSHARK_SANITIZE)
     target_sources(imshark_tests PRIVATE asan_options.cpp)

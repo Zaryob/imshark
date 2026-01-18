@@ -4,6 +4,7 @@
 #include "igmp.h"
 #include "sctp.h"
 #include "ospf.h"
+#include "ipsec.h"
 
 const dissect::Registry &dissect::Registry::builtin() {
     static const Registry registry = [] {
@@ -34,6 +35,8 @@ const dissect::Registry &dissect::Registry::builtin() {
         r.registerIpProtocol(58, [](Context &c, const char *d, size_t n) { dissectIcmp(c, d, n, true); });
         r.registerIpProtocol(6, dissectTcp);
         r.registerIpProtocol(17, dissectUdp);
+        r.registerIpProtocol(50, dissectEsp);
+        r.registerIpProtocol(51, dissectAh);
         r.registerIpProtocol(89, dissectOspf);
         r.registerIpProtocol(132, dissectSctp);
         r.registerIpProtocol(136, dissectUdpLite);
@@ -71,6 +74,8 @@ const dissect::Registry &dissect::Registry::builtin() {
         r.registerUdpPort(123, dissectNtp);
         r.registerUdpPort(161, dissectSnmp);
         r.registerUdpPort(162, dissectSnmp);
+        r.registerUdpPort(500, dissectIke);
+        r.registerUdpPort(4500, dissectIke);
         r.registerUdpPort(4433, dissectDtlsPort);
         r.registerUdpPort(5684, dissectDtlsPort);   // CoAPs
         // names for Decode As
