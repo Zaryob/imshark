@@ -5,6 +5,7 @@
 #include "sctp.h"
 #include "ospf.h"
 #include "ipsec.h"
+#include "ldap.h"
 
 const dissect::Registry &dissect::Registry::builtin() {
     static const Registry registry = [] {
@@ -66,6 +67,10 @@ const dissect::Registry &dissect::Registry::builtin() {
         r.registerTcpPort(587, dissectSmtp);
         r.registerTcpPort(179, dissectBgp);
         r.registerTcpStream(179, {"BGP", frameBgp, dissectBgp});
+        r.registerTcpPort(389, dissectLdap);
+        r.registerTcpStream(389, {"LDAP", frameLdap, dissectLdap});
+        r.registerTcpPort(636, dissectLdap);
+        r.registerTcpStream(636, {"LDAP", frameLdap, dissectLdap});
         r.registerUdpPort(53, dissectDns);
         r.registerUdpPort(5353, dissectMdns);
         r.registerUdpPort(67, dissectDhcp);
