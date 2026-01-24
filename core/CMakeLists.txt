@@ -27,6 +27,7 @@ add_library(imshark_core STATIC
     src/dissect/snmp.cpp
     src/dissect/ldap.cpp
     src/dissect/kerberos.cpp
+    src/dissect/smb2.cpp
     src/dissect/tls.cpp
     src/dissect/tls_handshake.cpp
     src/dissect/dtls.cpp
