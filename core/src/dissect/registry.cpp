@@ -8,6 +8,7 @@
 #include "ldap.h"
 #include "kerberos.h"
 #include "smb2.h"
+#include "dcerpc.h"
 
 const dissect::Registry &dissect::Registry::builtin() {
     static const Registry registry = [] {
@@ -79,6 +80,8 @@ const dissect::Registry &dissect::Registry::builtin() {
         r.registerTcpStream(445, {"SMB2", frameSmb2, dissectSmb2});
         r.registerTcpPort(139, dissectSmb2);
         r.registerTcpStream(139, {"SMB2", frameSmb2, dissectSmb2});
+        r.registerTcpPort(135, dissectDceRpc);
+        r.registerTcpStream(135, {"DCERPC", frameDceRpc, dissectDceRpc});
         r.registerUdpPort(53, dissectDns);
         r.registerUdpPort(88, dissectKerberos);
         r.registerUdpPort(5353, dissectMdns);
@@ -102,6 +105,7 @@ const dissect::Registry &dissect::Registry::builtin() {
         both("LDAP", nullptr, dissectLdap, std::make_shared<StreamProtocol>(StreamProtocol{"LDAP", frameLdap, dissectLdap}));
         both("Kerberos", dissectKerberos, dissectKerberos, std::make_shared<StreamProtocol>(StreamProtocol{"Kerberos", frameKerberos, dissectKerberos}));
         both("SMB2", nullptr, dissectSmb2, std::make_shared<StreamProtocol>(StreamProtocol{"SMB2", frameSmb2, dissectSmb2}));
+        both("DCERPC", nullptr, dissectDceRpc, std::make_shared<StreamProtocol>(StreamProtocol{"DCERPC", frameDceRpc, dissectDceRpc}));
         both("DTLS", dissectDtlsPort, nullptr);
         both("HTTP", nullptr, nullptr, std::make_shared<StreamProtocol>(StreamProtocol{"HTTP", frameHttp, [](Context &c, const char *d, size_t n) { dissectHttp(c, d, n); }}));
         both("HTTP2", nullptr, dissectHttp2, std::make_shared<StreamProtocol>(StreamProtocol{"HTTP2", frameHttp2, dissectHttp2}));
