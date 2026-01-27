@@ -79,6 +79,7 @@ add_executable(imshark_tests
     test_kerberos.cpp
     test_smb2.cpp
     test_dcerpc.cpp
+    test_nfs.cpp
 )
 if(IMSHARK_SANITIZE)
     target_sources(imshark_tests PRIVATE asan_options.cpp)

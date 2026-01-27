@@ -9,6 +9,7 @@
 #include "kerberos.h"
 #include "smb2.h"
 #include "dcerpc.h"
+#include "nfs.h"
 
 const dissect::Registry &dissect::Registry::builtin() {
     static const Registry registry = [] {
@@ -82,8 +83,14 @@ const dissect::Registry &dissect::Registry::builtin() {
         r.registerTcpStream(139, {"SMB2", frameSmb2, dissectSmb2});
         r.registerTcpPort(135, dissectDceRpc);
         r.registerTcpStream(135, {"DCERPC", frameDceRpc, dissectDceRpc});
+        r.registerTcpPort(2049, dissectNfs);
+        r.registerTcpStream(2049, {"NFS", frameRpc, dissectNfs});
+        r.registerTcpPort(111, dissectNfs);
+        r.registerTcpStream(111, {"Portmap", frameRpc, dissectNfs});
         r.registerUdpPort(53, dissectDns);
         r.registerUdpPort(88, dissectKerberos);
+        r.registerUdpPort(111, dissectNfs);
+        r.registerUdpPort(2049, dissectNfs);
         r.registerUdpPort(5353, dissectMdns);
         r.registerUdpPort(67, dissectDhcp);
         r.registerUdpPort(68, dissectDhcp);
@@ -106,6 +113,8 @@ const dissect::Registry &dissect::Registry::builtin() {
         both("Kerberos", dissectKerberos, dissectKerberos, std::make_shared<StreamProtocol>(StreamProtocol{"Kerberos", frameKerberos, dissectKerberos}));
         both("SMB2", nullptr, dissectSmb2, std::make_shared<StreamProtocol>(StreamProtocol{"SMB2", frameSmb2, dissectSmb2}));
         both("DCERPC", nullptr, dissectDceRpc, std::make_shared<StreamProtocol>(StreamProtocol{"DCERPC", frameDceRpc, dissectDceRpc}));
+        both("NFS", dissectNfs, dissectNfs, std::make_shared<StreamProtocol>(StreamProtocol{"NFS", frameRpc, dissectNfs}));
+        both("Portmap", dissectNfs, dissectNfs, std::make_shared<StreamProtocol>(StreamProtocol{"Portmap", frameRpc, dissectNfs}));
         both("DTLS", dissectDtlsPort, nullptr);
         both("HTTP", nullptr, nullptr, std::make_shared<StreamProtocol>(StreamProtocol{"HTTP", frameHttp, [](Context &c, const char *d, size_t n) { dissectHttp(c, d, n); }}));
         both("HTTP2", nullptr, dissectHttp2, std::make_shared<StreamProtocol>(StreamProtocol{"HTTP2", frameHttp2, dissectHttp2}));
