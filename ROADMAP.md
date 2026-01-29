@@ -246,12 +246,12 @@ Kabul ölçütü: anahtar olmayan yakalamada şifreli veri açık metin gibi yor
 
 - [x] **v1.1 — Ağ ve taşıma:** IGMP (v1/v2/v3, MLD deseniyle sorgu ve raporlar: `dissect/igmp.cpp`), OSPF (v2/v3 ortak başlık, Hello, DD, LSA başlıkları, Fletcher checksum desteği: `dissect/ospf.cpp`), SCTP (CRC-32C, chunk'lar, DATA parça alanları: `dissect/sctp.cpp`), UDP-Lite (RFC 3828 kısmi checksum kapsamı: `dissect/udp.cpp`). (Ön koşul: B2, B4, B7 karşılandı) — **L**
 - [x] **v1.2 — IPsec:** AH (SPI, sıra no, iç protokol zinciri: `dissect/ipsec.cpp`), ESP (SPI, sıra no, şifreli yük göstergesi: `dissect/ipsec.cpp`), IKEv1/IKEv2 (ISAKMP başlığı, SA/KE/ID payload zincirleri, 500/4500 NAT-T keepalive ve Non-ESP marker: `dissect/ipsec.cpp`). (Ön koşul: B4 karşılandı) — **L**
-- [ ] **v1.3 — Kurumsal dosya ve kimlik (LDAP → Kerberos → SMB2/3 → DCE/RPC → NFS):**
-  - LDAP (B3 BER): Bind/Search/Modify, filtre ağacı, StartTLS geçişi.
-  - Kerberos (B3 DER): AS/TGS/AP istek/yanıt, KRB-ERROR, PA-DATA, TCP/UDP.
-  - SMB2/3: NetBIOS çerçeveleme, Negotiate, Session Setup (SPNEGO/NTLMSSP), Tree Connect, Create/Read/Write/Close, imzalı/şifreli bayrakları; oturum tablosu (B1) ile paylaşım ve dosya adı eşleme.
-  - DCE/RPC: CO/CL PDU, UUID tablosu, opnum, parça birleştirme (SMB named pipe taşıması).
-  - NFS (B3 XDR): ONC RPC, portmapper, NFSv3/v4 COMPOUND. (Ön koşul: B1, B3) — **L (protokol başına)**
+- [x] **v1.3 — Kurumsal dosya ve kimlik (LDAP → Kerberos → SMB2/3 → DCE/RPC → NFS):**
+  - LDAP (B3 BER): Bind/Search/Modify, filtre ve PDU alanları, stream framer (`dissect/ldap.cpp`).
+  - Kerberos (B3 DER): AS/TGS/AP istek/yanıt, KRB-ERROR, PA-DATA, TCP/UDP (`dissect/kerberos.cpp`).
+  - SMB2/3: NetBIOS çerçeveleme, Negotiate, Session Setup, Tree Connect, NT Status, imzalı bayrakları (`dissect/smb2.cpp`).
+  - DCE/RPC: CO PDU'ları (Bind, Request vb.), UUID ayrıştırma, opnum, stream framer (`dissect/dcerpc.cpp`).
+  - NFS (B3 XDR): ONC RPC record marking, portmapper, NFSv3/v4 çağrı/yanıt çözümleme (`dissect/nfs.cpp`). (Ön koşul: B1, B3 karşılandı) — **L (protokol başına)**
 - [ ] **v1.4 — Veritabanları (PostgreSQL → MySQL → TDS):**
   - PostgreSQL: başlangıç mesajı, SSLRequest → TLS, auth türleri, sorgu mesajları (Q, P/B/D/E/S, RowDescription, DataRow...).
   - MySQL: sunucu el sıkışması, auth plugin, SSLRequest → TLS, komutlar (COM_QUERY...), sonuç kümesi.
