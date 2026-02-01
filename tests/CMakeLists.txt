@@ -80,6 +80,7 @@ add_executable(imshark_tests
     test_smb2.cpp
     test_dcerpc.cpp
     test_nfs.cpp
+    test_postgres.cpp
 )
 if(IMSHARK_SANITIZE)
     target_sources(imshark_tests PRIVATE asan_options.cpp)
