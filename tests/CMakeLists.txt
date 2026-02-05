@@ -82,6 +82,7 @@ add_executable(imshark_tests
     test_nfs.cpp
     test_postgres.cpp
     test_mysql.cpp
+    test_tds.cpp
 )
 if(IMSHARK_SANITIZE)
     target_sources(imshark_tests PRIVATE asan_options.cpp)

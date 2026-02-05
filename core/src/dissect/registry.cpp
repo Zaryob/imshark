@@ -12,6 +12,7 @@
 #include "nfs.h"
 #include "postgres.h"
 #include "mysql.h"
+#include "tds.h"
 
 const dissect::Registry &dissect::Registry::builtin() {
     static const Registry registry = [] {
@@ -93,6 +94,8 @@ const dissect::Registry &dissect::Registry::builtin() {
         r.registerTcpStream(5432, {"PGSQL", framePostgreSql, dissectPostgreSql});
         r.registerTcpPort(3306, dissectMySql);
         r.registerTcpStream(3306, {"MySQL", frameMySql, dissectMySql});
+        r.registerTcpPort(1433, dissectTds);
+        r.registerTcpStream(1433, {"TDS", frameTds, dissectTds});
         r.registerUdpPort(53, dissectDns);
         r.registerUdpPort(88, dissectKerberos);
         r.registerUdpPort(111, dissectNfs);
@@ -123,6 +126,7 @@ const dissect::Registry &dissect::Registry::builtin() {
         both("Portmap", dissectNfs, dissectNfs, std::make_shared<StreamProtocol>(StreamProtocol{"Portmap", frameRpc, dissectNfs}));
         both("PGSQL", nullptr, dissectPostgreSql, std::make_shared<StreamProtocol>(StreamProtocol{"PGSQL", framePostgreSql, dissectPostgreSql}));
         both("MySQL", nullptr, dissectMySql, std::make_shared<StreamProtocol>(StreamProtocol{"MySQL", frameMySql, dissectMySql}));
+        both("TDS", nullptr, dissectTds, std::make_shared<StreamProtocol>(StreamProtocol{"TDS", frameTds, dissectTds}));
         both("DTLS", dissectDtlsPort, nullptr);
         both("HTTP", nullptr, nullptr, std::make_shared<StreamProtocol>(StreamProtocol{"HTTP", frameHttp, [](Context &c, const char *d, size_t n) { dissectHttp(c, d, n); }}));
         both("HTTP2", nullptr, dissectHttp2, std::make_shared<StreamProtocol>(StreamProtocol{"HTTP2", frameHttp2, dissectHttp2}));
