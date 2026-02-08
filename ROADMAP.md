@@ -252,10 +252,10 @@ Kabul ölçütü: anahtar olmayan yakalamada şifreli veri açık metin gibi yor
   - SMB2/3: NetBIOS çerçeveleme, Negotiate, Session Setup, Tree Connect, NT Status, imzalı bayrakları (`dissect/smb2.cpp`).
   - DCE/RPC: CO PDU'ları (Bind, Request vb.), UUID ayrıştırma, opnum, stream framer (`dissect/dcerpc.cpp`).
   - NFS (B3 XDR): ONC RPC record marking, portmapper, NFSv3/v4 çağrı/yanıt çözümleme (`dissect/nfs.cpp`). (Ön koşul: B1, B3 karşılandı) — **L (protokol başına)**
-- [ ] **v1.4 — Veritabanları (PostgreSQL → MySQL → TDS):**
-  - PostgreSQL: başlangıç mesajı, SSLRequest → TLS, auth türleri, sorgu mesajları (Q, P/B/D/E/S, RowDescription, DataRow...).
-  - MySQL: sunucu el sıkışması, auth plugin, SSLRequest → TLS, komutlar (COM_QUERY...), sonuç kümesi.
-  - TDS (SQL Server): Pre-Login (TLS-in-TDS), Login7, SQL Batch, token akışı (COLMETADATA, ROW, DONE...). Parolalar varsayılan olarak maskelenir. (Ön koşul: B1) — **L (protokol başına)**
+- [x] **v1.4 — Veritabanları (PostgreSQL → MySQL → TDS):**
+  - PostgreSQL: SSLRequest, StartupMessage (v3.0 user/db parametreleri), Q (SimpleQuery), R (Auth), Z (ReadyForQuery), C (CommandComplete), stream framer (`dissect/postgres.cpp`).
+  - MySQL: Handshake initialisation (Server Greeting proto=10), COM_QUERY (0x03), COM_INIT_DB (0x02), OK/ERR/EOF paketleri, 3-bayt uzunluk + sequence ID stream framer (`dissect/mysql.cpp`).
+  - TDS (SQL Server): Pre-Login (18), SQL Batch (1) UTF-16LE sorgu çıkarma, SPID/EOM bayrakları, 8-bayt TDS başlık stream framer (`dissect/tds.cpp`). (Ön koşul: B1 karşılandı) — **L (protokol başına)**
 - [ ] **v1.5 — USB:** `LINKTYPE_USB_LINUX` (189), `USB_LINUX_MMAPPED` (220), `USBPCAP` (249); URB id, yön, transfer türleri, setup paketi, standart tanımlayıcılar (device, config, interface, endpoint, HID). Cihaz/uç nokta istatistikleri (B8). (Ön koşul: B6, B8) — **L**
 - [ ] **v1.6 — Bluetooth ve 802.15.4:** HCI H4 (187), pseudo-header (201), Linux monitor (254), USB-HCI; L2CAP (parça birleştirme), ATT/GATT, SDP; IEEE 802.15.4 (195/215), 6LoWPAN (IPHC sıkıştırması, FRAG1/FRAGN birleştirmesi B2), Zigbee NWK/APS. (Ön koşul: B6, v1.5) — **L**
 - [ ] **v1.7 — SIP/SDP, RTP/RTCP, RTSP:** SIP (metin ayrıştırma, Content-Length framer'ı, başlıklar, SDP gövdesi, Call-ID oturum tablosu), RTP/RTCP (başlık alanları, SDP portlarından dinamik RTP tanıma B1, RTCP SR/RR), RTSP. Medya çözümü ve VoIP grafikleri kapsam dışı. (Ön koşul: B1) — **L**
