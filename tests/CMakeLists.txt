@@ -83,6 +83,7 @@ add_executable(imshark_tests
     test_postgres.cpp
     test_mysql.cpp
     test_tds.cpp
+    test_usb.cpp
 )
 if(IMSHARK_SANITIZE)
     target_sources(imshark_tests PRIVATE asan_options.cpp)

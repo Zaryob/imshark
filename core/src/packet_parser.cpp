@@ -51,7 +51,10 @@ namespace {
             case 108: return "OpenBSD loopback";
             case 113: return "Linux cooked v1";
             case 127: return "IEEE 802.11 plus radiotap";
+            case 189: return "USB Linux";
             case 192: return "PPI";
+            case 220: return "USB Linux mmapped";
+            case 249: return "USBPcap";
             case 276: return "Linux cooked v2";
             default: return "unsupported";
         }

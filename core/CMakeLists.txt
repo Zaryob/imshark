@@ -33,6 +33,7 @@ add_library(imshark_core STATIC
     src/dissect/postgres.cpp
     src/dissect/mysql.cpp
     src/dissect/tds.cpp
+    src/dissect/usb.cpp
     src/dissect/tls.cpp
     src/dissect/tls_handshake.cpp
     src/dissect/dtls.cpp

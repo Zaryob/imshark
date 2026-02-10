@@ -13,6 +13,7 @@
 #include "postgres.h"
 #include "mysql.h"
 #include "tds.h"
+#include "usb.h"
 
 const dissect::Registry &dissect::Registry::builtin() {
     static const Registry registry = [] {
@@ -22,6 +23,9 @@ const dissect::Registry &dissect::Registry::builtin() {
         r.registerLinkType(105, dissectIeee80211);
         r.registerLinkType(127, dissectRadiotap);
         r.registerLinkType(192, dissectPpi);
+        r.registerLinkType(189, dissectUsbLinux);
+        r.registerLinkType(220, dissectUsbLinuxMmapped);
+        r.registerLinkType(249, dissectUsbPcap);
 
         // network layer, by EtherType
         r.registerEtherType(0x0800, dissectIPv4);
