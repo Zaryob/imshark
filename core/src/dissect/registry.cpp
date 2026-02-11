@@ -14,6 +14,7 @@
 #include "mysql.h"
 #include "tds.h"
 #include "usb.h"
+#include "bluetooth.h"
 
 const dissect::Registry &dissect::Registry::builtin() {
     static const Registry registry = [] {
@@ -26,6 +27,10 @@ const dissect::Registry &dissect::Registry::builtin() {
         r.registerLinkType(189, dissectUsbLinux);
         r.registerLinkType(220, dissectUsbLinuxMmapped);
         r.registerLinkType(249, dissectUsbPcap);
+        r.registerLinkType(187, dissectBluetoothHciH4);
+        r.registerLinkType(254, dissectBluetoothLinuxMonitor);
+        r.registerLinkType(195, dissectIeee802154);
+        r.registerLinkType(215, dissectIeee802154);
 
         // network layer, by EtherType
         r.registerEtherType(0x0800, dissectIPv4);
