@@ -15,6 +15,7 @@
 #include "tds.h"
 #include "usb.h"
 #include "bluetooth.h"
+#include "voip.h"
 
 const dissect::Registry &dissect::Registry::builtin() {
     static const Registry registry = [] {
@@ -105,10 +106,15 @@ const dissect::Registry &dissect::Registry::builtin() {
         r.registerTcpStream(3306, {"MySQL", frameMySql, dissectMySql});
         r.registerTcpPort(1433, dissectTds);
         r.registerTcpStream(1433, {"TDS", frameTds, dissectTds});
+        r.registerTcpPort(5060, dissectSip);
+        r.registerTcpStream(5060, {"SIP", frameSip, dissectSip});
+        r.registerTcpPort(554, dissectRtsp);
+        r.registerTcpStream(554, {"RTSP", frameRtsp, dissectRtsp});
         r.registerUdpPort(53, dissectDns);
         r.registerUdpPort(88, dissectKerberos);
         r.registerUdpPort(111, dissectNfs);
         r.registerUdpPort(2049, dissectNfs);
+        r.registerUdpPort(5060, dissectSip);
         r.registerUdpPort(5353, dissectMdns);
         r.registerUdpPort(67, dissectDhcp);
         r.registerUdpPort(68, dissectDhcp);
@@ -136,6 +142,10 @@ const dissect::Registry &dissect::Registry::builtin() {
         both("PGSQL", nullptr, dissectPostgreSql, std::make_shared<StreamProtocol>(StreamProtocol{"PGSQL", framePostgreSql, dissectPostgreSql}));
         both("MySQL", nullptr, dissectMySql, std::make_shared<StreamProtocol>(StreamProtocol{"MySQL", frameMySql, dissectMySql}));
         both("TDS", nullptr, dissectTds, std::make_shared<StreamProtocol>(StreamProtocol{"TDS", frameTds, dissectTds}));
+        both("SIP", dissectSip, dissectSip, std::make_shared<StreamProtocol>(StreamProtocol{"SIP", frameSip, dissectSip}));
+        both("RTSP", nullptr, dissectRtsp, std::make_shared<StreamProtocol>(StreamProtocol{"RTSP", frameRtsp, dissectRtsp}));
+        both("RTP", dissectRtp, nullptr);
+        both("RTCP", dissectRtcp, nullptr);
         both("DTLS", dissectDtlsPort, nullptr);
         both("HTTP", nullptr, nullptr, std::make_shared<StreamProtocol>(StreamProtocol{"HTTP", frameHttp, [](Context &c, const char *d, size_t n) { dissectHttp(c, d, n); }}));
         both("HTTP2", nullptr, dissectHttp2, std::make_shared<StreamProtocol>(StreamProtocol{"HTTP2", frameHttp2, dissectHttp2}));
