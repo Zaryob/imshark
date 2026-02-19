@@ -16,6 +16,7 @@
 #include "usb.h"
 #include "bluetooth.h"
 #include "voip.h"
+#include "industrial.h"
 
 const dissect::Registry &dissect::Registry::builtin() {
     static const Registry registry = [] {
@@ -32,6 +33,7 @@ const dissect::Registry &dissect::Registry::builtin() {
         r.registerLinkType(254, dissectBluetoothLinuxMonitor);
         r.registerLinkType(195, dissectIeee802154);
         r.registerLinkType(215, dissectIeee802154);
+        r.registerLinkType(227, dissectSocketCan);
 
         // network layer, by EtherType
         r.registerEtherType(0x0800, dissectIPv4);
@@ -110,11 +112,16 @@ const dissect::Registry &dissect::Registry::builtin() {
         r.registerTcpStream(5060, {"SIP", frameSip, dissectSip});
         r.registerTcpPort(554, dissectRtsp);
         r.registerTcpStream(554, {"RTSP", frameRtsp, dissectRtsp});
+        r.registerTcpPort(502, dissectModbus);
+        r.registerTcpStream(502, {"Modbus", frameModbus, dissectModbus});
+        r.registerTcpPort(20000, dissectDnp3);
+        r.registerTcpStream(20000, {"DNP3", frameDnp3, dissectDnp3});
         r.registerUdpPort(53, dissectDns);
         r.registerUdpPort(88, dissectKerberos);
         r.registerUdpPort(111, dissectNfs);
         r.registerUdpPort(2049, dissectNfs);
         r.registerUdpPort(5060, dissectSip);
+        r.registerUdpPort(20000, dissectDnp3);
         r.registerUdpPort(5353, dissectMdns);
         r.registerUdpPort(67, dissectDhcp);
         r.registerUdpPort(68, dissectDhcp);
@@ -146,6 +153,8 @@ const dissect::Registry &dissect::Registry::builtin() {
         both("RTSP", nullptr, dissectRtsp, std::make_shared<StreamProtocol>(StreamProtocol{"RTSP", frameRtsp, dissectRtsp}));
         both("RTP", dissectRtp, nullptr);
         both("RTCP", dissectRtcp, nullptr);
+        both("Modbus", nullptr, dissectModbus, std::make_shared<StreamProtocol>(StreamProtocol{"Modbus", frameModbus, dissectModbus}));
+        both("DNP3", dissectDnp3, dissectDnp3, std::make_shared<StreamProtocol>(StreamProtocol{"DNP3", frameDnp3, dissectDnp3}));
         both("DTLS", dissectDtlsPort, nullptr);
         both("HTTP", nullptr, nullptr, std::make_shared<StreamProtocol>(StreamProtocol{"HTTP", frameHttp, [](Context &c, const char *d, size_t n) { dissectHttp(c, d, n); }}));
         both("HTTP2", nullptr, dissectHttp2, std::make_shared<StreamProtocol>(StreamProtocol{"HTTP2", frameHttp2, dissectHttp2}));

@@ -36,6 +36,7 @@ add_library(imshark_core STATIC
     src/dissect/usb.cpp
     src/dissect/bluetooth.cpp
     src/dissect/voip.cpp
+    src/dissect/industrial.cpp
     src/dissect/tls.cpp
     src/dissect/tls_handshake.cpp
     src/dissect/dtls.cpp

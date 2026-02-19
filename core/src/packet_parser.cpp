@@ -57,6 +57,7 @@ namespace {
             case 195:
             case 215: return "IEEE 802.15.4";
             case 220: return "USB Linux mmapped";
+            case 227: return "SocketCAN";
             case 249: return "USBPcap";
             case 254: return "Bluetooth Linux Monitor";
             case 276: return "Linux cooked v2";
