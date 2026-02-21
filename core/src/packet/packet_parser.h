@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <sstream>
 #include <packet/packet_info.h>
 
 // Layer 2: Data link header
@@ -32,17 +33,20 @@ namespace packet {
         void parsePacket(packet::PacketInfo& pack, std::vector<char>& packetData);
         network::TCPConnection connection;
     protected:
-        void parseDNSQuestion(const char* data, size_t& offset, size_t length, std::ostringstream& oss);
-        void parseDNSAnswer(const char* data, size_t& offset, size_t length, std::ostringstream& oss);
+        // All parse* helpers take the number of bytes that are actually available at `data`
+        // and never read past it. On truncated input they mark the packet as malformed.
+        bool parseDNSQuestion(const char* data, size_t& offset, size_t length, std::ostringstream& oss);
+        bool parseDNSAnswer(const char* data, size_t& offset, size_t length, std::ostringstream& oss);
         void parseDNSPacket(const char* data, size_t length);
-        void parseICMP(const char* data);
-        void parseARP(network::ARPHeader arp_header);
+        void parseICMP(const char* data, size_t length);
+        void parseARP(const network::ARPHeader& arp_header);
         void parseDHCP(const network::DHCPHeader* dhcpHeader);
         void parseSNMP(const char* data, size_t length);
         void parseTelnet(const char* data, size_t length);
         void parseBGP(const char* data, size_t length);
         void parseSMTP(const char* data, size_t length);
-        void parseProtocolPacket( char* pack_data, uint8_t protocol);
+        void parseProtocolPacket(const char* pack_data, size_t length, uint8_t protocol);
+        void markMalformed(const std::string& reason);
     private:
         // Function to parse and print TCP flags
         std::string getTCPFlags(const network::TCPHeader& tcpHeader) {
