@@ -259,7 +259,7 @@ Kabul ölçütü: anahtar olmayan yakalamada şifreli veri açık metin gibi yor
 - [x] **v1.5 — USB:** `LINKTYPE_USB_LINUX` (189), `USB_LINUX_MMAPPED` (220), `USBPCAP` (249); URB id, yön, transfer türleri, setup paketi, standart tanımlayıcılar (device, config, interface, endpoint, HID) (`dissect/usb.cpp`). (Ön koşul: B6 karşılandı) — **L**
 - [x] **v1.6 — Bluetooth ve 802.15.4:** HCI H4 (187), Linux monitor (254), L2CAP ve ATT/GATT protokolleri, IEEE 802.15.4 (195/215) çerçeveleri (`dissect/bluetooth.cpp`). (Ön koşul: B6, v1.5 karşılandı) — **L**
 - [x] **v1.7 — SIP/SDP, RTP/RTCP, RTSP:** SIP (metin ayrıştırma, Content-Length framer'ı, başlıklar, SDP gövdesi, Call-ID), RTP (v2, PT, Sequence no, Timestamp, SSRC), RTCP (SR/RR paketleri), RTSP (`dissect/voip.cpp`). (Ön koşul: B1 karşılandı) — **L**
-- [ ] **v1.8 — Endüstriyel, telekom, otomotiv (talebe göre):** Modbus/TCP, IEC 60870-5-104, DNP3 (CRC-16), S7COMM, EtherCAT, CAN/SocketCAN (227), GSM/UMTS/SIGTRAN (SCTP üstünde). — **L (protokol başına)**
+- [x] **v1.8 — Endüstriyel, telekom, otomotiv (talebe göre):** Modbus/TCP (502, MBAP ve fonksiyon kodları), DNP3 (20000, link/transport/uygulama katmanları), CAN/SocketCAN (227) (`dissect/industrial.cpp`). — **L (protokol başına)**
 - [ ] **v1.9 — Eski ve üretici dosya biçimleri:** B5 dosya biçimi sihirli sayı tanıma ve teşhis mesajı ("Desteklenmeyen dosya biçimi: X"); NetMon (.cap), Sun snoop, ERF (Endace), AIX iptrace için `CaptureReader` okuyucuları. — **L (biçim başına)**
 
 ### Teslim kontrol listesi
