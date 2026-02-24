@@ -87,6 +87,7 @@ add_executable(imshark_tests
     test_bluetooth.cpp
     test_voip.cpp
     test_industrial.cpp
+    test_file_formats.cpp
 )
 if(IMSHARK_SANITIZE)
     target_sources(imshark_tests PRIVATE asan_options.cpp)

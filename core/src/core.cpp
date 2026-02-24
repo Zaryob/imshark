@@ -193,7 +193,90 @@ namespace {
             }
         });
     }
+
+    // File format magic numbers for legacy and vendor capture files (ROADMAP B5)
+    // Sun snoop magic: "snoop\0\0\0" (8 bytes)
+    const uint8_t kSnoopMagic[8] = {'s', 'n', 'o', 'o', 'p', 0, 0, 0};
+    // Microsoft Network Monitor: "GMBU" in ASCII (0x55424d47 in big endian, 0x474d4255 in memory: 'G','M','B','U')
+    const uint8_t kNetMonMagic[4] = {'G', 'M', 'B', 'U'};
+    // AIX iptrace: "iptrace 1.0" or "iptrace 2.0"
+    const char kIptraceMagic1[] = "iptrace 1.0";
+    const char kIptraceMagic2[] = "iptrace 2.0";
+
+    core::FileFormat identifyBufferFormat(const uint8_t *buf, size_t len) {
+        if (len >= 4) {
+            uint32_t magic;
+            std::memcpy(&magic, buf, 4);
+            if (magic == kPcapMagicMicro || magic == kPcapMagicNano ||
+                magic == swap32(kPcapMagicMicro) || magic == swap32(kPcapMagicNano)) {
+                return core::FileFormat::Pcap;
+            }
+            if (magic == kBlockSHB) {
+                return core::FileFormat::Pcapng;
+            }
+            if (std::memcmp(buf, kNetMonMagic, 4) == 0) {
+                return core::FileFormat::NetMon;
+            }
+        }
+        if (len >= 8 && std::memcmp(buf, kSnoopMagic, 8) == 0) {
+            return core::FileFormat::Snoop;
+        }
+        if (len >= 11 && (std::memcmp(buf, kIptraceMagic1, 11) == 0 || std::memcmp(buf, kIptraceMagic2, 11) == 0)) {
+            return core::FileFormat::Iptrace;
+        }
+        // Endace ERF record check:
+        // ERF records do not have a file-level global header. The first record begins with:
+        // uint64_t timestamp; uint8_t type; uint8_t flags; uint16_t rlen; uint16_t lctr; uint16_t wlen;
+        // Header length is 16 bytes. rlen >= 16 and rlen <= kMaxRecordSize, wlen <= rlen.
+        // ERF types 1..27 (TYPE_LEGACY=0, TYPE_HDLC=1, TYPE_ETH=2, TYPE_ATM=3, TYPE_AAL5=4, etc.)
+        if (len >= 16) {
+            uint8_t erfType = buf[8] & 0x7F; // bit 7 is extension header flag
+            uint16_t rlen;
+            std::memcpy(&rlen, buf + 10, 2);
+            rlen = swap16(rlen); // ERF multi-byte fields are big-endian
+            uint16_t wlen;
+            std::memcpy(&wlen, buf + 14, 2);
+            wlen = swap16(wlen);
+            if (erfType >= 1 && erfType <= 27 && rlen >= 16 && rlen <= 65535 && wlen <= rlen) {
+                return core::FileFormat::Erf;
+            }
+        }
+        return core::FileFormat::Unknown;
+    }
 } // namespace
+
+const char *core::formatName(FileFormat fmt) {
+    switch (fmt) {
+        case FileFormat::Pcap: return "PCAP";
+        case FileFormat::Pcapng: return "PCAPNG";
+        case FileFormat::NetMon: return "Microsoft Network Monitor";
+        case FileFormat::Snoop: return "Sun snoop";
+        case FileFormat::Erf: return "Endace ERF";
+        case FileFormat::Iptrace: return "AIX iptrace";
+        case FileFormat::Unknown: default: return "Bilinmeyen biçim";
+    }
+}
+
+std::string core::unsupportedFormatDiagnostic(FileFormat fmt) {
+    switch (fmt) {
+        case FileFormat::NetMon:
+        case FileFormat::Snoop:
+        case FileFormat::Erf:
+        case FileFormat::Iptrace:
+            return "Desteklenmeyen dosya biçimi: " + std::string(formatName(fmt));
+        default:
+            return "";
+    }
+}
+
+core::FileFormat core::detectFileFormat(const std::string &filepath) {
+    std::ifstream file(pathFromUtf8(filepath), std::ios::binary);
+    if (!file.is_open()) return FileFormat::Unknown;
+    uint8_t buf[24] = {0};
+    file.read(reinterpret_cast<char *>(buf), sizeof(buf));
+    const auto bytesRead = static_cast<size_t>(file.gcount());
+    return identifyBufferFormat(buf, bytesRead);
+}
 
 /// PCAP FILE PROCESSING
 
@@ -226,7 +309,13 @@ bool core::FileProcessor::processPcapFile(const std::string &filepath, std::vect
     } else if (magic == swap32(kPcapMagicMicro) || magic == swap32(kPcapMagicNano)) {
         e.swap = true;
     } else {
-        message = "Incompatible PCAP file format";
+        const FileFormat fmt = identifyBufferFormat(gh, sizeof(gh));
+        const std::string diag = unsupportedFormatDiagnostic(fmt);
+        if (!diag.empty()) {
+            message = diag;
+        } else {
+            message = "Incompatible PCAP file format";
+        }
         return false;
     }
     if (e.u32(gh) == kPcapMagicNano) fractionsPerSecond = 1000000000;
@@ -368,7 +457,13 @@ bool core::FileProcessor::processPcapngFile(const std::string &filepath, std::ve
             haveSection = true;
             interfaces.clear();
         } else if (!haveSection) {
-            message = "Not a pcapng file (missing Section Header Block)";
+            const FileFormat fmt = identifyBufferFormat(block.data(), have);
+            const std::string diag = unsupportedFormatDiagnostic(fmt);
+            if (!diag.empty()) {
+                message = diag;
+            } else {
+                message = "Not a pcapng file (missing Section Header Block)";
+            }
             return false;
         } else {
             type = e.u32(block.data());
@@ -601,6 +696,24 @@ void core::FileProcessor::appendLivePacket(std::vector<packet::PacketInfo> &pack
     parser.sessions().freeze();
     info_.interfaces[0].packets++;
     info_.fileSize = fileOffset + frame.size();
+}
+
+bool core::FileProcessor::processFile(const std::string &filepath, std::vector<packet::PacketInfo> &packets,
+                                      std::string &message, LoadControl *control) {
+    const FileFormat fmt = detectFileFormat(filepath);
+    if (fmt == FileFormat::Pcapng) {
+        return processPcapngFile(filepath, packets, message, control);
+    }
+    if (fmt == FileFormat::Pcap) {
+        return processPcapFile(filepath, packets, message, control);
+    }
+    const std::string diag = unsupportedFormatDiagnostic(fmt);
+    if (!diag.empty()) {
+        message = diag;
+        return false;
+    }
+    // Fall back to attempting pcap read (which produces specific header error if truncated or corrupt)
+    return processPcapFile(filepath, packets, message, control);
 }
 
 bool core::readPacketBytes(const std::string &filepath, const packet::PacketInfo &summary, std::vector<char> &out) {

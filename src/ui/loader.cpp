@@ -52,12 +52,6 @@ namespace ui {
 } // namespace ui
 
 namespace {
-    bool isPcapng(const std::string &filepath) {
-        std::ifstream file(core::pathFromUtf8(filepath), std::ios::binary);
-        uint32_t magic = 0;
-        return file.read(reinterpret_cast<char *>(&magic), sizeof(magic)) && magic == 0x0A0D0D0A;
-    }
-
     std::string makeTempPath() {
         static std::atomic<unsigned> counter{0};
         const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
@@ -90,8 +84,7 @@ namespace {
             job.decompressing = false;
             job.dataPath = job.tempPath;
         }
-        job.ok = isPcapng(job.dataPath) ? processor.processPcapngFile(job.dataPath, job.packets, job.message, &job.control)
-                                        : processor.processPcapFile(job.dataPath, job.packets, job.message, &job.control);
+        job.ok = processor.processFile(job.dataPath, job.packets, job.message, &job.control);
         job.startEpoch = processor.captureStartEpoch();
         job.info = processor.captureInfo();
         job.sessions = processor.sessions();

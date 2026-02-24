@@ -12,6 +12,28 @@
 #include <dissect/session.h>
 
 namespace core {
+    /// Supported and recognized capture file formats (ROADMAP B5).
+    enum class FileFormat {
+        Unknown = 0,
+        Pcap,
+        Pcapng,
+        NetMon,     // Microsoft Network Monitor (.cap)
+        Snoop,      // Sun snoop
+        Erf,        // Endace ERF
+        Iptrace,    // AIX iptrace (v1.0 / v2.0)
+    };
+
+    /// Returns the human-readable display name of a capture file format.
+    const char *formatName(FileFormat fmt);
+
+    /// Identifies the format of a file from its initial bytes/magic number.
+    FileFormat detectFileFormat(const std::string &filepath);
+
+    /// Diagnoses an unrecognized or unsupported capture file format.
+    /// Returns "Desteklenmeyen dosya biçimi: <Name>" if recognized but unsupported,
+    /// or empty string if supported or not a recognized format.
+    std::string unsupportedFormatDiagnostic(FileFormat fmt);
+
     /// Reads capture files (classic pcap and pcapng) into a list of parsed packets.
     ///
     /// Both entry points return true if the file could be read. On failure `message` describes the
@@ -72,6 +94,11 @@ namespace core {
 
         bool processPcapngFile(const std::string &filepath, std::vector<packet::PacketInfo> &packets,
                                std::string &message, LoadControl *control = nullptr);
+
+        /// Universal file loader that inspects the file header and dispatches to the appropriate loader,
+        /// or provides specific diagnostic messages for known unsupported file formats (B5).
+        bool processFile(const std::string &filepath, std::vector<packet::PacketInfo> &packets,
+                         std::string &message, LoadControl *control = nullptr);
 
         /// Incremental ("live") use: packets arrive one at a time while a capture file is still being written.
         /// beginLive() starts a new capture (clears the session tables, the time base and the metadata; `linkType`

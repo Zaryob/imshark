@@ -8,6 +8,15 @@ This document details the file formats, link types, encapsulation methods, and p
 - **PCAPNG** (`.pcapng`)
 - **GZIP** (`.gz`): Transparent decompression of `.pcap.gz` and `.pcapng.gz` files via streaming deflate parser.
 
+## Recognized File Formats (Diagnostic Support)
+
+Files with known magic numbers produce specific diagnostic messages (`Desteklenmeyen dosya biçimi: <Biçim>`):
+- **Microsoft Network Monitor** (`.cap`, `GMBU`)
+- **Sun snoop** (`snoop\0\0\0`)
+- **Endace ERF** (record-based header)
+- **AIX iptrace** (`iptrace 1.0` / `iptrace 2.0`)
+
+
 ## Link Types
 
 - **Ethernet** (LINKTYPE_ETHERNET / 1)
