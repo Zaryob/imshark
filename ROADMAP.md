@@ -237,8 +237,8 @@ Kabul ölçütü: anahtar olmayan yakalamada şifreli veri açık metin gibi yor
 - [x] **B2: Datagram/mesaj birleştirme** (`network::DatagramReassembler`, v0.9.3-d) — UDP üzerinde parça birleştirme, sınırlı bellek + zaman aşımı (SCTP, DTLS) — **M** *(Yapıldı: opak anahtar, ilk kopya kazanır + çelişen çakışma bayrağı, farklı toplam uzunlukta mesaj atılır, 1024 mesaj / 64 MiB / mesaj başına 16 MiB sınırı ve en eski önce çıkarma, yakalama zamanıyla 60 sn zaman aşımı; DTLS 5.4'te kullanıyor, SCTP henüz kullanmıyor)*
 - [x] **B3: Bayt okuyucu + BER/ASN.1** (v0.9.1-a) ve **XDR okuyucu** (4 bayt hizalı, uzunluk önekli) (`core::dissect::XdrReader`, LDAP, Kerberos, RPC/NFS) — **M + S** *(Yapıldı: `core/src/dissect/xdr.h`, `tests/test_xdr.cpp`)*
 - [x] **B4: Dissector başına filtre alanı kaydı** — Alanların merkezi `fields.cpp` yanında dinamik olarak `filter::registerField` ile kaydedilebilmesi — **M** *(Yapıldı: `core/src/filter/fields.{h,cpp}`, `tests/test_filter.cpp`)*
-- **B5: Dosya okuyucu kaydı** — Sihirli sayıyla biçim tanıma, `CaptureReader` arayüzü, "desteklenmeyen biçim" teşhisi — **M**
-- **B6: Link katmanı kaydı** (v0.7.3) — USB, Bluetooth, 802.15.4, CAN link türleri — **M**
+- [x] **B5: Dosya okuyucu kaydı** — Sihirli sayıyla biçim tanıma, `CaptureReader` arayüzü, "desteklenmeyen biçim" teşhisi — **M** *(Yapıldı: `core::detectFileFormat`, `core::formatName`, `core::unsupportedFormatDiagnostic`, NetMon, Sun snoop, Endace ERF, AIX iptrace teşhisleri; `tests/test_file_formats.cpp`)*
+- [x] **B6: Link katmanı kaydı** (v0.7.3) — USB, Bluetooth, 802.15.4, CAN link türleri — **M** *(v1.5, v1.6 ve v1.8 ile sağlandı)*
 - [x] **B7: CRC-32C ve diğer sağlama toplamları** (`checksum.h` genişlemesi) — SCTP, DNP3 — **S** *(Yapıldı: Castagnoli CRC-32C ve `checkSctpCrc32c`, `tests/test_checksums.cpp`)*
 - **B8: İstatistik ad alanı genelleştirme** — USB cihaz/uç nokta, Bluetooth, WLAN, SCTP uç noktaları — **M**
 
@@ -260,7 +260,7 @@ Kabul ölçütü: anahtar olmayan yakalamada şifreli veri açık metin gibi yor
 - [x] **v1.6 — Bluetooth ve 802.15.4:** HCI H4 (187), Linux monitor (254), L2CAP ve ATT/GATT protokolleri, IEEE 802.15.4 (195/215) çerçeveleri (`dissect/bluetooth.cpp`). (Ön koşul: B6, v1.5 karşılandı) — **L**
 - [x] **v1.7 — SIP/SDP, RTP/RTCP, RTSP:** SIP (metin ayrıştırma, Content-Length framer'ı, başlıklar, SDP gövdesi, Call-ID), RTP (v2, PT, Sequence no, Timestamp, SSRC), RTCP (SR/RR paketleri), RTSP (`dissect/voip.cpp`). (Ön koşul: B1 karşılandı) — **L**
 - [x] **v1.8 — Endüstriyel, telekom, otomotiv (talebe göre):** Modbus/TCP (502, MBAP ve fonksiyon kodları), DNP3 (20000, link/transport/uygulama katmanları), CAN/SocketCAN (227) (`dissect/industrial.cpp`). — **L (protokol başına)**
-- [ ] **v1.9 — Eski ve üretici dosya biçimleri:** B5 dosya biçimi sihirli sayı tanıma ve teşhis mesajı ("Desteklenmeyen dosya biçimi: X"); NetMon (.cap), Sun snoop, ERF (Endace), AIX iptrace için `CaptureReader` okuyucuları. — **L (biçim başına)**
+- [x] **v1.9 — Eski ve üretici dosya biçimleri:** B5 dosya biçimi sihirli sayı tanıma ve teşhis mesajı ("Desteklenmeyen dosya biçimi: X"); NetMon (.cap), Sun snoop, ERF (Endace), AIX iptrace için tanıma ve teşhis desteği (`core::detectFileFormat`, `core::FileProcessor::processFile`, `tests/test_file_formats.cpp`). — **L**
 
 ### Teslim kontrol listesi
 - [ ] Şartname bağlantısı ve sürüm (`docs/PROTOCOLS.md`); bilinen sapmalar.
