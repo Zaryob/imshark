@@ -1,217 +1,308 @@
-
 #include <core.h>
-#include <iostream>
-#include <fstream>
-#include <iomanip>
 
-#include <pcap/global_header.h>
-#include <pcap/packet_header.h>
-#include <pcapng/enhanced_packet_block.h>
+#include <algorithm>
+#include <cstring>
+#include <fstream>
+
+namespace {
+    // Upper bound for a single record/block; anything larger is treated as corruption
+    // instead of being allocated.
+    constexpr uint64_t kMaxRecordSize = 256ull * 1024 * 1024;
+
+    constexpr uint32_t kPcapMagicMicro = 0xa1b2c3d4;
+    constexpr uint32_t kPcapMagicNano = 0xa1b23c4d;
+
+    constexpr uint32_t kBlockSHB = 0x0A0D0D0A; // Section Header Block
+    constexpr uint32_t kBlockIDB = 0x00000001; // Interface Description Block
+    constexpr uint32_t kBlockSPB = 0x00000003; // Simple Packet Block
+    constexpr uint32_t kBlockEPB = 0x00000006; // Enhanced Packet Block
+    constexpr uint32_t kByteOrderMagic = 0x1A2B3C4D;
+
+    constexpr uint16_t kOptEnd = 0;
+    constexpr uint16_t kOptIfTsResol = 9;
+
+    constexpr uint32_t kDefaultTicksPerSecond = 1'000'000; // pcapng default: microseconds
+
+    uint16_t swap16(uint16_t v) { return static_cast<uint16_t>((v << 8) | (v >> 8)); }
+
+    uint32_t swap32(uint32_t v) {
+        return (v << 24) | ((v & 0xff00u) << 8) | ((v >> 8) & 0xff00u) | (v >> 24);
+    }
+
+    /// Reads fixed-size integers from a buffer in the byte order of the capture file.
+    struct Endian {
+        bool swap = false;
+
+        uint16_t u16(const uint8_t *p) const {
+            uint16_t v;
+            std::memcpy(&v, p, sizeof(v));
+            return swap ? swap16(v) : v;
+        }
+
+        uint32_t u32(const uint8_t *p) const {
+            uint32_t v;
+            std::memcpy(&v, p, sizeof(v));
+            return swap ? swap32(v) : v;
+        }
+    };
+
+    /// Reports time relative to the first packet that was seen.
+    struct TimeBase {
+        bool set = false;
+        long double base = 0;
+
+        double relative(long double absolute) {
+            if (!set) {
+                set = true;
+                base = absolute;
+            }
+            return static_cast<double>(absolute - base);
+        }
+    };
+
+    struct Interface {
+        uint32_t linkType = 1; // LINKTYPE_ETHERNET
+        uint32_t snapLen = 0;
+        uint64_t ticksPerSecond = kDefaultTicksPerSecond;
+    };
+
+    uint64_t remainingBytes(std::ifstream &file, uint64_t fileSize) {
+        const auto pos = file.tellg();
+        if (pos < 0) return 0;
+        return fileSize - std::min<uint64_t>(fileSize, static_cast<uint64_t>(pos));
+    }
+
+    uint64_t fileSizeOf(std::ifstream &file) {
+        file.seekg(0, std::ios::end);
+        const auto size = file.tellg();
+        file.seekg(0, std::ios::beg);
+        return size < 0 ? 0 : static_cast<uint64_t>(size);
+    }
+
+    void addPacket(packet::PacketParser &parser, std::vector<packet::PacketInfo> &packets,
+                   double time, std::vector<char> data) {
+        packet::PacketInfo pack(static_cast<int>(packets.size()) + 1);
+        pack.time = time;
+        parser.parsePacket(pack, data);
+        pack.raw_data = std::move(data);
+        packets.emplace_back(std::move(pack));
+    }
+
+    /// Parses the options of an Interface Description Block (only if_tsresol is used).
+    void parseIdbOptions(const Endian &e, const uint8_t *p, size_t size, Interface &iface) {
+        size_t off = 0;
+        while (size - off >= 4) {
+            const uint16_t code = e.u16(p + off);
+            const uint16_t len = e.u16(p + off + 2);
+            off += 4;
+            if (code == kOptEnd) break;
+            const size_t padded = (static_cast<size_t>(len) + 3) & ~static_cast<size_t>(3);
+            if (len > size - off) break; // option runs past the block
+            if (code == kOptIfTsResol && len == 1) {
+                const uint8_t v = p[off];
+                const unsigned exponent = v & 0x7f;
+                if (v & 0x80) { // power of two
+                    if (exponent <= 62) iface.ticksPerSecond = 1ull << exponent;
+                } else if (exponent <= 18) { // power of ten, must fit in 64 bits
+                    uint64_t t = 1;
+                    for (unsigned i = 0; i < exponent; ++i) t *= 10;
+                    iface.ticksPerSecond = t;
+                }
+            }
+            if (padded > size - off) break;
+            off += padded;
+        }
+    }
+} // namespace
 
 /// PCAP FILE PROCESSING
 
-void core::FileProcessor::processPcapFile(const std::string &filepath, std::vector<packet::PacketInfo> &packets) {
+bool core::FileProcessor::processPcapFile(const std::string &filepath, std::vector<packet::PacketInfo> &packets,
+                                          std::string &message) {
+    message.clear();
     std::ifstream file(filepath, std::ios::binary);
-    pcap::GlobalHeader gHeader;
-    file.read(reinterpret_cast<char *>(&gHeader), sizeof(pcap::GlobalHeader));
+    if (!file.is_open()) {
+        message = "Failed to open file: " + filepath;
+        return false;
+    }
+    const uint64_t fileSize = fileSizeOf(file);
 
-    if (gHeader.magic_number != 0xa1b2c3d4) {
-        std::cerr << "Incompatible PCAP file format" << std::endl;
-        return;
+    uint8_t gh[24];
+    if (!file.read(reinterpret_cast<char *>(gh), sizeof(gh))) {
+        message = "File is too short to be a PCAP file";
+        return false;
     }
 
-    uint32_t tsTimeOffset = 0;
-    uint32_t usTimeOffset = 0;
-    int packetNumber = 0;
+    // The magic number tells both the byte order and the timestamp precision of the file.
+    Endian e;
+    uint32_t magic;
+    std::memcpy(&magic, gh, sizeof(magic));
+    double fractionsPerSecond = 1e6;
+    if (magic == kPcapMagicMicro || magic == kPcapMagicNano) {
+        e.swap = false;
+    } else if (magic == swap32(kPcapMagicMicro) || magic == swap32(kPcapMagicNano)) {
+        e.swap = true;
+    } else {
+        message = "Incompatible PCAP file format";
+        return false;
+    }
+    if (e.u32(gh) == kPcapMagicNano) fractionsPerSecond = 1e9;
 
-    while (file.peek() != EOF) {
-        pcap::PacketHeader pHeader = {0};
-        file.read(reinterpret_cast<char *>(&pHeader), sizeof(pcap::PacketHeader));
+    TimeBase timeBase;
+    const size_t firstPacket = packets.size();
 
-        std::vector<char> packetData(pHeader.incl_len);
-        file.read(packetData.data(), pHeader.incl_len);
+    uint8_t ph[16];
+    while (true) {
+        file.read(reinterpret_cast<char *>(ph), sizeof(ph));
+        const auto got = file.gcount();
+        if (got == 0) break; // clean end of file
+        if (got < static_cast<std::streamsize>(sizeof(ph))) {
+            message = "Truncated packet header after packet " + std::to_string(packets.size() - firstPacket);
+            break;
+        }
 
-        packet::PacketInfo pack(++packetNumber);
-        pack.time = (pHeader.ts_sec) + 10e-7 * (pHeader.ts_usec) - (tsTimeOffset + 10e-7 * (usTimeOffset));
-        // Process the packet data using the shared packet processor
-        pack.raw_data = packetData;
-        parser.parsePacket(pack, packetData);
+        const uint32_t tsSec = e.u32(ph);
+        const uint32_t tsFrac = e.u32(ph + 4);
+        const uint32_t inclLen = e.u32(ph + 8);
+        if (inclLen > kMaxRecordSize || inclLen > remainingBytes(file, fileSize)) {
+            message = "Truncated or corrupt packet " + std::to_string(packets.size() - firstPacket + 1);
+            break;
+        }
 
-        packets.emplace_back(pack);
+        std::vector<char> data(inclLen);
+        if (inclLen > 0 && !file.read(data.data(), inclLen)) {
+            message = "Failed to read packet " + std::to_string(packets.size() - firstPacket + 1);
+            break;
+        }
+
+        const long double absolute = static_cast<long double>(tsSec) + tsFrac / fractionsPerSecond;
+        addPacket(parser, packets, timeBase.relative(absolute), std::move(data));
     }
 
-    file.close();
+    return true;
 }
 
 /// PCAPNG FILE PROCESSING
 
-
-void core::FileProcessor::processSectionHeaderBlock(std::ifstream &file, pcapng::SectionHeaderBlock section) {
-    // std::cout << "Section Header Block:" << std::endl;
-    // std::cout << "Magic Number: " << std::hex << section.magicNumber << std::dec << std::endl;
-    // std::cout << "Version: " << section.versionMajor << "." << section.versionMinor << std::endl;
-    // std::cout << "Section Length: " << section.sectionLength << std::endl;
-
-    // Verify block length trailer to match header
-    if (section.block_total_length != section.block_total_length_redundant) {
-        std::cerr << "Mismatched block length at end of block. Expected: " << section.block_total_length << ", Got: " <<
-                section.block_total_length_redundant << std::endl;
-        file.close();
-        return;
-    }
-}
-
-void core::FileProcessor::processEnhancedPacketBlock(pcapng::EnhancedPacketBlock &section, packet::PacketInfo &pack, uint32_t &tsTimeOffset,
-                                uint32_t &usTimeOffset) {
-    // std::cout << "Process Packet Block" << std::endl;
-
-    // Check for mismatched block length
-    if (section.block_total_length != section.block_total_length_redundant) {
-        std::cerr << "Mismatched block length at end of block" << std::endl;
-        return;
-    }
-
-    double timestampResolution = 1.0 / 1000; // Default milliseconds
-    uint64_t fullTimestamp = ((uint64_t) section.timestamp_upper << 32) | section.timestamp_lower;
-    fullTimestamp *= timestampResolution;
-    uint64_t seconds = fullTimestamp / 1'000'000;
-    uint64_t milliseconds = fullTimestamp % 1'000'000;
-
-    if (tsTimeOffset == 0) tsTimeOffset = seconds;
-    if (usTimeOffset == 0) usTimeOffset = milliseconds;
-
-    pack.time = (seconds + 10e-7 * (milliseconds)) - (tsTimeOffset + 10e-7 * (usTimeOffset));
-    pack.raw_data = section.packet_data;
-    // Process the packet data using the shared packet processor
-    parser.parsePacket(pack, section.packet_data);
-}
-
-void core::FileProcessor::processInterfaceDescriptionBlock(std::ifstream &file, pcapng::InterfaceDescriptionBlock &idb) {
-    // std::cout << "Interface Description Block: " << std::endl;
-    // std::cout << "Block Type: " << std::hex << idb.blockType << std::dec << std::endl;
-    // std::cout << "Block Total Length: " << idb.blockTotalLength << std::endl;
-    // std::cout << "Link Type: " << idb.linkType << std::endl;
-    // std::cout << "Snap Length: " << idb.snapLen << std::endl;
-    // std::cout << "TL Red Length: " << idb.blockTotalLengthRedundant << std::endl;
-    if (idb.block_total_length != idb.block_total_length_redundant) {
-        std::cerr << "Mismatched block length at end of block. Expected: " << idb.block_total_length << ", Got: " << idb
-                .block_total_length_redundant << std::endl;
-        file.close();
-        return;
-    }
-}
-
-
-void core::FileProcessor::processSimplePacketBlock(pcapng::SimplePacketBlock spb, packet::PacketInfo &pack, uint32_t &tsTimeOffset,
-                              uint32_t &usTimeOffset) {
-    if (spb.block_total_length != spb.block_total_length_redundant) {
-        std::cerr << "Mismatched block length at end of block. Expected: " << spb.block_total_length << ", Got: " << spb
-                .block_total_length_redundant << std::endl;
-        exit(0);
-        return;
-    }
-}
-
-// Function to print the statistics data
-void core::FileProcessor::printStatistics(pcapng::InterfaceStatisticsBlock isb) {
-    if (isb.block_total_length != isb.block_total_length_redundant) {
-        std::cerr << "Mismatched block length at end of block. Expected: " << isb.block_total_length << ", Got: " << isb
-                .block_total_length_redundant << std::endl;
-        exit(0);
-        return;
-    }
-    uint64_t fullTimestamp = ((uint64_t) isb.timestamp_high << 32) | isb.timestamp_low;
-    // std::cout << "Interface ID: " << isb.interfaceID << std::endl;
-    // std::cout << "Timestamp: " << fullTimestamp << " (high: " << isb.timestampHigh << ", low: " << isb.timestampLow << ")" << std::endl;
-    // std::cout << "Options Size: " << isb.options.size() << " bytes" << std::endl;
-
-    // Additional parsing of options could be done here (if required).
-}
-
-// Function to print the name resolution records
-void core::FileProcessor::printNameResolutionRecords(pcapng::NameResolutionBlock nrb) {
-    // std::cout << "Name Resolution Records:" << std::endl;
-    for (const auto &record: nrb.records) {
-        // std::cout << "Address: " << record.address << ", Resolved Name: " << record.resolvedName << std::endl;
-    }
-}
-
-void core::FileProcessor::processPcapngFile(const std::string &filepath, std::vector<packet::PacketInfo> &packets) {
+bool core::FileProcessor::processPcapngFile(const std::string &filepath, std::vector<packet::PacketInfo> &packets,
+                                            std::string &message) {
+    message.clear();
     std::ifstream file(filepath, std::ios::binary);
     if (!file.is_open()) {
-        std::cerr << "Failed to open file: " << filepath << std::endl;
-        return;
+        message = "Failed to open file: " + filepath;
+        return false;
     }
+    const uint64_t fileSize = fileSizeOf(file);
 
-    uint64_t blockIdx = 0;
-    uint32_t packetNumber = 0;
-    uint32_t tsTimeOffset = 0;
-    uint32_t usTimeOffset = 0;
+    Endian e;
+    bool haveSection = false;
+    std::vector<Interface> interfaces;
+    TimeBase timeBase;
+    double lastTime = 0;
+    const size_t firstPacket = packets.size();
 
-    while (file.peek() != EOF) {
-        pcapng::BlockHeader header;
-        header.deserialize(file);
-        // std::cout << "Block Type: "<<std::setfill('0') << std::setw(8) << std::hex << header.blockTotalLength << std::dec<< std::endl;
-        // std::cout << "Block Length: "<< header.blockTotalLength << std::endl;
-        switch (header.block_type) {
-            case static_cast<uint32_t>(pcapng::BlockType::SHB): {
-                pcapng::SectionHeaderBlock section(header);
-                // Read SHB fields
-                section.deserializeSectionFields(file);
-                processSectionHeaderBlock(file, section);
-            }
-            break;
-            case static_cast<uint32_t>(pcapng::BlockType::IDB): {
-                pcapng::InterfaceDescriptionBlock idb(header);
-                idb.deserializeInterfaceFields(file);
-                processInterfaceDescriptionBlock(file, idb);
-            }
-            break;
-            case static_cast<uint32_t>(pcapng::BlockType::SPB): {
-                pcapng::SimplePacketBlock spb(header);
+    // Stops the read loop. Packets that were read before the problem are kept.
+    auto fail = [&](const std::string &what) {
+        message = what;
+        return packets.size() > firstPacket;
+    };
 
-                spb.deserializePacketFields(file);
+    std::vector<uint8_t> block;
+    while (true) {
+        block.assign(8, 0);
+        file.read(reinterpret_cast<char *>(block.data()), 8);
+        const auto got = file.gcount();
+        if (got == 0) break; // clean end of file
+        if (got < 8) return fail("Truncated block header");
 
-                packet::PacketInfo pack(++packetNumber);
-                processSimplePacketBlock(spb, pack, tsTimeOffset, usTimeOffset);
-                packets.emplace_back(pack);
-            }
-            break;
-            case static_cast<uint32_t>(pcapng::BlockType::ISB): {
-                pcapng::InterfaceStatisticsBlock isb(header);
-                isb.deserializeStatisticsFields(file);
+        uint32_t type;
+        std::memcpy(&type, block.data(), sizeof(type)); // SHB type is a palindrome, byte order independent
+        size_t have = 8;
 
-                // Process Interface Statistics Block
-                printStatistics(isb);
-            }
-            break;
-            case static_cast<uint32_t>(pcapng::BlockType::EPB): {
-                pcapng::EnhancedPacketBlock pb(header);
-                pb.deserializeEnhancedFields(file);
-                packet::PacketInfo pack(++packetNumber);
-                processEnhancedPacketBlock(pb, pack, tsTimeOffset, usTimeOffset);
+        if (type == kBlockSHB) {
+            // The byte-order magic right after the header decides how the section is encoded.
+            block.resize(12);
+            if (!file.read(reinterpret_cast<char *>(block.data() + 8), 4)) return fail("Truncated Section Header Block");
+            have = 12;
+            uint32_t magic;
+            std::memcpy(&magic, block.data() + 8, sizeof(magic));
+            if (magic == kByteOrderMagic) e.swap = false;
+            else if (magic == swap32(kByteOrderMagic)) e.swap = true;
+            else return fail("Invalid pcapng byte-order magic");
+            haveSection = true;
+            interfaces.clear();
+        } else if (!haveSection) {
+            message = "Not a pcapng file (missing Section Header Block)";
+            return false;
+        } else {
+            type = e.u32(block.data());
+        }
 
-                packets.emplace_back(pack);
-            }
-            break;
-            case static_cast<uint32_t>(pcapng::BlockType::NRB): {
-                pcapng::NameResolutionBlock nrb(header);
-                nrb.deserializeNameResolutionFields(file);
+        const uint32_t totalLength = e.u32(block.data() + 4);
+        if (totalLength < 12 || totalLength % 4 != 0 || totalLength > kMaxRecordSize || totalLength < have) {
+            return fail("Invalid block length " + std::to_string(totalLength));
+        }
+        if (totalLength - have > remainingBytes(file, fileSize)) return fail("Truncated block");
 
-                // Process Name Resolution Block
-                printNameResolutionRecords(nrb);
-            }
-            break;
-            // Add cases for other block types...
-            default:
-                // std::cout << "Unhandled block type:" << std::hex << header.blockType << std::dec <<std::endl;
-                // Skip unknown block
-                file.seekg(header.block_total_length - sizeof(pcapng::BlockHeader), std::ios::cur);
+        block.resize(totalLength);
+        if (totalLength > have &&
+            !file.read(reinterpret_cast<char *>(block.data() + have), totalLength - have)) {
+            return fail("Failed to read block");
+        }
+        if (e.u32(block.data() + totalLength - 4) != totalLength) {
+            return fail("Mismatched block length at end of block. Expected: " + std::to_string(totalLength));
+        }
+
+        const uint8_t *body = block.data() + 8;
+        const size_t bodySize = totalLength - 12;
+
+        switch (type) {
+            case kBlockSHB:
+                if (bodySize < 16) return fail("Section Header Block too short");
                 break;
+            case kBlockIDB: {
+                if (bodySize < 8) return fail("Interface Description Block too short");
+                Interface iface;
+                iface.linkType = e.u16(body);
+                iface.snapLen = e.u32(body + 4);
+                parseIdbOptions(e, body + 8, bodySize - 8, iface);
+                interfaces.push_back(iface);
+            } break;
+            case kBlockEPB: {
+                if (bodySize < 20) return fail("Enhanced Packet Block too short");
+                const uint32_t interfaceId = e.u32(body);
+                const uint64_t ticks = (static_cast<uint64_t>(e.u32(body + 4)) << 32) | e.u32(body + 8);
+                const uint32_t capturedLength = e.u32(body + 12);
+                if (capturedLength > bodySize - 20) return fail("Enhanced Packet Block has invalid captured length");
+
+                const uint64_t tps = interfaceId < interfaces.size()
+                                         ? interfaces[interfaceId].ticksPerSecond
+                                         : kDefaultTicksPerSecond;
+                lastTime = timeBase.relative(static_cast<long double>(ticks) / tps);
+
+                // Only captured_length bytes are packet data; the rest is padding and options.
+                const char *data = reinterpret_cast<const char *>(body + 20);
+                addPacket(parser, packets, lastTime, std::vector<char>(data, data + capturedLength));
+            } break;
+            case kBlockSPB: {
+                if (bodySize < 4) return fail("Simple Packet Block too short");
+                const uint32_t originalLength = e.u32(body);
+                size_t captured = std::min<size_t>(originalLength, bodySize - 4);
+                if (!interfaces.empty() && interfaces[0].snapLen > 0) {
+                    captured = std::min<size_t>(captured, interfaces[0].snapLen);
+                }
+                // SPBs carry no timestamp; reuse the previous packet's time.
+                const char *data = reinterpret_cast<const char *>(body + 4);
+                addPacket(parser, packets, lastTime, std::vector<char>(data, data + captured));
+            } break;
+            default:
+                break; // NRB, ISB, custom and unknown blocks carry nothing we display
         }
     }
 
-    // std::cout <<"File processed successfully"<<std::endl;
-    file.close();
-    return;
+    if (!haveSection) {
+        message = "Not a pcapng file";
+        return false;
+    }
+    return true;
 }

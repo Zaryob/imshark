@@ -1,41 +1,26 @@
 #pragma once
 
+#include <cstdint>
 #include <string>
+#include <vector>
 
 #include <packet/packet_info.h>
 #include <packet/packet_parser.h>
-#include <pcapng/enhanced_packet_block.h>
-#include <pcapng/interface_statistics_block.h>
-#include <pcapng/name_resolution_block.h>
-#include <pcapng/section_header_block.h>
-#include <pcapng/simple_packet_block.h>
-#include <pcapng/interface_description_block.h>
 
 namespace core {
+    /// Reads capture files (classic pcap and pcapng) into a list of parsed packets.
+    ///
+    /// Both entry points return true if the file could be read. On failure `message` describes the
+    /// problem; on partial success (e.g. a truncated last packet) they return true, keep the packets
+    /// that were read and describe the problem in `message`. `message` is empty when everything is fine.
+    /// Malformed input never terminates the process.
     class FileProcessor {
         packet::PacketParser parser;
     public:
-        void processPcapFile(const std::string &filepath, std::vector<packet::PacketInfo> &packets);
+        bool processPcapFile(const std::string &filepath, std::vector<packet::PacketInfo> &packets,
+                             std::string &message);
 
-
-        void processSectionHeaderBlock(std::ifstream &file, pcapng::SectionHeaderBlock section);
-
-        void processEnhancedPacketBlock(pcapng::EnhancedPacketBlock &section, packet::PacketInfo &pack, uint32_t &tsTimeOffset,
-                                        uint32_t &usTimeOffset);
-
-
-        void processInterfaceDescriptionBlock(std::ifstream &file, pcapng::InterfaceDescriptionBlock &idb);
-
-        void processSimplePacketBlock(pcapng::SimplePacketBlock spb, packet::PacketInfo &pack, uint32_t &tsTimeOffset,
-                                      uint32_t &usTimeOffset);
-
-        // Function to print the statistics data
-        void printStatistics(pcapng::InterfaceStatisticsBlock isb);
-
-        // Function to print the name resolution records
-        void printNameResolutionRecords(pcapng::NameResolutionBlock nrb);
-
-        void processPcapngFile(const std::string &filepath, std::vector<packet::PacketInfo> &packets);
+        bool processPcapngFile(const std::string &filepath, std::vector<packet::PacketInfo> &packets,
+                               std::string &message);
     };
 } // namespace core
-
