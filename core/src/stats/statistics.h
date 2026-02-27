@@ -12,13 +12,21 @@
 
 namespace stats {
     enum class AddressKind {
-        Ipv4,   // IPv4 addresses
-        Ipv6,   // IPv6 addresses
-        Tcp,    // address + TCP port
-        Udp,    // address + UDP port
+        Ipv4,       // IPv4 addresses
+        Ipv6,       // IPv6 addresses
+        Tcp,        // address + TCP port
+        Udp,        // address + UDP port
+        Sctp,       // address + SCTP port (ROADMAP B8)
+        Ethernet,   // Ethernet MAC addresses
+        Wlan,       // IEEE 802.11 MAC addresses (ROADMAP B8)
+        Bluetooth,  // Bluetooth endpoints / Connection handles (ROADMAP B8)
+        Usb,        // USB device / bus endpoints (ROADMAP B8)
     };
 
+    constexpr size_t kAddressKindCount = 9;
+
     const char *kindName(AddressKind kind);
+    bool hasPort(AddressKind kind);
 
     using Subset = const std::vector<uint32_t> *;
 

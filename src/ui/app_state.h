@@ -66,10 +66,10 @@ namespace ui {
         bool expertValid = false;
         stats::HierarchyNode hierarchy;
         bool hierarchyValid = false;
-        std::vector<stats::Conversation> conversations[4];
-        bool conversationsValid[4] = {false, false, false, false};
-        std::vector<stats::Endpoint> endpoints[4];
-        bool endpointsValid[4] = {false, false, false, false};
+        std::vector<stats::Conversation> conversations[stats::kAddressKindCount];
+        bool conversationsValid[stats::kAddressKindCount] = {false};
+        std::vector<stats::Endpoint> endpoints[stats::kAddressKindCount];
+        bool endpointsValid[stats::kAddressKindCount] = {false};
     };
 
     /// The Follow Stream window.

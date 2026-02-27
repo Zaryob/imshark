@@ -14,11 +14,21 @@ namespace stats {
                 case AddressKind::Ipv6: return p.ip_version == 6;
                 case AddressKind::Tcp: return p.ip_version != 0 && p.ip_protocol == 6;
                 case AddressKind::Udp: return p.ip_version != 0 && p.ip_protocol == 17;
+                case AddressKind::Sctp: return p.ip_protocol == 132 || p.protocol == "SCTP";
+                case AddressKind::Ethernet: return p.link_type == 1 && !p.source.empty() && !p.destination.empty();
+                case AddressKind::Wlan: return (p.link_type == 105 || p.link_type == 127 || p.link_type == 192 ||
+                                               p.protocol == "802.11" || p.protocol == "WLAN") &&
+                                               (!p.source.empty() || !p.destination.empty());
+                case AddressKind::Bluetooth: return (p.link_type == 187 || p.link_type == 254 ||
+                                                    p.protocol == "HCI" || p.protocol == "BT Mon" ||
+                                                    p.protocol == "L2CAP" || p.protocol == "ATT") &&
+                                                    (!p.source.empty() || !p.destination.empty());
+                case AddressKind::Usb: return (p.link_type == 189 || p.link_type == 220 || p.link_type == 249 ||
+                                              p.protocol == "USB") &&
+                                              (!p.source.empty() || !p.destination.empty());
             }
             return false;
         }
-
-        bool hasPort(AddressKind kind) { return kind == AddressKind::Tcp || kind == AddressKind::Udp; }
 
         template<typename F>
         void forEachPacket(const std::vector<packet::PacketInfo> &packets, Subset subset, F &&f) {
@@ -32,12 +42,21 @@ namespace stats {
         std::string endpointKey(const std::string &address, uint16_t port) { return address + "#" + std::to_string(port); }
     } // namespace
 
+    bool hasPort(AddressKind kind) {
+        return kind == AddressKind::Tcp || kind == AddressKind::Udp || kind == AddressKind::Sctp;
+    }
+
     const char *kindName(AddressKind kind) {
         switch (kind) {
             case AddressKind::Ipv4: return "IPv4";
             case AddressKind::Ipv6: return "IPv6";
             case AddressKind::Tcp: return "TCP";
             case AddressKind::Udp: return "UDP";
+            case AddressKind::Sctp: return "SCTP";
+            case AddressKind::Ethernet: return "Ethernet";
+            case AddressKind::Wlan: return "WLAN";
+            case AddressKind::Bluetooth: return "Bluetooth";
+            case AddressKind::Usb: return "USB";
         }
         return "";
     }
@@ -111,27 +130,64 @@ namespace stats {
     }
 
     namespace {
-        // `ip.addr == a` for IPv4 kinds, `ipv6.addr == a` for IPv6; TCP/UDP kinds decide by the address text
         std::string addrTest(const std::string &address, AddressKind kind) {
-            const bool v6 = kind == AddressKind::Ipv6 || address.find(':') != std::string::npos;
-            return std::string(v6 ? "ipv6.addr == " : "ip.addr == ") + address;
+            switch (kind) {
+                case AddressKind::Ipv4:
+                    return "ip.addr == " + address;
+                case AddressKind::Ipv6:
+                    return "ipv6.addr == " + address;
+                case AddressKind::Tcp:
+                case AddressKind::Udp:
+                case AddressKind::Sctp: {
+                    const bool v6 = address.find(':') != std::string::npos;
+                    return std::string(v6 ? "ipv6.addr == " : "ip.addr == ") + address;
+                }
+                case AddressKind::Ethernet:
+                    return "eth.addr == \"" + address + "\"";
+                case AddressKind::Wlan:
+                    return "wlan.sa == \"" + address + "\" || wlan.da == \"" + address + "\"";
+                case AddressKind::Bluetooth:
+                    return "bt.handle == \"" + address + "\"";
+                case AddressKind::Usb:
+                    return "usb.device == \"" + address + "\"";
+            }
+            return "ip.addr == " + address;
         }
     } // namespace
 
     std::string conversationFilter(const Conversation &c, AddressKind kind) {
+        if (kind == AddressKind::Usb) {
+            return "usb";
+        }
+        if (kind == AddressKind::Bluetooth) {
+            return "bt.handle == \"" + c.addressA + "\"";
+        }
+        if (kind == AddressKind::Wlan) {
+            return "(wlan.sa == \"" + c.addressA + "\" && wlan.da == \"" + c.addressB + "\") || "
+                   "(wlan.sa == \"" + c.addressB + "\" && wlan.da == \"" + c.addressA + "\")";
+        }
         std::string f = addrTest(c.addressA, kind) + " && " + addrTest(c.addressB, kind);
         if (kind == AddressKind::Tcp) {
             f += " && tcp.port == " + std::to_string(c.portA) + " && tcp.port == " + std::to_string(c.portB);
         } else if (kind == AddressKind::Udp) {
             f += " && udp.port == " + std::to_string(c.portA) + " && udp.port == " + std::to_string(c.portB);
+        } else if (kind == AddressKind::Sctp) {
+            f += " && sctp.port == " + std::to_string(c.portA) + " && sctp.port == " + std::to_string(c.portB);
         }
         return f;
     }
 
     std::string endpointFilter(const Endpoint &e, AddressKind kind) {
+        if (kind == AddressKind::Usb) {
+            return "usb";
+        }
+        if (kind == AddressKind::Bluetooth) {
+            return "bt.handle == \"" + e.address + "\"";
+        }
         std::string f = addrTest(e.address, kind);
         if (kind == AddressKind::Tcp) f += " && tcp.port == " + std::to_string(e.port);
         else if (kind == AddressKind::Udp) f += " && udp.port == " + std::to_string(e.port);
+        else if (kind == AddressKind::Sctp) f += " && sctp.port == " + std::to_string(e.port);
         return f;
     }
 

@@ -80,6 +80,9 @@ namespace filter {
                 {"info", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { o.addS(p.info); }, "Info column (alias of _ws.col.info)"},
                 // ---- link layer
                 {"eth", FieldType::Boolean, proto<[](const PacketInfo &p) { return p.link_type == 1; }>, "Ethernet frame"},
+                {"eth.src", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (p.link_type == 1 && !p.source.empty()) o.addS(p.source); }, "Ethernet source address"},
+                {"eth.dst", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (p.link_type == 1 && !p.destination.empty()) o.addS(p.destination); }, "Ethernet destination address"},
+                {"eth.addr", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (p.link_type == 1) { if (!p.source.empty()) o.addS(p.source); if (!p.destination.empty()) o.addS(p.destination); } }, "Ethernet source or destination address"},
                 {"eth.len", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.link_type == 1 && p.has_llc && p.eth_len != 0) o.addU(p.eth_len); }, "IEEE 802.3 length field"},
                 {"eth.type", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (!p.has_llc && p.ether_type > 1500) o.addU(p.ether_type); }, "EtherType"},
                 {"vlan", FieldType::Boolean, proto<[](const PacketInfo &p) { return !p.vlan_ids.empty(); }>, "802.1Q VLAN tagged"},
@@ -109,6 +112,10 @@ namespace filter {
                 {"tcp", FieldType::Boolean, proto<hasTcp>, "TCP"},
                 {"udp", FieldType::Boolean, proto<hasUdp>, "UDP"},
                 {"udplite", FieldType::Boolean, proto<[](const PacketInfo &p) { return p.ip_protocol == 136 || p.protocol == "UDP-Lite"; }>, "Lightweight User Datagram Protocol"},
+                {"sctp", FieldType::Boolean, proto<[](const PacketInfo &p) { return p.ip_protocol == 132 || p.protocol == "SCTP"; }>, "Stream Control Transmission Protocol"},
+                {"sctp.srcport", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.ip_protocol == 132 || p.protocol == "SCTP") o.addU(p.src_port); }, "SCTP source port"},
+                {"sctp.dstport", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.ip_protocol == 132 || p.protocol == "SCTP") o.addU(p.dst_port); }, "SCTP destination port"},
+                {"sctp.port", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.ip_protocol == 132 || p.protocol == "SCTP") { o.addU(p.src_port); o.addU(p.dst_port); } }, "SCTP source or destination port"},
                 {"icmp", FieldType::Boolean, proto<[](const PacketInfo &p) { return ipv4(p) && p.ip_protocol == 1; }>, "ICMP"},
                 {"icmpv6", FieldType::Boolean, proto<[](const PacketInfo &p) { return ipv6(p) && p.ip_protocol == 58; }>, "ICMPv6"},
                 {"tcp.srcport", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (hasTcp(p)) o.addU(p.src_port); }, "TCP source port"},
@@ -341,6 +348,9 @@ namespace filter {
                 {"pause.time", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isMacControl(p) && p.app_code == 0x0001) o.addU(p.app_type); }, "PAUSE time (units of 512 bit times)"},
                 {"pfc", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isMacControl(p) && p.app_code == 0x0101) o.addU(1); }, "Priority Flow Control frame"},
                 {"pfc.class_enable", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isMacControl(p) && p.app_code == 0x0101) o.addU(p.app_type); }, "PFC Class Enable Vector"},
+                {"bt.handle", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (!p.source.empty()) o.addS(p.source); if (!p.destination.empty()) o.addS(p.destination); }, "Bluetooth Connection Handle"},
+                {"usb", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (p.link_type == 189 || p.link_type == 220 || p.link_type == 249 || isProtocol(p, "USB")) o.addU(1); }, "USB packet"},
+                {"usb.device", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (!p.source.empty()) o.addS(p.source); if (!p.destination.empty()) o.addS(p.destination); }, "USB Device address"},
                 {"malformed", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "Malformed") || p.info.find("[Malformed Packet") != std::string::npos) o.addU(1); }, "Packet that could not be fully decoded"},
             };
             std::sort(t.begin(), t.end(), [](const FieldDef &a, const FieldDef &b) { return std::string_view(a.name) < b.name; });

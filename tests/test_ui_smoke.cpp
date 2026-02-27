@@ -432,7 +432,7 @@ TEST_F(UiSmoke, StatisticsWindowsDrawAndFollowTheFilter) {
 
     EXPECT_TRUE(state.stats.conversationsValid[0]);
     EXPECT_FALSE(state.stats.conversationsValid[2]) << "only the visible tab is computed";
-    for (int tab = 0; tab < 4; ++tab) {     // every tab's data can be computed and drawn
+    for (int tab = 0; tab < static_cast<int>(stats::kAddressKindCount); ++tab) {     // every tab's data can be computed and drawn
         state.stats.selectTab = tab;
         frames(state);
         EXPECT_EQ(state.stats.tab, tab);

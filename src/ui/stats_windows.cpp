@@ -9,7 +9,17 @@
 namespace {
     using stats::AddressKind;
 
-    constexpr AddressKind kKinds[4] = {AddressKind::Ipv4, AddressKind::Ipv6, AddressKind::Tcp, AddressKind::Udp};
+    constexpr AddressKind kKinds[stats::kAddressKindCount] = {
+        AddressKind::Ipv4,
+        AddressKind::Ipv6,
+        AddressKind::Tcp,
+        AddressKind::Udp,
+        AddressKind::Sctp,
+        AddressKind::Ethernet,
+        AddressKind::Wlan,
+        AddressKind::Bluetooth,
+        AddressKind::Usb
+    };
 
     std::string fmtTime(double seconds) {
         char buf[32];
@@ -33,7 +43,7 @@ namespace {
         s.dirty = false;
         s.hierarchyValid = false;
         s.expertValid = false;
-        for (int i = 0; i < 4; ++i) s.conversationsValid[i] = s.endpointsValid[i] = false;
+        for (size_t i = 0; i < stats::kAddressKindCount; ++i) s.conversationsValid[i] = s.endpointsValid[i] = false;
     }
 
     const std::vector<uint32_t> *subset(const ui::AppState &state) {
@@ -151,14 +161,14 @@ namespace {
         refreshIfDirty(state);
 
         if (ImGui::BeginTabBar("convtabs")) {
-            for (int k = 0; k < 4; ++k) {
-                if (!ImGui::BeginTabItem(stats::kindName(kKinds[k]), nullptr, s.selectTab == k ? ImGuiTabItemFlags_SetSelected : 0)) continue;
-                s.tab = k;
+            for (size_t k = 0; k < stats::kAddressKindCount; ++k) {
+                if (!ImGui::BeginTabItem(stats::kindName(kKinds[k]), nullptr, s.selectTab == static_cast<int>(k) ? ImGuiTabItemFlags_SetSelected : 0)) continue;
+                s.tab = static_cast<int>(k);
                 if (!s.conversationsValid[k]) {
                     s.conversations[k] = stats::conversations(state.packets, subset(state), kKinds[k]);
                     s.conversationsValid[k] = true;
                 }
-                const bool ports = k >= 2;
+                const bool ports = (kKinds[k] == AddressKind::Tcp || kKinds[k] == AddressKind::Udp || kKinds[k] == AddressKind::Sctp);
                 auto &rows = s.conversations[k];
                 if (ImGui::BeginTable("conv", 10, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_Resizable |
                                                      ImGuiTableFlags_Sortable | ImGuiTableFlags_ScrollY)) {
@@ -247,13 +257,13 @@ namespace {
         refreshIfDirty(state);
 
         if (ImGui::BeginTabBar("eptabs")) {
-            for (int k = 0; k < 4; ++k) {
-                if (!ImGui::BeginTabItem(stats::kindName(kKinds[k]), nullptr, s.selectTab == k ? ImGuiTabItemFlags_SetSelected : 0)) continue;
+            for (size_t k = 0; k < stats::kAddressKindCount; ++k) {
+                if (!ImGui::BeginTabItem(stats::kindName(kKinds[k]), nullptr, s.selectTab == static_cast<int>(k) ? ImGuiTabItemFlags_SetSelected : 0)) continue;
                 if (!s.endpointsValid[k]) {
                     s.endpoints[k] = stats::endpoints(state.packets, subset(state), kKinds[k]);
                     s.endpointsValid[k] = true;
                 }
-                const bool ports = k >= 2;
+                const bool ports = stats::hasPort(kKinds[k]);
                 auto &rows = s.endpoints[k];
                 if (ImGui::BeginTable("ep", 7, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_Resizable |
                                                   ImGuiTableFlags_Sortable | ImGuiTableFlags_ScrollY)) {

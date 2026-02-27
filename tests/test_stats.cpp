@@ -178,3 +178,93 @@ TEST(Stats, ExpertInfoCountsWhatTheFiltersFind) {
     }
     EXPECT_TRUE(stats::expertInfo({}, nullptr).empty());
 }
+
+TEST(Stats, GeneralizedAddressKindsProduceExpectedFiltersAndEndpoints) {
+    Sample s;
+    // Ethernet endpoints & conversations
+    const auto ethEps = stats::endpoints(s.packets, nullptr, stats::AddressKind::Ethernet);
+    ASSERT_FALSE(ethEps.empty());
+    for (const auto &ep: ethEps) {
+        EXPECT_FALSE(ep.address.empty());
+        auto filterStr = stats::endpointFilter(ep, stats::AddressKind::Ethernet);
+        EXPECT_NE(filterStr.find("eth.addr =="), std::string::npos);
+        auto compiled = filter::Filter::compile(filterStr);
+        EXPECT_TRUE(compiled.ok) << "Ethernet endpoint filter compile failed: " << filterStr;
+    }
+
+    const auto ethConvs = stats::conversations(s.packets, nullptr, stats::AddressKind::Ethernet);
+    ASSERT_FALSE(ethConvs.empty());
+    auto ethConvFilter = stats::conversationFilter(ethConvs.front(), stats::AddressKind::Ethernet);
+    EXPECT_NE(ethConvFilter.find("eth.addr =="), std::string::npos);
+    EXPECT_TRUE(filter::Filter::compile(ethConvFilter).ok);
+
+    // Synthetic packet for SCTP, WLAN, BT, and USB
+    packet::PacketInfo p;
+    p.number = 1;
+    p.length = 64;
+    p.frame_length = 64;
+    p.ip_version = 4;
+    p.source = "192.168.1.10";
+    p.destination = "192.168.1.20";
+    p.protocol = "SCTP";
+    p.ip_protocol = 132;
+    p.src_port = 3868;
+    p.dst_port = 3868;
+
+    std::vector<packet::PacketInfo> synthetic = {p};
+
+    // SCTP
+    auto sctpEps = stats::endpoints(synthetic, nullptr, stats::AddressKind::Sctp);
+    ASSERT_EQ(sctpEps.size(), 2u);
+    auto sctpConvs = stats::conversations(synthetic, nullptr, stats::AddressKind::Sctp);
+    ASSERT_EQ(sctpConvs.size(), 1u);
+    EXPECT_TRUE(filter::Filter::compile(stats::conversationFilter(sctpConvs.front(), stats::AddressKind::Sctp)).ok);
+
+    // WLAN synthetic packet
+    packet::PacketInfo pWlan;
+    pWlan.number = 2;
+    pWlan.frame_length = 64;
+    pWlan.link_type = 105;
+    pWlan.protocol = "802.11";
+    pWlan.source = "00:11:22:33:44:55";
+    pWlan.destination = "aa:bb:cc:dd:ee:ff";
+    std::vector<packet::PacketInfo> synWlan = {pWlan};
+
+    auto wlanEps = stats::endpoints(synWlan, nullptr, stats::AddressKind::Wlan);
+    ASSERT_EQ(wlanEps.size(), 2u);
+    auto wlanConvs = stats::conversations(synWlan, nullptr, stats::AddressKind::Wlan);
+    ASSERT_EQ(wlanConvs.size(), 1u);
+    EXPECT_TRUE(filter::Filter::compile(stats::conversationFilter(wlanConvs.front(), stats::AddressKind::Wlan)).ok);
+
+    // Bluetooth synthetic packet
+    packet::PacketInfo pBt;
+    pBt.number = 3;
+    pBt.frame_length = 64;
+    pBt.link_type = 187;
+    pBt.protocol = "HCI";
+    pBt.source = "0x0001";
+    pBt.destination = "0x0001";
+    std::vector<packet::PacketInfo> synBt = {pBt};
+
+    auto btEps = stats::endpoints(synBt, nullptr, stats::AddressKind::Bluetooth);
+    ASSERT_EQ(btEps.size(), 1u);
+    auto btConvs = stats::conversations(synBt, nullptr, stats::AddressKind::Bluetooth);
+    ASSERT_EQ(btConvs.size(), 1u);
+    EXPECT_TRUE(filter::Filter::compile(stats::conversationFilter(btConvs.front(), stats::AddressKind::Bluetooth)).ok);
+
+    // USB synthetic packet
+    packet::PacketInfo pUsb;
+    pUsb.number = 4;
+    pUsb.frame_length = 64;
+    pUsb.link_type = 189;
+    pUsb.protocol = "USB";
+    pUsb.source = "1.2.0";
+    pUsb.destination = "host";
+    std::vector<packet::PacketInfo> synUsb = {pUsb};
+
+    auto usbEps = stats::endpoints(synUsb, nullptr, stats::AddressKind::Usb);
+    ASSERT_EQ(usbEps.size(), 2u);
+    auto usbConvs = stats::conversations(synUsb, nullptr, stats::AddressKind::Usb);
+    ASSERT_EQ(usbConvs.size(), 1u);
+    EXPECT_TRUE(filter::Filter::compile(stats::conversationFilter(usbConvs.front(), stats::AddressKind::Usb)).ok);
+}
