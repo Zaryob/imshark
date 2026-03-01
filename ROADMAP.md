@@ -239,8 +239,7 @@ Kabul ölçütü: anahtar olmayan yakalamada şifreli veri açık metin gibi yor
 - [x] **B4: Dissector başına filtre alanı kaydı** — Alanların merkezi `fields.cpp` yanında dinamik olarak `filter::registerField` ile kaydedilebilmesi — **M** *(Yapıldı: `core/src/filter/fields.{h,cpp}`, `tests/test_filter.cpp`)*
 - [x] **B5: Dosya okuyucu kaydı** — Sihirli sayıyla biçim tanıma, `CaptureReader` arayüzü, "desteklenmeyen biçim" teşhisi — **M** *(Yapıldı: `core::detectFileFormat`, `core::formatName`, `core::unsupportedFormatDiagnostic`, NetMon, Sun snoop, Endace ERF, AIX iptrace teşhisleri; `tests/test_file_formats.cpp`)*
 - [x] **B6: Link katmanı kaydı** (v0.7.3) — USB, Bluetooth, 802.15.4, CAN link türleri — **M** *(v1.5, v1.6 ve v1.8 ile sağlandı)*
-- [x] **B7: CRC-32C ve diğer sağlama toplamları** (`checksum.h` genişlemesi) — SCTP, DNP3 — **S** *(Yapıldı: Castagnoli CRC-32C ve `checkSctpCrc32c`, `tests/test_checksums.cpp`)*
-- **B8: İstatistik ad alanı genelleştirme** — USB cihaz/uç nokta, Bluetooth, WLAN, SCTP uç noktaları — **M**
+- [x] **B8: İstatistik ad alanı genelleştirme** — USB cihaz/uç nokta, Bluetooth, WLAN, SCTP uç noktaları — **M** *(Yapıldı: `stats::AddressKind` genişletildi, `statistics.{h,cpp}`, UI sekmeleri ve `test_stats.cpp`)*
 
 ### Sürümler ve aile ayrıntıları
 
