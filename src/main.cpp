@@ -66,17 +66,35 @@ std::tuple<std::string, std::string> toHexString(const std::vector<char> &data, 
 void processL2(const packet::PacketInfo &packet) {
     packetState["L2"] = {};
 
-    std::visit([](auto &&header) {
+    if (packet.link_type != 1) { // not Ethernet: no MAC addresses, just describe the link header
+        if (packet.l2_size > 0) {
+            packetState["L2"] = {
+                {"Link type " + std::to_string(packet.link_type) + " (" + std::to_string(packet.l2_size) + " bytes)"},
+                {{0, packet.l2_size - 1}}
+            };
+        }
+        return;
+    }
+
+    std::visit([&packet](auto &&header) {
         using T = std::decay_t<decltype(header)>;
         if constexpr (std::is_same_v<T, network::EthernetHeader>) {
             packetState["L2"] = {
                 {
                     "Destination MAC: " + network::getMACAddressString(header.dest_mac),
                     "Source MAC: " + network::getMACAddressString(header.src_mac),
-                    "Type: " + std::to_string(header.type)
+                    "Type: 0x" + [&] {
+                        std::ostringstream ss;
+                        ss << std::hex << std::setw(4) << std::setfill('0') << ntohs(header.type);
+                        return ss.str();
+                    }()
                 },
                 {{0, 5}, {6, 11}, {12, 13}}
             };
+            for (size_t i = 0; i < packet.vlan_ids.size(); ++i) {
+                packetState["L2"].first.push_back("802.1Q VLAN ID: " + std::to_string(packet.vlan_ids[i]));
+                packetState["L2"].second.push_back({14 + 4 * static_cast<int>(i), 17 + 4 * static_cast<int>(i)});
+            }
         }
     }, packet.l2_header);
 }
@@ -441,7 +459,8 @@ void displayPackets(const std::vector<packet::PacketInfo> &packets) {
             ImGui::TreePop();
         }
 
-        int data_link_i = 0;
+        // Index of the last link-layer byte; the L3/L4 highlight offsets are relative to it.
+        const int data_link_i = static_cast<int>(packet.l2_size) - 1;
         // Data Link Layer Details
         bool isHoveredDLL = ImGui::TreeNode("Data Link Layer");
 
@@ -459,7 +478,6 @@ void displayPackets(const std::vector<packet::PacketInfo> &packets) {
             else if(packetState["L2"].second[i].first == selected_byte_start){
                 raise_text=true;
             }
-            data_link_i = packetState["L2"].second[i].second;
 
 
             if (isHoveredDLL) {

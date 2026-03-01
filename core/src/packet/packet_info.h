@@ -7,6 +7,7 @@
 #include <cstdint>
 
 #include <string>
+#include <variant>
 #include <vector>
 
 #include <network/l2_data_link/ethernet_header.h>
@@ -32,6 +33,13 @@ namespace packet {
         std::string protocol;
         uint32_t length;
         std::string info;
+
+        // Capture link type (LINKTYPE_* from the pcap/pcapng file); 1 = Ethernet.
+        uint32_t link_type = 1;
+        // Number of link-layer bytes in front of the network header (0 for raw IP).
+        uint16_t l2_size = 0;
+        // 802.1Q/802.1ad VLAN IDs found in the Ethernet header, outermost first.
+        std::vector<uint16_t> vlan_ids;
 
         std::variant<network::EthernetHeader> l2_header;
         std::variant<network::ARPHeader,

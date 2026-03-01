@@ -80,9 +80,10 @@ namespace {
     }
 
     void addPacket(packet::PacketParser &parser, std::vector<packet::PacketInfo> &packets,
-                   double time, std::vector<char> data) {
+                   double time, uint32_t linkType, std::vector<char> data) {
         packet::PacketInfo pack(static_cast<int>(packets.size()) + 1);
         pack.time = time;
+        pack.link_type = linkType;
         parser.parsePacket(pack, data);
         pack.raw_data = std::move(data);
         packets.emplace_back(std::move(pack));
@@ -148,6 +149,9 @@ bool core::FileProcessor::processPcapFile(const std::string &filepath, std::vect
     }
     if (e.u32(gh) == kPcapMagicNano) fractionsPerSecond = 1e9;
 
+    // The low 28 bits of the "network" field are the LINKTYPE (upper bits hold FCS flags).
+    const uint32_t linkType = e.u32(gh + 20) & 0x0fffffff;
+
     TimeBase timeBase;
     const size_t firstPacket = packets.size();
 
@@ -176,7 +180,7 @@ bool core::FileProcessor::processPcapFile(const std::string &filepath, std::vect
         }
 
         const long double absolute = static_cast<long double>(tsSec) + tsFrac / fractionsPerSecond;
-        addPacket(parser, packets, timeBase.relative(absolute), std::move(data));
+        addPacket(parser, packets, timeBase.relative(absolute), linkType, std::move(data));
     }
 
     return true;
@@ -279,10 +283,11 @@ bool core::FileProcessor::processPcapngFile(const std::string &filepath, std::ve
                                          ? interfaces[interfaceId].ticksPerSecond
                                          : kDefaultTicksPerSecond;
                 lastTime = timeBase.relative(static_cast<long double>(ticks) / tps);
+                const uint32_t linkType = interfaceId < interfaces.size() ? interfaces[interfaceId].linkType : 1;
 
                 // Only captured_length bytes are packet data; the rest is padding and options.
                 const char *data = reinterpret_cast<const char *>(body + 20);
-                addPacket(parser, packets, lastTime, std::vector<char>(data, data + capturedLength));
+                addPacket(parser, packets, lastTime, linkType, std::vector<char>(data, data + capturedLength));
             } break;
             case kBlockSPB: {
                 if (bodySize < 4) return fail("Simple Packet Block too short");
@@ -293,7 +298,8 @@ bool core::FileProcessor::processPcapngFile(const std::string &filepath, std::ve
                 }
                 // SPBs carry no timestamp; reuse the previous packet's time.
                 const char *data = reinterpret_cast<const char *>(body + 4);
-                addPacket(parser, packets, lastTime, std::vector<char>(data, data + captured));
+                addPacket(parser, packets, lastTime, interfaces.empty() ? 1 : interfaces[0].linkType,
+                          std::vector<char>(data, data + captured));
             } break;
             default:
                 break; // NRB, ISB, custom and unknown blocks carry nothing we display
