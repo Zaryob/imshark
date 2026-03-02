@@ -262,14 +262,14 @@ Kabul ölçütü: anahtar olmayan yakalamada şifreli veri açık metin gibi yor
 - [x] **v1.9 — Eski ve üretici dosya biçimleri:** B5 dosya biçimi sihirli sayı tanıma ve teşhis mesajı ("Desteklenmeyen dosya biçimi: X"); NetMon (.cap), Sun snoop, ERF (Endace), AIX iptrace için tanıma ve teşhis desteği (`core::detectFileFormat`, `core::FileProcessor::processFile`, `tests/test_file_formats.cpp`). — **L**
 
 ### Teslim kontrol listesi
-- [ ] Şartname bağlantısı ve sürüm (`docs/PROTOCOLS.md`); bilinen sapmalar.
-- [ ] Gerçek örnekler manifestte (URL + SHA-256 + beklenen sayılar + `tree_contains` olguları).
-- [ ] Sentetik testler: RFC örnekleri, sınır değerler, birleştirme senaryoları.
-- [ ] Mutasyon-fuzz + ASan/UBSan; tüm alan ofsetleri çerçeve içinde.
-- [ ] Replay eşitliği testi (durumlu protokollerde özellik testi).
-- [ ] Filtre alanları, Info metni, protokol hiyerarşisi, Decode As adı.
-- [ ] `KNOWN_ISSUES.md` ve README güncellendi; 500 bin paket bellek/hız ölçümü korundu.
-- [ ] Şifreli/korumalı içerik açıkça etiketli; asla açık metin gibi yorumlanmıyor.
+- [x] Şartname bağlantısı ve sürüm (`docs/PROTOCOLS.md`); bilinen sapmalar.
+- [x] Gerçek örnekler manifestte (URL + SHA-256 + beklenen sayılar + `tree_contains` olguları; `tests/corpus/manifest.json`).
+- [x] Sentetik testler: RFC örnekleri, sınır değerler, birleştirme senaryoları.
+- [x] Mutasyon-fuzz + ASan/UBSan; tüm alan ofsetleri çerçeve içinde.
+- [x] Replay eşitliği testi (durumlu protokollerde özellik testi).
+- [x] Filtre alanları, Info metni, protokol hiyerarşisi, Decode As adı.
+- [x] `KNOWN_ISSUES.md` ve README güncellendi; 500 bin paket bellek/hız ölçümü korundu.
+- [x] Şifreli/korumalı içerik açıkça etiketli; asla açık metin gibi yorumlanmıyor.
 
 ## SampleCaptures incelemesinin başlangıç ölçümü
 
