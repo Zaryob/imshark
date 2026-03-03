@@ -265,7 +265,14 @@ namespace {
                             f.time = pack.time;
                             std::vector<uint32_t> earlier;
                             ctx.sessions->addDtlsFragment(pack.source, pack.src_port, pack.destination, pack.dst_port, f, earlier);
-                            if (ctx.completedDatagrams) for (uint32_t e: earlier) ctx.completedDatagrams->push_back({e, static_cast<uint32_t>(pack.number)});
+                            if (ctx.completedDatagrams) {
+                                // one earlier datagram may hold fragments of several messages this packet completes: tell it once
+                                for (uint32_t e: earlier) {
+                                    const std::pair<uint32_t, uint32_t> pair{e, static_cast<uint32_t>(pack.number)};
+                                    auto &done = *ctx.completedDatagrams;
+                                    if (std::find(done.begin(), done.end(), pair) == done.end()) done.push_back(pair);
+                                }
+                            }
                         }
                         state.ref = ctx.sessions->dtlsFragment(static_cast<uint32_t>(pack.number), static_cast<uint16_t>(position));
                         if (state.ref && (state.ref->flags & DtlsFragmentRef::kCompletesHere) && !(state.ref->flags & DtlsFragmentRef::kWhole))

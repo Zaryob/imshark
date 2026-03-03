@@ -359,6 +359,31 @@ TEST(DtlsReassembly, SeveralFragmentsOfDifferentMessagesInOneDatagram) {
     }
 }
 
+TEST(DtlsReassembly, TwoMessagesSplitOverTheSameTwoDatagramsAreAnnouncedOnceEach) {
+    // datagram 1: the first halves of the Certificate and the ServerKeyExchange; datagram 2 completes both. Datagram 1 is told
+    // where it was reassembled once, by the load pass and by Replay alike.
+    const std::string cert = certificateBody();
+    const std::string exchange(60, 'K');
+    const uint32_t certHalf = static_cast<uint32_t>(cert.size() / 2), exchangeHalf = 30;
+    Cap c;
+    c.frames = {toClient(hsRecord(1, handshake(11, 2, cert, 0, certHalf) + handshake(12, 3, exchange, 0, exchangeHalf))),
+                toClient(hsRecord(2, handshake(11, 2, cert, certHalf) + handshake(12, 3, exchange, exchangeHalf)))};
+    const Loaded &cap = c.load("twomessages");
+    const std::string note = "[Reassembled in #2]";
+    const auto count = [&](const std::string &text) {
+        size_t n = 0;
+        for (size_t at = text.find(note); at != std::string::npos; at = text.find(note, at + 1)) ++n;
+        return n;
+    };
+    EXPECT_EQ(count(cap.packets[0].info), 1u) << cap.packets[0].info;
+    EXPECT_EQ(count(cap.packets[1].info), 0u) << cap.packets[1].info;
+    for (size_t i = 0; i < 2; ++i) {
+        auto d = const_cast<Loaded &>(cap).details(i);
+        EXPECT_EQ(d.info, cap.packets[i].info) << i;
+        tlstest::expectInside(d.fields, d.raw_data.size());
+    }
+}
+
 TEST(DtlsReassembly, ARetransmittedFlightIsMarkedAndAFirstFragmentOfItStaysPending) {
     const std::string hello = handshake(1, 0, clientHelloBody("", "example.test"));
     Cap c;
