@@ -10,12 +10,14 @@
 #include <gtest/gtest.h>
 
 #include <memory>
+#include <span>
 #include <string>
 #include <vector>
 
 #include <core.h>
 #include <filter/filter.h>
 #include <stats/statistics.h>
+#include <dissect/dtls_decrypt.h>
 #include <dissect/tls_summary.h>
 #include <tls/crypto.h>
 
@@ -82,6 +84,49 @@ namespace {
         return out;
     }
 
+    // the plaintext the script sealed (tools/make_dtls_vectors.py): finished(msg_seq) and the two application data strings
+    std::string finishedPlain(uint8_t messageSeq) {
+        std::string p = std::string("\x14\x00\x00\x0c\x00", 5) + static_cast<char>(messageSeq) + std::string("\x00\x00\x00\x00\x00\x0c", 6);
+        for (int i = 0; i < 12; ++i) p += static_cast<char>(0xa0 + i);
+        return p;
+    }
+    const std::string kHelloPlain = "hello dtls", kPongPlain = "pong";
+
+    // what Replay reads back for the record `sealed` (a whole record at `position` of packet i's UDP payload): its state and plaintext
+    struct Opened {
+        TlsRecordState state;
+        std::string plain;
+    };
+    Opened openedRecord(Cap &cap, size_t i, const std::string &sealed, uint16_t position = 0) {
+        Opened o{TlsRecordState::NoKey, {}};
+        if (sealed.size() < 13) return o;
+        const auto u = [&](size_t at, size_t n) { uint64_t v = 0; for (size_t k = 0; k < n; ++k) v = v << 8 | static_cast<uint8_t>(sealed[at + k]); return v; };
+        const std::string body = sealed.substr(13);
+        dissect::DtlsRecordInput in;
+        in.type = static_cast<uint8_t>(sealed[0]);
+        in.version = static_cast<uint16_t>(u(1, 2));
+        in.epoch = static_cast<uint16_t>(u(3, 2));
+        in.sequence = u(5, 6);
+        in.fragment = std::span<const uint8_t>(reinterpret_cast<const uint8_t *>(body.data()), body.size());
+        dissect::SessionTables::DtlsRecordResult r;
+        cap.fp.sessions().readDtlsRecord(static_cast<uint32_t>(i + 1), position, in, r);
+        o.state = r.state;
+        o.plain.assign(r.plaintext.begin(), r.plaintext.end());
+        return o;
+    }
+
+    // nothing of the sealed plaintext may reach the packet: neither the bytes Replay reads back nor any text the plaintext would
+    // produce (the string "hello dtls", "pong", the decoded Finished handshake or the decrypted layers) in the Info or the tree
+    void expectNoPlaintext(Cap &cap, size_t i, const std::string &treeText) {
+        static const char *sealed[] = {kClientFinished, kServerFinished, kClientData, kServerData};
+        const Opened o = openedRecord(cap, i, bytes(sealed[i - 2]));
+        EXPECT_NE(o.state, TlsRecordState::Decrypted) << i;
+        EXPECT_TRUE(o.plain.empty()) << i;
+        for (const std::string &text: {treeText, cap.packets[i].info})
+            for (const char *known: {"hello dtls", "pong", "Decrypted DTLS", "Decrypted Handshake", "Decrypted Application Data", "Handshake Type: Finished (20)", "Finished (decrypted)"})
+                EXPECT_EQ(text.find(known), std::string::npos) << i << ": " << known;
+    }
+
     // what the load pass concluded and what Replay shows must be the same
     void expectReplayEqualsLoad(Cap &cap) {
         for (size_t i = 0; i < cap.packets.size(); ++i) {
@@ -134,6 +179,14 @@ TEST_F(DtlsFlow, TheRecordsDecryptAndThePacketsSayWhatTheyHold) {
     EXPECT_NE(ft.find("Handshake Type: Finished (20)"), std::string::npos);
     EXPECT_NE(ft.find("Message Sequence: 5"), std::string::npos);
     EXPECT_NE(textOf(cap.details(3).fields).find("[DTLS session: server to client, DTLS 1.2]"), std::string::npos);
+    // the bytes the records open to are the ones the script sealed
+    const std::string sealed[4] = {bytes(kClientFinished), bytes(kServerFinished), bytes(kClientData), bytes(kServerData)};
+    const std::string expected[4] = {finishedPlain(5), finishedPlain(6), kHelloPlain, kPongPlain};
+    for (size_t k = 0; k < 4; ++k) {
+        const Opened o = openedRecord(cap, k + 2, sealed[k]);
+        EXPECT_EQ(o.state, TlsRecordState::Decrypted) << k;
+        EXPECT_EQ(o.plain, expected[k]) << k;
+    }
     expectReplayEqualsLoad(cap);
 }
 
@@ -144,8 +197,7 @@ TEST_F(DtlsFlow, WithoutAKeyTheRecordsStayEncryptedAndNoPlaintextAppears) {
         EXPECT_EQ(dissect::dtlsSummaryState(cap.packets[i]), TlsRecordState::NoKey) << i;
         const auto d = cap.details(i);
         const std::string t = textOf(d.fields);
-        EXPECT_EQ(t.find("Decrypted DTLS"), std::string::npos);
-        EXPECT_EQ(t.find("hello dtls"), std::string::npos);
+        expectNoPlaintext(cap, i, t);
         EXPECT_NE(t.find("Decryption status: missing key"), std::string::npos) << t;
         EXPECT_NE(t.find("Key material: not found"), std::string::npos);
     }
@@ -163,8 +215,7 @@ TEST_F(DtlsFlow, AWrongKeyIsATagFailureAndShowsNothing) {
         const std::string t = textOf(d.fields);
         EXPECT_NE(t.find("Decryption status: wrong key"), std::string::npos) << t;
         EXPECT_NE(t.find("[Expert Info (Warning/Decryption): "), std::string::npos);
-        EXPECT_EQ(t.find("Decrypted DTLS"), std::string::npos);
-        EXPECT_EQ(t.find("hello"), std::string::npos);
+        expectNoPlaintext(cap, i, t);
     }
     EXPECT_EQ(cap.packets[4].info, "Application Data");
     expectReplayEqualsLoad(cap);
@@ -195,6 +246,10 @@ TEST_F(DtlsFlow, Aes256GcmWithTheSha384Prf) {
     EXPECT_EQ(cap.packets[4].info, "Application Data (decrypted, 10 bytes)");
     EXPECT_EQ(dissect::dtlsSummaryState(cap.packets[4]), TlsRecordState::Decrypted);
     EXPECT_EQ(dissect::dtlsSummaryState(cap.packets[2]), TlsRecordState::TagFailure) << "the 128-bit Finished under the 256-bit suite";
+    const Opened o = openedRecord(cap, 4, bytes(kClientData256));
+    EXPECT_EQ(o.state, TlsRecordState::Decrypted);
+    EXPECT_EQ(o.plain, kHelloPlain);
+    EXPECT_TRUE(openedRecord(cap, 2, bytes(kClientFinished)).plain.empty());
     expectReplayEqualsLoad(cap);
 }
 
@@ -206,6 +261,9 @@ TEST_F(DtlsFlow, ADatagramCarryingASealedRecordAfterClearOnesKeepsBothStates) {
     ASSERT_TRUE(cap.ok);
     EXPECT_EQ(cap.packets[2].info, "Change Cipher Spec, Finished (decrypted)");
     EXPECT_EQ(dissect::dtlsSummaryState(cap.packets[2]), TlsRecordState::Decrypted);
+    const Opened o = openedRecord(cap, 2, bytes(kClientFinished), 14);       // after the 13 byte header and 1 byte of the ChangeCipherSpec
+    EXPECT_EQ(o.state, TlsRecordState::Decrypted);
+    EXPECT_EQ(o.plain, finishedPlain(5));
     expectReplayEqualsLoad(cap);
 }
 
@@ -217,6 +275,9 @@ TEST_F(DtlsFlow, ADecryptedMessageOfTheOtherDirectionIsNotMixedUp) {
     ASSERT_TRUE(cap.ok);
     EXPECT_EQ(dissect::dtlsSummaryState(cap.packets[3]), TlsRecordState::TagFailure);
     EXPECT_EQ(cap.packets[3].info, "Encrypted Handshake Message");
+    const Opened o = openedRecord(cap, 3, bytes(kServerFinished));
+    EXPECT_NE(o.state, TlsRecordState::Decrypted);
+    EXPECT_TRUE(o.plain.empty());
 }
 
 TEST_F(DtlsFlow, ATableThatRanOutOfRoomReportsStateLostNotAMissingKey) {
@@ -246,6 +307,9 @@ TEST_F(DtlsFlow, EveryCutAndEveryDamagedByteOfASealedRecordNeverShowsWrongPlaint
         }
         Cap cap(frames, "sweep");
         ASSERT_TRUE(cap.ok);
+        const bool isData = sealed == kClientData;
+        const std::string expected = isData ? kHelloPlain : finishedPlain(5);
+        const std::string known = isData ? "hello dtls" : "Handshake Type: Finished (20)";
         for (size_t i = 2; i < cap.packets.size(); ++i) {
             const auto d = cap.details(i);
             tlstest::expectInside(d.fields, d.raw_data.size());
@@ -263,7 +327,19 @@ TEST_F(DtlsFlow, EveryCutAndEveryDamagedByteOfASealedRecordNeverShowsWrongPlaint
             } else {
                 EXPECT_TRUE(decrypted) << "the unchanged record";
             }
-            EXPECT_EQ(textOf(d.fields).find("hello dtls") == std::string::npos || decrypted, true);
+            // the variant of this packet, as sent
+            const size_t variant = i - firstCut;
+            std::string sent = good;
+            if (variant < good.size() + 1) sent = good.substr(0, variant);
+            else if (i >= firstFlip) sent[i - firstFlip] = static_cast<char>(sent[i - firstFlip] ^ 0x5a);
+            const Opened o = openedRecord(cap, i, sent);
+            if (decrypted) {
+                if (i == firstCut + good.size()) EXPECT_EQ(o.plain, expected) << "the unchanged record";
+            } else {
+                EXPECT_TRUE(o.plain.empty()) << i;
+                EXPECT_EQ(textOf(d.fields).find(known), std::string::npos) << i;
+                EXPECT_EQ(cap.packets[i].info.find("decrypted"), std::string::npos) << i;
+            }
         }
     }
 }
@@ -352,6 +428,9 @@ TEST_F(DtlsFlow, ASealedRecordInAnIpFragmentedDatagramIsDecryptedAtTheLastFragme
     EXPECT_EQ(d.info, cap.packets[5].info);
     EXPECT_EQ(d.reassembled_in, cap.packets[5].reassembled_in);
     EXPECT_NE(textOf(d.fields).find("Decrypted Application Data (10 bytes)"), std::string::npos);
+    const Opened o = openedRecord(cap, 5, bytes(kClientData));
+    EXPECT_EQ(o.state, TlsRecordState::Decrypted);
+    EXPECT_EQ(o.plain, kHelloPlain);
 }
 
 TEST(DtlsFlowNoBackend, WithoutOpenSslTheStateSaysDecryptionIsNotAvailable) {
