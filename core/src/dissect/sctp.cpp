@@ -7,7 +7,6 @@
 
 #include "checksum.h"
 #include "util.h"
-#include <filter/fields.h>
 #include <network/byteorder.h>
 
 using packet::Field;
@@ -35,49 +34,9 @@ namespace {
             default: return "Chunk " + std::to_string(type);
         }
     }
-
-    bool initSctpFilterFields() {
-        filter::registerField({"sctp", filter::FieldType::Boolean,
-            [](const packet::PacketInfo &p, const filter::Context &, filter::Values &o) {
-                if (p.protocol == "SCTP" || p.ip_protocol == 132) o.addU(1);
-            }, "Stream Control Transmission Protocol"});
-
-        filter::registerField({"sctp.srcport", filter::FieldType::Unsigned,
-            [](const packet::PacketInfo &p, const filter::Context &, filter::Values &o) {
-                if (p.ip_protocol == 132 || p.protocol == "SCTP") o.addU(p.src_port);
-            }, "SCTP source port"});
-
-        filter::registerField({"sctp.dstport", filter::FieldType::Unsigned,
-            [](const packet::PacketInfo &p, const filter::Context &, filter::Values &o) {
-                if (p.ip_protocol == 132 || p.protocol == "SCTP") o.addU(p.dst_port);
-            }, "SCTP destination port"});
-
-        filter::registerField({"sctp.port", filter::FieldType::Unsigned,
-            [](const packet::PacketInfo &p, const filter::Context &, filter::Values &o) {
-                if (p.ip_protocol == 132 || p.protocol == "SCTP") {
-                    o.addU(p.src_port);
-                    o.addU(p.dst_port);
-                }
-            }, "SCTP source or destination port"});
-
-        filter::registerField({"sctp.vtag", filter::FieldType::Unsigned,
-            [](const packet::PacketInfo &p, const filter::Context &, filter::Values &o) {
-                if (p.ip_protocol == 132 || p.protocol == "SCTP") o.addU(p.tcp_pdu_start);
-            }, "SCTP Verification Tag"});
-
-        filter::registerField({"sctp.chunk_type", filter::FieldType::Unsigned,
-            [](const packet::PacketInfo &p, const filter::Context &, filter::Values &o) {
-                if ((p.ip_protocol == 132 || p.protocol == "SCTP") && p.app_type != 0xFF) o.addU(p.app_type);
-            }, "SCTP Chunk Type"});
-
-        return true;
-    }
 } // namespace
 
 void dissect::dissectSctp(Context &ctx, const char *data, size_t length) {
-    static const bool registered = initSctpFilterFields();
-    (void)registered;
-
     auto &pack = ctx.pack;
     pack.protocol = "SCTP";
 

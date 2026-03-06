@@ -1,6 +1,8 @@
 #include "fields.h"
 
 #include <algorithm>
+#include <deque>
+#include <mutex>
 
 #include <dissect/checksum.h>
 #include <dissect/tls_summary.h>
@@ -116,6 +118,29 @@ namespace filter {
                 {"sctp.srcport", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.ip_protocol == 132 || p.protocol == "SCTP") o.addU(p.src_port); }, "SCTP source port"},
                 {"sctp.dstport", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.ip_protocol == 132 || p.protocol == "SCTP") o.addU(p.dst_port); }, "SCTP destination port"},
                 {"sctp.port", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.ip_protocol == 132 || p.protocol == "SCTP") { o.addU(p.src_port); o.addU(p.dst_port); } }, "SCTP source or destination port"},
+                {"sctp.vtag", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.ip_protocol == 132 || p.protocol == "SCTP") o.addU(p.tcp_pdu_start); }, "SCTP Verification Tag"},
+                {"sctp.chunk_type", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if ((p.ip_protocol == 132 || p.protocol == "SCTP") && p.app_type != 0xFF) o.addU(p.app_type); }, "SCTP Chunk Type (of the first chunk)"},
+                {"igmp", FieldType::Boolean, proto<[](const PacketInfo &p) { return p.protocol == "IGMP" || p.ip_protocol == 2; }>, "Internet Group Management Protocol"},
+                {"igmp.type", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.protocol == "IGMP" && p.app_type != 0) o.addU(p.app_type); }, "IGMP Message Type (0x11 Query, 0x12 v1 Report, 0x16 v2 Report, 0x17 Leave, 0x22 v3 Report)"},
+                {"igmp.group", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (p.protocol == "IGMP" && !p.app_text.empty()) o.addS(p.app_text); }, "IGMP Multicast Group Address"},
+                {"ospf", FieldType::Boolean, proto<[](const PacketInfo &p) { return p.protocol == "OSPF" || p.ip_protocol == 89; }>, "Open Shortest Path First"},
+                {"ospf.version", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.protocol == "OSPF") o.addU(p.app_code); }, "OSPF Version (2 or 3)"},
+                {"ospf.type", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.protocol == "OSPF") o.addU(p.app_type); }, "OSPF Packet Type (1=Hello, 2=DD, 3=LSR, 4=LSU, 5=LSAck)"},
+                {"ospf.router_id", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (p.protocol == "OSPF" && !p.app_text.empty()) o.addS(p.app_text); }, "OSPF Router ID"},
+                {"ospf.area_id", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (p.protocol == "OSPF" && !p.app_text2.empty()) o.addS(p.app_text2); }, "OSPF Area ID"},
+                {"ah", FieldType::Boolean, proto<[](const PacketInfo &p) { return p.protocol == "AH" || p.ip_protocol == 51; }>, "IPsec Authentication Header"},
+                {"ah.spi", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.protocol == "AH" || p.ip_protocol == 51) o.addU(p.tcp_pdu_start); }, "AH Security Parameters Index (SPI)"},
+                {"ah.sequence", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.protocol == "AH" || p.ip_protocol == 51) o.addU(p.app_code); }, "AH Sequence Number"},
+                {"esp", FieldType::Boolean, proto<[](const PacketInfo &p) { return p.protocol == "ESP" || p.ip_protocol == 50; }>, "IPsec Encapsulating Security Payload"},
+                {"esp.spi", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.protocol == "ESP" || p.ip_protocol == 50) o.addU(p.tcp_pdu_start); }, "ESP Security Parameters Index (SPI)"},
+                {"esp.sequence", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.protocol == "ESP" || p.ip_protocol == 50) o.addU(p.app_code); }, "ESP Sequence Number"},
+                {"ike", FieldType::Boolean, proto<[](const PacketInfo &p) { return p.protocol == "ISAKMP" || p.protocol == "IKEv2"; }>, "Internet Key Exchange / ISAKMP"},
+                {"ike.version", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.protocol == "ISAKMP" || p.protocol == "IKEv2") o.addU(p.app_code); }, "IKE Version (1 or 2)"},
+                {"ike.exchange_type", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.protocol == "ISAKMP" || p.protocol == "IKEv2") o.addU(p.app_type); }, "IKE Exchange Type"},
+                {"ldap", FieldType::Boolean, proto<[](const PacketInfo &p) { return p.protocol == "LDAP"; }>, "Lightweight Directory Access Protocol"},
+                {"ldap.message_id", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.protocol == "LDAP") o.addU(p.tcp_pdu_start); }, "LDAP Message ID"},
+                {"ldap.protocol_op", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.protocol == "LDAP" && p.app_type != 0xFF) o.addU(p.app_type); }, "LDAP Protocol Operation (Application tag)"},
+                {"ldap.name", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (p.protocol == "LDAP" && !p.app_text.empty()) o.addS(p.app_text); }, "LDAP Distinguished Name / Target Object"},
                 {"icmp", FieldType::Boolean, proto<[](const PacketInfo &p) { return ipv4(p) && p.ip_protocol == 1; }>, "ICMP"},
                 {"icmpv6", FieldType::Boolean, proto<[](const PacketInfo &p) { return ipv6(p) && p.ip_protocol == 58; }>, "ICMPv6"},
                 {"tcp.srcport", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (hasTcp(p)) o.addU(p.src_port); }, "TCP source port"},
@@ -357,36 +382,61 @@ namespace filter {
             return t;
         }
 
-        std::vector<FieldDef> &customFields() {
-            static std::vector<FieldDef> dynamicList;
-            return dynamicList;
+        // Protocol fields are part of the table above: it is built once, before the first filter is compiled and before
+        // any packet is dissected, so a field exists even in a fresh process and findField() pointers into it stay valid
+        // for the life of the process. registerField() is for fields added later (plugins, tests): it keeps them in a
+        // deque, whose elements never move, behind a mutex, and never touches the built table.
+        const std::vector<FieldDef> &baseTable() {
+            static const std::vector<FieldDef> table = buildTable();
+            return table;
         }
 
-        std::vector<FieldDef> combinedFields() {
-            static const std::vector<FieldDef> base = buildTable();
-            std::vector<FieldDef> all = base;
-            const auto &extra = customFields();
-            all.insert(all.end(), extra.begin(), extra.end());
-            std::sort(all.begin(), all.end(), [](const FieldDef &a, const FieldDef &b) { return std::string_view(a.name) < b.name; });
-            return all;
+        std::mutex &customMutex() {
+            static std::mutex m;
+            return m;
+        }
+
+        std::deque<FieldDef> &customFields() {
+            static std::deque<FieldDef> list;
+            return list;
+        }
+
+        const FieldDef *findBase(std::string_view lowerName) {
+            const auto &t = baseTable();
+            const auto it = std::lower_bound(t.begin(), t.end(), lowerName,
+                                             [](const FieldDef &f, std::string_view n) { return std::string_view(f.name) < n; });
+            return (it != t.end() && std::string_view(it->name) == lowerName) ? &*it : nullptr;
         }
     } // namespace
 
-    const std::vector<FieldDef> &allFields() {
-        static std::vector<FieldDef> table = combinedFields();
-        return table;
+    std::vector<FieldDef> allFields() {
+        std::vector<FieldDef> all = baseTable();
+        {
+            std::lock_guard<std::mutex> lock(customMutex());
+            all.insert(all.end(), customFields().begin(), customFields().end());
+        }
+        std::sort(all.begin(), all.end(), [](const FieldDef &a, const FieldDef &b) { return std::string_view(a.name) < b.name; });
+        return all;
     }
 
-    void registerField(FieldDef field) {
+    bool registerField(FieldDef field) {
+        if (field.name == nullptr || *field.name == '\0' || field.extract == nullptr) return false;
+        const std::string_view name = field.name;
+        if (findBase(name) != nullptr) return false;
+        std::lock_guard<std::mutex> lock(customMutex());
+        for (const auto &f: customFields()) {
+            if (std::string_view(f.name) == name) return false;
+        }
         customFields().push_back(field);
-        // Refresh combined table
-        const_cast<std::vector<FieldDef>&>(allFields()) = combinedFields();
+        return true;
     }
 
     const FieldDef *findField(std::string_view lowerName) {
-        const auto &t = allFields();
-        const auto it = std::lower_bound(t.begin(), t.end(), lowerName,
-                                         [](const FieldDef &f, std::string_view n) { return std::string_view(f.name) < n; });
-        return (it != t.end() && std::string_view(it->name) == lowerName) ? &*it : nullptr;
+        if (const FieldDef *f = findBase(lowerName)) return f;
+        std::lock_guard<std::mutex> lock(customMutex());
+        for (const auto &f: customFields()) {
+            if (std::string_view(f.name) == lowerName) return &f;
+        }
+        return nullptr;
     }
 } // namespace filter

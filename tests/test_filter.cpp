@@ -1,8 +1,10 @@
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <cctype>
 #include <random>
 #include <set>
+#include <thread>
 
 #include <core.h>
 #include <filter/filter.h>
@@ -292,19 +294,88 @@ TEST(Filter, DynamicFieldRegistration) {
     const auto tcp = parse(hex(kTcpSyn));
     EXPECT_EQ(filter::findField("myproto.magic"), nullptr);
 
-    filter::registerField({
+    EXPECT_TRUE(filter::registerField({
         "myproto.magic",
         filter::FieldType::Unsigned,
         [](const packet::PacketInfo &p, const filter::Context &, filter::Values &out) {
             if (p.src_port == 8080) out.addU(42);
         },
         "My custom protocol magic field"
-    });
+    }));
 
     const auto *def = filter::findField("myproto.magic");
     ASSERT_NE(def, nullptr);
     EXPECT_EQ(std::string(def->name), "myproto.magic");
     EXPECT_TRUE(match("myproto.magic == 42", tcp));
     EXPECT_FALSE(match("myproto.magic == 99", tcp));
+}
+
+// B4: the fields of the protocols that used to register themselves from inside their dissector must exist in a process
+// that has not dissected a single packet. gtest_discover_tests runs every test in its own process, so this one is fresh
+// as long as it does not parse anything first.
+TEST(FilterFields, ProtocolFieldsExistBeforeAnyPacketIsDissected) {
+    for (const char *expr: {"igmp.type == 17", "igmp", "igmp.group == \"224.0.0.1\"", "ospf.version == 2", "ospf.type == 1", "ospf",
+                            "ospf.router_id == \"1.2.3.4\"", "ospf.area_id == \"0.0.0.0\"", "ike", "ike.version == 2", "ike.exchange_type == 34",
+                            "esp", "esp.spi == 1", "esp.sequence == 7", "ah", "ah.spi == 1", "ah.sequence == 1",
+                            "sctp.vtag == 1", "sctp.chunk_type == 0", "sctp.port == 38412", "ldap", "ldap.message_id == 1",
+                            "ldap.protocol_op == 0", "ldap.name == \"cn=x\""}) {
+        const auto f = filter::Filter::compile(expr);
+        EXPECT_TRUE(f.ok) << expr;
+    }
+}
+
+TEST(FilterFields, PointersStayValidWhenFieldsAreRegistered) {
+    const filter::FieldDef *ttl = filter::findField("ip.ttl");
+    const filter::FieldDef *igmp = filter::findField("igmp.type");
+    ASSERT_NE(ttl, nullptr);
+    ASSERT_NE(igmp, nullptr);
+    static const char *const names[] = {"stab.a", "stab.b", "stab.c", "stab.d", "stab.e", "stab.f", "stab.g", "stab.h"};
+    const filter::FieldDef *first = nullptr;
+    for (const char *name: names) {
+        ASSERT_TRUE(filter::registerField({name, filter::FieldType::Boolean, [](const packet::PacketInfo &, const filter::Context &, filter::Values &o) { o.addU(1); }, "stability probe"}));
+        if (first == nullptr) first = filter::findField(name);
+    }
+    // the pointers taken before, and the first registered one, still point at the same live definitions
+    EXPECT_EQ(filter::findField("ip.ttl"), ttl);
+    EXPECT_EQ(filter::findField("igmp.type"), igmp);
+    EXPECT_EQ(filter::findField("stab.a"), first);
+    EXPECT_STREQ(ttl->name, "ip.ttl");
+    EXPECT_STREQ(igmp->name, "igmp.type");
+    EXPECT_STREQ(first->name, "stab.a");
+}
+
+TEST(FilterFields, NamesAreUniqueAndDuplicateRegistrationIsRejected) {
+    const auto before = filter::allFields();
+    // sctp.port is built in; a second definition (what sctp.cpp used to register) must be refused
+    EXPECT_FALSE(filter::registerField({"sctp.port", filter::FieldType::Unsigned, [](const packet::PacketInfo &, const filter::Context &, filter::Values &) {}, "dup"}));
+    EXPECT_FALSE(filter::registerField({"ospf.version", filter::FieldType::Unsigned, [](const packet::PacketInfo &, const filter::Context &, filter::Values &) {}, "dup"}));
+    EXPECT_TRUE(filter::registerField({"dupcheck.once", filter::FieldType::Unsigned, [](const packet::PacketInfo &, const filter::Context &, filter::Values &) {}, "first"}));
+    EXPECT_FALSE(filter::registerField({"dupcheck.once", filter::FieldType::Unsigned, [](const packet::PacketInfo &, const filter::Context &, filter::Values &) {}, "second"}));
+    EXPECT_STREQ(filter::findField("dupcheck.once")->description, "first");
+    EXPECT_FALSE(filter::registerField({"", filter::FieldType::Unsigned, [](const packet::PacketInfo &, const filter::Context &, filter::Values &) {}, "empty name"}));
+
+    const auto after = filter::allFields();
+    EXPECT_EQ(after.size(), before.size() + 1);
+    std::set<std::string> seen;
+    for (const auto &f: after) EXPECT_TRUE(seen.insert(f.name).second) << "duplicate field name " << f.name;
+}
+
+TEST(FilterFields, ConcurrentRegistrationAndLookup) {
+    static const char *const names[] = {"conc.0", "conc.1", "conc.2", "conc.3", "conc.4", "conc.5", "conc.6", "conc.7"};
+    std::vector<std::thread> threads;
+    std::atomic<int> registered{0};
+    for (int t = 0; t < 4; ++t) {
+        threads.emplace_back([&] {
+            for (const char *name: names) {
+                if (filter::registerField({name, filter::FieldType::Boolean, [](const packet::PacketInfo &, const filter::Context &, filter::Values &o) { o.addU(1); }, "conc"})) ++registered;
+                const auto *f = filter::findField("tcp.port");
+                if (f == nullptr || std::string(f->name) != "tcp.port") ADD_FAILURE() << "lookup failed";
+                filter::allFields();
+            }
+        });
+    }
+    for (auto &t: threads) t.join();
+    EXPECT_EQ(registered.load(), 8);   // every name won by exactly one thread
+    for (const char *name: names) EXPECT_NE(filter::findField(name), nullptr);
 }
 

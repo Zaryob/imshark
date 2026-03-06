@@ -7,7 +7,6 @@
 
 #include "registry.h"
 #include "util.h"
-#include <filter/fields.h>
 #include <network/byteorder.h>
 
 using packet::Field;
@@ -74,64 +73,9 @@ namespace {
             default: return "Payload " + std::to_string(nextPayload);
         }
     }
-
-    bool initIpsecFilterFields() {
-        // AH
-        filter::registerField({"ah", filter::FieldType::Boolean,
-            [](const packet::PacketInfo &p, const filter::Context &, filter::Values &o) {
-                if (p.protocol == "AH" || p.ip_protocol == 51) o.addU(1);
-            }, "IPsec Authentication Header"});
-
-        filter::registerField({"ah.spi", filter::FieldType::Unsigned,
-            [](const packet::PacketInfo &p, const filter::Context &, filter::Values &o) {
-                if (p.protocol == "AH" || p.ip_protocol == 51) o.addU(p.tcp_pdu_start);
-            }, "AH Security Parameters Index (SPI)"});
-
-        filter::registerField({"ah.sequence", filter::FieldType::Unsigned,
-            [](const packet::PacketInfo &p, const filter::Context &, filter::Values &o) {
-                if (p.protocol == "AH" || p.ip_protocol == 51) o.addU(p.app_code);
-            }, "AH Sequence Number"});
-
-        // ESP
-        filter::registerField({"esp", filter::FieldType::Boolean,
-            [](const packet::PacketInfo &p, const filter::Context &, filter::Values &o) {
-                if (p.protocol == "ESP" || p.ip_protocol == 50) o.addU(1);
-            }, "IPsec Encapsulating Security Payload"});
-
-        filter::registerField({"esp.spi", filter::FieldType::Unsigned,
-            [](const packet::PacketInfo &p, const filter::Context &, filter::Values &o) {
-                if (p.protocol == "ESP" || p.ip_protocol == 50) o.addU(p.tcp_pdu_start);
-            }, "ESP Security Parameters Index (SPI)"});
-
-        filter::registerField({"esp.sequence", filter::FieldType::Unsigned,
-            [](const packet::PacketInfo &p, const filter::Context &, filter::Values &o) {
-                if (p.protocol == "ESP" || p.ip_protocol == 50) o.addU(p.app_code);
-            }, "ESP Sequence Number"});
-
-        // IKE
-        filter::registerField({"ike", filter::FieldType::Boolean,
-            [](const packet::PacketInfo &p, const filter::Context &, filter::Values &o) {
-                if (p.protocol == "ISAKMP" || p.protocol == "IKEv2" || p.src_port == 500 || p.dst_port == 500 || p.src_port == 4500 || p.dst_port == 4500) o.addU(1);
-            }, "Internet Key Exchange / ISAKMP"});
-
-        filter::registerField({"ike.version", filter::FieldType::Unsigned,
-            [](const packet::PacketInfo &p, const filter::Context &, filter::Values &o) {
-                if (p.protocol == "ISAKMP" || p.protocol == "IKEv2") o.addU(p.app_code);
-            }, "IKE Version (1 or 2)"});
-
-        filter::registerField({"ike.exchange_type", filter::FieldType::Unsigned,
-            [](const packet::PacketInfo &p, const filter::Context &, filter::Values &o) {
-                if (p.protocol == "ISAKMP" || p.protocol == "IKEv2") o.addU(p.app_type);
-            }, "IKE Exchange Type"});
-
-        return true;
-    }
 } // namespace
 
 void dissect::dissectAh(Context &ctx, const char *data, size_t length) {
-    static const bool registered = initIpsecFilterFields();
-    (void)registered;
-
     auto &pack = ctx.pack;
     pack.protocol = "AH";
 
@@ -175,9 +119,6 @@ void dissect::dissectAh(Context &ctx, const char *data, size_t length) {
 }
 
 void dissect::dissectEsp(Context &ctx, const char *data, size_t length) {
-    static const bool registered = initIpsecFilterFields();
-    (void)registered;
-
     auto &pack = ctx.pack;
     pack.protocol = "ESP";
 
@@ -208,9 +149,6 @@ void dissect::dissectEsp(Context &ctx, const char *data, size_t length) {
 }
 
 void dissect::dissectIke(Context &ctx, const char *data, size_t length) {
-    static const bool registered = initIpsecFilterFields();
-    (void)registered;
-
     // Handle NAT-Traversal keepalive (single byte 0xFF)
     if (length == 1 && static_cast<uint8_t>(data[0]) == 0xFF) {
         ctx.pack.protocol = "NAT-Keepalive";

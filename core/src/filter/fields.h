@@ -36,10 +36,22 @@ namespace filter {
         const char *description;
     };
 
+    // Where fields live (B4): the protocols' fields are rows of the table in fields.cpp, built once on first use,
+    // before any filter is compiled and before any packet is dissected. A dissector must NOT register its fields
+    // lazily from its own function: that made a field appear only after the first packet of its protocol and
+    // modified the table while filters and worker threads were using it.
+    //
+    // A FieldDef pointer returned by findField() stays valid for the life of the process.
+
     /// nullptr if unknown. Names are matched case-insensitively (the table is lower case).
     const FieldDef *findField(std::string_view lowerName);
-    const std::vector<FieldDef> &allFields();
 
-    /// Register a custom / protocol-specific filter field dynamically.
-    void registerField(FieldDef field);
+    /// A snapshot of every field (built-in and registered), sorted by name.
+    std::vector<FieldDef> allFields();
+
+    /// Add a field that is not part of the built-in table (a plugin, a test). Thread-safe; the field is stored in
+    /// stable storage, so earlier findField() pointers are never invalidated. `name` must point to storage that
+    /// outlives the process (a string literal). Returns false, and changes nothing, if the name already exists
+    /// (built-in or registered) or the definition is incomplete.
+    bool registerField(FieldDef field);
 } // namespace filter

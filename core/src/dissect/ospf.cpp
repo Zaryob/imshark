@@ -6,7 +6,6 @@
 
 #include "checksum.h"
 #include "util.h"
-#include <filter/fields.h>
 #include <network/byteorder.h>
 
 using packet::Field;
@@ -41,41 +40,9 @@ namespace {
             default: return "LSA Type " + std::to_string(type);
         }
     }
-
-    bool initOspfFilterFields() {
-        filter::registerField({"ospf", filter::FieldType::Boolean,
-            [](const packet::PacketInfo &p, const filter::Context &, filter::Values &o) {
-                if (p.protocol == "OSPF" || p.ip_protocol == 89) o.addU(1);
-            }, "Open Shortest Path First"});
-
-        filter::registerField({"ospf.version", filter::FieldType::Unsigned,
-            [](const packet::PacketInfo &p, const filter::Context &, filter::Values &o) {
-                if (p.protocol == "OSPF") o.addU(p.app_code);
-            }, "OSPF Version (2 or 3)"});
-
-        filter::registerField({"ospf.type", filter::FieldType::Unsigned,
-            [](const packet::PacketInfo &p, const filter::Context &, filter::Values &o) {
-                if (p.protocol == "OSPF") o.addU(p.app_type);
-            }, "OSPF Packet Type (1=Hello, 2=DD, 3=LSR, 4=LSU, 5=LSAck)"});
-
-        filter::registerField({"ospf.router_id", filter::FieldType::String,
-            [](const packet::PacketInfo &p, const filter::Context &, filter::Values &o) {
-                if (p.protocol == "OSPF" && !p.app_text.empty()) o.addS(p.app_text);
-            }, "OSPF Router ID"});
-
-        filter::registerField({"ospf.area_id", filter::FieldType::String,
-            [](const packet::PacketInfo &p, const filter::Context &, filter::Values &o) {
-                if (p.protocol == "OSPF" && !p.app_text2.empty()) o.addS(p.app_text2);
-            }, "OSPF Area ID"});
-
-        return true;
-    }
 } // namespace
 
 void dissect::dissectOspf(Context &ctx, const char *data, size_t length) {
-    static const bool registered = initOspfFilterFields();
-    (void)registered;
-
     auto &pack = ctx.pack;
     pack.protocol = "OSPF";
 

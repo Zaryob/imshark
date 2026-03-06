@@ -6,7 +6,6 @@
 
 #include "checksum.h"
 #include "util.h"
-#include <filter/fields.h>
 #include <network/byteorder.h>
 #include <network/utils.h>
 
@@ -30,32 +29,9 @@ namespace {
         return std::to_string(p[0]) + "." + std::to_string(p[1]) + "." +
                std::to_string(p[2]) + "." + std::to_string(p[3]);
     }
-
-    // Static flag ensuring dynamic filter fields are registered once
-    bool initFilterFields() {
-        filter::registerField({"igmp", filter::FieldType::Boolean,
-            [](const packet::PacketInfo &p, const filter::Context &, filter::Values &o) {
-                if (p.protocol == "IGMP" || p.ip_protocol == 2) o.addU(1);
-            }, "Internet Group Management Protocol"});
-
-        filter::registerField({"igmp.type", filter::FieldType::Unsigned,
-            [](const packet::PacketInfo &p, const filter::Context &, filter::Values &o) {
-                if (p.protocol == "IGMP" && p.app_type != 0) o.addU(p.app_type);
-            }, "IGMP Message Type (0x11 Query, 0x12 v1 Report, 0x16 v2 Report, 0x17 Leave, 0x22 v3 Report)"});
-
-        filter::registerField({"igmp.group", filter::FieldType::String,
-            [](const packet::PacketInfo &p, const filter::Context &, filter::Values &o) {
-                if (p.protocol == "IGMP" && !p.app_text.empty()) o.addS(p.app_text);
-            }, "IGMP Multicast Group Address"});
-
-        return true;
-    }
 } // namespace
 
 void dissect::dissectIgmp(Context &ctx, const char *data, size_t length) {
-    static const bool registered = initFilterFields();
-    (void)registered;
-
     auto &pack = ctx.pack;
     pack.protocol = "IGMP";
 

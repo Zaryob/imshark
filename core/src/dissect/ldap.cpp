@@ -6,7 +6,6 @@
 
 #include "asn1.h"
 #include "util.h"
-#include <filter/fields.h>
 
 using packet::Field;
 
@@ -58,30 +57,6 @@ namespace {
             default: return "code " + std::to_string(code);
         }
     }
-
-    bool initLdapFilterFields() {
-        filter::registerField({"ldap", filter::FieldType::Boolean,
-            [](const packet::PacketInfo &p, const filter::Context &, filter::Values &o) {
-                if (p.protocol == "LDAP") o.addU(1);
-            }, "Lightweight Directory Access Protocol"});
-
-        filter::registerField({"ldap.message_id", filter::FieldType::Unsigned,
-            [](const packet::PacketInfo &p, const filter::Context &, filter::Values &o) {
-                if (p.protocol == "LDAP") o.addU(p.tcp_pdu_start);
-            }, "LDAP Message ID"});
-
-        filter::registerField({"ldap.protocol_op", filter::FieldType::Unsigned,
-            [](const packet::PacketInfo &p, const filter::Context &, filter::Values &o) {
-                if (p.protocol == "LDAP" && p.app_type != 0xFF) o.addU(p.app_type);
-            }, "LDAP Protocol Operation (Application tag)"});
-
-        filter::registerField({"ldap.name", filter::FieldType::String,
-            [](const packet::PacketInfo &p, const filter::Context &, filter::Values &o) {
-                if (p.protocol == "LDAP" && !p.app_text.empty()) o.addS(p.app_text);
-            }, "LDAP Distinguished Name / Target Object"});
-
-        return true;
-    }
 } // namespace
 
 dissect::StreamFrame dissect::frameLdap(const char *data, size_t length) {
@@ -100,9 +75,6 @@ dissect::StreamFrame dissect::frameLdap(const char *data, size_t length) {
 }
 
 void dissect::dissectLdap(Context &ctx, const char *data, size_t length) {
-    static const bool registered = initLdapFilterFields();
-    (void)registered;
-
     auto &pack = ctx.pack;
     pack.protocol = "LDAP";
 
