@@ -14,7 +14,9 @@ namespace network {
         RST = 0x04,
         PSH = 0x08,
         ACK = 0x10,
-        URG = 0x20
+        URG = 0x20,
+        ECE = 0x40,
+        CWR = 0x80
     };
 
     // Helper function to cast enum class to uint8_t

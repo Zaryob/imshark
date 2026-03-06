@@ -116,13 +116,14 @@ void processL3(const packet::PacketInfo &packet) {
                     "Version: " + std::to_string(header.version),
                     "IHL: " + std::to_string(header.ihl),
                     "Type of Service: " + std::to_string(header.tos),
-                    "Total Length: " + std::to_string(header.tot_length),
-                    "Identification: " + std::to_string(header.id),
-                    "Flags: " + std::to_string(header.flags),
-                    "Fragment Offset: " + std::to_string(header.frag_off),
+                    "Total Length: " + std::to_string(ntohs(header.tot_length)),
+                    "Identification: " + std::to_string(ntohs(header.id)),
+                    "Flags: " + std::to_string(header.flags()) + ((header.flags() & 0x2) ? " [DF]" : "") +
+                            ((header.flags() & 0x1) ? " [MF]" : ""),
+                    "Fragment Offset: " + std::to_string(header.fragmentOffset() * 8),
                     "TTL: " + std::to_string(header.ttl),
                     "Protocol: " + std::to_string(header.protocol),
-                    "Header Checksum: " + std::to_string(header.check),
+                    "Header Checksum: " + std::to_string(ntohs(header.check)),
                     "Source IP: " + std::string(inet_ntoa(src_addr)),
                     "Destination IP: " + std::string(inet_ntoa(dest_addr))
                 },
@@ -131,10 +132,10 @@ void processL3(const packet::PacketInfo &packet) {
         } else if constexpr (std::is_same_v<T, network::IPv6Header>) {
             packetState["L3"] = {
                 {
-                    "Version: " + std::to_string(header.version),
-                    "Traffic Class: " + std::to_string(header.traffic_class),
-                    "Flow Label: " + std::to_string(header.flow_label),
-                    "Payload Length: " + std::to_string(header.payload_len),
+                    "Version: " + std::to_string(header.version()),
+                    "Traffic Class: " + std::to_string(header.trafficClass()),
+                    "Flow Label: " + std::to_string(header.flowLabel()),
+                    "Payload Length: " + std::to_string(ntohs(header.payload_len)),
                     "Next Header: " + std::to_string(header.next_header),
                     "Hop Limit: " + std::to_string(header.hop_limit),
                     "Source IP: " + network::getIPv6AddressString(header.src_addr),
@@ -156,25 +157,25 @@ void processL4(const packet::PacketInfo &packet) {
         } else if constexpr (std::is_same_v<T, network::TCPHeader>) {
             packetState["L4"] = {
                 {
-                    "Source Port: " + std::to_string(header.src_port),
-                    "Destination Port: " + std::to_string(header.dest_port),
-                    "Sequence Number: " + std::to_string(header.seq_num),
-                    "Acknowledgement Number: " + std::to_string(header.ack_num),
-                    "Data Offset: " + std::to_string(header.data_offset),
+                    "Source Port: " + std::to_string(ntohs(header.src_port)),
+                    "Destination Port: " + std::to_string(ntohs(header.dest_port)),
+                    "Sequence Number: " + std::to_string(ntohl(header.seq_num)),
+                    "Acknowledgement Number: " + std::to_string(ntohl(header.ack_num)),
+                    "Data Offset: " + std::to_string((header.data_offset >> 4) * 4) + " bytes",
                     "Flags: " + std::to_string(header.flags),
-                    "Window Size: " + std::to_string(header.window),
-                    "Checksum: " + std::to_string(header.checksum),
-                    "Urgent Pointer: " + std::to_string(header.urgent_pointer)
+                    "Window Size: " + std::to_string(ntohs(header.window)),
+                    "Checksum: " + std::to_string(ntohs(header.checksum)),
+                    "Urgent Pointer: " + std::to_string(ntohs(header.urgent_pointer))
                 },
                 {{0, 1}, {2, 3}, {4, 7}, {8, 11}, {12, 12}, {13, 13}, {14, 15}, {16, 17}, {18, 19}}
             };
         } else if constexpr (std::is_same_v<T, network::UDPHeader>) {
             packetState["L4"] = {
                 {
-                    "Source Port: " + std::to_string(header.src_port),
-                    "Destination Port: " + std::to_string(header.dest_port),
-                    "Length: " + std::to_string(header.len),
-                    "Checksum: " + std::to_string(header.checksum)
+                    "Source Port: " + std::to_string(ntohs(header.src_port)),
+                    "Destination Port: " + std::to_string(ntohs(header.dest_port)),
+                    "Length: " + std::to_string(ntohs(header.len)),
+                    "Checksum: " + std::to_string(ntohs(header.checksum))
                 },
                 {{0, 1}, {2, 3}, {4, 5}, {6, 7}}
             };
