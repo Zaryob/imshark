@@ -1,8 +1,12 @@
 #include <gtest/gtest.h>
 
+#include <functional>
+
 #include <core.h>
+#include <dissect/checksum.h>
 #include <filter/filter.h>
 
+#include "frame_sweep.h"
 #include "support.h"
 
 using support::parse;
@@ -126,4 +130,118 @@ TEST(Ipsec, Ikev2InitMessage) {
     auto f = filter::Filter::compile("ike && ike.version == 2 && ike.exchange_type == 34");
     ASSERT_TRUE(f.ok);
     EXPECT_TRUE(f.filter.matches(pkt));
+}
+
+namespace {
+    using framesweep::Bytes;
+
+    Bytes be32(uint32_t v) { return {static_cast<uint8_t>(v >> 24), static_cast<uint8_t>(v >> 16), static_cast<uint8_t>(v >> 8), static_cast<uint8_t>(v)}; }
+
+    // IKEv2 IKE_SA_INIT, 56 bytes: header (28) + SA payload (8, next = Nonce 40) + Nonce payload (20)
+    Bytes ikeInit(uint8_t exchange = 34, uint8_t version = 0x20) {
+        Bytes b = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0, 0, 0, 0, 0, 0, 0, 0, 33, version, exchange, 0x08, 0, 0, 0, 0, 0, 0, 0, 56,
+                   40, 0, 0, 8, 0, 0, 0, 0,
+                   0, 0, 0, 20, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16};
+        return b;
+    }
+
+    packet::PacketInfo udpFrame(uint16_t sport, uint16_t dport, const Bytes &data) {
+        return framesweep::parseEthernet(framesweep::ethernet(0x0800, framesweep::ipv4Packet(17, framesweep::udpDatagram(sport, dport, data))));
+    }
+} // namespace
+
+TEST(IkeClaim, IkeOnPort500IsRecognised) {
+    const auto p = udpFrame(500, 500, ikeInit());
+    EXPECT_EQ(p.protocol, "IKEv2");
+    EXPECT_EQ(p.app_code, 2);
+    EXPECT_EQ(p.app_type, 34);
+    EXPECT_NE(p.info.find("IKE_SA_INIT"), std::string::npos);
+    auto f = filter::Filter::compile("ike && ike.version == 2 && ike.exchange_type == 34");
+    ASSERT_TRUE(f.ok);
+    EXPECT_TRUE(f.filter.matches(p));
+    // the payloads carry their RFC 7296 names (33 = SA, 40 = Nonce), not the IKEv1 ones
+    std::string all;
+    std::function<void(const packet::Field &)> walk = [&](const packet::Field &x) { all += x.text + "\n"; for (const auto &c: x.children) walk(c); };
+    for (const auto &x: p.fields) walk(x);
+    EXPECT_NE(all.find("Payload: Security Association (SA) (8 bytes)"), std::string::npos) << all;
+    EXPECT_NE(all.find("Payload: Nonce (Ni, Nr) (20 bytes)"), std::string::npos) << all;
+}
+
+TEST(IkeClaim, NonEspMarkerOnPort4500IsSkipped) {
+    Bytes marked = {0, 0, 0, 0};
+    const Bytes ike = ikeInit();
+    marked.insert(marked.end(), ike.begin(), ike.end());
+    const auto p = udpFrame(4500, 4500, marked);
+    EXPECT_EQ(p.protocol, "IKEv2");
+    framesweep::expectInside(p, 14 + 20 + 8 + marked.size(), "marker");
+}
+
+// I-4: ESP in UDP (RFC 3948) is what 4500 normally carries; its first four bytes (the SPI) are not zero
+TEST(IkeClaim, EspInUdpOnPort4500IsEsp) {
+    Bytes esp = be32(0x11223344);
+    const Bytes rest = {0, 0, 0, 7, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
+    esp.insert(esp.end(), rest.begin(), rest.end());
+    const auto p = udpFrame(4500, 4500, esp);
+    EXPECT_EQ(p.protocol, "ESP");
+    EXPECT_EQ(p.tcp_pdu_start, 0x11223344u);
+    EXPECT_EQ(p.app_code, 7u);
+    auto f = filter::Filter::compile("esp.spi == 0x11223344 && !ike");
+    ASSERT_TRUE(f.ok);
+    EXPECT_TRUE(f.filter.matches(p));
+}
+
+TEST(IkeClaim, KeepaliveAndNonIkeDatagramsFallThrough) {
+    EXPECT_EQ(udpFrame(4500, 4500, {0xff}).protocol, "NAT-Keepalive");
+    // random bytes on 500, a wrong version, an implausible exchange type, a Length that is not the datagram's
+    Bytes random(40);
+    for (size_t i = 0; i < random.size(); ++i) random[i] = static_cast<uint8_t>(i * 37 + 11);
+    EXPECT_EQ(udpFrame(500, 500, random).protocol, "UDP");
+    EXPECT_EQ(udpFrame(500, 500, ikeInit(34, 0x30)).protocol, "UDP");
+    EXPECT_EQ(udpFrame(500, 500, ikeInit(99, 0x20)).protocol, "UDP");
+    Bytes longer = ikeInit();
+    longer.push_back(0);   // a datagram one byte longer than the header Length
+    EXPECT_EQ(udpFrame(500, 500, longer).protocol, "UDP");
+    EXPECT_EQ(udpFrame(500, 500, {1, 2, 3}).protocol, "UDP");
+    // the IKE field no longer matches a mere port number
+    auto f = filter::Filter::compile("ike");
+    ASSERT_TRUE(f.ok);
+    EXPECT_FALSE(f.filter.matches(udpFrame(500, 500, random)));
+}
+
+// I-5: a payload Length of 65535 in a 56-byte datagram
+TEST(IkeClaim, PayloadLengthBeyondThePacketIsClampedAndFlagged) {
+    Bytes b = ikeInit();
+    b[30] = 0xff;
+    b[31] = 0xff;
+    const auto p = udpFrame(500, 500, b);
+    EXPECT_EQ(p.protocol, "IKEv2");
+    EXPECT_NE(p.info.find("Malformed"), std::string::npos) << p.info;
+    framesweep::expectInside(p, 14 + 20 + 8 + b.size(), "payload 65535");
+    Bytes tiny = ikeInit();
+    tiny[31] = 2;   // below the 4-byte payload header
+    EXPECT_NE(udpFrame(500, 500, tiny).info.find("Malformed"), std::string::npos);
+}
+
+TEST(Ipsec, AhAndEspSweepsAndFilters) {
+    Bytes ah = {6, 4, 0, 0, 0, 0, 0x12, 0x34, 0, 0, 0, 9, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,   // Next Header 6, 24 bytes
+                0x00, 0x14, 0x00, 0x50};                                                    // start of the protected TCP header
+    const auto p = framesweep::parseEthernet(framesweep::ethernet(0x0800, framesweep::ipv4Packet(51, ah)));
+    EXPECT_EQ(p.protocol, "AH");
+    auto f = filter::Filter::compile("ah.spi == 0x1234 && ah.sequence == 9");
+    ASSERT_TRUE(f.ok);
+    EXPECT_TRUE(f.filter.matches(p));
+
+    const Bytes esp = {0, 0, 0x12, 0x34, 0, 0, 0, 3, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 1, 2};
+    framesweep::sweep(framesweep::ethernet(0x0800, framesweep::ipv4Packet(51, ah)), 0x1b5ec001u);
+    framesweep::sweep(framesweep::ethernet(0x0800, framesweep::ipv4Packet(50, esp)), 0x1b5ec002u);
+    framesweep::sweep(framesweep::ethernet(0x0800, framesweep::ipv4Packet(17, framesweep::udpDatagram(500, 500, ikeInit()))), 0x1b5ec003u);
+    Bytes marked = {0, 0, 0, 0};
+    const Bytes ike = ikeInit(37);
+    marked.insert(marked.end(), ike.begin(), ike.end());
+    framesweep::sweep(framesweep::ethernet(0x0800, framesweep::ipv4Packet(17, framesweep::udpDatagram(4500, 4500, marked))), 0x1b5ec004u);
+    framesweep::sweep(framesweep::ethernet(0x0800, framesweep::ipv4Packet(17, framesweep::udpDatagram(4500, 4500, esp))), 0x1b5ec005u);
+}
+
+TEST(Ipsec, RealCapturesWhenAvailable) {
+    framesweep::checkCorpus({"AH", "ESP", "IKEv2", "ISAKMP"});
 }
