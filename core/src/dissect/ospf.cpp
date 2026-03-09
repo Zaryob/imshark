@@ -84,12 +84,13 @@ void dissect::dissectOspf(Context &ctx, const char *data, size_t length) {
     // was captured: everything below is bounded by `body`.
     const bool lengthValid = (version == 2 || version == 3) && packetLen >= headerLen;
     const size_t body = lengthValid ? std::min<size_t>(packetLen, length) : length;
+    const char *malformed = nullptr;
     if (version != 2 && version != 3) {
-        ctx.markMalformed("unsupported OSPF version");
+        malformed = "unsupported OSPF version";
     } else if (!lengthValid) {
-        ctx.markMalformed("OSPF packet length shorter than its header");
-    } else if (version == 2 && length >= headerLen && body < headerLen) {
-        ctx.markMalformed("OSPF header truncated");
+        malformed = "OSPF packet length shorter than its header";
+    } else if (body < headerLen) {
+        malformed = "OSPF header truncated";
     }
 
     // Checksum. v2 (RFC 2328 D.4): 16-bit one's complement over the whole packet (the Length field says how much)
@@ -119,6 +120,7 @@ void dissect::dissectOspf(Context &ctx, const char *data, size_t length) {
     std::string typeStr = ospfPacketTypeName(type);
     pack.info = "OSPFv" + std::to_string(version) + " " + typeStr +
                 ", Router ID: " + routerId + ", Area: " + areaId;
+    if (malformed) ctx.markMalformed(malformed);   // after the summary: it replaces it
 
     if (ctx.wantFields()) {
         const size_t o = ctx.offsetOf(data);

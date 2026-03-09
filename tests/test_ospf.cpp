@@ -214,6 +214,7 @@ TEST(Ospf, EveryPacketLengthValueIsSafe) {
     const auto p = ospfV2(shortLen);
     EXPECT_EQ(p.protocol, "OSPF");
     EXPECT_EQ(csumState(p), dissect::kChecksumNone);
+    EXPECT_NE(p.info.find("[Malformed Packet"), std::string::npos) << p.info;
     framesweep::expectInside(p, 14 + 20 + shortLen.size(), "length 20");
 }
 
