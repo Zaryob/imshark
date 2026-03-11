@@ -80,10 +80,13 @@ void dissect::dissectSctp(Context &ctx, const char *data, size_t length) {
     struct ChunkInfo {
         uint8_t type;
         uint8_t flags;
-        uint16_t length;
+        uint16_t length;   // as the chunk header states it
+        size_t shown;      // what lies inside the packet: min(length, bytes left)
         size_t off;
     };
     std::vector<ChunkInfo> chunks;
+    bool chunkBeyondPacket = false;
+    const char *malformed = nullptr;
 
     while (offset + 4 <= length) {
         uint8_t ctype = bytes[offset];
@@ -92,25 +95,32 @@ void dissect::dissectSctp(Context &ctx, const char *data, size_t length) {
 
         if (firstChunkType == 0xFF) firstChunkType = ctype;
 
-        chunks.push_back({ctype, cflags, clen, offset});
+        const size_t room = length - offset;
+        chunks.push_back({ctype, cflags, clen, clen < room ? clen : room, offset});
 
         if (!chunkSummary.empty()) chunkSummary += ", ";
         chunkSummary += sctpChunkTypeName(ctype);
 
         if (clen < 4) {
-            ctx.markMalformed("Invalid SCTP chunk length (< 4)");
+            malformed = "Invalid SCTP chunk length (< 4)";
+            break;
+        }
+        if (clen > room) {
+            chunkBeyondPacket = true;
+            malformed = "SCTP chunk length extends beyond the packet";
             break;
         }
 
         // Advance with 4-byte padding per RFC 4960 section 3.2
-        size_t paddedLen = (clen + 3) & ~3;
-        if (offset + paddedLen < offset) break; // overflow
-        offset += paddedLen;
+        offset += (static_cast<size_t>(clen) + 3) & ~static_cast<size_t>(3);
     }
+    // a chunk cut off by the end of the capture: the CRC covers bytes that are not there
+    if (chunkBeyondPacket) pack.checksum_state = static_cast<uint8_t>((pack.checksum_state & ~0x0c) | (kChecksumUnverified << 2));
 
     pack.app_type = firstChunkType;
     pack.info = std::to_string(srcPort) + " -> " + std::to_string(dstPort) + " [" +
                 (chunkSummary.empty() ? "No chunks" : chunkSummary) + "]";
+    if (malformed) ctx.markMalformed(malformed);   // after the summary: it replaces it
 
     if (ctx.wantFields()) {
         const size_t o = ctx.offsetOf(data);
@@ -121,10 +131,11 @@ void dissect::dissectSctp(Context &ctx, const char *data, size_t length) {
         l.add("Destination Port: " + std::to_string(dstPort), o + 2, 2);
         l.add("Verification Tag: " + hexString(vtag, 8), o + 4, 4);
 
+        const uint8_t csumState = transportChecksumState(pack);
         Field &csumField = l.add("Checksum: " + hexString(storedCrc, 8) +
-                                 (csumGood ? " [Correct CRC-32C]" : " [Incorrect CRC-32C]"), o + 8, 4);
-        csumField.add(std::string("[Checksum Status: ") + (csumGood ? "Good" : "Bad") + "]", o + 8, 4);
-        if (!csumGood) {
+                                 (csumState == kChecksumUnverified ? " [Unverified: chunk cut off]" : csumGood ? " [Correct CRC-32C]" : " [Incorrect CRC-32C]"), o + 8, 4);
+        csumField.add(std::string("[Checksum Status: ") + checksumStateText(csumState) + "]", o + 8, 4);
+        if (csumState == kChecksumBad) {
             csumField.add("[Calculated Checksum: " + hexString(calcCrc, 8) + "]", o + 8, 4);
         }
 
@@ -133,13 +144,13 @@ void dissect::dissectSctp(Context &ctx, const char *data, size_t length) {
             size_t co = ctx.offsetOf(data + chunk.off);
             std::string cname = sctpChunkTypeName(chunk.type);
             Field &cf = l.add("Chunk: " + cname + " (Type: " + std::to_string(chunk.type) +
-                              ", Length: " + std::to_string(chunk.length) + ")", co, chunk.length);
+                              ", Length: " + std::to_string(chunk.length) + ")", co, chunk.shown);
             cf.add("Type: " + std::to_string(chunk.type) + " (" + cname + ")", co, 1);
             cf.add("Flags: " + hexString(chunk.flags, 2), co + 1, 1);
-            cf.add("Length: " + std::to_string(chunk.length), co + 2, 2);
+            cf.add("Length: " + std::to_string(chunk.length), co + 2, 2);   // shown >= 4: the loop needs 4 bytes
 
             // DATA chunk detail
-            if (chunk.type == 0 && chunk.length >= 16 && chunk.off + 16 <= length) {
+            if (chunk.type == 0 && chunk.length >= 16 && chunk.shown >= 16) {
                 const auto *cp = bytes + chunk.off;
                 uint32_t tsn = readU32(cp + 4);
                 uint16_t sid = readU16(cp + 8);
@@ -151,9 +162,9 @@ void dissect::dissectSctp(Context &ctx, const char *data, size_t length) {
                 cf.add("Stream Sequence Number: " + std::to_string(ssn), co + 10, 2);
                 cf.add("Payload Protocol Identifier: " + std::to_string(ppid), co + 12, 4);
 
-                size_t userLen = chunk.length - 16;
+                size_t userLen = chunk.shown - 16;
                 if (userLen > 0) {
-                    cf.add("User Data (" + std::to_string(userLen) + " bytes)", co + 16, userLen);
+                    cf.add("User Data (" + std::to_string(userLen) + " bytes)" + (chunk.shown < chunk.length ? " [cut]" : ""), co + 16, userLen);
                 }
             }
         }

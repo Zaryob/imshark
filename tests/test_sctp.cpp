@@ -4,6 +4,7 @@
 #include <dissect/checksum.h>
 #include <filter/filter.h>
 
+#include "frame_sweep.h"
 #include "support.h"
 
 using support::parse;
@@ -99,4 +100,71 @@ TEST(Sctp, DataChunkBreakdown) {
     auto f = filter::Filter::compile("sctp.chunk_type == 0");
     ASSERT_TRUE(f.ok);
     EXPECT_TRUE(f.filter.matches(pkt));
+}
+
+namespace {
+    using framesweep::Bytes;
+
+    packet::PacketInfo sctpFrame(const Bytes &sctp) {
+        return framesweep::parseEthernet(framesweep::ethernet(0x0800, framesweep::ipv4Packet(132, sctp)));
+    }
+    uint8_t sctpState(const packet::PacketInfo &p) { return dissect::transportChecksumState(p); }
+    const packet::Field *firstNamed(const std::vector<packet::Field> &fs, const std::string &prefix) {
+        for (const auto &f: fs) {
+            if (f.text.rfind(prefix, 0) == 0) return &f;
+            if (const auto *c = firstNamed(f.children, prefix)) return c;
+        }
+        return nullptr;
+    }
+} // namespace
+
+// CRC-32C values from an independent bitwise Python implementation (reflected polynomial 0x82F63B78, init and final
+// xor 0xffffffff; it reproduces crc32c(b"123456789") == 0xe3069283), computed over the packet with the checksum
+// field zero and stored little-endian (RFC 4960 appendix B):
+//   DATA packet below            -> 0x7654e8c9 -> bytes c9 e8 54 76
+//   HEARTBEAT packet below       -> 0xd2d8f780 -> bytes 80 f7 d8 d2
+TEST(Sctp, CrcMatchesAnIndependentComputation) {
+    const Bytes data = {0x13, 0x88, 0x95, 0x0c, 0x12, 0x34, 0x56, 0x78, 0xc9, 0xe8, 0x54, 0x76,
+                        0, 3, 0, 20, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 60, 0x61, 0x62, 0x63, 0x64};
+    const auto good = sctpFrame(data);
+    EXPECT_EQ(sctpState(good), dissect::kChecksumGood);
+    EXPECT_EQ(good.src_port, 5000);
+    EXPECT_EQ(good.dst_port, 38156);   // 0x950c
+    EXPECT_EQ(good.tcp_pdu_start, 0x12345678u);
+    Bytes corrupt = data;
+    corrupt[30] ^= 0x01;
+    EXPECT_EQ(sctpState(sctpFrame(corrupt)), dissect::kChecksumBad);
+
+    const Bytes hb = {0x13, 0x88, 0x95, 0x0c, 0x12, 0x34, 0x56, 0x78, 0x80, 0xf7, 0xd8, 0xd2, 4, 0, 0, 8, 0xde, 0xad, 0xbe, 0xef};
+    EXPECT_EQ(sctpState(sctpFrame(hb)), dissect::kChecksumGood);
+}
+
+// I-5: a chunk Length of 65520 inside a 36-byte packet used to be reported as the field length (and the User Data
+// child as 65504 bytes), far outside the frame.
+TEST(Sctp, ChunkLengthBeyondThePacketIsClampedAndFlagged) {
+    Bytes b = {0x13, 0x88, 0x95, 0x0c, 0x12, 0x34, 0x56, 0x78, 0, 0, 0, 0,
+               0, 3, 0xff, 0xf0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 60, 0x61, 0x62, 0x63, 0x64};
+    const auto p = sctpFrame(b);
+    EXPECT_NE(p.info.find("Malformed"), std::string::npos) << p.info;
+    EXPECT_EQ(sctpState(p), dissect::kChecksumUnverified);
+    framesweep::expectInside(p, 14 + 20 + b.size(), "clamped chunk");
+    const auto *chunk = firstNamed(p.fields, "Chunk: DATA");
+    ASSERT_NE(chunk, nullptr);
+    EXPECT_EQ(size_t(chunk->offset) + chunk->length, 14 + 20 + b.size());
+    EXPECT_NE(chunk->text.find("Length: 65520"), std::string::npos);   // the stated length is still shown
+}
+
+TEST(Sctp, TruncationAndMutationStayInsideTheFrame) {
+    const Bytes data = {0x13, 0x88, 0x95, 0x0c, 0x12, 0x34, 0x56, 0x78, 0xc9, 0xe8, 0x54, 0x76,
+                        0, 3, 0, 20, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 60, 0x61, 0x62, 0x63, 0x64};
+    const Bytes hb = {0x13, 0x88, 0x95, 0x0c, 0x12, 0x34, 0x56, 0x78, 0x80, 0xf7, 0xd8, 0xd2, 4, 0, 0, 8, 0xde, 0xad, 0xbe, 0xef};
+    Bytes two = data;   // two chunks: DATA padded to 4 bytes, then a SHUTDOWN_ACK
+    two.insert(two.end(), {8, 0, 0, 4});
+    framesweep::sweep(framesweep::ethernet(0x0800, framesweep::ipv4Packet(132, data)), 0x5c700001u);
+    framesweep::sweep(framesweep::ethernet(0x0800, framesweep::ipv4Packet(132, hb)), 0x5c700002u);
+    framesweep::sweep(framesweep::ethernet(0x0800, framesweep::ipv4Packet(132, two)), 0x5c700003u);
+}
+
+TEST(Sctp, RealCapturesWhenAvailable) {
+    framesweep::checkCorpus({"SCTP"});
 }
