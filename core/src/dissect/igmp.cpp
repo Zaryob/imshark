@@ -44,7 +44,7 @@ void dissect::dissectIgmp(Context &ctx, const char *data, size_t length) {
     const auto *bytes = reinterpret_cast<const uint8_t *>(data);
     const uint8_t type = bytes[0];
     const uint8_t maxRespTime = bytes[1]; // In 1/10th second (IGMPv2/v3 Query)
-    const uint16_t storedCsum = network::ntoh16(*reinterpret_cast<const uint16_t *>(data + 2));
+    const uint16_t storedCsum = static_cast<uint16_t>((bytes[2] << 8) | bytes[3]);
     const std::string groupAddr = formatIpv4(bytes + 4);
 
     pack.app_type = type;
@@ -68,7 +68,7 @@ void dissect::dissectIgmp(Context &ctx, const char *data, size_t length) {
     } else if (type == 0x22) {
         // IGMPv3 report has num_records at bytes 6..7
         if (length >= 8) {
-            uint16_t numRecords = network::ntoh16(*reinterpret_cast<const uint16_t *>(data + 6));
+            uint16_t numRecords = static_cast<uint16_t>((bytes[6] << 8) | bytes[7]);
             pack.info = "IGMPv3 Membership Report, " + std::to_string(numRecords) + " group record(s)";
         } else {
             pack.info = typeStr;
@@ -100,7 +100,7 @@ void dissect::dissectIgmp(Context &ctx, const char *data, size_t length) {
         } else {
             l.add("Reserved", o + 4, 2);
             if (length >= 8) {
-                uint16_t numRecords = network::ntoh16(*reinterpret_cast<const uint16_t *>(data + 6));
+                uint16_t numRecords = static_cast<uint16_t>((bytes[6] << 8) | bytes[7]);
                 l.add("Number of Group Records: " + std::to_string(numRecords), o + 6, 2);
             }
         }

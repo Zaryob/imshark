@@ -4,6 +4,7 @@
 #include <dissect/checksum.h>
 #include <filter/filter.h>
 
+#include "frame_sweep.h"
 #include "support.h"
 
 using support::parse;
@@ -101,4 +102,63 @@ TEST(UdpLite, BadChecksum) {
     // Checksum state should be Bad (2)
     uint8_t cstate = (pkt.checksum_state >> 2) & 0x03;
     EXPECT_EQ(cstate, dissect::kChecksumBad);
+}
+
+namespace {
+    using framesweep::Bytes;
+
+    Bytes liteHeader(uint16_t cov, uint16_t csum, const std::string &payload) {
+        Bytes b = {0x04, 0xd2, 0x16, 0x2e, static_cast<uint8_t>(cov >> 8), static_cast<uint8_t>(cov & 0xff),
+                   static_cast<uint8_t>(csum >> 8), static_cast<uint8_t>(csum & 0xff)};
+        b.insert(b.end(), payload.begin(), payload.end());
+        return b;
+    }
+    packet::PacketInfo liteV4(const Bytes &b) { return framesweep::parseEthernet(framesweep::ethernet(0x0800, framesweep::ipv4Packet(136, b))); }
+    uint8_t liteState(const packet::PacketInfo &p) { return dissect::transportChecksumState(p); }
+} // namespace
+
+// Python (stdlib) oracle, RFC 3828: the pseudo header holds the length of the WHOLE datagram, the sum covers only
+// `cov` bytes. cs(src+dst+b'\0\x88'+len16 + hdr[:6] + b'\0\0' + hdr[8:cov]), 10.0.0.1 -> 10.0.0.2, ports 1234 -> 5678:
+//   cov 0, "abcdefgh": 0x3ecf     cov 8, "Data outside coverage": 0xd04f     cov 12, "abcdefgh": 0x0b92
+TEST(UdpLite, ChecksumPseudoHeaderCarriesTheFullLength) {
+    EXPECT_EQ(liteState(liteV4(liteHeader(0, 0x3ecf, "abcdefgh"))), dissect::kChecksumGood);
+    EXPECT_EQ(liteState(liteV4(liteHeader(0, 0x3ed0, "abcdefgh"))), dissect::kChecksumBad);
+    // partial coverage (this was a false Bad: the pseudo header took the coverage instead of the full length)
+    EXPECT_EQ(liteState(liteV4(liteHeader(8, 0xd04f, "Data outside coverage"))), dissect::kChecksumGood);
+    EXPECT_EQ(liteState(liteV4(liteHeader(12, 0x0b92, "abcdefgh"))), dissect::kChecksumGood);
+    // a byte after the covered part may change, one inside may not
+    Bytes outside = liteHeader(12, 0x0b92, "abcdefgh");
+    outside[14] ^= 0xff;
+    EXPECT_EQ(liteState(liteV4(outside)), dissect::kChecksumGood);
+    Bytes inside = liteHeader(12, 0x0b92, "abcdefgh");
+    inside[10] ^= 0xff;
+    EXPECT_EQ(liteState(liteV4(inside)), dissect::kChecksumBad);
+}
+
+// IPv6 (next header 136): 2001:db8::1 -> 2001:db8::2, cov 12, "abcdefgh": Python cs(src + dst + len32 + 0,0,0,136 + ...) = 0xc41f
+TEST(UdpLite, Ipv6PartialCoverage) {
+    const Bytes src = {0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
+    const Bytes dst = {0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2};
+    auto frame = [&](uint16_t csum) {
+        return framesweep::parseEthernet(framesweep::ethernet(0x86dd, framesweep::ipv6Packet(136, liteHeader(12, csum, "abcdefgh"), src, dst)));
+    };
+    EXPECT_EQ(liteState(frame(0xc41f)), dissect::kChecksumGood);
+    EXPECT_EQ(liteState(frame(0xc420)), dissect::kChecksumBad);
+}
+
+TEST(UdpLite, CoverageBelowTheHeaderIsMalformed) {
+    for (uint16_t cov = 1; cov < 8; ++cov) {
+        const auto p = liteV4(liteHeader(cov, 0, "abcdefgh"));
+        EXPECT_EQ(p.protocol, "UDP-Lite");
+        EXPECT_NE(p.info.find("Malformed"), std::string::npos) << cov;
+    }
+}
+
+TEST(UdpLite, TruncationAndMutationStayInsideTheFrame) {
+    framesweep::sweep(framesweep::ethernet(0x0800, framesweep::ipv4Packet(136, liteHeader(12, 0x0b92, "abcdefgh"))), 0x0d1e0001u);
+    framesweep::sweep(framesweep::ethernet(0x0800, framesweep::ipv4Packet(136, liteHeader(0, 0x3ecf, "abcdefgh"))), 0x0d1e0002u);
+}
+
+TEST(UdpLite, RealCapturesWhenAvailable) {
+    framesweep::checkCorpus({"UDP-Lite"});
 }

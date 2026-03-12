@@ -54,8 +54,10 @@ namespace dissect {
     }
 
     /// TCP / UDP / ICMPv6 (pseudo header) or ICMPv4 (none) checksum over `needed` bytes of the segment at `d`, of which
-    /// `avail` were captured. `field` is the offset of the checksum inside the segment.
-    inline ChecksumResult checkTransport(const Context &ctx, uint8_t protocol, const char *d, size_t avail, size_t needed, size_t field) {
+    /// `avail` were captured. `field` is the offset of the checksum inside the segment. `pseudoLength` is the length the
+    /// pseudo header carries when that is not `needed` (UDP-Lite, RFC 3828: the whole datagram, while the sum covers less).
+    inline ChecksumResult checkTransport(const Context &ctx, uint8_t protocol, const char *d, size_t avail, size_t needed, size_t field,
+                                         size_t pseudoLength = 0) {
         ChecksumResult r;
         if (needed < field + 2 || avail < needed) { r.state = kChecksumUnverified; return r; }   // cut by the snap length
         r.stored = static_cast<uint16_t>((static_cast<uint8_t>(d[field]) << 8) | static_cast<uint8_t>(d[field + 1]));
@@ -65,10 +67,11 @@ namespace dissect {
             if (!ctx.addrs.valid) { r.state = kChecksumUnverified; return r; }
             pseudo = checksumAdd(0, reinterpret_cast<const char *>(ctx.addrs.src), ctx.addrs.length);
             pseudo = checksumAdd(pseudo, reinterpret_cast<const char *>(ctx.addrs.dst), ctx.addrs.length);
+            const size_t plen = pseudoLength ? pseudoLength : needed;
             if (ctx.addrs.length == 16) {   // IPv6: upper-layer length (32 bits), three zero bytes, next header
-                pseudo += static_cast<uint32_t>(needed >> 16) + static_cast<uint32_t>(needed & 0xffff) + protocol;
+                pseudo += static_cast<uint32_t>(plen >> 16) + static_cast<uint32_t>(plen & 0xffff) + protocol;
             } else {
-                pseudo += protocol + static_cast<uint32_t>(needed);
+                pseudo += protocol + static_cast<uint32_t>(plen);
             }
         }
         uint32_t sum = checksumAdd(pseudo, d, field);

@@ -103,7 +103,7 @@ void dissect::dissectUdpLite(Context &ctx, const char *data, size_t length) {
     }
 
     const size_t neededCov = (cov == 0) ? length : std::min<size_t>(cov, length);
-    const ChecksumResult sum = checkTransport(ctx, 136, data, length, neededCov, 6);
+    const ChecksumResult sum = checkTransport(ctx, 136, data, length, neededCov, 6, length);
     setTransportChecksumState(pack, sum.state);
 
     const size_t o = ctx.offsetOf(data);
