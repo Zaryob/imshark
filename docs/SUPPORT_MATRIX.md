@@ -66,14 +66,14 @@ Files with known magic numbers produce specific diagnostic messages (`Desteklenm
 | **IPv6** | Extension headers (Hop-by-Hop, Routing, Frag, DestOpt) | Fragment reassembly | `ipv6.*`, `ipv6.src`, `ipv6.dst`, `ipv6.addr`, `ipv6.fragment` |
 | **ARP / RARP** | Hardware/Protocol types, Sender/Target HW & IP | N/A | `arp` |
 | **ICMP / ICMPv6** | Type/Code, Quoted payload, Checksum, NDP | N/A | `icmp.*`, `icmpv6.*` |
-| **IGMP / MLD** | IGMPv1/v2/v3 Query/Report/Leave, Group record parsing | N/A | `igmp`, `igmp.type`, `igmp.group` |
-| **OSPF** | OSPFv2 / OSPFv3 Hello, DD, LSA headers, Fletcher-16 | N/A | `ospf`, `ospf.version`, `ospf.type`, `ospf.router_id`, `ospf.area_id` |
-| **IPsec (AH / ESP)** | SPI, Sequence, inner protocol chaining, payload encryption mark | N/A | `ah`, `ah.spi`, `ah.sequence`, `esp`, `esp.spi`, `esp.sequence` |
-| **IKEv1 / IKEv2** | ISAKMP headers, SA/KE/Nonce/ID payloads, NAT-T keepalive | N/A | `ike`, `ike.version`, `ike.exchange_type` |
+| **IGMP / MLD** | IGMPv1/v2/v3 Query/Report/Leave header and group address, v3 record count, checksum (no v3 group records) | N/A | `igmp`, `igmp.type`, `igmp.group` |
+| **OSPF** | OSPFv2 Hello, DD with LSA headers; OSPFv3 common header; packet checksum (v2 RFC 2328 D.4, v3 pseudo header). No LSR/LSU/LSAck, LSA bodies or LSA checksum | N/A | `ospf`, `ospf.version`, `ospf.type`, `ospf.router_id`, `ospf.area_id` |
+| **IPsec (AH / ESP)** | SPI, Sequence, ICV, encrypted-payload mark; ESP-in-UDP (4500). No inner protocol chaining (AH Next Header only shown); IPv6 AH not dissected | N/A | `ah`, `ah.spi`, `ah.sequence`, `esp`, `esp.spi`, `esp.sequence` |
+| **IKEv1 / IKEv2** | ISAKMP/IKEv2 header, generic payload chain, NAT-T keepalive and Non-ESP marker, content-validated on ports 500/4500. No payload contents or fragmentation | N/A | `ike`, `ike.version`, `ike.exchange_type` |
 | **TCP** | Options (MSS, WS, SACK, TS), Relative Seq/Ack, Flags, Analysis | TCP stream reassembly | `tcp.*`, `tcp.port`, `tcp.flags.*`, `tcp.analysis.*` |
 | **UDP** | Ports, Length, UDP checksum verification | N/A | `udp.*`, `udp.port`, `udp.checksum.status` |
-| **UDP-Lite** | RFC 3828 Partial Checksum coverage length and validation | N/A | `udplite` |
-| **SCTP** | Verification Tag, Castagnoli CRC-32C, Chunks (DATA, INIT, SACK...) | N/A | `sctp`, `sctp.srcport`, `sctp.dstport`, `sctp.port`, `sctp.vtag`, `sctp.chunk_type` |
+| **UDP-Lite** | RFC 3828 checksum coverage and validation (IPv4, IPv6) | N/A | `udplite` |
+| **SCTP** | Verification Tag, Castagnoli CRC-32C, generic chunk list and DATA fields (no INIT/SACK/HEARTBEAT bodies, no reassembly) | N/A | `sctp`, `sctp.srcport`, `sctp.dstport`, `sctp.port`, `sctp.vtag`, `sctp.chunk_type` |
 
 ### Application Layer
 | Protocol | Features | Stream / Message Framing | Filter Fields |

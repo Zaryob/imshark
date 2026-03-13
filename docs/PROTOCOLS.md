@@ -41,10 +41,10 @@ This document catalogs every network protocol, encapsulation, and application di
 | **ARP / RARP** | RFC 826, RFC 903 | [`core/src/dissect/arp.cpp`](file:///Users/zaryob/Development/imshark/core/src/dissect/arp.cpp) | Hardware & Protocol types, Request / Reply opcodes, Sender / Target hardware and IP addresses. |
 | **ICMP** | RFC 792 | [`core/src/dissect/icmp.cpp`](file:///Users/zaryob/Development/imshark/core/src/dissect/icmp.cpp) | Echo Request/Reply, Unreachable, Redirect, Time Exceeded, Checksum check, Quoted original packet. |
 | **ICMPv6** | RFC 4443, RFC 4861 | [`core/src/dissect/icmp.cpp`](file:///Users/zaryob/Development/imshark/core/src/dissect/icmp.cpp) | Neighbor Discovery (NS, NA, RS, RA), Echo Request/Reply, ICMPv6 checksum calculation with pseudo-header. |
-| **IGMP / MLD** | RFC 2236, RFC 3376, RFC 2710 | [`core/src/dissect/igmp.cpp`](file:///Users/zaryob/Development/imshark/core/src/dissect/igmp.cpp) | IGMPv1/v2/v3 Query/Report/Leave, Group record parsing, Max Response Time. |
-| **OSPFv2 / OSPFv3** | RFC 2328, RFC 5340 | [`core/src/dissect/ospf.cpp`](file:///Users/zaryob/Development/imshark/core/src/dissect/ospf.cpp) | Common header, Hello packet, Database Description (DD), LSA headers, Fletcher-16 checksum. |
-| **IPsec (AH & ESP)** | RFC 4302, RFC 4303 | [`core/src/dissect/ipsec.cpp`](file:///Users/zaryob/Development/imshark/core/src/dissect/ipsec.cpp) | AH (SPI, Sequence, Next Header chaining), ESP (SPI, Sequence, payload encryption indicator). |
-| **IKEv1 / IKEv2** | RFC 2409, RFC 7296 | [`core/src/dissect/ipsec.cpp`](file:///Users/zaryob/Development/imshark/core/src/dissect/ipsec.cpp) | ISAKMP header, SA/KE/Nonce/ID payload headers, NAT-T keepalive & Non-ESP marker handling (ports 500, 4500). |
+| **IGMP / MLD** | RFC 2236, RFC 3376, RFC 2710 | [`core/src/dissect/igmp.cpp`](file:///Users/zaryob/Development/imshark/core/src/dissect/igmp.cpp) | IGMPv1/v2/v3 Query/Report/Leave type and group address, Max Response Time, IGMPv3 report record count, checksum verification. v3 group records and Query fields, and MLD, are not decoded. |
+| **OSPFv2 / OSPFv3** | RFC 2328, RFC 5340 | [`core/src/dissect/ospf.cpp`](file:///Users/zaryob/Development/imshark/core/src/dissect/ospf.cpp) | Common header (v2; v3 header with Instance ID), v2 Hello and Database Description with LSA headers, packet checksum (v2 per RFC 2328 D.4, v3 via the IPv6 pseudo header). LSR/LSU/LSAck, LSA bodies, v3 Hello/DD and the LSA Fletcher checksum are not implemented. |
+| **IPsec (AH & ESP)** | RFC 4302, RFC 4303 | [`core/src/dissect/ipsec.cpp`](file:///Users/zaryob/Development/imshark/core/src/dissect/ipsec.cpp) | AH (SPI, Sequence, ICV; the inner protocol is shown as Next Header only and is not dissected; IPv6 AH is consumed as an extension header), ESP (SPI, Sequence, encrypted-payload indicator; also ESP-in-UDP on port 4500). |
+| **IKEv1 / IKEv2** | RFC 2409, RFC 7296 | [`core/src/dissect/ipsec.cpp`](file:///Users/zaryob/Development/imshark/core/src/dissect/ipsec.cpp) | ISAKMP/IKEv2 header and the generic payload chain (type, length; IKEv2 names per RFC 7296), validated before a UDP 500/4500 datagram is claimed; NAT-T keepalive and Non-ESP marker. Payload contents (SA, KE, ID, CERT, AUTH, SK) and IKE fragmentation are not decoded. |
 
 ---
 
@@ -54,8 +54,8 @@ This document catalogs every network protocol, encapsulation, and application di
 |---|---|---|---|
 | **TCP** | RFC 9293, RFC 7323 | [`core/src/dissect/tcp.cpp`](file:///Users/zaryob/Development/imshark/core/src/dissect/tcp.cpp) | Relative Seq/Ack, Flags (SYN, ACK, FIN, RST, PSH, URG, ECE, CWR), Options (MSS, Window Scale, SACK, Timestamps), Checksum validation, Stream reassembly, Follow TCP Stream. |
 | **UDP** | RFC 768 | [`core/src/dissect/udp.cpp`](file:///Users/zaryob/Development/imshark/core/src/dissect/udp.cpp) | Ports, Length, UDP checksum verification (IPv4/IPv6 pseudo-header). |
-| **UDP-Lite** | RFC 3828 | [`core/src/dissect/udp.cpp`](file:///Users/zaryob/Development/imshark/core/src/dissect/udp.cpp) | Partial checksum coverage length parsing and verification. |
-| **SCTP** | RFC 4960 | [`core/src/dissect/sctp.cpp`](file:///Users/zaryob/Development/imshark/core/src/dissect/sctp.cpp) | Common header (Ports, Verification Tag), Castagnoli CRC-32C checksum calculation and validation, Chunk dissection (DATA, INIT, SACK, HEARTBEAT, etc.). |
+| **UDP-Lite** | RFC 3828 | [`core/src/dissect/udp.cpp`](file:///Users/zaryob/Development/imshark/core/src/dissect/udp.cpp) | Checksum coverage field and checksum verification (pseudo header carries the full datagram length, RFC 3828), IPv4 and IPv6. |
+| **SCTP** | RFC 4960 | [`core/src/dissect/sctp.cpp`](file:///Users/zaryob/Development/imshark/core/src/dissect/sctp.cpp) | Common header (Ports, Verification Tag), Castagnoli CRC-32C validation, generic chunk header list and DATA chunk fields (TSN, stream, SSN, PPID, user data length), clamped to the packet. INIT/SACK/HEARTBEAT/ABORT bodies, DATA reassembly and PPID dissection are not implemented. |
 
 ---
 
