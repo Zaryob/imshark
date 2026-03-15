@@ -40,8 +40,8 @@ namespace dissect {
 
     class TcpStreams {
     public:
-        /// Chooses the protocol of the message that starts at `data` (nullptr: none of them).
-        using Selector = std::function<const StreamProtocol *(const char *data, size_t size)>;
+        /// Chooses the protocol of the message that starts at `data`, at relative sequence number `startSeq` (nullptr: none of them).
+        using Selector = std::function<const StreamProtocol *(const char *data, size_t size, uint32_t startSeq)>;
 
         /// Feeds one TCP segment: `relSeq` is the relative sequence number of its first payload byte, `syn` resets the
         /// direction, `closed` (FIN or RST) completes a message that runs until close.

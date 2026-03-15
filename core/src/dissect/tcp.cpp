@@ -197,10 +197,31 @@ namespace {
 namespace {
     using namespace dissect;
 
-    // The stream protocol for a message starting at `data`: the one registered for the port, else the first heuristic
-    // whose framer does not reject the bytes. nullptr if none applies.
-    const StreamProtocol *selectStreamProtocol(Context &ctx, uint16_t srcPort, uint16_t dstPort, const char *data, size_t size) {
+    const StreamProtocol *tlsStreamProtocol(const Context &ctx) {
+        for (const auto &h: ctx.registry.tcpStreamHeuristics()) {
+            if (h->name == "TLS") return h.get();
+        }
+        return nullptr;
+    }
+
+    // True if the bytes open a TLS record: the TLS framer does not reject them and a handshake record starts with a handshake
+    // message type that exists. `certain` (the connection was switched to TLS) accepts every record the framer accepts.
+    bool startsTlsRecord(const StreamProtocol &tls, const char *data, size_t size, bool certain) {
+        if (size < 6 || tls.frame(data, size).kind == StreamFrame::Kind::Reject) return false;
+        return certain || static_cast<uint8_t>(data[0]) != 22 || static_cast<uint8_t>(data[5]) <= 24;
+    }
+
+    // The stream protocol for a message starting at `data` (relative sequence number `startSeq`): TLS if the bytes open a TLS
+    // record on a port whose protocol is not TLS (LDAPS, a database behind TLS, any protocol after STARTTLS: a plain
+    // protocol's framer would otherwise swallow or mis-decode it) or the connection was switched to TLS by an earlier
+    // message; else the protocol registered for the port, else the first heuristic whose framer does not reject the bytes.
+    // nullptr if none applies.
+    const StreamProtocol *selectStreamProtocol(Context &ctx, uint16_t srcPort, uint16_t dstPort, const char *data, size_t size, uint32_t startSeq) {
         if (const StreamProtocol *byPort = ctx.registry.findTcpStream(srcPort, dstPort)) {
+            const StreamProtocol *tls = tlsStreamProtocol(ctx);
+            const bool switched = ctx.sessions && ctx.sessions->isTlsUpgraded(ctx.pack.source, srcPort, ctx.pack.destination, dstPort, startSeq);
+            if (tls && startsTlsRecord(*tls, data, size, switched)) return tls;
+            if (switched) return nullptr;   // encrypted bytes that do not open a record: not the port protocol's
             return byPort->frame(data, size).kind == StreamFrame::Kind::Reject ? nullptr : byPort;
         }
         for (const auto &h: ctx.registry.tcpStreamHeuristics()) {
@@ -260,7 +281,7 @@ namespace {
         size_t at = from;
         int count = 0;
         while (at < payloadLen && count < 64) {
-            const StreamProtocol *protocol = selectStreamProtocol(ctx, srcPort, dstPort, payload + at, payloadLen - at);
+            const StreamProtocol *protocol = selectStreamProtocol(ctx, srcPort, dstPort, payload + at, payloadLen - at, static_cast<uint32_t>(payloadSeq + at));
             if (!protocol) break;
             const StreamFrame f = protocol->frame(payload + at, payloadLen - at);
             if (f.kind != StreamFrame::Kind::Complete || f.length == 0 || f.length > payloadLen - at) break;
@@ -413,7 +434,7 @@ void dissect::dissectTcp(Context &ctx, const char *data, size_t length) {
         } else if (pack.tcp_pdu_state == 3) {   // a whole message inside this segment
             const int32_t skip = static_cast<int32_t>(pack.tcp_pdu_start - static_cast<uint32_t>(seq >= 0 ? seq : 0));
             if (skip >= 0 && static_cast<size_t>(skip) + pack.tcp_pdu_len <= payloadLen) {
-                if (const StreamProtocol *protocol = selectStreamProtocol(ctx, srcPort, dstPort, payload + skip, pack.tcp_pdu_len)) {
+                if (const StreamProtocol *protocol = selectStreamProtocol(ctx, srcPort, dstPort, payload + skip, pack.tcp_pdu_len, pack.tcp_pdu_start)) {
                     ctx.tcpStreamSeq = pack.tcp_pdu_start;
                     protocol->dissect(ctx, payload + skip, pack.tcp_pdu_len);   // in this frame: the fields keep their real offsets
                     ctx.tcpStreamSeq = -1;
@@ -422,7 +443,7 @@ void dissect::dissectTcp(Context &ctx, const char *data, size_t length) {
                 }
             }
         } else if (pack.tcp_pdu_state == 2 && ctx.tcpPdu) {
-            const StreamProtocol *protocol = selectStreamProtocol(ctx, srcPort, dstPort, ctx.tcpPdu->data(), ctx.tcpPdu->size());
+            const StreamProtocol *protocol = selectStreamProtocol(ctx, srcPort, dstPort, ctx.tcpPdu->data(), ctx.tcpPdu->size(), pack.tcp_pdu_start);
             if (protocol) {
                 dissectPdu(ctx, *ctx.tcpPdu, *protocol, ctx.tcpPduPackets ? *ctx.tcpPduPackets : std::vector<uint32_t>(), pack.tcp_pdu_start);
                 const int32_t end = static_cast<int32_t>(pack.tcp_pdu_start + pack.tcp_pdu_len - payloadSeq);
@@ -434,9 +455,10 @@ void dissect::dissectTcp(Context &ctx, const char *data, size_t length) {
         const std::string key = pack.source + ":" + std::to_string(srcPort) + ">" + pack.destination + ":" + std::to_string(dstPort);
         const auto result = ctx.streams->feed(key, static_cast<uint32_t>(pack.number), static_cast<uint32_t>(seq >= 0 ? seq : 0), payload,
                                               payloadLen, syn, fin || rst,
-                                              [&](const char *d, size_t n) { return selectStreamProtocol(ctx, srcPort, dstPort, d, n); });
+                                              [&](const char *d, size_t n, uint32_t at) { return selectStreamProtocol(ctx, srcPort, dstPort, d, n, at); });
         if (syn && !(tcpHeader.flags & 0x10) && ctx.sessions) {   // a new connection on endpoints that had a TLS session: its hello starts a new one
             ctx.sessions->markTlsRestart(pack.source, srcPort, pack.destination, dstPort, payloadSeq + 1);
+            ctx.sessions->forgetTlsUpgrade(pack.source, srcPort, pack.destination, dstPort);
         }
         if (ctx.completedTcp) {
             for (uint32_t earlier: result.earlier) ctx.completedTcp->push_back({earlier, static_cast<uint32_t>(pack.number)});
@@ -488,6 +510,12 @@ void dissect::dissectTcp(Context &ctx, const char *data, size_t length) {
         dissectFtpData(ctx, payload, payloadLen);
     } else if (ctx.sessions && (ctx.sessions->hasFtpDataPort(srcPort) || ctx.sessions->hasFtpDataPort(dstPort))) {
         dissectFtpData(ctx, payload, payloadLen);
+    } else if (ctx.sessions && payloadLen > 0 && ctx.sessions->isTlsUpgraded(pack.source, srcPort, pack.destination, dstPort, payloadSeq)) {
+        // the connection was switched to TLS (STARTTLS family): encrypted bytes are not the port protocol's, TLS gets what it can read
+        dissectTls(ctx, payload, payloadLen);
+    } else if (payloadLen > 0 && ctx.registry.findTcpStream(srcPort, dstPort) && tlsStreamProtocol(ctx) &&
+               startsTlsRecord(*tlsStreamProtocol(ctx), payload, payloadLen, false)) {
+        dissectTls(ctx, payload, payloadLen);   // LDAPS, a database behind TLS: not what the port's own dissector reads (no stream state here)
     } else if (const Dissector *app = ctx.registry.findTcpPort(srcPort, dstPort)) {
         (*app)(ctx, payload, payloadLen);
     } else if (payloadLen > 0) {

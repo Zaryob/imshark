@@ -246,7 +246,7 @@ TEST(TcpReassembly, AHoleThatNeverFillsIsGivenUp) {
 
 TEST(TcpReassembly, IncompleteDirectionsAreBoundedInMemory) {
     dissect::TcpStreams streams;
-    auto select = [](const char *, size_t) -> const dissect::StreamProtocol * { return nullptr; };
+    auto select = [](const char *, size_t, uint32_t) -> const dissect::StreamProtocol * { return nullptr; };
     for (uint32_t i = 0; i < dissect::TcpStreams::kMaxDirections + 50; ++i) {
         streams.feed("key" + std::to_string(i), i, 0, "x", 1, false, false, select);
     }

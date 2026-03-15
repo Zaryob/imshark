@@ -94,10 +94,10 @@ namespace dissect {
         if (d.buf.size() > kMaxBuffer) { reset(d); d.bufStart = d.next; }   // a message that never ends
 
         // cut messages out of the buffer
-        bool sawPartial = false;
+        bool sawPartial = false, reselected = false;
         while (!d.buf.empty()) {
             if (!d.protocol) {
-                d.protocol = select(d.buf.data(), d.buf.size());
+                d.protocol = select(d.buf.data(), d.buf.size(), d.bufStart);
                 if (d.protocol) d.plain = false;
                 if (!d.protocol) {                                // not a stream protocol: decode segments on their own
                     d.plain = true;
@@ -115,6 +115,10 @@ namespace dissect {
                 take = d.buf.size();
             } else if (f.kind == StreamFrame::Kind::Reject) {
                 d.protocol = nullptr;                             // these bytes are not (or no longer) this protocol
+                if (!reselected && !d.buf.empty()) {              // another protocol may take over right here (a TLS handshake after STARTTLS)
+                    reselected = true;
+                    continue;
+                }
                 d.plain = true;
                 d.buf.clear();
                 d.contributors.clear();
@@ -125,6 +129,7 @@ namespace dissect {
                 break;
             }
 
+            reselected = false;
             StreamPdu pdu;
             pdu.data = d.buf.substr(0, take);
             pdu.startSeq = d.bufStart;

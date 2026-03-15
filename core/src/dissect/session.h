@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <span>
 #include <string>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -43,6 +44,9 @@ public:
         tlsDecrypt_.clear();
         dtls_.clear();
         tlsCaptureKeys_.clear();   // the keys the user supplied (tlsExternalKeys) outlive a new capture
+        tlsUpgrades_.clear();
+        serverEndpoints_.clear();
+        connectionMemory_ = 0;
         stateLost_ = false;
         stateLostTables_.clear();
         frozen_ = false;
@@ -191,6 +195,63 @@ public:
     }
     const TlsSessionTable &tlsTable() const { return tls_; }
 
+    // ---- TCP connections that switch to TLS in the middle (LDAP StartTLS, PostgreSQL SSLRequest, MySQL SSL) ------------
+    // Decided while the capture loads, from the message that agrees to the switch; Replay only reads. A direction is
+    // identified like the TCP stream tables do (src:port>dst:port), the mark is the relative sequence number of the first
+    // byte that is TLS. The stream dispatcher (tcp.cpp) hands TLS to the TLS dissector from there on, whatever the port
+    // registered, and does not let the port's own dissector mis-decode encrypted bytes.
+    /// Load pass: bytes of the direction src -> dst from relative sequence number `fromSeq` on are TLS. The first mark of a
+    /// direction wins. Returns false if frozen or out of budget (then the "tls-upgrade" table is state lost).
+    bool markTlsUpgrade(const std::string &srcIp, uint16_t srcPort, const std::string &dstIp, uint16_t dstPort, uint32_t fromSeq) {
+        if (frozen_) return false;
+        const std::string key = directionKey(srcIp, srcPort, dstIp, dstPort);
+        if (tlsUpgrades_.count(key)) return true;
+        const size_t entrySize = key.capacity() + sizeof(uint32_t) + 48;
+        if (connectionMemory_ + entrySize > maxMemoryPerTable_) {
+            markStateLost("tls-upgrade");
+            return false;
+        }
+        tlsUpgrades_.emplace(key, fromSeq);
+        connectionMemory_ += entrySize;
+        return true;
+    }
+    /// True if the byte at relative sequence number `seq` of the direction src -> dst is part of a TLS connection that was
+    /// switched to TLS (see markTlsUpgrade).
+    bool isTlsUpgraded(const std::string &srcIp, uint16_t srcPort, const std::string &dstIp, uint16_t dstPort, uint32_t seq) const {
+        if (tlsUpgrades_.empty()) return false;
+        const auto it = tlsUpgrades_.find(directionKey(srcIp, srcPort, dstIp, dstPort));
+        return it != tlsUpgrades_.end() && static_cast<int32_t>(seq - it->second) >= 0;
+    }
+    /// Load pass: a new connection (SYN) between the endpoints forgets the switch of an earlier one.
+    void forgetTlsUpgrade(const std::string &srcIp, uint16_t srcPort, const std::string &dstIp, uint16_t dstPort) {
+        if (frozen_ || tlsUpgrades_.empty()) return;
+        for (const std::string &key: {directionKey(srcIp, srcPort, dstIp, dstPort), directionKey(dstIp, dstPort, srcIp, srcPort)}) {
+            const auto it = tlsUpgrades_.find(key);
+            if (it == tlsUpgrades_.end()) continue;
+            connectionMemory_ -= std::min(connectionMemory_, it->first.capacity() + sizeof(uint32_t) + 48);
+            tlsUpgrades_.erase(it);
+        }
+    }
+
+    // ---- Database servers on a port other than the default (MySQL: told by the server greeting) -------------------------
+    /// Load pass: the endpoint ip:port sent a server greeting, so it is the server side of its connections.
+    bool markServerEndpoint(const std::string &ip, uint16_t port) {
+        if (frozen_) return false;
+        const std::string key = ip + ":" + std::to_string(port);
+        if (serverEndpoints_.count(key)) return true;
+        const size_t entrySize = key.capacity() + 48;
+        if (connectionMemory_ + entrySize > maxMemoryPerTable_) {
+            markStateLost("server-endpoints");
+            return false;
+        }
+        serverEndpoints_.insert(key);
+        connectionMemory_ += entrySize;
+        return true;
+    }
+    bool isServerEndpoint(const std::string &ip, uint16_t port) const {
+        return !serverEndpoints_.empty() && serverEndpoints_.count(ip + ":" + std::to_string(port)) > 0;
+    }
+
     // ---- DTLS connections (see dtls_session.h) -----------------------------------------------
     /// Load pass: a complete ClientHello / ServerHello went by from src to dst. Returns false if the tables are frozen or
     /// the budget is exhausted (then the "dtls" table is state lost).
@@ -302,9 +363,13 @@ public:
         return true;
     }
 
-    size_t totalMemoryUsage() const { return ftpMemory_ + tftpMemory_ + tls_.memory() + tlsDecrypt_.memory() + dtls_.memory(); }
+    size_t totalMemoryUsage() const { return ftpMemory_ + tftpMemory_ + connectionMemory_ + tls_.memory() + tlsDecrypt_.memory() + dtls_.memory(); }
 
 private:
+    static std::string directionKey(const std::string &srcIp, uint16_t srcPort, const std::string &dstIp, uint16_t dstPort) {
+        return srcIp + ":" + std::to_string(srcPort) + ">" + dstIp + ":" + std::to_string(dstPort);
+    }
+
     void markStateLost(const std::string &tableName) {
         stateLost_ = true;
         stateLostTables_.insert(tableName);
@@ -320,6 +385,10 @@ private:
 
     std::vector<TftpSession> tftpSessions_;
     size_t tftpMemory_ = 0;
+
+    std::unordered_map<std::string, uint32_t> tlsUpgrades_;
+    std::unordered_set<std::string> serverEndpoints_;
+    size_t connectionMemory_ = 0;
 
     TlsSessionTable tls_;
     TlsDecryptTable tlsDecrypt_;
