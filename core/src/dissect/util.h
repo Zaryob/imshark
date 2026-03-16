@@ -87,4 +87,14 @@ namespace dissect {
         if (length > max) out += "...";
         return out;
     }
+
+    /// Attacker-controlled text for Info and the field tree: printable ASCII only (anything else becomes '?'), at most `max`
+    /// characters (then "..."). Use it for every string taken from a packet.
+    inline std::string printableText(const void *data, size_t length, size_t max = 200) {
+        std::string out;
+        const auto *p = static_cast<const unsigned char *>(data);
+        for (size_t i = 0; p && i < length && i < max; ++i) out += (p[i] >= 32 && p[i] < 127) ? static_cast<char>(p[i]) : '?';
+        if (length > max) out += "...";
+        return out;
+    }
 } // namespace dissect
