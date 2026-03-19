@@ -53,7 +53,7 @@ namespace dissect {
     }
 
     StreamFeedResult TcpStreams::feed(const std::string &key, uint32_t packet, uint32_t relSeq, const char *data, size_t size,
-                                      bool syn, bool closed, const Selector &select) {
+                                      bool syn, bool closed, const Selector &select, const Selector &takeOver) {
         StreamFeedResult result;
         if (dirs_.size() >= kMaxDirections && dirs_.find(key) == dirs_.end()) dirs_.clear(); // bounded memory
         Dir &d = dirs_[key];
@@ -106,6 +106,9 @@ namespace dissect {
                     d.bufStart = d.next;
                     break;
                 }
+            }
+            if (takeOver) {
+                if (const StreamProtocol *other = takeOver(d.buf.data(), d.buf.size(), d.bufStart)) d.protocol = other;
             }
             const StreamFrame f = d.protocol->frame(d.buf.data(), d.buf.size());
             size_t take = 0;

@@ -204,11 +204,33 @@ namespace {
         return nullptr;
     }
 
-    // True if the bytes open a TLS record: the TLS framer does not reject them and a handshake record starts with a handshake
-    // message type that exists. `certain` (the connection was switched to TLS) accepts every record the framer accepts.
+    // True if the bytes open a TLS record: the TLS framer does not reject them and the record is one a real connection sends
+    // first (a handshake record starts with a handshake message type that exists, a ChangeCipherSpec is one byte, an alert two
+    // or a protected record of at least a tag's length, application data has a tag): other protocols' bytes that happen to
+    // look like a header (a MySQL packet of 788 bytes starts 14 03 00 00) are not mistaken for it. `certain` (the connection
+    // was switched to TLS) accepts every record the framer accepts.
     bool startsTlsRecord(const StreamProtocol &tls, const char *data, size_t size, bool certain) {
-        if (size < 6 || tls.frame(data, size).kind == StreamFrame::Kind::Reject) return false;
-        return certain || static_cast<uint8_t>(data[0]) != 22 || static_cast<uint8_t>(data[5]) <= 24;
+        if (size < (certain ? 5u : 6u) || tls.frame(data, size).kind == StreamFrame::Kind::Reject) return false;
+        if (certain) return true;
+        const uint8_t type = static_cast<uint8_t>(data[0]);
+        const size_t len = (static_cast<size_t>(static_cast<uint8_t>(data[3])) << 8) | static_cast<uint8_t>(data[4]);
+        switch (type) {
+            case 20: return len == 1;
+            case 21: return len == 2 || len >= 16;
+            case 22: return static_cast<uint8_t>(data[5]) <= 24 || len >= 16 + 4;
+            case 23: return len >= 16;
+            default: return false;
+        }
+    }
+
+    // A direction that already has a stream protocol continues as TLS when its next message opens a TLS record on a port whose
+    // own protocol is not TLS (or the connection was switched).
+    const StreamProtocol *tlsTakeOver(Context &ctx, uint16_t srcPort, uint16_t dstPort, const char *data, size_t size, uint32_t startSeq) {
+        if (!ctx.registry.findTcpStream(srcPort, dstPort)) return nullptr;
+        const StreamProtocol *tls = tlsStreamProtocol(ctx);
+        if (!tls) return nullptr;
+        const bool switched = ctx.sessions && ctx.sessions->isTlsUpgraded(ctx.pack.source, srcPort, ctx.pack.destination, dstPort, startSeq);
+        return startsTlsRecord(*tls, data, size, switched) ? tls : nullptr;
     }
 
     // The stream protocol for a message starting at `data` (relative sequence number `startSeq`): TLS if the bytes open a TLS
@@ -455,7 +477,8 @@ void dissect::dissectTcp(Context &ctx, const char *data, size_t length) {
         const std::string key = pack.source + ":" + std::to_string(srcPort) + ">" + pack.destination + ":" + std::to_string(dstPort);
         const auto result = ctx.streams->feed(key, static_cast<uint32_t>(pack.number), static_cast<uint32_t>(seq >= 0 ? seq : 0), payload,
                                               payloadLen, syn, fin || rst,
-                                              [&](const char *d, size_t n, uint32_t at) { return selectStreamProtocol(ctx, srcPort, dstPort, d, n, at); });
+                                              [&](const char *d, size_t n, uint32_t at) { return selectStreamProtocol(ctx, srcPort, dstPort, d, n, at); },
+                                              [&](const char *d, size_t n, uint32_t at) { return tlsTakeOver(ctx, srcPort, dstPort, d, n, at); });
         if (syn && !(tcpHeader.flags & 0x10) && ctx.sessions) {   // a new connection on endpoints that had a TLS session: its hello starts a new one
             ctx.sessions->markTlsRestart(pack.source, srcPort, pack.destination, dstPort, payloadSeq + 1);
             ctx.sessions->forgetTlsUpgrade(pack.source, srcPort, pack.destination, dstPort);

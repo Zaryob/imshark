@@ -45,8 +45,10 @@ namespace dissect {
 
         /// Feeds one TCP segment: `relSeq` is the relative sequence number of its first payload byte, `syn` resets the
         /// direction, `closed` (FIN or RST) completes a message that runs until close.
+        /// `takeOver` (optional) is asked at the start of every message of a direction that already has a protocol: a non-null
+        /// answer replaces the protocol from this message on (a plain protocol that continues as TLS after STARTTLS).
         StreamFeedResult feed(const std::string &key, uint32_t packet, uint32_t relSeq, const char *data, size_t size, bool syn,
-                              bool closed, const Selector &select);
+                              bool closed, const Selector &select, const Selector &takeOver = nullptr);
 
         size_t directions() const { return dirs_.size(); }
 
