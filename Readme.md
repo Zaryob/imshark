@@ -16,24 +16,45 @@ ImShark, [Dear ImGui](https://github.com/ocornut/imgui) ile yazılmış, Wiresha
 
 ## Derleme
 
-Gereksinimler: C++20 derleyici, CMake ≥ 3.13, OpenGL, `pkg-config`, GLFW 3.
+Gereksinimler: C++20 derleyici, CMake ≥ 3.21, OpenGL ve GLFW 3. İki yoldan biriyle derlenir.
+
+### Seçenek 1 — vcpkg (önerilen, tüm platformlar)
+
+[vcpkg](https://github.com/microsoft/vcpkg) kurulu ve `VCPKG_ROOT` tanımlıysa bağımlılıklar (`glfw3`) `vcpkg.json` manifestinden otomatik kurulur:
+
+```bash
+cmake --preset vcpkg
+cmake --build --preset vcpkg
+./build-vcpkg/imshark
+```
+
+### Seçenek 2 — sistem paketleri
 
 ```bash
 # macOS
-brew install glfw pkg-config cmake
+brew install glfw cmake
 # Debian/Ubuntu
 sudo apt install build-essential cmake pkg-config libglfw3-dev libgl1-mesa-dev
 ```
 
 ```bash
-cmake -S . -B build
-cmake --build build
+cmake --preset default
+cmake --build --preset default
 ./build/imshark
 ```
 
-Ardından **File → Open** ile bir `.pcap`/`.pcapng` dosyası seçin.
+GLFW, önce CMake paket yapılandırmasıyla (`find_package(glfw3)`), bulunamazsa `pkg-config` ile aranır.
 
-Not: kod `<arpa/inet.h>` kullandığı için şu an yalnızca POSIX (macOS/Linux) hedeflidir.
+### Kullanım
+
+```bash
+./build/imshark                    # File → Open ile dosya seçin
+./build/imshark tests/data/sample.pcap   # dosyayı doğrudan açın
+```
+
+`python3 tools/make_sample_pcap.py` örnek yakalama dosyasını (`tests/data/sample.pcap`) yeniden üretir: ARP, ICMP, DNS, TCP (seçeneklerle), SMTP, IPv6, VLAN, bilinmeyen EtherType ve kırpık paket içerir.
+
+Not: kod `<arpa/inet.h>` kullandığı için şu an yalnızca POSIX (macOS/Linux) hedeflidir (Windows, yol haritasında).
 
 ## Dizin yapısı
 
