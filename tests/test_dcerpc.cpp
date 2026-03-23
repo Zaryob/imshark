@@ -1,130 +1,140 @@
+// DCE/RPC connection-oriented PDUs (C706): packed with Python's struct module and uuid.UUID(...).bytes_le / .bytes from the layouts of
+// C706 chapter 12 - common header "5, 0, ptype, pfc_flags, drep[4], frag_length, auth_length, call_id"; Bind "max_xmit, max_recv,
+// assoc_group, n_ctx, 3 reserved, { ctx_id, n_transfer, reserved, abstract syntax (uuid, version), transfer syntaxes }*"; Bind_ack
+// with its secondary address padded to 4; Request "alloc_hint, p_cont_id, opnum, [object uuid when pfc_flags & 0x80]". The opnum
+// comes BEFORE the object UUID (C706 12.6.3.1; the audit's remark that it moves to offset 24 is not what the specification says, the
+// old offset 22 was right and the test below pins it down). Python's encoder is the oracle.
 #include <gtest/gtest.h>
 
 #include <core.h>
-#include <filter/filter.h>
 #include <dissect/dcerpc.h>
-#include "support.h"
+#include <filter/filter.h>
 
-using support::parse;
-using namespace dissect;
+#include "app_flow.h"
+
+using appflow::bytes;
+using appflow::Flow;
 
 namespace {
+    const std::string kBindEpm = bytes("05000b03100000004800000001000000b810b810000000000100000000000100"
+        "0883afe11f5dc91191a408002b14a0fa03000000045d888aeb1cc9119fe80800"
+        "2b10486002000000");
+    const std::string kBindTwo = bytes("05000b03100000007400000002000000b810b810000000000200000000000100"
+        "c84f324b7016d30112785a47bf6ee18803000000045d888aeb1cc9119fe80800"
+        "2b1048600200000001000100785734123412cdabef000123456789ac01000000"
+        "045d888aeb1cc9119fe808002b10486002000000");
+    const std::string kBindAck = bytes("05000c03100000004400000002000000b810b810341200000d005c504950455c"
+        "73727673766300000100000000000000045d888aeb1cc9119fe808002b104860"
+        "02000000");
+    const std::string kBindNak = bytes("05000d031000000012000000020000000400");
+    const std::string kRequest = bytes("05000003100000001c000000030000004000000000000f0001020304");
+    const std::string kRequestObj = bytes("05000083100000002a0000000400000000000000010007004301000000000000"
+        "c000000000000046aabb");
+    const std::string kRequestBe = bytes("0500000300000000001c000000000005000000000000010200000000");
+    const std::string kResponse = bytes("0500020310000000200000000300000018000000000000000000000000000000");
+    const std::string kFault = bytes("05000303100000001c0000000300000000000000000000000300011c");
+    const std::string kRequestFirst = bytes("0500000110000000380000000600000088130000000009000000000000000000"
+        "000000000000000000000000000000000000000000000000");
 
-std::vector<char> makeTcpPacket(uint16_t sport, uint16_t dport, const std::vector<uint8_t> &tcpPayload) {
-    std::vector<uint8_t> frame = {
-        0x00, 0x11, 0x22, 0x33, 0x44, 0x55,
-        0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,
-        0x08, 0x00
-    };
+    const std::string kClientHello = bytes("160301" "0004" "01000000");
 
-    size_t ipTotalLen = 20 + 20 + tcpPayload.size();
-    std::vector<uint8_t> ip = {
-        0x45, 0x00, static_cast<uint8_t>(ipTotalLen >> 8), static_cast<uint8_t>(ipTotalLen & 0xff),
-        0x00, 0x01, 0x00, 0x00,
-        64, 6, 0x00, 0x00,
-        10, 0, 0, 1,
-        10, 0, 0, 2
-    };
+    bool matches(const std::string &expr, const packet::PacketInfo &p) {
+        auto f = filter::Filter::compile(expr);
+        EXPECT_TRUE(f.ok) << expr << ": " << f.error.message;
+        return f.ok && f.filter.matches(p);
+    }
 
-    uint32_t csum = 0;
-    for (size_t i = 0; i < ip.size(); i += 2) csum += (ip[i] << 8) | ip[i + 1];
-    while (csum >> 16) csum = (csum & 0xffff) + (csum >> 16);
-    uint16_t folded = static_cast<uint16_t>(~csum);
-    ip[10] = static_cast<uint8_t>(folded >> 8);
-    ip[11] = static_cast<uint8_t>(folded & 0xff);
-
-    std::vector<uint8_t> tcp = {
-        static_cast<uint8_t>(sport >> 8), static_cast<uint8_t>(sport & 0xff),
-        static_cast<uint8_t>(dport >> 8), static_cast<uint8_t>(dport & 0xff),
-        0, 0, 0, 1, // Seq 1
-        0, 0, 0, 1, // Ack 1
-        0x50, 0x18, 0x20, 0x00, // ACK + PSH
-        0, 0, 0, 0 // checksum placeholder
-    };
-
-    frame.insert(frame.end(), ip.begin(), ip.end());
-    frame.insert(frame.end(), tcp.begin(), tcp.end());
-    frame.insert(frame.end(), tcpPayload.begin(), tcpPayload.end());
-
-    std::vector<char> out(frame.size());
-    std::memcpy(out.data(), frame.data(), frame.size());
-    return out;
+    const packet::Field *find(const std::vector<packet::Field> &fields, const std::string &prefix) {
+        for (const auto &f: fields) {
+            if (f.text.rfind(prefix, 0) == 0) return &f;
+            if (auto *c = find(f.children, prefix)) return c;
+        }
+        return nullptr;
+    }
 }
 
-} // namespace
-
-TEST(DceRpc, BindPacketEndpointMapper) {
-    // DCE/RPC Bind packet:
-    // Version 5.0, PDU Type 11 (Bind), Flags 0x03 (PFC_FIRST_FRAG | PFC_LAST_FRAG)
-    // Data representation: 0x10, 0x00, 0x00, 0x00 (little endian ASCII IEEE)
-    // Frag length: 72 (0x48), Auth length: 0, Call ID: 1
-    // Max xmit: 5840, Max recv: 5840, Assoc group: 0
-    // Ctx items: 1, Reserved: 0, Ctx ID: 0, Num transfer: 1, Reserved: 0
-    // Abstract syntax: e1af830d-5d1f-11c9-91a4-08002b14a0fa (Endpoint Mapper)
-    std::vector<uint8_t> pdu = {
-        0x05, 0x00, 0x0b, 0x03, 0x10, 0x00, 0x00, 0x00,
-        0x48, 0x00, // Frag length = 72
-        0x00, 0x00, // Auth length = 0
-        0x01, 0x00, 0x00, 0x00, // Call ID = 1
-        0xd0, 0x16, 0xd0, 0x16, 0x00, 0x00, 0x00, 0x00,
-        0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00,
-        // Abstract Syntax UUID: e1af830d-5d1f-11c9-91a4-08002b14a0fa
-        0x0d, 0x83, 0xaf, 0xe1, 0x1f, 0x5d, 0xc9, 0x11,
-        0x91, 0xa4, 0x08, 0x00, 0x2b, 0x14, 0xa0, 0xfa,
-        0x03, 0x00, 0x00, 0x00, // Version 3.0
-        // Transfer Syntax UUID: 8a885d04-1ceb-11c9-9fe8-08002b104860 (NDR)
-        0x04, 0x5d, 0x88, 0x8a, 0xeb, 0x1c, 0xc9, 0x11,
-        0x9f, 0xe8, 0x08, 0x00, 0x2b, 0x10, 0x48, 0x60,
-        0x02, 0x00, 0x00, 0x00  // Version 2.0
-    };
-
-    auto pkt = parse(makeTcpPacket(54321, 135, pdu));
-
-    EXPECT_EQ(pkt.protocol, "DCERPC");
-    EXPECT_EQ(pkt.app_type, 11); // Bind
-    EXPECT_NE(pkt.info.find("Bind"), std::string::npos);
-    EXPECT_NE(pkt.info.find("Endpoint Mapper"), std::string::npos);
+TEST(DceRpc, BindListsEveryPresentationContext) {
+    Flow flow(50000, 135, "dce_bind");
+    flow.client(kBindEpm).client(kBindTwo).server(kBindAck).server(kBindNak);
+    flow.load();
+    const auto &k = flow.packets();
+    EXPECT_EQ(k[0].protocol, "DCERPC");
+    EXPECT_EQ(k[0].info, "Bind (CallID: 1), Bind: EPM (Endpoint Mapper)");
+    EXPECT_TRUE(matches("dcerpc && dcerpc.pkt_type == 11 && dcerpc.cn_call_id == 1 && dcerpc.if_uuid == \"e1af8308-5d1f-11c9-91a4-08002b14a0fa\"", k[0]));
+    EXPECT_EQ(k[1].info, "Bind (CallID: 2), Bind: SRVSVC (Server Service), SAMR (Security Account Manager)") << "only the first context was read before";
+    EXPECT_EQ(k[2].info, "Bind_ack (CallID: 2), acceptance");
+    EXPECT_EQ(k[3].info, "Bind_nak (CallID: 2), protocol version not supported");
+    const auto d = flow.details(1);
+    EXPECT_NE(find(d.fields, "Context 0: SRVSVC (Server Service) v3.0"), nullptr);
+    EXPECT_NE(find(d.fields, "Context 1: SAMR (Security Account Manager) v1.0"), nullptr);
+    EXPECT_NE(find(d.fields, "  Transfer Syntax: NDR transfer syntax"), nullptr);
+    EXPECT_NE(find(flow.details(2).fields, "Secondary Address: \\PIPE\\srvsvc"), nullptr);
+    flow.expectReplayEqualsLoad();
 }
 
-TEST(DceRpc, RequestPacketWithOpnum) {
-    // DCE/RPC Request packet:
-    // Version 5.0, PDU Type 0 (Request), Flags 0x03
-    // Data representation: 0x10, 0x00, 0x00, 0x00 (little endian)
-    // Frag length: 24, Auth length: 0, Call ID: 1
-    // Alloc hint: 0, Context ID: 0, Opnum: 3
-    std::vector<uint8_t> pdu = {
-        0x05, 0x00, 0x00, 0x03, 0x10, 0x00, 0x00, 0x00,
-        0x18, 0x00, // Frag length = 24
-        0x00, 0x00, // Auth length = 0
-        0x01, 0x00, 0x00, 0x00, // Call ID = 1
-        0x00, 0x00, 0x00, 0x00, // Alloc hint = 0
-        0x00, 0x00,             // Context ID = 0
-        0x03, 0x00              // Opnum = 3
-    };
-
-    auto pkt = parse(makeTcpPacket(54321, 135, pdu));
-
-    EXPECT_EQ(pkt.protocol, "DCERPC");
-    EXPECT_EQ(pkt.app_type, 0); // Request
-    EXPECT_NE(pkt.info.find("Request"), std::string::npos);
-    EXPECT_NE(pkt.info.find("Opnum: 3"), std::string::npos);
+TEST(DceRpc, RequestOpnumIsRightWithAndWithoutAnObjectUuid) {
+    Flow flow(50000, 135, "dce_request");
+    flow.client(kRequest).client(kRequestObj).client(kRequestBe).server(kResponse).server(kFault);
+    flow.load();
+    const auto &k = flow.packets();
+    EXPECT_EQ(k[0].info, "Request (CallID: 3), Opnum: 15");
+    EXPECT_TRUE(matches("dcerpc.opnum == 15", k[0]));
+    EXPECT_EQ(k[1].info, "Request (CallID: 4), Opnum: 7") << "PFC_OBJECT_UUID set: the object UUID follows the opnum";
+    EXPECT_NE(find(flow.details(1).fields, "Object: 00000143-0000-0000-c000-000000000046"), nullptr);
+    EXPECT_EQ(k[2].info, "Request (CallID: 5), Opnum: 258") << "big-endian data representation";
+    EXPECT_TRUE(matches("dcerpc.opnum == 258", k[2]));
+    EXPECT_EQ(k[3].info, "Response (CallID: 3)");
+    EXPECT_FALSE(matches("dcerpc.opnum == 0", k[3])) << "a response has no opnum";
+    EXPECT_EQ(k[4].info, "Fault (CallID: 3), Status: 0x1c010003");
+    flow.expectReplayEqualsLoad();
 }
 
-TEST(DceRpc, StreamFramer) {
-    // Valid 24-byte packet header
-    std::vector<uint8_t> streamData = {
-        0x05, 0x00, 0x00, 0x03, 0x10, 0x00, 0x00, 0x00,
-        0x18, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x03, 0x00
-    };
+TEST(DceRpc, FragmentFlagsAreShown) {
+    Flow flow(50000, 135, "dce_frag");
+    flow.client(kRequestFirst);
+    flow.load();
+    EXPECT_EQ(flow.packets()[0].info, "Request (CallID: 6), Opnum: 9 [first fragment]");
+}
 
-    auto f1 = frameDceRpc(reinterpret_cast<const char *>(streamData.data()), 8);
-    EXPECT_EQ(f1.kind, StreamFrame::Kind::NeedMore);
+TEST(DceRpc, PdusSplitOverSegmentsAreReassembled) {
+    Flow flow(50000, 135, "dce_split");
+    flow.client(kBindTwo.substr(0, 10)).client(kBindTwo.substr(10, 50)).client(kBindTwo.substr(60));
+    flow.load();
+    const auto &k = flow.packets();
+    EXPECT_NE(k[0].info.find("[TCP segment of a reassembled PDU]"), std::string::npos) << k[0].info;
+    EXPECT_EQ(k[2].info.rfind("Bind (CallID: 2), Bind: SRVSVC", 0), 0u) << k[2].info;
+    flow.expectReplayEqualsLoad();
+}
 
-    auto f2 = frameDceRpc(reinterpret_cast<const char *>(streamData.data()), 20);
-    EXPECT_EQ(f2.kind, StreamFrame::Kind::NeedMore);
+TEST(DceRpc, ATlsRecordOnPort135IsTls) {
+    Flow flow(50000, 135, "dce_tls");
+    flow.client(kClientHello);
+    flow.load();
+    EXPECT_EQ(flow.packets()[0].protocol, "TLS");
+}
 
-    auto f3 = frameDceRpc(reinterpret_cast<const char *>(streamData.data()), 24);
-    EXPECT_EQ(f3.kind, StreamFrame::Kind::Complete);
-    EXPECT_EQ(f3.length, 24u);
+TEST(DceRpcFramer, FramesByTheFragmentLengthInTheSenderByteOrder) {
+    using K = dissect::StreamFrame::Kind;
+    auto frame = [](const std::string &s) { return dissect::frameDceRpc(s.data(), s.size()); };
+    EXPECT_EQ(frame(kBindTwo.substr(0, 9)).kind, K::NeedMore);
+    EXPECT_EQ(frame(kBindTwo.substr(0, 40)).kind, K::NeedMore);
+    EXPECT_EQ(frame(kBindTwo.substr(0, 40)).length, kBindTwo.size());
+    EXPECT_EQ(frame(kBindTwo).kind, K::Complete);
+    EXPECT_EQ(frame(kRequestBe).length, kRequestBe.size());
+    EXPECT_EQ(frame(kRequest + kResponse).length, kRequest.size());
+    EXPECT_EQ(frame(bytes("1603010004" "01000000" "0000")).kind, K::Reject) << "a TLS record";
+    EXPECT_EQ(frame(bytes("04000b03100000001000000001000000")).kind, K::Reject) << "version 4 is connectionless";
+    EXPECT_EQ(frame(bytes("05000b0310000000" "0f000000")).kind, K::Reject) << "fragment shorter than the header";
+    EXPECT_EQ(frame(bytes("0500ff03100000001000000001000000")).kind, K::Reject) << "unknown PDU type";
+    EXPECT_EQ(frame(bytes("05000b03ff000000" "10000000")).kind, K::Reject) << "data representation";
+}
+
+TEST(DceRpc, TruncationAndMutationStayInsideTheFrame) {
+    for (const std::string *m: {&kBindEpm, &kBindTwo, &kBindAck, &kBindNak, &kRequest, &kRequestObj, &kRequestBe, &kResponse, &kFault, &kRequestFirst}) {
+        appflow::sweepPayload(*m, 135, 0x4443);
+    }
+}
+
+TEST(DceRpc, RealCapturesWhenAvailable) {
+    framesweep::checkCorpus({"DCERPC"});
 }
