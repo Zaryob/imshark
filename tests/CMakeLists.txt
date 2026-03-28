@@ -39,6 +39,7 @@ add_executable(imshark_tests
     test_tcp.cpp
     test_tcp_reassembly.cpp
     test_tls_ports.cpp
+    test_enterprise_stats.cpp
     test_tcp_options.cpp
     test_telnet.cpp
     test_smtp.cpp

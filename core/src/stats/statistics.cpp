@@ -291,6 +291,19 @@ namespace stats {
             if (protocol == "FTP-DATA") return "File Transfer Protocol (data)";
             if (protocol == "TFTP") return "Trivial File Transfer Protocol";
             if (protocol == "SSH") return "Secure Shell";
+            if (protocol == "LDAP") return "Lightweight Directory Access Protocol";
+            if (protocol == "Kerberos") return "Kerberos";
+            if (protocol == "SMB2") return "Server Message Block 2/3";
+            if (protocol == "SMB") return "Server Message Block (SMB1)";
+            if (protocol == "NBSS") return "NetBIOS Session Service";
+            if (protocol == "DCERPC") return "Distributed Computing Environment / Remote Procedure Calls";
+            if (protocol == "RPC") return "Remote Procedure Call";
+            if (protocol == "NFS" || protocol == "NFSv4") return "Network File System";
+            if (protocol == "Portmap") return "Portmap";
+            if (protocol == "Mount") return "NFS Mount";
+            if (protocol == "PGSQL") return "PostgreSQL";
+            if (protocol == "MySQL") return "MySQL";
+            if (protocol == "TDS") return "Tabular Data Stream";
             return "";
         }
 
