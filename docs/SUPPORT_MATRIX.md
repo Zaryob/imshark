@@ -87,14 +87,14 @@ Files with known magic numbers produce specific diagnostic messages (`Desteklenm
 | **NTP** | Timestamps, Leap indicator, Modes, Stratum, Reference ID | N/A (UDP) | `ntp.*` |
 | **SSH** | Banner, KEXINIT algorithms, Message codes | Yes (TCP) | `ssh.*`, `ssh.message_code`, `ssh.protocol`, `ssh.kex_algorithm` |
 | **BGP** | BGP marker, OPEN, UPDATE, NOTIFICATION, KEEPALIVE, NLRI prefix | Yes (TCP) | `bgp`, `bgp.type`, `bgp.as`, `bgp.nlri`, `bgp.notification.code` |
-| **LDAP** | BER/ASN.1, Message ID, BindRequest, SearchRequest, SearchResultEntry | Yes (TCP) | `ldap`, `ldap.message_id`, `ldap.protocol_op`, `ldap.name` |
-| **Kerberos** | DER/ASN.1, AS/TGS/AP REQ/REP, KRB-ERROR, PA-DATA | Yes (TCP) | `kerberos`, `kerberos.msg_type`, `kerberos.realm`, `kerberos.error_code` |
-| **SMB2 / SMB3** | NetBIOS framing, Negotiate, Session Setup, Tree Connect, NT Status | Yes (TCP) | `smb2`, `smb2.cmd`, `smb2.nt_status` |
-| **DCE/RPC** | CO PDU headers, Bind, Request, Interface UUID, Opnum | Yes (TCP) | `dcerpc`, `dcerpc.pkt_type`, `dcerpc.opnum` |
-| **NFS / ONC RPC** | Record Marking, XDR parsing, Portmap, NFSv3/v4 GETATTR call/reply | Yes (TCP) | `rpc`, `rpc.xid`, `rpc.program`, `rpc.procedure`, `nfs`, `nfs.proc` |
-| **PostgreSQL** | SSLRequest, StartupMessage, SimpleQuery ('Q'), ReadyForQuery ('Z') | Yes (TCP) | `pgsql`, `pgsql.type`, `pgsql.query` |
-| **MySQL** | Length+SeqID, Server Greeting, COM_QUERY, COM_INIT_DB, OK/ERR | Yes (TCP) | `mysql`, `mysql.command`, `mysql.query` |
-| **TDS (SQL Server)**| 8-byte TDS header, Pre-Login, SQL Batch UTF-16LE query extraction | Yes (TCP) | `tds`, `tds.type` |
+| **LDAP** | BER header framing + reassembly, Message ID, Bind (no password), Search (scope, RFC 4515 filter), results with result-code names, Extended / StartTLS (TLS follows) | Yes (TCP) | `ldap`, `ldap.message_id`, `ldap.protocol_op`, `ldap.name`, `ldap.result_code`, `ldap.extended_name` |
+| **Kerberos** | RFC 4120 tags per message type, AS/TGS/AP REQ/REP, KRB-ERROR names, PA-DATA types, principal / realm, UDP + TCP record mark | Yes (TCP) | `kerberos`, `kerberos.msg_type`, `kerberos.error_code`, `kerberos.realm`, `kerberos.cname`, `kerberos.sname` |
+| **SMB2 / SMB3** | NBSS, compound / async headers, Negotiate dialects, Session Setup (NTLMSSP user), Tree Connect path, Create file name, Read / Write, NT status (MS-ERREF), Transform = encrypted label | Yes (TCP) | `smb2`, `smb2.cmd`, `smb2.nt_status`, `smb2.flags.response`, `smb2.flags.signed`, `smb2.encrypted`, `smb2.dialect`, `smb2.tree`, `smb2.filename`, `smb2.user` |
+| **DCE/RPC** | CO PDUs in the sender's byte order, every Bind context + interface name, Bind_ack / nak, Request opnum + object UUID, Fault status | Yes (TCP) | `dcerpc`, `dcerpc.pkt_type`, `dcerpc.opnum`, `dcerpc.cn_call_id`, `dcerpc.if_uuid` |
+| **NFS / ONC RPC** | Record marking (TCP), XID, AUTH_SYS, NFS v3 handle / name / offset / count, v4 COMPOUND first operation, Portmap, Mount, reply accept / deny status (no call matching, no results) | Yes (TCP) | `rpc`, `rpc.xid`, `rpc.msgtyp`, `rpc.program`, `rpc.programversion`, `rpc.procedure`, `rpc.state_accept`, `rpc.reply_denied`, `nfs`, `nfs.proc`, `nfs.version`, `nfs.name`, `portmap.proc`, `mount.path` |
+| **PostgreSQL** | Startup / SSLRequest (+ TLS follow) / Cancel, typed messages by direction, queries, authentication types, ErrorResponse SQLSTATE | Yes (TCP) | `pgsql`, `pgsql.type`, `pgsql.query`, `pgsql.user`, `pgsql.code`, `pgsql.ssl_request` |
+| **MySQL** | Direction-aware: greeting, login (no password hash), SSLRequest (+ TLS follow), commands, OK / ERR / EOF, result set packets | Yes (TCP) | `mysql`, `mysql.command`, `mysql.query`, `mysql.error_code`, `mysql.version`, `mysql.user`, `mysql.packet_number`, `mysql.from_server`, `mysql.ssl_request` |
+| **TDS (SQL Server)**| Pre-Login options, wrapped TLS handshake, Login7 (password masked), SQL Batch, RPC, response tokens (ERROR number) | Yes (TCP) | `tds`, `tds.type`, `tds.status`, `tds.spid`, `tds.query`, `tds.user`, `tds.encryption`, `tds.error_number` |
 | **SIP / SDP** | Request (INVITE, BYE...), Response codes, Call-ID, Content-Length, SDP | Yes (TCP) / UDP | `sip`, `sip.method`, `sip.status_code`, `sip.call_id` |
 | **RTP / RTCP** | RTP v2 header (PT, Seq, Timestamp, SSRC), RTCP SR/RR packets | N/A (UDP) | `rtp`, `rtp.pt`, `rtp.ssrc`, `rtcp`, `rtcp.pt` |
 | **Modbus/TCP** | MBAP header (Transaction ID, Unit ID), Function Codes, Registers | Yes (TCP) | `modbus`, `modbus.func_code`, `modbus.unit_id` |
