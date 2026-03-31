@@ -1,0 +1,120 @@
+#include <gtest/gtest.h>
+
+#include <algorithm>
+#include <random>
+
+#include "support.h"
+
+using support::hex;
+using support::parse;
+
+TEST(Parser, Arp) {
+    auto p = parse(hex(support::kArpRequest));
+    EXPECT_EQ(p.protocol, "ARP");
+    EXPECT_EQ(p.source, "00:11:22:33:44:55");
+    EXPECT_EQ(p.info, "ARP Request: Who has 10.0.0.2? Tell 10.0.0.1");
+}
+
+TEST(Parser, UdpOverIpv4) {
+    auto p = parse(hex(std::string(support::kEthIpUdp)));
+    EXPECT_EQ(p.source, "10.0.0.1");
+    EXPECT_EQ(p.destination, "10.0.0.2");
+    EXPECT_EQ(p.l2_size, 14);
+    // port 53 is classified as DNS, but the message is empty -> malformed, not a crash
+    EXPECT_EQ(p.protocol, "DNS");
+    EXPECT_NE(p.info.find("Malformed"), std::string::npos);
+}
+
+TEST(Parser, DnsQueryAndCompressedAnswer) {
+    // query example.com A, answer uses a compression pointer (0xc00c) back to the question name
+    const std::string dns =
+        "1234 8180 0001 0001 0000 0000 076578616d706c6503636f6d00 0001 0001"
+        "c00c 0001 0001 0000012c 0004 5db8d822";
+    const size_t udpLen = 8 + dns.size() / 2;
+    char lens[16];
+    snprintf(lens, sizeof lens, "%04zx", udpLen);
+    char total[16];
+    snprintf(total, sizeof total, "%04zx", 20 + udpLen);
+    auto p = parse(hex("001122334455 aabbccddeeff 0800 4500" + std::string(total) + "000000004011 0000 08080808 0a000001 0035 c350 " +
+                       lens + " 0000 " + dns));
+    EXPECT_EQ(p.protocol, "DNS");
+    EXPECT_EQ(p.info, "Standard query response 0x1234 A example.com example.com A 93.184.216.34");
+}
+
+TEST(Parser, TcpOptionsAndFlags) {
+    auto p = parse(hex("001122334455 aabbccddeeff 0800 4500003c123440004006 0000 0a000001 0a000002"
+                       "1f90 01bb 00000064 00000000 a002 7210 0000 0000"
+                       "020405b4 01 030307 0402 080a 00000001 00000000"));
+    EXPECT_EQ(p.protocol, "TCP");
+    EXPECT_EQ(p.info, "8080 -> 443 [SYN]  Seq=0 Win=29200 MSS=1460 WS=7 SACK_PERM TSval=1 TSecr=0");
+    const auto &ip = std::get<network::IPHeader>(p.l3_header);
+    EXPECT_EQ(ip.flags(), 2) << "DF bit";
+    EXPECT_EQ(ip.fragmentOffset(), 0);
+}
+
+TEST(Parser, Ipv6WithExtensionHeaders) {
+    auto p = parse(hex("001122334455 aabbccddeeff 86dd 60123456 0018 00 40"
+                       "20010db8000000000000000000000001 20010db8000000000000000000000002"
+                       "3c00 000000000000 1100 000000000000 1234 1235 0008 0000"));
+    EXPECT_EQ(p.protocol, "UDP");
+    EXPECT_EQ(p.source, "2001:db8::1");
+    const auto &ip6 = std::get<network::IPv6Header>(p.l3_header);
+    EXPECT_EQ(ip6.version(), 6);
+    EXPECT_EQ(ip6.trafficClass(), 1);
+    EXPECT_EQ(ip6.flowLabel(), 0x23456u);
+}
+
+TEST(Parser, LinkTypes) {
+    const std::string ip = "4500001c00000000401100000a0000010a000002 1234 0035 0008 0000";
+    struct Case { const char *name; uint32_t linkType; std::string prefix; uint16_t l2; };
+    const Case cases[] = {
+        {"vlan", 1, "001122334455aabbccddeeff 8100 0064 0800", 18},
+        {"qinq", 1, "001122334455aabbccddeeff 88a8 0064 8100 00c8 0800", 22},
+        {"null", 0, "02000000", 4},
+        {"null-swapped", 0, "00000002", 4},
+        {"loop", 108, "00000002", 4},
+        {"raw", 101, "", 0},
+        {"sll", 113, "0000 0001 0006 001122334455 0000 0800", 16},
+        {"sll2", 276, "0800 0000 00000001 0001 00 06 001122334455 0000", 20},
+    };
+    for (const auto &c: cases) {
+        SCOPED_TRACE(c.name);
+        auto p = parse(hex(c.prefix + ip), c.linkType);
+        EXPECT_EQ(p.source, "10.0.0.1");
+        EXPECT_EQ(p.l2_size, c.l2);
+    }
+    EXPECT_EQ(parse(hex(std::string("001122334455aabbccddeeff 8100 0064 0800") + ip)).vlan_ids, std::vector<uint16_t>{100});
+    EXPECT_EQ(parse(hex(ip), 999).info, "Unsupported link type 999");
+}
+
+TEST(Parser, UnknownEtherType) {
+    auto p = parse(hex("001122334455 aabbccddeeff 88cc 0207"));
+    EXPECT_EQ(p.protocol, "Ethernet");
+    EXPECT_EQ(p.info, "EtherType 0x88cc");
+}
+
+TEST(Parser, TruncatedFramesAreMalformedNotCrashes) {
+    const auto frame = hex("001122334455 aabbccddeeff 0800 4500003c123440004006 0000 0a000001 0a000002 1f90 01bb 00000064 00000000 a002 7210 0000 0000");
+    for (size_t cut = 0; cut < frame.size(); ++cut) {
+        auto p = parse(std::vector<char>(frame.begin(), frame.begin() + cut));
+        if (cut < 14 + 20 + 20) {
+            EXPECT_NE(p.info.find("Malformed"), std::string::npos) << "cut at " << cut;
+        }
+    }
+}
+
+// Mutation fuzzing: must never crash or trip sanitizers, whatever the input.
+TEST(Parser, RandomisedInputNeverCrashes) {
+    std::mt19937 rng(12345);
+    const std::vector<std::vector<char>> seeds = {
+        hex(support::kArpRequest), hex(std::string(support::kEthIpUdp)),
+        hex("001122334455 aabbccddeeff 0800 4500003c123440004006 0000 0a000001 0a000002 1f90 01bb 00000064 00000000 a002 7210 0000 0000 020405b4"),
+        hex("001122334455 aabbccddeeff 86dd 60000000 0008 11 40 20010db8000000000000000000000001 20010db8000000000000000000000002 1234 0035 0008 0000"),
+    };
+    for (int i = 0; i < 20000; ++i) {
+        auto data = seeds[rng() % seeds.size()];
+        data.resize(rng() % (data.size() + 1));
+        for (unsigned flips = rng() % 5; flips > 0 && !data.empty(); --flips) data[rng() % data.size()] = static_cast<char>(rng());
+        parse(data, (i % 7 == 0) ? 113 : (i % 11 == 0) ? 101 : 1);
+    }
+}
