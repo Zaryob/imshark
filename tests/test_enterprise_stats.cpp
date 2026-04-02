@@ -56,33 +56,59 @@ TEST(EnterpriseStats, EveryProtocolHasANameInTheHierarchy) {
     EXPECT_NE(findNode(stats::protocolHierarchy(call.packets(), nullptr), "Network File System"), nullptr);
 }
 
-TEST(EnterpriseStats, AMalformedMessageOfEachProtocolIsCountedByTheExpertInfo) {
-    struct Case { uint16_t port; std::string payload; };
-    const Case cases[] = {
-        {389, bytes("31050201016000")},                                                    // not an LDAPMessage SEQUENCE
-        {88, bytes("6a20" "3003020105")},                                                  // AS-REQ that declares 32 bytes and has 5 (UDP)
-        {445, bytes("00000020fe534d4240000000")},                                          // SMB2 header cut
-        {5432, bytes("510000000100")},                                                     // length below 4
-        {1433, bytes("0100000400000100")},                                                 // TDS length below the header
-    };
-    int udpChecked = 0;
-    for (const auto &c: cases) {
-        std::vector<std::vector<char>> frames;
-        if (c.port == 88) {
-            frames.push_back(support::udpPacket("0a000001", "0a000002", "c350", "0058", c.payload));
-            ++udpChecked;
-        } else {
-            char port[8];
-            std::snprintf(port, sizeof port, "%04x", c.port);
-            frames.push_back(support::tcpPacket("0a000001", "0a000002", "c350", port, "00000001", "00000001", "18", c.payload));
-        }
+namespace {
+    // one TCP segment (or UDP datagram) carrying `payload` between 10.0.0.1:50000 and 10.0.0.2:port, from the client or the server side
+    std::vector<char> segment(uint16_t port, bool fromServer, bool udp, const std::string &payload) {
+        char p[8];
+        std::snprintf(p, sizeof p, "%04x", port);
+        if (udp) return fromServer ? support::udpPacket("0a000002", "0a000001", p, "c350", payload) : support::udpPacket("0a000001", "0a000002", "c350", p, payload);
+        return fromServer ? support::tcpPacket("0a000002", "0a000001", p, "c350", "00000001", "00000001", "18", payload)
+                          : support::tcpPacket("0a000001", "0a000002", "c350", p, "00000001", "00000001", "18", payload);
+    }
+
+    uint64_t malformedPackets(const std::vector<char> &frame, const std::string &name) {
         std::string path;
         core::FileProcessor fp;
-        const auto packets = load(frames, "expert" + std::to_string(c.port), path, fp);
-        bool found = false;
-        for (const auto &item: stats::expertInfo(packets, nullptr)) found = found || (item.summary == "Malformed packet" && item.count == 1);
-        EXPECT_TRUE(found) << "port " << c.port << ": " << packets[0].protocol << " / " << packets[0].info;
+        const auto packets = load({frame}, name, path, fp);
+        uint64_t n = 0;
+        for (const auto &item: stats::expertInfo(packets, nullptr)) if (item.summary == "Malformed packet") n += item.count;
         std::remove(path.c_str());
+        return n;
     }
-    EXPECT_EQ(udpChecked, 1);
+}
+
+TEST(EnterpriseStats, AMalformedMessageOfEachProtocolIsCountedByTheExpertInfo) {
+    // each message is complete (its own length field says so, or it is a whole datagram) and its body does not decode
+    struct Case { const char *name; uint16_t port; bool fromServer, udp; std::string payload; };
+    const Case cases[] = {
+        {"ldap", 389, false, false, bytes("31050201016000")},                                         // not an LDAPMessage SEQUENCE
+        {"kerberos", 88, false, true, bytes("6a20" "3003020105")},                                    // AS-REQ that declares 32 bytes and has 5
+        {"smb2", 445, false, false, bytes("0000000cfe534d424000000000000000")},                  // a complete session message of 12 bytes: no 64 byte SMB2 header
+        {"nfs", 2049, false, false, bytes("80000008" "12345678" "00000000")},                        // a call record of 8 bytes: no RPC version, program, ...
+        {"dcerpc", 135, false, false, bytes("05000b03" "10000000" "1c000000" "01000000" "b810b810" "00000000" "03000000")},   // Bind with 3 contexts and none present
+        {"postgres", 5432, false, false, bytes("510000000100")},                                      // length below 4
+        {"mysql", 3306, true, false, bytes("01000000" "ff")},                                         // ERR without an error code
+        {"tds", 1433, false, false, bytes("10010010" "0000" "0100" "0000000000000000")},              // Login7 of 8 payload bytes
+    };
+    for (const auto &c: cases) {
+        EXPECT_EQ(malformedPackets(segment(c.port, c.fromServer, c.udp, c.payload), std::string("mal_") + c.name), 1u) << c.name;
+    }
+}
+
+TEST(EnterpriseStats, AMessageCutByTheSegmentIsNotMalformed) {
+    // the same kinds of message, but their length fields promise more bytes than the segment holds: the rest is in the next segment
+    struct Case { const char *name; uint16_t port; bool fromServer; std::string payload; };
+    const Case cases[] = {
+        {"ldap", 389, false, bytes("30820100" "020101")},
+        {"kerberos", 88, false, bytes("00000100" "6a820080" "3081")},
+        {"nfs", 2049, false, bytes("80000040" "12345678" "00000000")},
+        {"dcerpc", 135, false, bytes("05000b03" "10000000" "48000000" "01000000" "b810b810" "00000000" "03000000")},
+        {"postgres", 5432, false, bytes("5100000020" "53454c")},
+        {"mysql", 3306, true, bytes("14000000" "ff")},
+        {"tds", 1433, false, bytes("10010080" "0000" "0100" "0000000000000000")},
+        {"smb2", 445, false, bytes("00000200fe534d4240000000")},
+    };
+    for (const auto &c: cases) {
+        EXPECT_EQ(malformedPackets(segment(c.port, c.fromServer, false, c.payload), std::string("cut_") + c.name), 0u) << c.name;
+    }
 }

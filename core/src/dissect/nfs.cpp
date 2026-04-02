@@ -164,15 +164,19 @@ void dissectNfs(Context &ctx, const char *data, size_t length) {
     // record marking: TCP only
     size_t offset = 0;
     bool lastFragment = true;
+    bool complete = true;   // every byte of the fragment (TCP) or datagram (UDP) is here: a body that does not decode is malformed, not cut
     if (pack.ip_protocol == 6 && length >= 4) {
         const uint32_t rm = be32(data);
         const size_t fragLen = rm & 0x7FFFFFFFu;
         lastFragment = (rm & 0x80000000u) != 0;
-        (void) fragLen;
+        complete = fragLen + 4 <= length;
         offset = 4;
     }
     const size_t bodyLen = length - offset;
-    if (bodyLen < 8) return;
+    if (bodyLen < 8) {
+        if (complete) { pack.protocol = "RPC"; pack.info = "RPC"; ctx.markMalformed("RPC message shorter than xid and message type"); }
+        return;
+    }
 
     XdrReader r(bytes + offset, bodyLen);
     const uint32_t xid = r.readUnsignedInt();
@@ -181,12 +185,14 @@ void dissectNfs(Context &ctx, const char *data, size_t length) {
     std::vector<std::pair<std::string, std::pair<size_t, size_t>>> items;   // detail-tree children: text, offset, length
     auto add = [&](const std::string &t, size_t at, size_t len) { items.push_back({t, {o + offset + at, len}}); };
     std::string summary, layerName;
+    const char *malformed = nullptr;
 
     if (mtype == 0) { // RPC CALL
         const uint32_t rpcvers = r.readUnsignedInt(), prog = r.readUnsignedInt(), vers = r.readUnsignedInt(), proc = r.readUnsignedInt();
         if (!r.ok()) {
             pack.protocol = "RPC";
-            pack.info = "RPC Call (XID: 0x" + hexString(xid, 8).substr(2) + ") [cut]";
+            pack.info = "RPC Call (XID: " + hexString(xid, 8) + ") [cut]";
+            if (complete) ctx.markMalformed("RPC call header shorter than its fixed fields");
             return;
         }
         const char *progName = rpcProgramName(prog);
@@ -208,9 +214,9 @@ void dissectNfs(Context &ctx, const char *data, size_t length) {
         pack.app_type = static_cast<uint16_t>(proc);
         pack.app_code = static_cast<uint16_t>(vers);
         pack.app_text = std::to_string(prog);
-        summary = progStr + " v" + std::to_string(vers) + " " + procStr + " Call (XID: 0x" + hexString(xid, 8).substr(2) + ")";
+        summary = progStr + " v" + std::to_string(vers) + " " + procStr + " Call (XID: " + hexString(xid, 8) + ")";
         layerName = "Remote Procedure Call (Call " + progStr + ")";
-        add("XID: 0x" + hexString(xid, 8).substr(2), 0, 4);
+        add("XID: " + hexString(xid, 8), 0, 4);
         add("Type: Call (0)", 4, 4);
         add("RPC Version: " + std::to_string(rpcvers), 8, 4);
         add("Program: " + progStr + " (" + std::to_string(prog) + ")", 12, 4);
@@ -223,7 +229,7 @@ void dissectNfs(Context &ctx, const char *data, size_t length) {
             const size_t at = r.pos();
             const uint32_t flavor = r.readUnsignedInt();
             const uint32_t len = r.readUnsignedInt();
-            if (!r.ok() || len > 400 || len > r.remaining()) { credOk = false; break; }
+            if (!r.ok() || len > 400 || len > r.remaining()) { credOk = false; if (complete) malformed = "RPC credential / verifier length does not fit"; break; }
             const size_t bodyAt = r.pos();
             if (which == 0 && flavor == 1 && len >= 20) { // AUTH_SYS: stamp, machinename, uid, gid, gids
                 XdrReader c(bytes + offset + bodyAt, len);
@@ -305,14 +311,15 @@ void dissectNfs(Context &ctx, const char *data, size_t length) {
         const uint32_t replyStat = r.readUnsignedInt();   // 0 = MSG_ACCEPTED, 1 = MSG_DENIED
         if (!r.ok()) {
             pack.protocol = "RPC";
-            pack.info = "RPC Reply (XID: 0x" + hexString(xid, 8).substr(2) + ") [cut]";
+            pack.info = "RPC Reply (XID: " + hexString(xid, 8) + ") [cut]";
+            if (complete) ctx.markMalformed("RPC reply without a reply status");
             return;
         }
         pack.protocol = "RPC";
         pack.app_flags |= kFlagReply;
-        summary = "RPC Reply (XID: 0x" + hexString(xid, 8).substr(2) + ")";
+        summary = "RPC Reply (XID: " + hexString(xid, 8) + ")";
         layerName = "Remote Procedure Call (Reply)";
-        add("XID: 0x" + hexString(xid, 8).substr(2), 0, 4);
+        add("XID: " + hexString(xid, 8), 0, 4);
         add("Type: Reply (1)", 4, 4);
         add(std::string("Reply Status: ") + (replyStat == 0 ? "Accepted (0)" : "Denied (1)"), 8, 4);
         if (replyStat == 0) {
@@ -368,6 +375,7 @@ void dissectNfs(Context &ctx, const char *data, size_t length) {
             if (it.second.first <= o + length) root.add(it.first, it.second.first, std::min(it.second.second, o + length - it.second.first));
         }
     }
+    if (malformed) ctx.markMalformed(malformed);   // after the summary: it replaces it
 }
 
 } // namespace dissect

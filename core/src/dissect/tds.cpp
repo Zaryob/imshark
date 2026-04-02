@@ -163,6 +163,7 @@ void dissectTds(Context &ctx, const char *data, size_t length) {
     const bool cut = pktLen > length;
 
     std::string summary = typeStr;
+    const char *malformed = nullptr;   // set when the packet is complete (not cut) but its body does not decode
     std::vector<std::pair<std::string, std::pair<size_t, size_t>>> items;   // detail-tree children: text, offset, length
     auto add = [&](const std::string &text, size_t off, size_t len) { items.push_back({text, {off, len}}); };
 
@@ -200,14 +201,19 @@ void dissectTds(Context &ctx, const char *data, size_t length) {
             i += 5;
         }
         summary = std::string("Pre-Login ") + (type == 18 ? "request" : "response") + what;
-    } else if (type == 16 && payloadLen >= 36 + 58) { // Login7: fixed part, then (offset, length) pairs, then the data
+    } else if (type == 18 && packetId == 1 && payloadLen > 0) {
+        // the first Pre-Login packet is an option table or the start of a wrapped TLS record; anything else is not Pre-Login
+        if (!cut) malformed = "TDS Pre-Login payload is neither an option table nor a TLS record";
+    } else if (type == 16 && payloadLen < 36 + 58) {
+        if (!cut) malformed = "TDS Login7 shorter than its fixed part";
+    } else if (type == 16) { // Login7: fixed part, then (offset, length) pairs, then the data
         pack.app_flags |= kFlagLogin7;
         const uint8_t *b = payload;
         const auto le16At = [&](size_t at) { return static_cast<size_t>(b[at] | (b[at + 1] << 8)); };
         const auto field = [&](size_t pair, const char *label, bool mask) {
             const size_t off = le16At(36 + pair * 4), chars = le16At(36 + pair * 4 + 2);
             if (chars == 0) return std::string();
-            if (off + chars * 2 > payloadLen) { add(std::string(label) + ": [outside the packet]", o + 8, 0); return std::string(); }
+            if (off + chars * 2 > payloadLen) { add(std::string(label) + ": [outside the packet]", o + 8, 0); if (!cut) malformed = "TDS Login7 string lies outside the packet"; return std::string(); }
             if (mask) {   // the password is obfuscated on the wire (nibble swap, XOR 0xA5); it is never decoded or shown
                 add(std::string(label) + ": " + std::string(std::min<size_t>(chars, 16), '*') + " (masked, " + std::to_string(chars) + " characters)", o + 8 + off, chars * 2);
                 return std::string();
@@ -331,8 +337,9 @@ void dissectTds(Context &ctx, const char *data, size_t length) {
             if (rel <= length) root.add(it.first, it.second.first, std::min(it.second.second, length - rel));
         }
     }
-    (void) cut;   // a packet continued in the next segment is not an error
+    // a packet continued in the next segment (cut) is not an error
     if (pktLen < 8) ctx.markMalformed("TDS packet length below the 8 byte header");
+    else if (malformed) ctx.markMalformed(malformed);   // after the summary: it replaces it
 }
 
 } // namespace dissect

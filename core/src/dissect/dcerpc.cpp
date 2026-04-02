@@ -159,6 +159,19 @@ void dissectDceRpc(Context &ctx, const char *data, size_t length) {
     auto uuidAt = [&](size_t at) { return formatUuid(bytes + at, le); };
 
     std::string firstUuid;
+    const char *malformed = nullptr;   // set when the PDU is complete (not cut) but its body does not decode
+    {   // the fixed part of each PDU type must be there in a complete PDU
+        size_t minimum = 16;
+        switch (pduType) {
+            case 0: case 2: minimum = 24; break;
+            case 3: minimum = 28; break;
+            case 11: case 14: minimum = 28; break;
+            case 12: case 15: minimum = 26; break;
+            case 13: minimum = 18; break;
+            default: break;
+        }
+        if (!cut && fragLen >= 16 && fragLen < minimum) malformed = "DCE/RPC PDU shorter than the fixed part of its type";
+    }
     // Bind (11) / Alter_context (14): max_xmit_frag, max_recv_frag, assoc_group_id, then the presentation context list
     if ((pduType == 11 || pduType == 14) && have >= 28) {
         const uint16_t maxXmit = rd16(r), maxRecv = rd16(r);
@@ -169,6 +182,7 @@ void dissectDceRpc(Context &ctx, const char *data, size_t length) {
         add("Assoc Group: " + hexString(assoc, 8), 20, 4);
         add("Num Ctx Items: " + std::to_string(nctx), 24, 1);
         std::string ifaces;
+        unsigned read = 0;
         for (unsigned i = 0; i < nctx && i < 16; ++i) {
             const size_t at = r.offset();
             if (r.remaining() < 4 + 20 + 20) break;
@@ -180,6 +194,7 @@ void dissectDceRpc(Context &ctx, const char *data, size_t length) {
             const uint32_t ver = rd32(r);
             const char *kn = interfaceName(uuid);
             std::string name = kn ? kn : uuid;
+            ++read;
             if (firstUuid.empty()) firstUuid = uuid;
             ifaces += (ifaces.empty() ? "" : ", ") + name;
             add("Context " + std::to_string(ctxId) + ": " + name + " v" + std::to_string(ver & 0xffff) + "." + std::to_string(ver >> 16), at, 4 + 20 + 20ul * ntrans);
@@ -191,6 +206,7 @@ void dissectDceRpc(Context &ctx, const char *data, size_t length) {
             }
             if (ntrans > 8) r.skip(std::min<size_t>(r.remaining(), 20ul * (ntrans - 8)));
         }
+        if (!cut && read < std::min<unsigned>(nctx, 16)) malformed = "DCE/RPC Bind announces more presentation contexts than it holds";
         if (!ifaces.empty()) summary += (pduType == 11 ? ", Bind: " : ", Alter: ") + ifaces;
     } else if ((pduType == 12 || pduType == 15) && have >= 26) { // Bind_ack: ..., sec_addr_len, sec_addr, pad to 4, n_results, results
         const uint16_t maxXmit = rd16(r), maxRecv = rd16(r);
@@ -261,8 +277,8 @@ void dissectDceRpc(Context &ctx, const char *data, size_t length) {
             if (it.second.first <= o + length) root.add(it.first, it.second.first, std::min(it.second.second, o + length - it.second.first));
         }
     }
-    (void) cut;
     if (fragLen < 16) ctx.markMalformed("DCE/RPC fragment length below the 16 byte header");
+    else if (malformed) ctx.markMalformed(malformed);   // after the summary: it replaces it
 }
 
 } // namespace dissect

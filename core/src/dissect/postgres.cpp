@@ -252,7 +252,7 @@ void dissectPostgreSql(Context &ctx, const char *data, size_t length) {
                     if (a == 10) {
                         std::string mechs;
                         while (b.remaining() > 1) { const std::string m = b.stringZ(); if (m.empty()) break; mechs += (mechs.empty() ? "" : ", ") + printableText(m.data(), m.size(), 40); }
-                        if (!mechs.empty()) { info += " (" + mechs + ")"; items.push_back({"SASL Mechanisms: " + mechs, {bo + 4, bodyEnd - bo - 4}}); }
+                        if (!mechs.empty()) { info += " (" + mechs + ")"; items.push_back({"SASL Mechanisms: " + mechs, {bo + 4, bodyEnd - 5 - 4}}); }
                     }
                 } else if (type == 'K' && b.remaining() >= 8) {
                     const uint32_t pid = b.u32_be();
@@ -261,7 +261,7 @@ void dissectPostgreSql(Context &ctx, const char *data, size_t length) {
                 } else if (type == 'S') {
                     const std::string k = b.stringZ(), v = b.stringZ();
                     info = "ParameterStatus: " + printableText(k.data(), k.size(), 63) + "=" + printableText(v.data(), v.size(), 100);
-                    items.push_back({"Parameter: " + printableText(k.data(), k.size(), 63) + " = " + printableText(v.data(), v.size(), 100), {bo, bodyEnd - bo}});
+                    items.push_back({"Parameter: " + printableText(k.data(), k.size(), 63) + " = " + printableText(v.data(), v.size(), 100), {bo, bodyEnd - 5}});
                 } else if (type == 'Z' && b.remaining() >= 1) {
                     const char st = static_cast<char>(b.u8());
                     const char *sn = st == 'I' ? "idle" : st == 'T' ? "in a transaction" : st == 'E' ? "in a failed transaction" : "unknown";
@@ -270,7 +270,7 @@ void dissectPostgreSql(Context &ctx, const char *data, size_t length) {
                 } else if (type == 'C') {
                     const std::string tag = b.stringZ();
                     info = "CommandComplete: " + printableText(tag.data(), tag.size(), 100);
-                    items.push_back({"Command Tag: " + printableText(tag.data(), tag.size(), 100), {bo, bodyEnd - bo}});
+                    items.push_back({"Command Tag: " + printableText(tag.data(), tag.size(), 100), {bo, bodyEnd - 5}});
                 } else if (type == 'T' && b.remaining() >= 2) {
                     const uint16_t n = b.u16_be();
                     info = "RowDescription (" + std::to_string(n) + " columns)";
@@ -292,7 +292,7 @@ void dissectPostgreSql(Context &ctx, const char *data, size_t length) {
                     pack.app_text2 = printableText(state.data(), state.size(), 5);
                     items.push_back({"Severity: " + printableText(sev.data(), sev.size(), 20), {bo, 0}});
                     items.push_back({"SQLSTATE: " + printableText(state.data(), state.size(), 5), {bo, 0}});
-                    items.push_back({"Message: " + printableText(msg.data(), msg.size(), 200), {bo, bodyEnd - bo}});
+                    items.push_back({"Message: " + printableText(msg.data(), msg.size(), 200), {bo, bodyEnd - 5}});
                 } else if (type == 'A' && b.remaining() >= 4) {
                     const uint32_t pid = b.u32_be();
                     const std::string ch = b.stringZ();
@@ -303,7 +303,7 @@ void dissectPostgreSql(Context &ctx, const char *data, size_t length) {
                     const std::string q = b.stringZ();
                     info = "Query: " + printableText(q.data(), q.size(), 200);
                     pack.app_text = printableText(q.data(), q.size(), 512);
-                    items.push_back({"Query: " + pack.app_text, {bo, bodyEnd - bo}});
+                    items.push_back({"Query: " + pack.app_text, {bo, bodyEnd - 5}});
                 } else if (type == 'P') {
                     const std::string stmt = b.stringZ(), q = b.stringZ();
                     info = "Parse: " + printableText(q.data(), q.size(), 200);

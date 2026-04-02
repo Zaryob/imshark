@@ -203,7 +203,8 @@ void dissect::dissectLdap(Context &ctx, const char *data, size_t length) {
     int64_t msgId = 0;
     if (!readBerTlv(body, idTlv) || !idTlv.isUniversal(asn1::tag::Integer) || !idTlv.asInt64(msgId) || msgId < 0 || msgId > 0x7fffffff) {
         pack.info = "LDAP";
-        ctx.markMalformed(cut ? "LDAP message cut before its MessageID" : "LDAP MessageID missing");
+        if (cut) pack.info += " [cut]";   // the rest is in the next segment
+        else ctx.markMalformed("LDAP MessageID missing");
         return;
     }
     pack.app_stream = static_cast<uint32_t>(msgId);
@@ -212,7 +213,8 @@ void dissect::dissectLdap(Context &ctx, const char *data, size_t length) {
     const size_t opStart = h.header + idTlv.total;
     if (avail - opStart < 2 || (bytes[opStart] & 0xc0) != 0x40 || (bytes[opStart] & 0x1f) == 0x1f) {
         pack.info = "LDAP MsgID=" + std::to_string(msgId);
-        ctx.markMalformed(cut ? "LDAP message cut before its protocolOp" : "LDAP protocolOp missing");
+        if (cut) pack.info += " [cut]";
+        else ctx.markMalformed("LDAP protocolOp missing");
         return;
     }
     const uint32_t opTag = bytes[opStart] & 0x1f;

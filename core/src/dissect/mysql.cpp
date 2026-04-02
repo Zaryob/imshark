@@ -104,6 +104,7 @@ void dissectMySql(Context &ctx, const char *data, size_t length) {
     const size_t have = std::min<size_t>(payloadLen, length - 4);   // payload bytes captured
     ByteReader p(bytes + 4, have);
     const bool cut = payloadLen > length - 4;
+    const char *malformed = nullptr;   // set when the packet is complete (not cut) but its body does not decode
 
     // who sent it: the default port, else an endpoint that was seen sending a greeting
     bool server = pack.src_port == 3306;
@@ -132,6 +133,7 @@ void dissectMySql(Context &ctx, const char *data, size_t length) {
             pack.app_flags |= kFlagGreeting;
             p.skip(1);
             const std::string version = p.stringZ();
+            if (!cut && 5 + version.size() >= 4 + have) malformed = "MySQL greeting: server version is not terminated";
             std::string greeting = "Server Greeting proto=10 version=" + printableText(version.data(), version.size(), 63);
             items.push_back({"Protocol: 10", {po, 1}});
             items.push_back({"Version: " + printableText(version.data(), version.size(), 63), {po + 1, version.size() + 1}});
@@ -167,6 +169,7 @@ void dissectMySql(Context &ctx, const char *data, size_t length) {
         } else if (first == 0xff) {
             typeName = "ERR";
             pack.app_flags |= kFlagError;
+            if (!cut && payloadLen < 3) malformed = "MySQL ERR packet without an error code";
             p.skip(1);
             const uint16_t code = p.remaining() >= 2 ? p.u16_le() : 0;
             std::string state;
@@ -247,6 +250,7 @@ void dissectMySql(Context &ctx, const char *data, size_t length) {
                 ByteReader u(bytes + 4 + 32, have - 32);
                 user = u.stringZ();
             }
+            if (!cut && (have <= 32 || 4 + 32 + user.size() >= 4 + have)) malformed = "MySQL login request: user name is not terminated";
             pack.app_text2 = printableText(user.data(), user.size(), 63);
             info = "Login Request user=" + printableText(user.data(), user.size(), 63);
             items.push_back({"Client Capabilities: " + hexString(have >= 4 ? le32(data + 4) : 0, 8), {po, std::min<size_t>(have, 4)}});
@@ -286,6 +290,7 @@ void dissectMySql(Context &ctx, const char *data, size_t length) {
     }
 
     pack.info = info + (cut ? " [cut]" : "");
+    if (malformed) ctx.markMalformed(malformed);
     if (ctx.wantFields()) {
         Field &l = ctx.addLayer("MySQL Protocol (" + typeName + ")", o, std::min<size_t>(4 + payloadLen, length));
         for (const auto &it: items) {

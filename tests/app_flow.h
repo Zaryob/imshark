@@ -7,7 +7,7 @@
 //                         sequence and acknowledgement numbers; load() returns the packets of the loading pass
 //   appflow::details      the Replay of packet `index` (uses the frozen session tables of the loading pass)
 //   appflow::expectReplayEqualsLoad   every packet's Replay shows the same protocol, Info and application facts as the loading pass
-//   appflow::sweepFlow    every segment cut at every length and mutated at seeded random bytes: no crash under ASan,
+//   appflow::sweepPayload one segment cut at every length and mutated at seeded random bytes, both directions: no crash under ASan,
 //                         every field of every node inside its frame
 #include <gtest/gtest.h>
 

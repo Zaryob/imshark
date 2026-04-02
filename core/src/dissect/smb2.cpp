@@ -221,7 +221,9 @@ void dissectSmb2(Context &ctx, const char *data, size_t length) {
         if (avail < kHeader || !smbMagic(msg + pos, 0xfe)) {
             if (commands == 0) { // the first header is cut: name it
                 infoAll = "SMB2 [Truncated header]";
-                malformed = "SMB2 header truncated";
+                // a session message whose NBSS length promises more bytes is the first segment of a longer message
+                const bool segmentOfLonger = base == 4 && bytes[0] == 0x00 && ((static_cast<size_t>(bytes[1]) << 16) | (static_cast<size_t>(bytes[2]) << 8) | bytes[3]) > msgLen;
+                if (!segmentOfLonger) malformed = "SMB2 header truncated";
             } else {
                 malformed = "NextCommand does not lead to an SMB2 header";
             }
