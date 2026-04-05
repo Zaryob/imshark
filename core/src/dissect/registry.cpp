@@ -31,8 +31,9 @@ const dissect::Registry &dissect::Registry::builtin() {
         r.registerLinkType(249, dissectUsbPcap);
         r.registerLinkType(187, dissectBluetoothHciH4);
         r.registerLinkType(254, dissectBluetoothLinuxMonitor);
-        r.registerLinkType(195, dissectIeee802154);
-        r.registerLinkType(215, dissectIeee802154);
+        r.registerLinkType(195, dissectIeee802154WithFcs);
+        r.registerLinkType(215, dissectIeee802154NonaskPhy);
+        r.registerLinkType(230, dissectIeee802154);
         r.registerLinkType(227, dissectSocketCan);
 
         // network layer, by EtherType

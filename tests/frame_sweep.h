@@ -1,7 +1,7 @@
 #pragma once
 
 // Shared helpers for "every field stays inside the frame" tests (R1; reuse them for later dissector tests):
-//   framesweep::parseEthernet   parse one Ethernet frame in Full mode
+//   framesweep::parseEthernet   parse one frame in Full mode (Ethernet unless another link type is given)
 //   framesweep::ethernet / ipv4Packet / ipv6Packet / udpDatagram   hand-built frames (IP header checksum filled in)
 //   framesweep::expectInside    every node of the tree lies inside the frame
 //   framesweep::sweep           the frame cut at every length plus seeded random byte mutations (also truncated):
@@ -26,12 +26,13 @@
 namespace framesweep {
     using Bytes = std::vector<uint8_t>;
 
-    inline packet::PacketInfo parseEthernet(const Bytes &frame) {
+    inline packet::PacketInfo parseEthernet(const Bytes &frame, uint32_t linkType = 1,
+                                            dissect::ParseMode mode = dissect::ParseMode::Full) {
         packet::PacketInfo pack;
-        pack.link_type = 1;
+        pack.link_type = linkType;
         std::vector<char> raw(frame.begin(), frame.end());
         packet::PacketParser parser;
-        parser.parsePacket(pack, raw, dissect::ParseMode::Full);
+        parser.parsePacket(pack, raw, mode);
         return pack;
     }
 
@@ -85,21 +86,21 @@ namespace framesweep {
         for (const auto &f: p.fields) EXPECT_TRUE(inside(f, frameSize)) << what << ": " << f.text;
     }
 
-    inline void sweep(const Bytes &frame, uint32_t seed, int rounds = 400) {
+    inline void sweep(const Bytes &frame, uint32_t seed, int rounds = 400, uint32_t linkType = 1) {
         auto next = [&seed]() {
             seed = seed * 1664525u + 1013904223u;
             return seed >> 8;
         };
         for (size_t n = 0; n <= frame.size(); ++n) {
             const Bytes cut(frame.begin(), frame.begin() + n);
-            expectInside(parseEthernet(cut), n, "truncated to " + std::to_string(n));
+            expectInside(parseEthernet(cut, linkType), n, "truncated to " + std::to_string(n));
         }
         for (int round = 0; round < rounds; ++round) {
             Bytes mutated = frame;
             const int flips = 1 + int(next() % 3);
             for (int i = 0; i < flips; ++i) mutated[next() % mutated.size()] = static_cast<uint8_t>(next());
             if (next() % 2) mutated.resize(next() % (mutated.size() + 1));
-            expectInside(parseEthernet(mutated), mutated.size(), "mutation round " + std::to_string(round));
+            expectInside(parseEthernet(mutated, linkType), mutated.size(), "mutation round " + std::to_string(round));
         }
     }
 
