@@ -1,12 +1,15 @@
 #include "usb.h"
 #include "reader.h"
 #include "util.h"
+#include <algorithm>
 #include <cstdio>
 #include <string>
 
 namespace dissect {
 
 namespace {
+
+uint16_t le16(const uint8_t *p) { return static_cast<uint16_t>(p[0] | (p[1] << 8)); }
 
 const char *usbTransferTypeName(uint8_t xferType) {
     switch (xferType) {
@@ -62,135 +65,155 @@ const char *usbStandardRequestName(uint8_t req) {
     }
 }
 
-void dissectUsbDescriptors(Context &ctx, const uint8_t *descData, size_t descLen, size_t fileOffset) {
+std::string hex64(uint64_t v) {
+    char buf[24];
+    std::snprintf(buf, sizeof(buf), "0x%016llx", static_cast<unsigned long long>(v));
+    return buf;
+}
+
+// Standard descriptors in `descLen` bytes at `descData` (absolute offset `base`). Returns after the first one that does
+// not fit.
+void dissectUsbDescriptors(Context &ctx, const uint8_t *descData, size_t descLen, size_t base) {
     if (!ctx.wantFields() || descLen < 2) return;
 
-    ByteReader r(descData, descLen);
-    while (r.remaining() >= 2) {
-        size_t descOffset = fileOffset + r.pos();
-        uint8_t bLength = r.u8();
-        uint8_t bDescriptorType = r.u8();
-
-        if (bLength < 2 || bLength > r.remaining() + 2) {
-            break;
-        }
+    size_t pos = 0;
+    while (descLen - pos >= 2) {
+        const uint8_t *d = descData + pos;
+        const size_t at = base + pos;
+        const uint8_t bLength = d[0];
+        const uint8_t bDescriptorType = d[1];
+        if (bLength < 2 || bLength > descLen - pos) break;
 
         const char *name = usbStandardDescriptorName(bDescriptorType);
-        std::string dName = name ? name : ("TYPE_0x" + hexString(bDescriptorType, 2));
+        const std::string dName = name ? name : ("TYPE_" + hexString(bDescriptorType, 2));
 
-        auto &dNode = ctx.addLayer("USB Descriptor: " + dName, descOffset, bLength);
-        dNode.add("bLength: " + std::to_string(bLength));
-        dNode.add("bDescriptorType: " + dName + " (0x" + hexString(bDescriptorType, 2) + ")");
+        auto &dNode = ctx.addLayer("USB Descriptor: " + dName, at, bLength);
+        dNode.add("bLength: " + std::to_string(bLength), at, 1);
+        dNode.add("bDescriptorType: " + dName + " (" + hexString(bDescriptorType, 2) + ")", at + 1, 1);
 
-        size_t bodyLen = bLength - 2;
-        if (bDescriptorType == 1 && bodyLen >= 16) { // DEVICE Descriptor
-            uint16_t bcdUSB = r.u16_le();
-            uint8_t bDevClass = r.u8();
-            uint8_t bDevSubClass = r.u8();
-            uint8_t bDevProto = r.u8();
-            uint8_t bMaxPacketSize0 = r.u8();
-            uint16_t idVendor = r.u16_le();
-            uint16_t idProduct = r.u16_le();
-            uint16_t bcdDevice = r.u16_le();
-            r.skip(bodyLen - 14);
-
-            dNode.add("bcdUSB: 0x" + hexString(bcdUSB, 4));
-            dNode.add("bDeviceClass: 0x" + hexString(bDevClass, 2));
-            dNode.add("bDeviceSubClass: 0x" + hexString(bDevSubClass, 2));
-            dNode.add("bDeviceProtocol: 0x" + hexString(bDevProto, 2));
-            dNode.add("bMaxPacketSize0: " + std::to_string(bMaxPacketSize0));
-            dNode.add("idVendor: 0x" + hexString(idVendor, 4));
-            dNode.add("idProduct: 0x" + hexString(idProduct, 4));
-            dNode.add("bcdDevice: 0x" + hexString(bcdDevice, 4));
+        const size_t bodyLen = bLength - 2u;
+        if (bDescriptorType == 1 && bodyLen >= 16) { // DEVICE: the remaining 4 bytes are iManufacturer .. bNumConfigurations
+            dNode.add("bcdUSB: " + hexString(le16(d + 2), 4), at + 2, 2);
+            dNode.add("bDeviceClass: " + hexString(d[4], 2), at + 4, 1);
+            dNode.add("bDeviceSubClass: " + hexString(d[5], 2), at + 5, 1);
+            dNode.add("bDeviceProtocol: " + hexString(d[6], 2), at + 6, 1);
+            dNode.add("bMaxPacketSize0: " + std::to_string(d[7]), at + 7, 1);
+            dNode.add("idVendor: " + hexString(le16(d + 8), 4), at + 8, 2);
+            dNode.add("idProduct: " + hexString(le16(d + 10), 4), at + 10, 2);
+            dNode.add("bcdDevice: " + hexString(le16(d + 12), 4), at + 12, 2);
         } else if (bDescriptorType == 2 && bodyLen >= 7) { // CONFIGURATION
-            uint16_t wTotalLength = r.u16_le();
-            uint8_t bNumInterfaces = r.u8();
-            uint8_t bConfigVal = r.u8();
-            r.skip(bodyLen - 4);
-
-            dNode.add("wTotalLength: " + std::to_string(wTotalLength));
-            dNode.add("bNumInterfaces: " + std::to_string(bNumInterfaces));
-            dNode.add("bConfigurationValue: " + std::to_string(bConfigVal));
+            dNode.add("wTotalLength: " + std::to_string(le16(d + 2)), at + 2, 2);
+            dNode.add("bNumInterfaces: " + std::to_string(d[4]), at + 4, 1);
+            dNode.add("bConfigurationValue: " + std::to_string(d[5]), at + 5, 1);
         } else if (bDescriptorType == 4 && bodyLen >= 7) { // INTERFACE
-            uint8_t bInterfaceNumber = r.u8();
-            uint8_t bAlternateSetting = r.u8();
-            uint8_t bNumEndpoints = r.u8();
-            uint8_t bInterfaceClass = r.u8();
-            uint8_t bInterfaceSubClass = r.u8();
-            uint8_t bInterfaceProtocol = r.u8();
-            r.skip(bodyLen - 6);
-
-            dNode.add("bInterfaceNumber: " + std::to_string(bInterfaceNumber));
-            dNode.add("bAlternateSetting: " + std::to_string(bAlternateSetting));
-            dNode.add("bNumEndpoints: " + std::to_string(bNumEndpoints));
-            dNode.add("bInterfaceClass: 0x" + hexString(bInterfaceClass, 2));
-            dNode.add("bInterfaceSubClass: 0x" + hexString(bInterfaceSubClass, 2));
-            dNode.add("bInterfaceProtocol: 0x" + hexString(bInterfaceProtocol, 2));
+            dNode.add("bInterfaceNumber: " + std::to_string(d[2]), at + 2, 1);
+            dNode.add("bAlternateSetting: " + std::to_string(d[3]), at + 3, 1);
+            dNode.add("bNumEndpoints: " + std::to_string(d[4]), at + 4, 1);
+            dNode.add("bInterfaceClass: " + hexString(d[5], 2), at + 5, 1);
+            dNode.add("bInterfaceSubClass: " + hexString(d[6], 2), at + 6, 1);
+            dNode.add("bInterfaceProtocol: " + hexString(d[7], 2), at + 7, 1);
         } else if (bDescriptorType == 5 && bodyLen >= 5) { // ENDPOINT
-            uint8_t bEndpointAddress = r.u8();
-            uint8_t bmAttributes = r.u8();
-            uint16_t wMaxPacketSize = r.u16_le();
-            uint8_t bInterval = r.u8();
-            r.skip(bodyLen - 5);
-
-            dNode.add("bEndpointAddress: 0x" + hexString(bEndpointAddress, 2));
-            dNode.add("bmAttributes: 0x" + hexString(bmAttributes, 2));
-            dNode.add("wMaxPacketSize: " + std::to_string(wMaxPacketSize));
-            dNode.add("bInterval: " + std::to_string(bInterval));
-        } else {
-            r.skip(bodyLen);
+            dNode.add("bEndpointAddress: " + hexString(d[2], 2), at + 2, 1);
+            dNode.add("bmAttributes: " + hexString(d[3], 2), at + 3, 1);
+            dNode.add("wMaxPacketSize: " + std::to_string(le16(d + 4)), at + 4, 2);
+            dNode.add("bInterval: " + std::to_string(d[6]), at + 6, 1);
         }
+        pos += bLength;
     }
 }
 
-} // namespace
+const char *usbDirection(uint8_t endpoint) { return (endpoint & 0x80) ? "IN" : "OUT"; }
 
-void dissectUsbLinux(Context &ctx, const char *data, size_t length) {
-    if (!data || length < 48) {
-        ctx.markMalformed("Truncated Linux USB header");
+std::string usbAddress(unsigned bus, unsigned device) { return std::to_string(bus) + "." + std::to_string(device); }
+
+// A request travels from the host to the device, a completion (or error) back: that decides source and destination.
+// The transfer direction (IN/OUT) is a property of the endpoint and is shown separately.
+void setUsbEndpoints(Context &ctx, bool request, unsigned bus, unsigned device) {
+    const std::string dev = usbAddress(bus, device);
+    ctx.pack.source = request ? "host" : dev;
+    ctx.pack.destination = request ? dev : "host";
+}
+
+void addSetupNode(Context &ctx, packet::Field &parent, const uint8_t *s, size_t at) {
+    (void)ctx;
+    const uint8_t bmReqType = s[0], bReq = s[1];
+    const char *reqName = usbStandardRequestName(bReq);
+    const std::string reqStr = reqName ? reqName : ("REQ_" + hexString(bReq, 2));
+    auto &sNode = parent.add("Setup Packet: " + reqStr, at, 8);
+    sNode.add("bmRequestType: " + hexString(bmReqType, 2), at, 1);
+    sNode.add("bRequest: " + reqStr + " (" + std::to_string(bReq) + ")", at + 1, 1);
+    sNode.add("wValue: " + hexString(le16(s + 2), 4), at + 2, 2);
+    sNode.add("wIndex: " + hexString(le16(s + 4), 4), at + 4, 2);
+    sNode.add("wLength: " + std::to_string(le16(s + 6)), at + 6, 2);
+}
+
+UsbControlRequest requestFrom(const uint8_t *s) {
+    UsbControlRequest r;
+    r.bmRequestType = s[0];
+    r.bRequest = s[1];
+    r.wValue = le16(s + 2);
+    r.wIndex = le16(s + 4);
+    r.wLength = le16(s + 6);
+    return r;
+}
+
+// Linux usbmon binary header (Documentation/usb/usbmon.rst, struct mon_bin_hdr): 48 bytes, followed (link type 220) by
+// the 16 byte mmapped extension, then the captured data.
+void dissectUsbmon(Context &ctx, const char *data, size_t length, size_t headerLen) {
+    if (!data || length < headerLen) {
         ctx.pack.protocol = "USB";
         ctx.pack.info = "USB [Truncated Header]";
+        ctx.markMalformed("Truncated Linux USB header");
         return;
     }
 
     const auto *bytes = reinterpret_cast<const uint8_t *>(data);
     ByteReader r(bytes, length);
 
-    uint64_t urbId = r.u64_le();
-    uint8_t eventType = r.u8();
-    uint8_t transferType = r.u8();
-    uint8_t endpoint = r.u8();
-    uint8_t device = r.u8();
-    uint16_t busId = r.u16_le();
-    uint8_t setupFlag = r.u8();
-    uint8_t dataFlag = r.u8();
-    int64_t tsSec = r.i64_le();
-    int32_t tsUsec = r.i32_le();
-    (void)tsSec; (void)tsUsec;
-    int32_t status = r.i32_le();
-    uint32_t urbLen = r.u32_le();
-    uint32_t dataLen = r.u32_le();
+    const uint64_t urbId = r.u64_le();
+    const uint8_t eventType = r.u8();
+    const uint8_t transferType = r.u8();
+    const uint8_t endpoint = r.u8();
+    const uint8_t device = r.u8();
+    const uint16_t busId = r.u16_le();
+    const uint8_t setupFlag = r.u8();
+    const uint8_t dataFlag = r.u8();
+    r.skip(12); // ts_sec, ts_usec
+    const int32_t status = r.i32_le();
+    const uint32_t urbLen = r.u32_le();
+    const uint32_t dataLen = r.u32_le();
 
     ctx.pack.protocol = "USB";
     ctx.pack.app_type = transferType;
 
-    bool isTx = (endpoint & 0x80) == 0; // OUT is host to device
-    std::string direction = isTx ? "OUT" : "IN";
-    std::string xferStr = usbTransferTypeName(transferType);
-    std::string eventStr = usbEventTypeName(eventType);
+    const bool request = eventType == 'S';
+    const std::string direction = usbDirection(endpoint);
+    const std::string xferStr = usbTransferTypeName(transferType);
+    const std::string eventStr = usbEventTypeName(eventType);
+    setUsbEndpoints(ctx, request, busId, device);
 
-    char srcBuf[32], dstBuf[32];
-    if (isTx) {
-        std::snprintf(srcBuf, sizeof(srcBuf), "host");
-        std::snprintf(dstBuf, sizeof(dstBuf), "%u.%u", busId, device);
-    } else {
-        std::snprintf(srcBuf, sizeof(srcBuf), "%u.%u", busId, device);
-        std::snprintf(dstBuf, sizeof(dstBuf), "host");
+    // Control transfers: remember the request of a submit, find it again for the completion (load pass and replay alike)
+    const bool control = transferType == 2;
+    const bool haveSetup = control && setupFlag == 0;
+    UsbControlRequest setup;
+    if (haveSetup) setup = requestFrom(bytes + 40);
+    const UsbControlRequest *answered = nullptr;
+    if (control && ctx.sessions) {
+        const uint32_t number = static_cast<uint32_t>(ctx.pack.number);
+        if (request && haveSetup) {
+            ctx.sessions->addUsbRequest(urbId, setup);
+        } else if (!request) {
+            ctx.sessions->completeUsbRequest(urbId, number);
+            answered = ctx.sessions->usbRequestOf(number);
+        }
     }
-    ctx.pack.source = srcBuf;
-    ctx.pack.destination = dstBuf;
+    const UsbControlRequest *shown = haveSetup ? &setup : answered;
 
     std::string summary = "URB " + eventStr + " " + xferStr + " " + direction + " (Dev " + std::to_string(device) + ", Ep " + std::to_string(endpoint & 0x7F) + ")";
+    if (shown) {
+        const char *reqName = usbStandardRequestName(shown->bRequest);
+        if (reqName && (shown->bmRequestType & 0x60) == 0) summary += std::string(" ") + reqName;
+    }
     if (status != 0) {
         summary += " Status: " + std::to_string(status);
         ctx.pack.app_code = static_cast<uint16_t>(status & 0xFFFF);
@@ -198,142 +221,143 @@ void dissectUsbLinux(Context &ctx, const char *data, size_t length) {
     if (dataLen > 0) {
         summary += " [" + std::to_string(dataLen) + " bytes]";
     }
-
     ctx.pack.info = summary;
 
     if (ctx.wantFields()) {
         const size_t o = ctx.offsetOf(data);
         auto &root = ctx.addLayer("USB URB (" + xferStr + " " + eventStr + ")", o, 48);
-        root.add("URB ID: 0x" + hexString(urbId, 16));
-        root.add("Event Type: " + eventStr + " ('" + std::string(1, static_cast<char>(eventType)) + "')");
-        root.add("Transfer Type: " + xferStr + " (" + std::to_string(transferType) + ")");
-        root.add("Endpoint: 0x" + hexString(endpoint, 2) + " (" + direction + ")");
-        root.add("Device Address: " + std::to_string(device));
-        root.add("Bus ID: " + std::to_string(busId));
-        root.add("Status: " + std::to_string(status));
-        root.add("URB Length: " + std::to_string(urbLen));
-        root.add("Data Length: " + std::to_string(dataLen));
+        root.add("URB ID: " + hex64(urbId), o, 8);
+        root.add("Event Type: " + eventStr + " ('" + std::string(1, (eventType >= 32 && eventType < 127) ? static_cast<char>(eventType) : '?') + "')", o + 8, 1);
+        root.add("Transfer Type: " + xferStr + " (" + std::to_string(transferType) + ")", o + 9, 1);
+        root.add("Endpoint: " + hexString(endpoint, 2) + " (" + direction + ")", o + 10, 1);
+        root.add("Device Address: " + std::to_string(device), o + 11, 1);
+        root.add("Bus ID: " + std::to_string(busId), o + 12, 2);
+        root.add("Status: " + std::to_string(status), o + 28, 4);
+        root.add("URB Length: " + std::to_string(urbLen), o + 32, 4);
+        root.add("Data Length: " + std::to_string(dataLen), o + 36, 4);
 
-        // If control setup packet present (setupFlag == 0, 8 bytes at offset 40)
-        if (setupFlag == 0 && length >= 48) {
-            ByteReader sr(bytes + 40, 8);
-            uint8_t bmReqType = sr.u8();
-            uint8_t bReq = sr.u8();
-            uint16_t wValue = sr.u16_le();
-            uint16_t wIndex = sr.u16_le();
-            uint16_t wLength = sr.u16_le();
+        if (haveSetup) addSetupNode(ctx, root, bytes + 40, o + 40);
 
-            const char *reqName = usbStandardRequestName(bReq);
-            std::string reqStr = reqName ? reqName : ("REQ_0x" + hexString(bReq, 2));
-
-            auto &sNode = root.add("Setup Packet: " + reqStr, o + 40, 8);
-            sNode.add("bmRequestType: 0x" + hexString(bmReqType, 2));
-            sNode.add("bRequest: " + reqStr + " (" + std::to_string(bReq) + ")");
-            sNode.add("wValue: 0x" + hexString(wValue, 4));
-            sNode.add("wIndex: 0x" + hexString(wIndex, 4));
-            sNode.add("wLength: " + std::to_string(wLength));
+        if (headerLen >= 64) {
+            ByteReader m(bytes + 48, 16);
+            const int32_t interval = m.i32_le();
+            const int32_t startFrame = m.i32_le();
+            const uint32_t xferFlags = m.u32_le();
+            const uint32_t numDesc = m.u32_le();
+            auto &mNode = ctx.addLayer("USB Linux Mmapped Extension", o + 48, 16);
+            mNode.add("Interval: " + std::to_string(interval), o + 48, 4);
+            mNode.add("Start Frame: " + std::to_string(startFrame), o + 52, 4);
+            mNode.add("Transfer Flags: " + hexString(xferFlags, 8), o + 56, 4);
+            mNode.add("Number of Isochronous Descriptors: " + std::to_string(numDesc), o + 60, 4);
         }
 
-        // Dissect payload descriptors if complete GET_DESCRIPTOR response
-        if (length > 48 && dataFlag == 0) {
-            dissectUsbDescriptors(ctx, bytes + 48, length - 48, o + 48);
+        // Descriptors only in the data of the completion of a GET_DESCRIPTOR request (not in any payload)
+        if (!request && answered && answered->isGetDescriptor() && dataFlag == 0 && length > headerLen) {
+            const size_t present = std::min<size_t>(length - headerLen, dataLen);
+            dissectUsbDescriptors(ctx, bytes + headerLen, present, o + headerLen);
         }
     }
 }
 
-void dissectUsbLinuxMmapped(Context &ctx, const char *data, size_t length) {
-    if (!data || length < 64) {
-        dissectUsbLinux(ctx, data, length);
-        return;
-    }
-
-    // First 48 bytes are identical to usbmon standard header
-    dissectUsbLinux(ctx, data, length);
-
-    if (ctx.wantFields() && length >= 64) {
-        const auto *bytes = reinterpret_cast<const uint8_t *>(data);
-        ByteReader r(bytes + 48, 16);
-        int32_t interval = r.i32_le();
-        int32_t startFrame = r.i32_le();
-        uint32_t xferFlags = r.u32_le();
-        uint32_t numDesc = r.u32_le();
-
-        const size_t o = ctx.offsetOf(data) + 48;
-        auto &mNode = ctx.addLayer("USB Linux Mmapped Extension", o, 16);
-        mNode.add("Interval: " + std::to_string(interval));
-        mNode.add("Start Frame: " + std::to_string(startFrame));
-        mNode.add("Transfer Flags: 0x" + hexString(xferFlags, 8));
-        mNode.add("Number of Isochronous Descriptors: " + std::to_string(numDesc));
-    }
-}
-
-void dissectUsbPcap(Context &ctx, const char *data, size_t length) {
-    if (!data || length < 28) {
-        ctx.markMalformed("Truncated USBPcap header");
+// USBPcap (https://desowin.org/usbpcap/captureformat.html): 27 byte packet header, control transfers add a stage byte.
+// info bit 0 is set for a completion (PDO to FDO), clear for a request (FDO to PDO).
+void dissectUsbPcapPacket(Context &ctx, const char *data, size_t length) {
+    if (!data || length < 27) {
         ctx.pack.protocol = "USB";
-        ctx.pack.info = "USBPcap [Truncated Header]";
+        ctx.markMalformed("Truncated USBPcap header");
         return;
     }
 
     const auto *bytes = reinterpret_cast<const uint8_t *>(data);
     ByteReader r(bytes, length);
 
-    uint16_t headerLen = r.u16_le();
-    uint64_t irpId = r.u64_le();
-    uint32_t usbdStatus = r.u32_le();
-    uint16_t function = r.u16_le();
-    uint8_t info = r.u8();
-    uint16_t busId = r.u16_le();
-    uint16_t device = r.u16_le();
-    uint8_t endpoint = r.u8();
-    uint8_t transferType = r.u8();
-    uint32_t dataLen = r.u32_le();
+    const uint16_t headerLen = r.u16_le();
+    const uint64_t irpId = r.u64_le();
+    const uint32_t usbdStatus = r.u32_le();
+    const uint16_t function = r.u16_le();
+    const uint8_t info = r.u8();
+    const uint16_t busId = r.u16_le();
+    const uint16_t device = r.u16_le();
+    const uint8_t endpoint = r.u8();
+    const uint8_t transferType = r.u8();
+    const uint32_t dataLen = r.u32_le();
 
     ctx.pack.protocol = "USB";
     ctx.pack.app_type = transferType;
 
-    bool isTx = (info & 0x01) == 0; // 0 = PDO -> FDO (OUT), 1 = FDO -> PDO (IN)
-    std::string direction = isTx ? "OUT" : "IN";
-    std::string xferStr = usbTransferTypeName(transferType);
+    const bool completion = (info & 0x01) != 0;
+    const std::string direction = usbDirection(endpoint);
+    const std::string xferStr = usbTransferTypeName(transferType);
+    setUsbEndpoints(ctx, !completion, busId, device);
 
-    char srcBuf[32], dstBuf[32];
-    if (isTx) {
-        std::snprintf(srcBuf, sizeof(srcBuf), "host");
-        std::snprintf(dstBuf, sizeof(dstBuf), "%u.%u", busId, device);
-    } else {
-        std::snprintf(srcBuf, sizeof(srcBuf), "%u.%u", busId, device);
-        std::snprintf(dstBuf, sizeof(dstBuf), "host");
+    const bool badHeader = headerLen < 27 || headerLen > length;
+    const size_t hdr = badHeader ? 27 : headerLen;
+    const bool control = transferType == 2 && hdr >= 28;
+    const uint8_t stage = control ? bytes[27] : 0;
+    const size_t present = length - hdr;
+
+    // Control transfers: a setup stage request carries the 8 byte setup packet; the completion with the same IRP id answers it
+    UsbControlRequest setup;
+    bool haveSetup = false;
+    const UsbControlRequest *answered = nullptr;
+    if (control && !badHeader) {
+        haveSetup = !completion && stage == 0 && present >= 8;
+        if (haveSetup) setup = requestFrom(bytes + hdr);
+        if (ctx.sessions) {
+            const uint32_t number = static_cast<uint32_t>(ctx.pack.number);
+            if (haveSetup) ctx.sessions->addUsbRequest(irpId, setup);
+            else if (completion) {
+                ctx.sessions->completeUsbRequest(irpId, number);
+                answered = ctx.sessions->usbRequestOf(number);
+            }
+        }
     }
-    ctx.pack.source = srcBuf;
-    ctx.pack.destination = dstBuf;
+    const UsbControlRequest *shown = haveSetup ? &setup : answered;
 
-    std::string summary = "USBPcap " + xferStr + " " + direction + " (Dev " + std::to_string(device) + ", Ep " + std::to_string(endpoint & 0x7F) + ")";
+    std::string summary = "USBPcap " + xferStr + " " + direction + (completion ? " Completion" : " Request") +
+                          " (Dev " + std::to_string(device) + ", Ep " + std::to_string(endpoint & 0x7F) + ")";
+    if (shown) {
+        const char *reqName = usbStandardRequestName(shown->bRequest);
+        if (reqName && (shown->bmRequestType & 0x60) == 0) summary += std::string(" ") + reqName;
+    }
     if (usbdStatus != 0) {
-        summary += " Status: 0x" + hexString(usbdStatus, 8);
+        summary += " Status: " + hexString(usbdStatus, 8);
     }
     if (dataLen > 0) {
         summary += " [" + std::to_string(dataLen) + " bytes]";
     }
-
     ctx.pack.info = summary;
 
     if (ctx.wantFields()) {
         const size_t o = ctx.offsetOf(data);
-        auto &root = ctx.addLayer("USBPcap (" + xferStr + " " + direction + ")", o, headerLen <= length ? headerLen : length);
-        root.add("Header Length: " + std::to_string(headerLen));
-        root.add("IRP ID: 0x" + hexString(irpId, 16));
-        root.add("USBD Status: 0x" + hexString(usbdStatus, 8));
-        root.add("Function: 0x" + hexString(function, 4));
-        root.add("Bus ID: " + std::to_string(busId));
-        root.add("Device Address: " + std::to_string(device));
-        root.add("Endpoint: 0x" + hexString(endpoint, 2) + " (" + direction + ")");
-        root.add("Transfer Type: " + xferStr + " (" + std::to_string(transferType) + ")");
-        root.add("Data Length: " + std::to_string(dataLen));
+        auto &root = ctx.addLayer("USBPcap (" + xferStr + " " + direction + ")", o, hdr);
+        root.add("Header Length: " + std::to_string(headerLen), o, 2);
+        root.add("IRP ID: " + hex64(irpId), o + 2, 8);
+        root.add("USBD Status: " + hexString(usbdStatus, 8), o + 10, 4);
+        root.add("Function: " + hexString(function, 4), o + 14, 2);
+        root.add(std::string("IRP Information: ") + (completion ? "PDO to FDO (completion)" : "FDO to PDO (request)") +
+                     " (" + hexString(info, 2) + ")", o + 16, 1);
+        root.add("Bus ID: " + std::to_string(busId), o + 17, 2);
+        root.add("Device Address: " + std::to_string(device), o + 19, 2);
+        root.add("Endpoint: " + hexString(endpoint, 2) + " (" + direction + ")", o + 21, 1);
+        root.add("Transfer Type: " + xferStr + " (" + std::to_string(transferType) + ")", o + 22, 1);
+        root.add("Data Length: " + std::to_string(dataLen), o + 23, 4);
+        if (control) root.add("Control Stage: " + std::to_string(stage), o + 27, 1);
+        if (haveSetup) addSetupNode(ctx, root, bytes + hdr, o + hdr);
 
-        if (headerLen <= length && length > headerLen) {
-            dissectUsbDescriptors(ctx, bytes + headerLen, length - headerLen, o + headerLen);
+        if (!badHeader && completion && answered && answered->isGetDescriptor() && present > 0) {
+            dissectUsbDescriptors(ctx, bytes + hdr, std::min<size_t>(present, dataLen), o + hdr);
         }
     }
+    if (badHeader) ctx.markMalformed(headerLen < 27 ? "USBPcap header length is too small" : "Truncated USBPcap header");
 }
+
+} // namespace
+
+void dissectUsbLinux(Context &ctx, const char *data, size_t length) { dissectUsbmon(ctx, data, length, 48); }
+
+void dissectUsbLinuxMmapped(Context &ctx, const char *data, size_t length) { dissectUsbmon(ctx, data, length, 64); }
+
+void dissectUsbPcap(Context &ctx, const char *data, size_t length) { dissectUsbPcapPacket(ctx, data, length); }
 
 } // namespace dissect

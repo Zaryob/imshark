@@ -23,6 +23,17 @@ struct TftpSession {
     uint16_t serverPort = 0; // TID
 };
 
+/// The setup packet of a USB control request (USB 2.0 spec 9.3), remembered so that its completion can be decoded.
+struct UsbControlRequest {
+    uint8_t bmRequestType = 0;
+    uint8_t bRequest = 0;
+    uint16_t wValue = 0;
+    uint16_t wIndex = 0;
+    uint16_t wLength = 0;
+    /// Standard GET_DESCRIPTOR request (device to host, bRequest 6): the completion carries descriptors.
+    bool isGetDescriptor() const { return bRequest == 6 && (bmRequestType & 0xE0) == 0x80; }
+};
+
 class SessionTables {
 public:
     static constexpr size_t kDefaultMaxMemoryPerTable = 64 * 1024 * 1024; // 64 MB per table upper bound
@@ -47,6 +58,9 @@ public:
         tlsUpgrades_.clear();
         serverEndpoints_.clear();
         connectionMemory_ = 0;
+        usbOpen_.clear();
+        usbDone_.clear();
+        usbMemory_ = 0;
         stateLost_ = false;
         stateLostTables_.clear();
         frozen_ = false;
@@ -252,6 +266,39 @@ public:
         return !serverEndpoints_.empty() && serverEndpoints_.count(ip + ":" + std::to_string(port)) > 0;
     }
 
+    // ---- USB control transfers ---------------------------------------------------------------------------------------
+    /// Load pass: a control request (URB submit / USBPcap setup stage) with this URB or IRP id went by.
+    bool addUsbRequest(uint64_t urbId, const UsbControlRequest &request) {
+        if (frozen_) return false;
+        const size_t entrySize = sizeof(uint64_t) + sizeof(UsbControlRequest) + 48;
+        if (usbMemory_ + entrySize > maxMemoryPerTable_) {
+            markStateLost("usb");
+            return false;
+        }
+        if (usbOpen_.insert_or_assign(urbId, request).second) usbMemory_ += entrySize;
+        return true;
+    }
+    /// Load pass: packet `packet` completes the request with this id (the request is consumed).
+    bool completeUsbRequest(uint64_t urbId, uint32_t packet) {
+        if (frozen_) return false;
+        const auto it = usbOpen_.find(urbId);
+        if (it == usbOpen_.end()) return false;
+        const size_t entrySize = sizeof(uint32_t) + sizeof(UsbControlRequest) + 48;
+        if (usbMemory_ + entrySize > maxMemoryPerTable_) {
+            markStateLost("usb");
+            return false;
+        }
+        usbDone_[packet] = it->second;
+        usbMemory_ += entrySize;
+        usbOpen_.erase(it);
+        return true;
+    }
+    /// The request that packet `packet` completed (nullptr if it completed none or the request was never seen).
+    const UsbControlRequest *usbRequestOf(uint32_t packet) const {
+        const auto it = usbDone_.find(packet);
+        return it == usbDone_.end() ? nullptr : &it->second;
+    }
+
     // ---- DTLS connections (see dtls_session.h) -----------------------------------------------
     /// Load pass: a complete ClientHello / ServerHello went by from src to dst. Returns false if the tables are frozen or
     /// the budget is exhausted (then the "dtls" table is state lost).
@@ -363,7 +410,7 @@ public:
         return true;
     }
 
-    size_t totalMemoryUsage() const { return ftpMemory_ + tftpMemory_ + connectionMemory_ + tls_.memory() + tlsDecrypt_.memory() + dtls_.memory(); }
+    size_t totalMemoryUsage() const { return ftpMemory_ + tftpMemory_ + connectionMemory_ + usbMemory_ + tls_.memory() + tlsDecrypt_.memory() + dtls_.memory(); }
 
 private:
     static std::string directionKey(const std::string &srcIp, uint16_t srcPort, const std::string &dstIp, uint16_t dstPort) {
@@ -389,6 +436,10 @@ private:
     std::unordered_map<std::string, uint32_t> tlsUpgrades_;
     std::unordered_set<std::string> serverEndpoints_;
     size_t connectionMemory_ = 0;
+
+    std::unordered_map<uint64_t, UsbControlRequest> usbOpen_;      // requests waiting for their completion
+    std::unordered_map<uint32_t, UsbControlRequest> usbDone_;      // completing packet number -> its request
+    size_t usbMemory_ = 0;
 
     TlsSessionTable tls_;
     TlsDecryptTable tlsDecrypt_;
