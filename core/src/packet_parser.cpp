@@ -14,6 +14,14 @@
 #include <network/utils.h>
 
 namespace {
+    using packet::Field;
+
+    std::string hexString(uint32_t value, int width) {
+        std::ostringstream ss;
+        ss << "0x" << std::hex << std::setw(width) << std::setfill('0') << value;
+        return ss.str();
+    }
+
     // Copies a T out of [base, base + avail) at `off`. Returns false if it does not fit.
     // memcpy (instead of reinterpret_cast) also avoids unaligned-access UB.
     template<typename T>
@@ -98,6 +106,22 @@ void packet::PacketParser::parseDNSPacket(const char *data, size_t length) {
     uint16_t flags = ntohs(dnsHeader.flags);
     uint16_t questions = ntohs(dnsHeader.questions);
     uint16_t answerRRs = ntohs(dnsHeader.answer_rrs);
+
+    {
+        const size_t o = offsetOf(data);
+        Field &l = pack.fields.emplace_back(Field{std::string("Domain Name System (") + ((flags & 0x8000) ? "response" : "query") + ")",
+                                                  static_cast<uint32_t>(o), static_cast<uint32_t>(length), {}});
+        l.add("Transaction ID: " + hexString(transactionID, 4), o, 2);
+        l.add("Flags: " + hexString(flags, 4), o + 2, 2);
+        l.add("Questions: " + std::to_string(questions), o + 4, 2);
+        l.add("Answer RRs: " + std::to_string(answerRRs), o + 6, 2);
+        l.add("Authority RRs: " + std::to_string(ntohs(dnsHeader.authority_rrs)), o + 8, 2);
+        l.add("Additional RRs: " + std::to_string(ntohs(dnsHeader.additional_rrs)), o + 10, 2);
+        if (length > sizeof(network::DNSHeader)) {
+            l.add("Records (" + std::to_string(length - sizeof(network::DNSHeader)) + " bytes)", o + sizeof(network::DNSHeader),
+                  length - sizeof(network::DNSHeader));
+        }
+    }
 
     std::ostringstream oss;
     oss << ((flags & 0x8000) ? "Standard query response 0x" : "Standard query 0x")
@@ -261,8 +285,65 @@ std::string packet::PacketParser::describeTCPOptions(const char *p, size_t len) 
     return out;
 }
 
+namespace {
+    std::string etherTypeName(uint16_t type) {
+        switch (type) {
+            case 0x0800: return "IPv4";
+            case 0x86DD: return "IPv6";
+            case 0x0806: return "ARP";
+            case 0x8035: return "RARP";
+            case 0x8100: return "802.1Q VLAN";
+            case 0x88A8: return "802.1ad VLAN";
+            default: return "unknown";
+        }
+    }
+
+    std::string linkTypeName(uint32_t type) {
+        switch (type) {
+            case 0: return "NULL";
+            case 1: return "Ethernet";
+            case 12:
+            case 14:
+            case 101: return "Raw IP";
+            case 108: return "OpenBSD loopback";
+            case 113: return "Linux cooked v1";
+            case 276: return "Linux cooked v2";
+            default: return "unsupported";
+        }
+    }
+
+    std::string tcpFlagNames(uint8_t flags) {
+        static const std::pair<uint8_t, const char *> names[] = {
+            {0x80, "CWR"}, {0x40, "ECE"}, {0x20, "URG"}, {0x10, "ACK"}, {0x08, "PSH"}, {0x04, "RST"}, {0x02, "SYN"}, {0x01, "FIN"}};
+        std::string out;
+        for (const auto &[bit, name]: names) {
+            if (flags & bit) out += (out.empty() ? "" : ", ") + std::string(name);
+        }
+        return out;
+    }
+
+    // Printable preview of a payload for the details tree
+    std::string asciiPreview(const char *data, size_t length, size_t max = 40) {
+        std::string out;
+        for (size_t i = 0; i < std::min(length, max); ++i) {
+            const auto c = static_cast<unsigned char>(data[i]);
+            out += (c >= 32 && c < 127) ? static_cast<char>(c) : '.';
+        }
+        if (length > max) out += "...";
+        return out;
+    }
+} // namespace
+
+// Adds a layer that only shows its payload as raw data (Telnet, SMTP, BGP, SNMP)
+void packet::PacketParser::addDataLayer(const std::string &name, const char *payload, size_t length) {
+    const size_t o = offsetOf(payload);
+    Field &l = pack.fields.emplace_back(Field{name, static_cast<uint32_t>(o), static_cast<uint32_t>(length), {}});
+    if (length > 0) l.add("Data (" + std::to_string(length) + " bytes): " + asciiPreview(payload, length), o, length);
+}
+
 // `length` is the number of bytes actually available at pack_data (captured, clamped to the IP payload).
 void packet::PacketParser::parseProtocolPacket(const char *pack_data, size_t length, uint8_t protocol) {
+    const size_t o = offsetOf(pack_data);
     switch (protocol) {
         case 1: // ICMP
         case 58: { // ICMPv6
@@ -274,6 +355,19 @@ void packet::PacketParser::parseProtocolPacket(const char *pack_data, size_t len
             pack.l4_header = icmpHeader;
             pack.protocol = (protocol == 1) ? "ICMP" : "ICMPv6";
             parseICMP(pack_data, length);
+
+            Field &l = pack.fields.emplace_back(Field{protocol == 1 ? "Internet Control Message Protocol"
+                                                                    : "Internet Control Message Protocol v6",
+                                                      static_cast<uint32_t>(o), static_cast<uint32_t>(length), {}});
+            l.add("Type: " + std::to_string(icmpHeader.type), o, 1);
+            l.add("Code: " + std::to_string(icmpHeader.code), o + 1, 1);
+            l.add("Checksum: " + hexString(ntohs(icmpHeader.checksum), 4), o + 2, 2);
+            l.add("Identifier: " + std::to_string(ntohs(icmpHeader.identifier)), o + 4, 2);
+            l.add("Sequence Number: " + std::to_string(ntohs(icmpHeader.sequence)), o + 6, 2);
+            if (length > sizeof(icmpHeader)) {
+                l.add("Data (" + std::to_string(length - sizeof(icmpHeader)) + " bytes)", o + sizeof(icmpHeader),
+                      length - sizeof(icmpHeader));
+            }
         } break;
         case 6: { // TCP
             network::TCPHeader tcpHeader;
@@ -302,21 +396,55 @@ void packet::PacketParser::parseProtocolPacket(const char *pack_data, size_t len
             uint16_t window = ntohs(tcpHeader.window);
             uint16_t src_port = ntohs(tcpHeader.src_port);
             uint16_t dest_port = ntohs(tcpHeader.dest_port);
+            const std::string options = describeTCPOptions(pack_data + sizeof(network::TCPHeader),
+                                                           headerLen - sizeof(network::TCPHeader));
             pack.info = std::to_string(src_port) + " -> " + std::to_string(dest_port) + " [" + flags + "] " +
                         (seq >= 0 ? (" Seq=" + std::to_string(seq)) : "") +
                         (ack >= 0 ? (" Ack=" + std::to_string(ack)) : "") +
-                        (window > 0 ? (" Win=" + std::to_string(window)) : "") +
-                        describeTCPOptions(pack_data + sizeof(network::TCPHeader), headerLen - sizeof(network::TCPHeader));
+                        (window > 0 ? (" Win=" + std::to_string(window)) : "") + options;
+
+            {
+                Field &l = pack.fields.emplace_back(Field{
+                    "Transmission Control Protocol, Src Port: " + std::to_string(src_port) + ", Dst Port: " +
+                        std::to_string(dest_port) + (seq >= 0 ? ", Seq: " + std::to_string(seq) : "") +
+                        ", Len: " + std::to_string(payloadLen),
+                    static_cast<uint32_t>(o), static_cast<uint32_t>(headerLen + payloadLen), {}});
+                l.add("Source Port: " + std::to_string(src_port), o, 2);
+                l.add("Destination Port: " + std::to_string(dest_port), o + 2, 2);
+                l.add("Sequence Number: " + (seq >= 0 ? std::to_string(seq) + " (relative), " : std::string()) +
+                          std::to_string(ntohl(tcpHeader.seq_num)) + " (raw)", o + 4, 4);
+                l.add("Acknowledgment Number: " + (ack >= 0 ? std::to_string(ack) + " (relative), " : std::string()) +
+                          std::to_string(ntohl(tcpHeader.ack_num)) + " (raw)", o + 8, 4);
+                l.add("Header Length: " + std::to_string(headerLen) + " bytes", o + 12, 1);
+                Field &f = l.add("Flags: " + hexString(tcpHeader.flags, 3) + " (" + tcpFlagNames(tcpHeader.flags) + ")", o + 13, 1);
+                static const std::pair<uint8_t, const char *> bits[] = {
+                    {0x80, "Congestion Window Reduced"}, {0x40, "ECN-Echo"}, {0x20, "Urgent"}, {0x10, "Acknowledgment"},
+                    {0x08, "Push"}, {0x04, "Reset"}, {0x02, "Syn"}, {0x01, "Fin"}};
+                for (const auto &[bit, name]: bits) {
+                    f.add(std::string(name) + ": " + ((tcpHeader.flags & bit) ? "Set" : "Not set"), o + 13, 1);
+                }
+                l.add("Window: " + std::to_string(window), o + 14, 2);
+                l.add("Checksum: " + hexString(ntohs(tcpHeader.checksum), 4), o + 16, 2);
+                l.add("Urgent Pointer: " + std::to_string(ntohs(tcpHeader.urgent_pointer)), o + 18, 2);
+                if (headerLen > sizeof(network::TCPHeader)) {
+                    l.add("Options:" + (options.empty() ? std::string(" (no decoded options)") : options), o + 20,
+                          headerLen - sizeof(network::TCPHeader));
+                }
+                if (payloadLen > 0) l.add("TCP payload (" + std::to_string(payloadLen) + " bytes)", o + headerLen, payloadLen);
+            }
 
             if (src_port == 23 || dest_port == 23) {
                 pack.protocol = "Telnet";
                 parseTelnet(payload, payloadLen);
+                addDataLayer("Telnet", payload, payloadLen);
             } else if (src_port == 25 || dest_port == 25) {
                 pack.protocol = "SMTP";
                 parseSMTP(payload, payloadLen);
+                addDataLayer("Simple Mail Transfer Protocol", payload, payloadLen);
             } else if (src_port == 179 || dest_port == 179) {
                 pack.protocol = "BGP";
                 parseBGP(payload, payloadLen);
+                addDataLayer("Border Gateway Protocol", payload, payloadLen);
             }
         } break;
         case 17: { // UDP
@@ -341,6 +469,17 @@ void packet::PacketParser::parseProtocolPacket(const char *pack_data, size_t len
             const char *payload = pack_data + sizeof(network::UDPHeader);
             const size_t payloadLen = std::min(udpLen, length) - sizeof(network::UDPHeader);
 
+            {
+                Field &l = pack.fields.emplace_back(Field{
+                    "User Datagram Protocol, Src Port: " + std::to_string(srcPort) + ", Dst Port: " + std::to_string(dstPort),
+                    static_cast<uint32_t>(o), static_cast<uint32_t>(sizeof(network::UDPHeader) + payloadLen), {}});
+                l.add("Source Port: " + std::to_string(srcPort), o, 2);
+                l.add("Destination Port: " + std::to_string(dstPort), o + 2, 2);
+                l.add("Length: " + std::to_string(udpLen), o + 4, 2);
+                l.add("Checksum: " + hexString(ntohs(udpHeader.checksum), 4), o + 6, 2);
+                if (payloadLen > 0) l.add("UDP payload (" + std::to_string(payloadLen) + " bytes)", o + 8, payloadLen);
+            }
+
             if (srcPort == 53 || dstPort == 53) {
                 pack.protocol = "DNS";
                 parseDNSPacket(payload, payloadLen);
@@ -350,12 +489,30 @@ void packet::PacketParser::parseProtocolPacket(const char *pack_data, size_t len
                 if (readStruct(payload, payloadLen, 0, dhcpHeader)) {
                     pack.l7_header = dhcpHeader;
                     parseDHCP(&dhcpHeader);
+
+                    const size_t p = offsetOf(payload);
+                    Field &l = pack.fields.emplace_back(Field{"Dynamic Host Configuration Protocol", static_cast<uint32_t>(p),
+                                                              static_cast<uint32_t>(payloadLen), {}});
+                    l.add("Message type: " + std::string(dhcpHeader.op == 1 ? "Boot Request (1)" : dhcpHeader.op == 2 ? "Boot Reply (2)"
+                                                                                                                       : std::to_string(dhcpHeader.op)), p, 1);
+                    l.add("Hardware type: " + hexString(dhcpHeader.hw_type, 2), p + 1, 1);
+                    l.add("Hardware address length: " + std::to_string(dhcpHeader.hw_len), p + 2, 1);
+                    l.add("Hops: " + std::to_string(dhcpHeader.hops), p + 3, 1);
+                    l.add("Transaction ID: " + hexString(ntohl(dhcpHeader.xid), 8), p + 4, 4);
+                    l.add("Seconds elapsed: " + std::to_string(ntohs(dhcpHeader.secs)), p + 8, 2);
+                    l.add("Flags: " + hexString(ntohs(dhcpHeader.flags), 4), p + 10, 2);
+                    l.add("Client IP address: " + ip4(dhcpHeader.cip_addr), p + 12, 4);
+                    l.add("Your (client) IP address: " + ip4(dhcpHeader.yip_addr), p + 16, 4);
+                    l.add("Next server IP address: " + ip4(dhcpHeader.sip_addr), p + 20, 4);
+                    l.add("Relay agent IP address: " + ip4(dhcpHeader.gip_addr), p + 24, 4);
+                    l.add("Client MAC address: " + network::getMACAddressString(dhcpHeader.ch_addr), p + 28, 6);
                 } else {
                     markMalformed("DHCP message too short");
                 }
             } else if (srcPort == 161 || dstPort == 161 || srcPort == 162 || dstPort == 162) { // SNMP
                 pack.protocol = "SNMP";
                 parseSNMP(payload, payloadLen);
+                addDataLayer("Simple Network Management Protocol", payload, payloadLen);
             } else {
                 pack.protocol = "UDP";
                 pack.info = std::to_string(srcPort) + " -> " + std::to_string(dstPort) +
@@ -375,9 +532,19 @@ namespace {
 void packet::PacketParser::parsePacket(packet::PacketInfo &packet, std::vector<char> &packetData) {
     pack = packet;
     pack.vlan_ids.clear();
+    pack.fields.clear();
     const char *base = packetData.data();
+    frame_ = base;
     const size_t len = packetData.size();
     pack.length = static_cast<uint32_t>(len);
+
+    {
+        Field &frame = pack.fields.emplace_back(Field{"Frame " + std::to_string(pack.number) + ": " + std::to_string(len) +
+                                                          " bytes on wire", 0, static_cast<uint32_t>(len), {}});
+        frame.add("Frame Number: " + std::to_string(pack.number));
+        frame.add("Frame Length: " + std::to_string(len) + " bytes", 0, len);
+        frame.add("Link type: " + std::to_string(pack.link_type) + " (" + linkTypeName(pack.link_type) + ")");
+    }
 
     // Link layer: find out where the network header starts and which protocol it carries.
     uint16_t etherType = 0;
@@ -396,6 +563,7 @@ void packet::PacketParser::parsePacket(packet::PacketInfo &packet, std::vector<c
             pack.l2_header = ethHeader;
             etherType = ntohs(ethHeader.type);
             l3Offset = sizeof(network::EthernetHeader);
+            const uint16_t outerType = etherType;
             // 802.1Q / 802.1ad (QinQ) tags: 2 bytes TCI + 2 bytes inner EtherType each
             while (etherType == 0x8100 || etherType == 0x88A8 || etherType == 0x9100) {
                 if (len < l3Offset || len - l3Offset < 4) {
@@ -408,6 +576,16 @@ void packet::PacketParser::parsePacket(packet::PacketInfo &packet, std::vector<c
                 pack.vlan_ids.push_back(be16(base + l3Offset) & 0x0FFF);
                 etherType = be16(base + l3Offset + 2);
                 l3Offset += 4;
+            }
+
+            Field &eth = pack.fields.emplace_back(Field{"Ethernet II, Src: " + network::getMACAddressString(ethHeader.src_mac) +
+                                                            ", Dst: " + network::getMACAddressString(ethHeader.dest_mac),
+                                                        0, static_cast<uint32_t>(l3Offset), {}});
+            eth.add("Destination: " + network::getMACAddressString(ethHeader.dest_mac), 0, 6);
+            eth.add("Source: " + network::getMACAddressString(ethHeader.src_mac), 6, 6);
+            eth.add("Type: " + etherTypeName(outerType) + " (" + hexString(outerType, 4) + ")", 12, 2);
+            for (size_t i = 0; i < pack.vlan_ids.size(); ++i) {
+                eth.add("802.1Q Virtual LAN, ID: " + std::to_string(pack.vlan_ids[i]), 14 + 4 * i, 4);
             }
         } break;
         case kLinkNull:
@@ -445,6 +623,9 @@ void packet::PacketParser::parsePacket(packet::PacketInfo &packet, std::vector<c
             return;
     }
     pack.l2_size = static_cast<uint16_t>(l3Offset);
+    if (!haveEthernet && l3Offset > 0) {
+        pack.fields.emplace_back(Field{linkTypeName(pack.link_type) + " link header", 0, static_cast<uint32_t>(l3Offset), {}});
+    }
 
     if (etherType == 0x0800) { // IPv4
         network::IPHeader ipHeader;
@@ -467,6 +648,27 @@ void packet::PacketParser::parsePacket(packet::PacketInfo &packet, std::vector<c
         }
 
         const size_t totalLen = ntohs(ipHeader.tot_length);
+        {
+            const size_t o = l3Offset;
+            Field &l = pack.fields.emplace_back(Field{"Internet Protocol Version 4, Src: " + pack.source + ", Dst: " + pack.destination,
+                                                      static_cast<uint32_t>(o), static_cast<uint32_t>(ipHeaderLen), {}});
+            l.add("Version: " + std::to_string(ipHeader.version), o, 1);
+            l.add("Header Length: " + std::to_string(ipHeaderLen) + " bytes (" + std::to_string(ipHeader.ihl) + ")", o, 1);
+            l.add("Differentiated Services: " + hexString(ipHeader.tos, 2), o + 1, 1);
+            l.add("Total Length: " + std::to_string(totalLen), o + 2, 2);
+            l.add("Identification: " + hexString(ntohs(ipHeader.id), 4) + " (" + std::to_string(ntohs(ipHeader.id)) + ")", o + 4, 2);
+            Field &flags = l.add("Flags: " + hexString(ipHeader.flags(), 1) + ((ipHeader.flags() & 2) ? ", Don't fragment" : "") +
+                                     ((ipHeader.flags() & 1) ? ", More fragments" : ""), o + 6, 1);
+            flags.add(std::string("Don't fragment: ") + ((ipHeader.flags() & 2) ? "Set" : "Not set"), o + 6, 1);
+            flags.add(std::string("More fragments: ") + ((ipHeader.flags() & 1) ? "Set" : "Not set"), o + 6, 1);
+            l.add("Fragment Offset: " + std::to_string(ipHeader.fragmentOffset() * 8), o + 6, 2);
+            l.add("Time to Live: " + std::to_string(ipHeader.ttl), o + 8, 1);
+            l.add("Protocol: " + std::to_string(ipHeader.protocol), o + 9, 1);
+            l.add("Header Checksum: " + hexString(ntohs(ipHeader.check), 4), o + 10, 2);
+            l.add("Source Address: " + pack.source, o + 12, 4);
+            l.add("Destination Address: " + pack.destination, o + 16, 4);
+            if (ipHeaderLen > sizeof(network::IPHeader)) l.add("Options", o + 20, ipHeaderLen - sizeof(network::IPHeader));
+        }
         pack.length = totalLen >= ipHeaderLen ? totalLen - ipHeaderLen : 0;
         const size_t avail = std::min<size_t>(pack.length, len - l3Offset - ipHeaderLen); // drops Ethernet padding
         parseProtocolPacket(base + l3Offset + ipHeaderLen, avail, ipHeader.protocol);
@@ -496,6 +698,22 @@ void packet::PacketParser::parsePacket(packet::PacketInfo &packet, std::vector<c
         size_t avail = std::min<size_t>(pack.length, len - l4Offset);
         uint8_t nextHeader = ipv6Header.next_header;
 
+        Field *ipv6Layer = nullptr;
+        {
+            const size_t o = l3Offset;
+            Field &l = pack.fields.emplace_back(Field{"Internet Protocol Version 6, Src: " + pack.source + ", Dst: " + pack.destination,
+                                                      static_cast<uint32_t>(o), static_cast<uint32_t>(sizeof(network::IPv6Header)), {}});
+            l.add("Version: " + std::to_string(ipv6Header.version()), o, 1);
+            l.add("Traffic Class: " + hexString(ipv6Header.trafficClass(), 2), o, 2);
+            l.add("Flow Label: " + hexString(ipv6Header.flowLabel(), 5), o + 1, 3);
+            l.add("Payload Length: " + std::to_string(ntohs(ipv6Header.payload_len)), o + 4, 2);
+            l.add("Next Header: " + std::to_string(ipv6Header.next_header), o + 6, 1);
+            l.add("Hop Limit: " + std::to_string(ipv6Header.hop_limit), o + 7, 1);
+            l.add("Source Address: " + pack.source, o + 8, 16);
+            l.add("Destination Address: " + pack.destination, o + 24, 16);
+            ipv6Layer = &l;
+        }
+
         // Skip extension headers (hop-by-hop, routing, fragment, destination options, AH)
         while (nextHeader == 0 || nextHeader == 43 || nextHeader == 44 || nextHeader == 51 || nextHeader == 60) {
             if (avail < 8) { markMalformed("IPv6 extension header truncated"); packet = pack; return; }
@@ -504,6 +722,7 @@ void packet::PacketParser::parsePacket(packet::PacketInfo &packet, std::vector<c
                                   : nextHeader == 51 ? (static_cast<size_t>(static_cast<uint8_t>(base[l4Offset + 1])) + 2) * 4
                                   : (static_cast<size_t>(static_cast<uint8_t>(base[l4Offset + 1])) + 1) * 8;
             if (extLen > avail) { markMalformed("IPv6 extension header truncated"); packet = pack; return; }
+            ipv6Layer->add("Extension Header (type " + std::to_string(nextHeader) + ", " + std::to_string(extLen) + " bytes)", l4Offset, extLen);
             l4Offset += extLen;
             avail -= extLen;
             nextHeader = following;
@@ -526,6 +745,19 @@ void packet::PacketParser::parsePacket(packet::PacketInfo &packet, std::vector<c
             pack.destination = "Broadcast";
         }
         parseARP(arpHeader);
+
+        const size_t o = l3Offset;
+        Field &l = pack.fields.emplace_back(Field{"Address Resolution Protocol (" + std::string(ntohs(arpHeader.opcode) == 1 ? "request" : ntohs(arpHeader.opcode) == 2 ? "reply" : "other") + ")",
+                                                  static_cast<uint32_t>(o), static_cast<uint32_t>(sizeof(network::ARPHeader)), {}});
+        l.add("Hardware type: " + std::to_string(ntohs(arpHeader.hw_type)), o, 2);
+        l.add("Protocol type: " + hexString(ntohs(arpHeader.protocol_type), 4), o + 2, 2);
+        l.add("Hardware size: " + std::to_string(arpHeader.hw_addr_len), o + 4, 1);
+        l.add("Protocol size: " + std::to_string(arpHeader.protocol_addr_len), o + 5, 1);
+        l.add("Opcode: " + std::to_string(ntohs(arpHeader.opcode)), o + 6, 2);
+        l.add("Sender MAC address: " + network::getMACAddressString(arpHeader.sender_hw_addr), o + 8, 6);
+        l.add("Sender IP address: " + ip4(arpHeader.sender_protocol_addr), o + 14, 4);
+        l.add("Target MAC address: " + network::getMACAddressString(arpHeader.target_hw_addr), o + 18, 6);
+        l.add("Target IP address: " + ip4(arpHeader.target_protocol_addr), o + 24, 4);
     } else {
         // Unsupported EtherType: show the frame at least by its MAC addresses.
         pack.protocol = haveEthernet ? "Ethernet" : "Unknown";
@@ -536,6 +768,10 @@ void packet::PacketParser::parsePacket(packet::PacketInfo &packet, std::vector<c
         std::ostringstream oss;
         oss << "EtherType 0x" << std::hex << std::setw(4) << std::setfill('0') << etherType;
         pack.info = oss.str();
+        if (len > l3Offset) {
+            pack.fields.emplace_back(Field{"Data (" + std::to_string(len - l3Offset) + " bytes)", static_cast<uint32_t>(l3Offset),
+                                           static_cast<uint32_t>(len - l3Offset), {}});
+        }
     }
     packet = pack;
 }

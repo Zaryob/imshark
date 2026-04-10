@@ -118,3 +118,99 @@ TEST(Parser, RandomisedInputNeverCrashes) {
         parse(data, (i % 7 == 0) ? 113 : (i % 11 == 0) ? 101 : 1);
     }
 }
+
+// ---- protocol tree (Field) ------------------------------------------------------------------------
+
+namespace {
+    using packet::Field;
+
+    const Field *findField(const Field &f, const std::string &prefix) {
+        if (f.text.rfind(prefix, 0) == 0) return &f;
+        for (const auto &c: f.children) {
+            if (auto r = findField(c, prefix)) return r;
+        }
+        return nullptr;
+    }
+
+    const Field *findField(const packet::PacketInfo &p, const std::string &prefix) {
+        for (const auto &l: p.fields) {
+            if (auto r = findField(l, prefix)) return r;
+        }
+        return nullptr;
+    }
+
+    // Every field must lie inside the frame and inside its parent (when the parent has a byte range).
+    void expectWithinFrame(const Field &f, size_t frameLen, const Field *parent = nullptr) {
+        EXPECT_LE(size_t(f.offset) + f.length, frameLen) << f.text;
+        if (parent && parent->length > 0 && f.length > 0) {
+            EXPECT_GE(f.offset, parent->offset) << f.text;
+            EXPECT_LE(size_t(f.offset) + f.length, size_t(parent->offset) + parent->length) << f.text;
+        }
+        for (const auto &c: f.children) expectWithinFrame(c, frameLen, &f);
+    }
+} // namespace
+
+TEST(FieldTree, EthernetIpTcpRangesAreAbsolute) {
+    // IPv4 with options (ihl = 6) so that the TCP header starts at 14 + 24 = 38, not 34
+    auto frame = hex("001122334455 aabbccddeeff 0800 4600003c123440004006 0000 0a000001 0a000002 01010101"
+                     "1f90 01bb 00000064 00000000 5002 7210 0000 0000");
+    auto p = parse(frame);
+    ASSERT_EQ(p.protocol, "TCP");
+
+    ASSERT_GE(p.fields.size(), 4u);
+    EXPECT_EQ(p.fields[0].text.rfind("Frame 1", 0), 0u);
+    const Field *ip = findField(p, "Internet Protocol Version 4");
+    const Field *tcp = findField(p, "Transmission Control Protocol");
+    ASSERT_NE(ip, nullptr);
+    ASSERT_NE(tcp, nullptr);
+    EXPECT_EQ(ip->offset, 14u);
+    EXPECT_EQ(ip->length, 24u);
+    EXPECT_EQ(tcp->offset, 38u) << "IP options must shift the TCP header";
+
+    const Field *srcPort = findField(*tcp, "Source Port: 8080");
+    ASSERT_NE(srcPort, nullptr);
+    EXPECT_EQ(srcPort->offset, 38u);
+    EXPECT_EQ(srcPort->length, 2u);
+    const Field *dst = findField(*ip, "Destination Address: 10.0.0.2");
+    ASSERT_NE(dst, nullptr);
+    EXPECT_EQ(dst->offset, 14u + 16u);
+
+    for (const auto &l: p.fields) expectWithinFrame(l, frame.size());
+}
+
+TEST(FieldTree, ArpDnsAndVlan) {
+    auto arp = parse(hex(support::kArpRequest));
+    const Field *spa = findField(arp, "Sender IP address: 10.0.0.1");
+    ASSERT_NE(spa, nullptr);
+    EXPECT_EQ(spa->offset, 14u + 14u);
+    EXPECT_EQ(spa->length, 4u);
+
+    auto vlan = parse(hex(std::string("001122334455aabbccddeeff 8100 0064 0800 ") +
+                          "4500001c00000000401100000a0000010a000002 1234 1235 0008 0000"));
+    const Field *tag = findField(vlan, "802.1Q Virtual LAN, ID: 100");
+    ASSERT_NE(tag, nullptr);
+    EXPECT_EQ(tag->offset, 14u);
+    const Field *ip = findField(vlan, "Internet Protocol Version 4");
+    ASSERT_NE(ip, nullptr);
+    EXPECT_EQ(ip->offset, 18u);
+    const Field *udp = findField(vlan, "User Datagram Protocol");
+    ASSERT_NE(udp, nullptr);
+    EXPECT_EQ(udp->offset, 38u);
+}
+
+TEST(FieldTree, FieldsStayInsideFrameForTruncatedAndRandomInput) {
+    const auto frame = hex("001122334455 aabbccddeeff 0800 4500003c123440004006 0000 0a000001 0a000002 1f90 01bb 00000064 00000000 a002 7210 0000 0000 020405b4");
+    for (size_t cut = 0; cut <= frame.size(); ++cut) {
+        std::vector<char> part(frame.begin(), frame.begin() + cut);
+        auto p = parse(part);
+        for (const auto &l: p.fields) expectWithinFrame(l, part.size());
+    }
+    std::mt19937 rng(99);
+    for (int i = 0; i < 5000; ++i) {
+        auto data = frame;
+        data.resize(rng() % (data.size() + 1));
+        for (unsigned f = rng() % 4; f > 0 && !data.empty(); --f) data[rng() % data.size()] = static_cast<char>(rng());
+        auto p = parse(data);
+        for (const auto &l: p.fields) expectWithinFrame(l, data.size());
+    }
+}
