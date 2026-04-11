@@ -1,6 +1,7 @@
 #include "industrial.h"
 #include "reader.h"
 #include "util.h"
+#include <algorithm>
 #include <cstdio>
 #include <string>
 
@@ -76,7 +77,7 @@ StreamFrame frameModbus(const char *data, size_t length) {
 }
 
 void dissectModbus(Context &ctx, const char *data, size_t length) {
-    if (!data || length < 7) return;
+    if (!data || length < 7) return;   // MBAP header
 
     const auto *bytes = reinterpret_cast<const uint8_t *>(data);
     ByteReader r(bytes, length);
@@ -90,7 +91,12 @@ void dissectModbus(Context &ctx, const char *data, size_t length) {
 
     ctx.pack.protocol = "Modbus";
 
-    if (r.remaining() == 0) return;
+    // pduLen counts the unit id and the PDU: it has to cover at least the function code and must not promise more than is there
+    if (r.remaining() == 0) {
+        ctx.markMalformed("Modbus message without a function code");
+        return;
+    }
+    const bool badLength = pduLen < 2 || size_t(pduLen) - 1 > length - 7;
     uint8_t fn = r.u8();
     bool isException = (fn & 0x80) != 0;
     const char *fnName = modbusFunctionName(fn);
@@ -110,13 +116,14 @@ void dissectModbus(Context &ctx, const char *data, size_t length) {
 
     if (ctx.wantFields()) {
         const size_t o = ctx.offsetOf(data);
-        auto &root = ctx.addLayer("Modbus/TCP", o, 6 + pduLen <= length ? 6 + pduLen : length);
-        root.add("Transaction ID: " + std::to_string(transId));
-        root.add("Protocol ID: 0 (Modbus/TCP)");
-        root.add("Length: " + std::to_string(pduLen));
-        root.add("Unit ID: " + std::to_string(unitId));
-        root.add("Function Code: " + std::string(fnName) + " (" + std::to_string(fn) + ")");
+        auto &root = ctx.addLayer("Modbus/TCP", o, std::min<size_t>(length, size_t(6) + pduLen));
+        root.add("Transaction ID: " + std::to_string(transId), o, 2);
+        root.add("Protocol ID: 0 (Modbus/TCP)", o + 2, 2);
+        root.add("Length: " + std::to_string(pduLen), o + 4, 2);
+        root.add("Unit ID: " + std::to_string(unitId), o + 6, 1);
+        root.add("Function Code: " + std::string(fnName) + " (" + std::to_string(fn) + ")", o + 7, 1);
     }
+    if (badLength) ctx.markMalformed("Modbus length field does not match the data");
 }
 
 StreamFrame frameDnp3(const char *data, size_t length) {
@@ -154,27 +161,18 @@ void dissectDnp3(Context &ctx, const char *data, size_t length) {
     uint16_t dest = r.u16_le();
     uint16_t src = r.u16_le();
     uint16_t linkCrc = r.u16_le();
-    (void)linkCrc;
 
     ctx.pack.protocol = "DNP3";
-    ctx.pack.source = std::to_string(src);
-    ctx.pack.destination = std::to_string(dest);
 
     std::string summary = "DNP3 (Src " + std::to_string(src) + " -> Dst " + std::to_string(dest) + ")";
 
-    // Check transport / application layer if present
-    if (length >= 12 && dnpLen > 5) {
-        uint8_t transportHdr = bytes[10];
-        (void)transportHdr;
-        if (length >= 13) {
-            uint8_t appCtrl = bytes[11];
-            uint8_t appFc = bytes[12];
-            (void)appCtrl;
-            const char *fcName = dnp3FunctionCodeName(appFc);
-            if (fcName) {
-                summary += ", " + std::string(fcName);
-                ctx.pack.app_type = appFc;
-            }
+    // Transport header, application control and function code are the first three user data bytes (LEN = 5 + user data)
+    if (dnpLen >= 8 && length >= 13) {
+        const uint8_t appFc = bytes[12];
+        const char *fcName = dnp3FunctionCodeName(appFc);
+        if (fcName) {
+            summary += ", " + std::string(fcName);
+            ctx.pack.app_type = appFc;
         }
     }
 
@@ -183,62 +181,77 @@ void dissectDnp3(Context &ctx, const char *data, size_t length) {
     if (ctx.wantFields()) {
         const size_t o = ctx.offsetOf(data);
         auto &root = ctx.addLayer("Distributed Network Protocol 3.0 (DNP3)", o, length);
-        root.add("Length: " + std::to_string(dnpLen));
-        root.add("Control: 0x" + hexString(ctrl, 2));
-        root.add("Destination: " + std::to_string(dest));
-        root.add("Source: " + std::to_string(src));
+        root.add("Start: 0x0564", o, 2);
+        root.add("Length: " + std::to_string(dnpLen), o + 2, 1);
+        root.add("Control: " + hexString(ctrl, 2), o + 3, 1);
+        root.add("Destination: " + std::to_string(dest), o + 4, 2);
+        root.add("Source: " + std::to_string(src), o + 6, 2);
+        root.add("Header CRC: " + hexString(linkCrc, 4) + " [unverified]", o + 8, 2);
+        if (dnpLen >= 8 && length >= 13) {
+            root.add("Transport Header: " + hexString(bytes[10], 2), o + 10, 1);
+            root.add("Application Control: " + hexString(bytes[11], 2), o + 11, 1);
+            root.add("Application Function Code: " + std::to_string(bytes[12]), o + 12, 1);
+        }
     }
 }
 
 void dissectSocketCan(Context &ctx, const char *data, size_t length) {
-    // SocketCAN frame structure (can_frame):
-    // can_id (4 bytes, uint32)
-    // can_dlc (1 byte)
-    // __pad, __res0, len8_dlc (3 bytes)
-    // data (8 bytes)
+    // SocketCAN (LINKTYPE_CAN_SOCKETCAN): can_id and flags (4 bytes, network byte order), length (1 byte), then
+    //   classic CAN (16 bytes):  3 bytes padding, 8 data bytes
+    //   CAN FD (72 bytes):       flags, 2 reserved bytes, 64 data bytes
     if (!data || length < 16) {
-        ctx.markMalformed("Truncated CAN frame");
         ctx.pack.protocol = "CAN";
-        ctx.pack.info = "CAN [Truncated]";
+        ctx.markMalformed("Truncated CAN frame");
         return;
     }
 
     const auto *bytes = reinterpret_cast<const uint8_t *>(data);
     ByteReader r(bytes, length);
 
-    uint32_t canIdRaw = r.u32_be();
-    uint8_t dlc = r.u8();
-    r.skip(3); // padding
+    const uint32_t canIdRaw = r.u32_be();
+    const uint8_t dlc = r.u8();
+    const bool fd = length >= 72;
+    const uint8_t fdFlags = bytes[5];
 
-    bool isEff = (canIdRaw & 0x80000000U) != 0; // Extended frame format (29-bit)
-    bool isRtr = (canIdRaw & 0x40000000U) != 0; // Remote transmission request
-    bool isErr = (canIdRaw & 0x20000000U) != 0; // Error message frame
+    const bool isEff = (canIdRaw & 0x80000000U) != 0; // Extended frame format (29-bit)
+    const bool isRtr = (canIdRaw & 0x40000000U) != 0; // Remote transmission request
+    const bool isErr = (canIdRaw & 0x20000000U) != 0; // Error message frame
 
-    uint32_t canId = isEff ? (canIdRaw & 0x1FFFFFFFU) : (canIdRaw & 0x000007FFU);
+    const uint32_t canId = isEff ? (canIdRaw & 0x1FFFFFFFU) : (canIdRaw & 0x000007FFU);
 
-    ctx.pack.protocol = "CAN";
+    ctx.pack.protocol = fd ? "CAN FD" : "CAN";
     ctx.pack.app_type = static_cast<uint16_t>(canId & 0xFFFF);
+    ctx.pack.app_code = static_cast<uint16_t>(canId >> 16);   // the high bits of a 29-bit identifier
+
+    const size_t maxData = fd ? 64 : 8;
+    const size_t dataLen = std::min<size_t>(dlc, maxData);
+    const size_t dataAt = 8;
+    const size_t shownData = isRtr ? 0 : std::min(dataLen, length - dataAt);
 
     std::string summary = "CAN ID: " + hexString(canId, isEff ? 8 : 3) + " DLC: " + std::to_string(dlc);
     if (isRtr) summary += " [RTR]";
     if (isErr) summary += " [ERROR]";
-
-    if (dlc > 0 && dlc <= 8 && length >= 8 + dlc) {
-        summary += " Data: " + hexString(bytes[8], 2);
-        for (size_t i = 1; i < dlc; ++i) {
-            summary += " " + hexString(bytes[8 + i], 2).substr(2); // hex byte
+    if (shownData > 0) {
+        static const char *digits = "0123456789abcdef";
+        summary += " Data:";
+        for (size_t i = 0; i < shownData && i < 16; ++i) {
+            summary += ' ';
+            summary += digits[bytes[dataAt + i] >> 4];
+            summary += digits[bytes[dataAt + i] & 15];
         }
+        if (shownData > 16) summary += " ...";
     }
-
     ctx.pack.info = summary;
 
     if (ctx.wantFields()) {
         const size_t o = ctx.offsetOf(data);
-        auto &root = ctx.addLayer("Controller Area Network (CAN)", o, 16);
-        root.add("CAN ID: 0x" + hexString(canId, isEff ? 8 : 3) + (isEff ? " (Extended 29-bit)" : " (Standard 11-bit)"));
-        root.add("DLC: " + std::to_string(dlc));
-        root.add("Remote Transmission Request (RTR): " + std::string(isRtr ? "Yes" : "No"));
-        root.add("Error Frame: " + std::string(isErr ? "Yes" : "No"));
+        auto &root = ctx.addLayer(fd ? "Controller Area Network FD (CAN FD)" : "Controller Area Network (CAN)", o, std::min<size_t>(length, dataAt + shownData));
+        root.add("CAN ID: " + hexString(canId, isEff ? 8 : 3) + (isEff ? " (Extended 29-bit)" : " (Standard 11-bit)"), o, 4);
+        root.add("DLC: " + std::to_string(dlc), o + 4, 1);
+        root.add("Remote Transmission Request (RTR): " + std::string(isRtr ? "Yes" : "No"), o, 4);
+        root.add("Error Frame: " + std::string(isErr ? "Yes" : "No"), o, 4);
+        if (fd) root.add("FD Flags: " + hexString(fdFlags, 2), o + 5, 1);
+        if (shownData > 0) root.add("Data (" + std::to_string(shownData) + " bytes)", o + dataAt, shownData);
     }
 }
 
