@@ -12,11 +12,12 @@ add_executable(imshark_tests
     test_reader.cpp
     test_tcp.cpp
     test_utils.cpp
+    test_ui_smoke.cpp
 )
 if(IMSHARK_SANITIZE)
     target_sources(imshark_tests PRIVATE asan_options.cpp)
 endif()
-target_link_libraries(imshark_tests PRIVATE imshark_core GTest::gtest_main)
+target_link_libraries(imshark_tests PRIVATE imshark_core imshark_ui GTest::gtest_main)
 target_compile_definitions(imshark_tests PRIVATE IMSHARK_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
 
 include(GoogleTest)
