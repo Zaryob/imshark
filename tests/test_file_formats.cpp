@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 #include <core.h>
 #include "support.h"
+#include "json_lite.h"
+#include <fstream>
 
 #include <vector>
 #include <string>
@@ -132,4 +134,147 @@ TEST(FileFormats, FormatIdentificationAndDiagnostics) {
         EXPECT_EQ(message, "Desteklenmeyen dosya biçimi: AIX iptrace");
         std::remove(path2.c_str());
     }
+}
+
+namespace {
+    const core::FileFormat kUnknown = core::FileFormat::Unknown;
+
+    core::FileFormat detect(const std::vector<char> &bytes) {
+        const auto path = support::writeTemp("probe.bin", bytes);
+        const auto fmt = core::detectFileFormat(path);
+        std::remove(path.c_str());
+        return fmt;
+    }
+
+    // pcap global header (24 bytes) with no packets: magic 0xa1b2c3d4, version 2.4, snaplen 65535, link type 1
+    std::vector<char> pcapHeader(bool bigEndian, bool nano) {
+        std::vector<char> b;
+        support::put<uint32_t>(b, nano ? 0xa1b23c4d : 0xa1b2c3d4, bigEndian);
+        support::put<uint16_t>(b, 2, bigEndian);
+        support::put<uint16_t>(b, 4, bigEndian);
+        support::put<uint32_t>(b, 0, bigEndian);
+        support::put<uint32_t>(b, 0, bigEndian);
+        support::put<uint32_t>(b, 65535, bigEndian);
+        support::put<uint32_t>(b, 1, bigEndian);
+        return b;
+    }
+} // namespace
+
+// Magic numbers (independent of the code): pcap 0xa1b2c3d4 / 0xa1b23c4d, pcapng 0x0a0d0d0a, Microsoft NetMon "GMBU",
+// Sun snoop "snoop\0\0\0", AIX "iptrace 1.0"/"iptrace 2.0"
+TEST(FileFormats, PcapAndPcapngRoutingIsUnchanged) {
+    EXPECT_EQ(detect(pcapHeader(false, false)), core::FileFormat::Pcap);
+    EXPECT_EQ(detect(pcapHeader(true, false)), core::FileFormat::Pcap);
+    EXPECT_EQ(detect(pcapHeader(false, true)), core::FileFormat::Pcap);
+    EXPECT_EQ(detect(pcapHeader(true, true)), core::FileFormat::Pcap);
+    EXPECT_EQ(detect({'\x0a', '\x0d', '\x0d', '\x0a', 0, 0, 0, 0}), core::FileFormat::Pcapng);
+
+    // an empty pcap loads through processFile (the legacy routing)
+    const auto path = support::writeTemp("empty.pcap", pcapHeader(false, false));
+    core::FileProcessor fp;
+    std::vector<packet::PacketInfo> packets;
+    std::string message;
+    EXPECT_TRUE(fp.processFile(path, packets, message)) << message;
+    EXPECT_TRUE(packets.empty());
+    std::remove(path.c_str());
+}
+
+TEST(FileFormats, EveryTruncatedMagicIsEitherItsFormatOrUnknown) {
+    struct Sample { std::vector<char> bytes; core::FileFormat format; size_t magicLength; };
+    const std::vector<Sample> samples = {
+        {makeNetMonSample(), core::FileFormat::NetMon, 4},
+        {makeSnoopSample(), core::FileFormat::Snoop, 8},
+        {makeIptrace1Sample(), core::FileFormat::Iptrace, 11},
+        {makeIptrace2Sample(), core::FileFormat::Iptrace, 11},
+        {pcapHeader(false, false), core::FileFormat::Pcap, 4},
+        {pcapHeader(true, true), core::FileFormat::Pcap, 4},
+        {makeErfSample(), core::FileFormat::Erf, 16},
+    };
+    for (const auto &s: samples) {
+        for (size_t n = 0; n <= 32 && n <= s.bytes.size(); ++n) {
+            const std::vector<char> cut(s.bytes.begin(), s.bytes.begin() + n);
+            const auto fmt = detect(cut);
+            if (n >= s.magicLength) EXPECT_EQ(fmt, s.format) << "length " << n;
+            else EXPECT_TRUE(fmt == s.format || fmt == kUnknown) << "length " << n;
+            // loading never crashes whatever the length, and a diagnosed foreign format is reported, not loaded
+            const auto path = support::writeTemp("cut.bin", cut);
+            core::FileProcessor fp;
+            std::vector<packet::PacketInfo> packets;
+            std::string message;
+            const bool ok = fp.processFile(path, packets, message);
+            if (fmt == core::FileFormat::NetMon || fmt == core::FileFormat::Snoop || fmt == core::FileFormat::Iptrace || fmt == core::FileFormat::Erf) {
+                EXPECT_FALSE(ok);
+                EXPECT_EQ(message, core::unsupportedFormatDiagnostic(fmt));
+            }
+            std::remove(path.c_str());
+        }
+    }
+}
+
+TEST(FileFormats, MutatedHeadersNeverCrashAndKeepTheMagicRouting) {
+    uint32_t seed = 7;
+    auto next = [&seed]() { seed = seed * 1664525u + 1013904223u; return seed >> 8; };
+    const std::vector<std::vector<char>> seeds = {makeNetMonSample(), makeSnoopSample(), makeIptrace1Sample(), makeErfSample(),
+                                                  pcapHeader(false, false), pcapHeader(true, true)};
+    for (int round = 0; round < 300; ++round) {
+        std::vector<char> b = seeds[next() % seeds.size()];
+        for (int i = 0, flips = 1 + int(next() % 3); i < flips; ++i) b[next() % b.size()] = static_cast<char>(next());
+        b.resize(next() % (b.size() + 1));
+        const auto path = support::writeTemp("mut.bin", b);
+        const auto fmt = core::detectFileFormat(path);
+        // the detected format follows the leading bytes, not the rest
+        uint32_t first = 0;
+        std::memcpy(&first, b.data(), std::min<size_t>(4, b.size()));
+        if (b.size() >= 4 && (first == 0xa1b2c3d4 || first == 0xa1b23c4d || first == 0xd4c3b2a1 || first == 0x4d3cb2a1)) EXPECT_EQ(fmt, core::FileFormat::Pcap);
+        if (b.size() >= 4 && first == 0x0a0d0d0a) EXPECT_EQ(fmt, core::FileFormat::Pcapng);
+        core::FileProcessor fp;
+        std::vector<packet::PacketInfo> packets;
+        std::string message;
+        fp.processFile(path, packets, message);
+        std::remove(path.c_str());
+    }
+}
+
+TEST(FileFormats, ErfDetectionNeedsAPlausibleFirstRecordHeader) {
+    auto erf = makeErfSample();
+    EXPECT_EQ(detect(erf), core::FileFormat::Erf);
+    erf[8] = 0;       // type 0 (legacy) is not claimed
+    EXPECT_EQ(detect(erf), kUnknown);
+    erf[8] = 2;
+    erf[11] = 8;      // record length below the 16 byte header
+    EXPECT_EQ(detect(erf), kUnknown);
+    erf[11] = 64;
+    erf[15] = 100;    // wire length above the record length
+    EXPECT_EQ(detect(erf), kUnknown);
+}
+
+TEST(FileFormats, CaptureFilesOfTheRepositoryAreDetectedAsTheirFormat) {
+    std::ifstream mf(std::string(IMSHARK_TEST_DATA_DIR) + "/../corpus/manifest.json", std::ios::binary);
+    const std::string text((std::istreambuf_iterator<char>(mf)), std::istreambuf_iterator<char>());
+    const auto manifest = testutil::JsonParser(text).parse();
+    int checked = 0;
+    for (const auto &e: manifest.at("entries").items) {
+        if (e.str("kind") != "synthetic") continue;
+        const std::string path = std::string(IMSHARK_TEST_DATA_DIR) + "/../corpus/" + e.str("file");
+        if (!std::ifstream(path)) continue;
+        EXPECT_EQ(core::detectFileFormat(path), e.str("format") == "pcapng" ? core::FileFormat::Pcapng : core::FileFormat::Pcap) << e.str("file");
+        ++checked;
+    }
+    EXPECT_GT(checked, 0);
+}
+
+TEST(FileFormats, RealCapturesWhenAvailable) {
+    const char *dir = std::getenv("IMSHARK_CORPUS_DIR");
+    if (!dir) GTEST_SKIP() << "set IMSHARK_CORPUS_DIR to a directory with the captures listed in tests/corpus/manifest.json";
+    std::ifstream mf(std::string(IMSHARK_TEST_DATA_DIR) + "/../corpus/manifest.json", std::ios::binary);
+    const std::string text((std::istreambuf_iterator<char>(mf)), std::istreambuf_iterator<char>());
+    const auto manifest = testutil::JsonParser(text).parse();
+    int checked = 0;
+    for (const auto &e: manifest.at("entries").items) {
+        const std::string path = std::string(dir) + "/" + e.str("file");
+        if (!std::ifstream(path)) continue;
+        EXPECT_EQ(core::detectFileFormat(path), e.str("format") == "pcapng" ? core::FileFormat::Pcapng : core::FileFormat::Pcap) << e.str("file");
+        ++checked;
+    }
+    if (checked == 0) GTEST_SKIP() << "no manifest capture is present in " << dir;
 }
