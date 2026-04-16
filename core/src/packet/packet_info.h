@@ -15,6 +15,17 @@ namespace packet {
     /// link_type of a packet that names a capture interface the file never defined (nothing is guessed for it).
     constexpr uint32_t kUndefinedLinkType = 0xFFFFFFFFu;
 
+    /// "aa:bb:cc:dd:ee:ff": the form of the MAC addresses the Ethernet dissector puts into `source`/`destination`.
+    inline bool isMacAddress(const std::string &s) {
+        if (s.size() != 17) return false;
+        for (size_t i = 0; i < 17; ++i) {
+            const char c = s[i];
+            if (i % 3 == 2) { if (c != ':') return false; }
+            else if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F'))) return false;
+        }
+        return true;
+    }
+
     /// One node of the protocol tree shown in the packet details pane: a label plus the byte range
     /// of the frame (`raw_data`) it was decoded from. `length == 0` means "no bytes" (derived values).
     struct Field {

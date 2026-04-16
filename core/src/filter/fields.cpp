@@ -26,6 +26,14 @@ namespace filter {
         void proto(const PacketInfo &p, const Context &, Values &out) { if (Present(p)) out.addU(1); }
 
         bool isProtocol(const PacketInfo &p, const char *name) { return p.protocol == name; }
+        // Bluetooth and USB packets carry their own kind of address in source/destination (see dissect/bluetooth.cpp, usb.cpp)
+        bool isBluetooth(const PacketInfo &p) {
+            return p.link_type == 187 || p.link_type == 254 || p.protocol == "HCI" || p.protocol == "BT Mon" ||
+                   p.protocol == "L2CAP" || p.protocol == "ATT";
+        }
+        bool isUsb(const PacketInfo &p) { return p.link_type == 189 || p.link_type == 220 || p.link_type == 249 || isProtocol(p, "USB"); }
+        // An IP dissector replaces source/destination with the IP addresses: only a frame that still holds MAC addresses has Ethernet ones
+        bool hasMacAddresses(const PacketInfo &p) { return p.link_type == 1 && p.ip_version == 0; }
         bool isStp(const PacketInfo &p) { return isProtocol(p, "STP") || isProtocol(p, "RSTP") || isProtocol(p, "MSTP"); }
         bool isSnap(const PacketInfo &p) { return p.has_snap || isProtocol(p, "SNAP"); }
         bool isLlc(const PacketInfo &p) { return p.has_llc || isProtocol(p, "LLC") || isSnap(p) || isStp(p); }
@@ -86,9 +94,9 @@ namespace filter {
                 {"info", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { o.addS(p.info); }, "Info column (alias of _ws.col.info)"},
                 // ---- link layer
                 {"eth", FieldType::Boolean, proto<[](const PacketInfo &p) { return p.link_type == 1; }>, "Ethernet frame"},
-                {"eth.src", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (p.link_type == 1 && !p.source.empty()) o.addS(p.source); }, "Ethernet source address"},
-                {"eth.dst", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (p.link_type == 1 && !p.destination.empty()) o.addS(p.destination); }, "Ethernet destination address"},
-                {"eth.addr", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (p.link_type == 1) { if (!p.source.empty()) o.addS(p.source); if (!p.destination.empty()) o.addS(p.destination); } }, "Ethernet source or destination address"},
+                {"eth.src", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (hasMacAddresses(p) && packet::isMacAddress(p.source)) o.addS(p.source); }, "Ethernet source address (frames the summary still holds MAC addresses for: not IP packets)"},
+                {"eth.dst", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (hasMacAddresses(p) && packet::isMacAddress(p.destination)) o.addS(p.destination); }, "Ethernet destination address (frames the summary still holds MAC addresses for: not IP packets)"},
+                {"eth.addr", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (hasMacAddresses(p)) { if (packet::isMacAddress(p.source)) o.addS(p.source); if (packet::isMacAddress(p.destination)) o.addS(p.destination); } }, "Ethernet source or destination address (frames the summary still holds MAC addresses for: not IP packets)"},
                 {"eth.len", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.link_type == 1 && p.has_llc && p.eth_len != 0) o.addU(p.eth_len); }, "IEEE 802.3 length field"},
                 {"eth.type", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (!p.has_llc && p.ether_type > 1500) o.addU(p.ether_type); }, "EtherType"},
                 {"vlan", FieldType::Boolean, proto<[](const PacketInfo &p) { return !p.vlan_ids.empty(); }>, "802.1Q VLAN tagged"},
@@ -437,9 +445,10 @@ namespace filter {
                 {"pause.time", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isMacControl(p) && p.app_code == 0x0001) o.addU(p.app_type); }, "PAUSE time (units of 512 bit times)"},
                 {"pfc", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isMacControl(p) && p.app_code == 0x0101) o.addU(1); }, "Priority Flow Control frame"},
                 {"pfc.class_enable", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isMacControl(p) && p.app_code == 0x0101) o.addU(p.app_type); }, "PFC Class Enable Vector"},
-                {"bt.handle", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (!p.source.empty()) o.addS(p.source); if (!p.destination.empty()) o.addS(p.destination); }, "Bluetooth Connection Handle"},
-                {"usb", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (p.link_type == 189 || p.link_type == 220 || p.link_type == 249 || isProtocol(p, "USB")) o.addU(1); }, "USB packet"},
-                {"usb.device", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (!p.source.empty()) o.addS(p.source); if (!p.destination.empty()) o.addS(p.destination); }, "USB Device address"},
+                {"bt.handle", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (!isBluetooth(p)) return; for (const std::string *a: {&p.source, &p.destination}) if (a->rfind("0x", 0) == 0) o.addS(*a); }, "Bluetooth ACL connection handle (0x0040 form)"},
+                {"bt.addr", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (!isBluetooth(p)) return; if (!p.source.empty()) o.addS(p.source); if (!p.destination.empty()) o.addS(p.destination); }, "Bluetooth source or destination: host, controller (hciN), or a connection handle"},
+                {"usb", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isUsb(p)) o.addU(1); }, "USB packet"},
+                {"usb.device", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (!isUsb(p)) return; for (const std::string *a: {&p.source, &p.destination}) if (!a->empty() && *a != "host") o.addS(*a); }, "USB device address (bus.device)"},
                 {"malformed", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "Malformed") || p.info.find("[Malformed Packet") != std::string::npos) o.addU(1); }, "Packet that could not be fully decoded"},
             };
             std::sort(t.begin(), t.end(), [](const FieldDef &a, const FieldDef &b) { return std::string_view(a.name) < b.name; });

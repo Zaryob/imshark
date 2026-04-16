@@ -268,3 +268,127 @@ TEST(Stats, GeneralizedAddressKindsProduceExpectedFiltersAndEndpoints) {
     ASSERT_EQ(usbConvs.size(), 1u);
     EXPECT_TRUE(filter::Filter::compile(stats::conversationFilter(usbConvs.front(), stats::AddressKind::Usb)).ok);
 }
+
+// ---- B8: addresses of parsed Ethernet, Bluetooth and USB packets (not hand-filled summaries)
+
+#include "frame_sweep.h"
+
+namespace {
+    std::vector<packet::PacketInfo> parseSequence(uint32_t linkType, const std::vector<framesweep::Bytes> &frames) {
+        packet::PacketParser parser;
+        std::vector<packet::PacketInfo> out;
+        int number = 1;
+        for (const auto &f: frames) {
+            packet::PacketInfo pack(number++);
+            pack.link_type = linkType;
+            std::vector<char> raw(f.begin(), f.end());
+            parser.parsePacket(pack, raw, dissect::ParseMode::Summary);
+            pack.frame_length = pack.captured_length = static_cast<uint32_t>(f.size());
+            out.push_back(std::move(pack));
+        }
+        return out;
+    }
+
+    size_t countMatches(const std::vector<packet::PacketInfo> &packets, const std::string &text) {
+        const auto f = filter::Filter::compile(text);
+        EXPECT_TRUE(f.ok) << text;
+        size_t n = 0;
+        for (const auto &p: packets) n += f.ok && f.filter.matches(p);
+        return n;
+    }
+
+    std::set<std::string> addresses(const std::vector<stats::Endpoint> &eps) {
+        std::set<std::string> out;
+        for (const auto &e: eps) out.insert(e.address);
+        return out;
+    }
+} // namespace
+
+TEST(Stats, BluetoothEndpointsOfParsedPackets) {
+    using framesweep::Bytes;
+    // HCI command, ACL TX and ACL RX of one connection (handle 0x0040), Linux monitor pseudo header (adapter 0)
+    const Bytes cmd = {0, 0, 0, 2, 0x0c, 0x20, 0x00};
+    const Bytes acl = {0x40, 0x00, 0x07, 0x00, 0x03, 0x00, 0x04, 0x00, 0x02, 0x00, 0x02};
+    auto mon = [&](uint8_t opcode) { Bytes b = {0, 0, 0, opcode}; b.insert(b.end(), acl.begin(), acl.end()); return b; };
+    const auto packets = parseSequence(254, {cmd, mon(4), mon(5)});
+
+    const auto eps = stats::endpoints(packets, nullptr, stats::AddressKind::Bluetooth);
+    EXPECT_EQ(addresses(eps), (std::set<std::string>{"host", "hci0", "0x0040"}));
+    const auto convs = stats::conversations(packets, nullptr, stats::AddressKind::Bluetooth);
+    ASSERT_EQ(convs.size(), 2u);   // host <-> hci0 (the command) and host <-> 0x0040 (both ACL directions)
+
+    for (const auto &e: eps) {
+        const auto text = stats::endpointFilter(e, stats::AddressKind::Bluetooth);
+        if (e.address == "0x0040") {
+            EXPECT_EQ(text, "bt.handle == \"0x0040\"");
+            EXPECT_EQ(countMatches(packets, text), 2u);
+        } else if (e.address == "hci0") {
+            EXPECT_EQ(text, "bt.addr == \"hci0\"");
+            EXPECT_EQ(countMatches(packets, text), 1u);
+        } else {
+            EXPECT_EQ(text, "bt.addr == \"host\"");
+            EXPECT_EQ(countMatches(packets, text), 3u);
+        }
+    }
+    for (const auto &c: convs) {
+        const auto text = stats::conversationFilter(c, stats::AddressKind::Bluetooth);
+        EXPECT_NE(text.find("&&"), std::string::npos) << "both addresses: " << text;
+        EXPECT_EQ(countMatches(packets, text), c.packets) << text;
+    }
+    // the generic fields do not match anything but Bluetooth packets
+    EXPECT_EQ(countMatches(parseSequence(1, {framesweep::ethernet(0x0800, framesweep::ipv4Packet(17, framesweep::udpDatagram(1, 2, {1})))}),
+                           "bt.handle == \"0x0040\" || bt.addr == \"10.0.0.1\" || bt.handle"), 0u);
+}
+
+TEST(Stats, UsbEndpointsOfParsedPackets) {
+    using framesweep::Bytes;
+    auto urb = [](char event, uint8_t xfer, uint8_t endpoint, uint8_t device) {
+        Bytes b = {1, 0, 0, 0, 0, 0, 0, 0, static_cast<uint8_t>(event), xfer, endpoint, device, 1, 0, '-', '<'};
+        b.resize(48, 0);
+        return b;
+    };
+    const auto packets = parseSequence(189, {urb('S', 3, 0x02, 3), urb('C', 3, 0x02, 3), urb('S', 3, 0x81, 4), urb('C', 3, 0x81, 4)});
+
+    const auto eps = stats::endpoints(packets, nullptr, stats::AddressKind::Usb);
+    EXPECT_EQ(addresses(eps), (std::set<std::string>{"host", "1.3", "1.4"}));
+    for (const auto &e: eps) {
+        const auto text = stats::endpointFilter(e, stats::AddressKind::Usb);
+        if (e.address == "host") EXPECT_EQ(text, "usb");
+        else EXPECT_EQ(text, "usb.device == \"" + e.address + "\"");
+        EXPECT_EQ(countMatches(packets, text), e.address == "host" ? 4u : 2u) << text;
+    }
+    const auto convs = stats::conversations(packets, nullptr, stats::AddressKind::Usb);
+    ASSERT_EQ(convs.size(), 2u);
+    for (const auto &c: convs) {
+        const auto text = stats::conversationFilter(c, stats::AddressKind::Usb);
+        EXPECT_NE(text, "usb");
+        EXPECT_NE(text.find("usb.device == \"1."), std::string::npos) << text;
+        EXPECT_EQ(countMatches(packets, text), 2u) << text;
+    }
+    // the filter fields are gated: an IP packet never matches them, even when it has an address of the same text
+    const auto ip = parseSequence(1, {framesweep::ethernet(0x0800, framesweep::ipv4Packet(17, framesweep::udpDatagram(1, 2, {1})))});
+    EXPECT_EQ(countMatches(ip, "usb.device"), 0u);
+    EXPECT_EQ(countMatches(ip, "usb.device == \"10.0.0.1\""), 0u);
+    EXPECT_EQ(countMatches(ip, "usb.device == \"host\""), 0u);
+}
+
+TEST(Stats, EthernetTabListsMacAddressesNotIpStrings) {
+    using framesweep::Bytes;
+    const auto ipFrame = framesweep::ethernet(0x0800, framesweep::ipv4Packet(17, framesweep::udpDatagram(1000, 2000, {1, 2})));
+    const auto otherFrame = framesweep::ethernet(0x88B5, {1, 2, 3, 4});   // an experimental EtherType: no IP layer replaces the MACs
+    const auto packets = parseSequence(1, {ipFrame, otherFrame});
+    ASSERT_EQ(packets[0].source, "10.0.0.1");
+    ASSERT_EQ(packets[1].source, "66:77:88:99:aa:bb");
+
+    const auto eps = stats::endpoints(packets, nullptr, stats::AddressKind::Ethernet);
+    ASSERT_EQ(eps.size(), 2u);
+    for (const auto &e: eps) {
+        EXPECT_TRUE(packet::isMacAddress(e.address)) << e.address;
+        EXPECT_EQ(countMatches(packets, stats::endpointFilter(e, stats::AddressKind::Ethernet)), 1u);
+    }
+    EXPECT_EQ(addresses(eps), (std::set<std::string>{"66:77:88:99:aa:bb", "00:11:22:33:44:55"}));
+    // IP frames show up in the IP tabs, and the eth.* fields do not pretend that an IP string is a MAC
+    EXPECT_EQ(stats::endpoints(packets, nullptr, stats::AddressKind::Ipv4).size(), 2u);
+    EXPECT_EQ(countMatches(packets, "eth.addr == \"10.0.0.1\""), 0u);
+    EXPECT_EQ(countMatches(packets, "eth.src == \"66:77:88:99:aa:bb\""), 1u);
+}

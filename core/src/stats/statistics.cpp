@@ -15,7 +15,8 @@ namespace stats {
                 case AddressKind::Tcp: return p.ip_version != 0 && p.ip_protocol == 6;
                 case AddressKind::Udp: return p.ip_version != 0 && p.ip_protocol == 17;
                 case AddressKind::Sctp: return p.ip_protocol == 132 || p.protocol == "SCTP";
-                case AddressKind::Ethernet: return p.link_type == 1 && !p.source.empty() && !p.destination.empty();
+                // an IP dissector replaces source/destination by the IP addresses: only frames that still hold MACs are listed
+                case AddressKind::Ethernet: return p.link_type == 1 && p.ip_version == 0 && packet::isMacAddress(p.source) && packet::isMacAddress(p.destination);
                 case AddressKind::Wlan: return (p.link_type == 105 || p.link_type == 127 || p.link_type == 192 ||
                                                p.protocol == "802.11" || p.protocol == "WLAN") &&
                                                (!p.source.empty() || !p.destination.empty());
@@ -146,22 +147,16 @@ namespace stats {
                     return "eth.addr == \"" + address + "\"";
                 case AddressKind::Wlan:
                     return "wlan.sa == \"" + address + "\" || wlan.da == \"" + address + "\"";
-                case AddressKind::Bluetooth:
-                    return "bt.handle == \"" + address + "\"";
-                case AddressKind::Usb:
-                    return "usb.device == \"" + address + "\"";
+                case AddressKind::Bluetooth: // ACL connection handles are "0x...."; host, controller and hciN are plain addresses
+                    return std::string(address.rfind("0x", 0) == 0 ? "bt.handle == \"" : "bt.addr == \"") + address + "\"";
+                case AddressKind::Usb: // the host takes part in every transfer
+                    return address == "host" ? std::string("usb") : "usb.device == \"" + address + "\"";
             }
             return "ip.addr == " + address;
         }
     } // namespace
 
     std::string conversationFilter(const Conversation &c, AddressKind kind) {
-        if (kind == AddressKind::Usb) {
-            return "usb";
-        }
-        if (kind == AddressKind::Bluetooth) {
-            return "bt.handle == \"" + c.addressA + "\"";
-        }
         if (kind == AddressKind::Wlan) {
             return "(wlan.sa == \"" + c.addressA + "\" && wlan.da == \"" + c.addressB + "\") || "
                    "(wlan.sa == \"" + c.addressB + "\" && wlan.da == \"" + c.addressA + "\")";
@@ -178,12 +173,6 @@ namespace stats {
     }
 
     std::string endpointFilter(const Endpoint &e, AddressKind kind) {
-        if (kind == AddressKind::Usb) {
-            return "usb";
-        }
-        if (kind == AddressKind::Bluetooth) {
-            return "bt.handle == \"" + e.address + "\"";
-        }
         std::string f = addrTest(e.address, kind);
         if (kind == AddressKind::Tcp) f += " && tcp.port == " + std::to_string(e.port);
         else if (kind == AddressKind::Udp) f += " && udp.port == " + std::to_string(e.port);
