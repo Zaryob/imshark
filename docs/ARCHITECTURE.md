@@ -9,7 +9,7 @@
                                         └─► TCPConnection (bağıl seq/ack)
 ```
 
-Akış tamamen **tek iş parçacıklı ve eşzamanlıdır**: kullanıcı dosya seçtiğinde ana (UI) döngüsünde dosyanın tamamı okunur, ayrıştırılır ve `std::vector<PacketInfo>` içine konur. Sonraki her karede arayüz bu vektörü çizer.
+Akış hâlâ **tek iş parçacıklı ve eşzamanlıdır**: kullanıcı dosya seçtiğinde ana (UI) döngüsünde dosyanın tamamı okunur, ayrıştırılır ve `std::vector<PacketInfo>` içine konur. Sonraki her karede arayüz bu vektörü çizer.
 
 ## 2. Modüller
 
@@ -26,70 +26,72 @@ Akış tamamen **tek iş parçacıklı ve eşzamanlıdır**: kullanıcı dosya s
 
 ### Build hedefleri
 
-- `imshark_core` — **SHARED** kütüphane. İçine yalnızca ayrıştırma kodu değil, **ImGui, GLFW backend'i ve ImGuiFileDialog** da girer; OpenGL ve GLFW (pkg-config) `PUBLIC` bağımlılıktır.
-- `imshark` — `src/main.cpp`'den üretilen çalıştırılabilir dosya, `imshark_core`'a bağlanır.
+- `imshark_core` — **STATIC**, UI bağımsız (OpenGL/GLFW/ImGui yok): okuyucular, ayrıştırıcı, paket modeli.
+- `imshark_imgui` — `third_party/`: Dear ImGui, GLFW/OpenGL3 backend'leri, ImGuiFileDialog; GLFW önce CMake paketiyle (vcpkg dahil), yoksa pkg-config ile bulunur.
+- `imshark_ui` — `src/ui/`: tüm arayüz kodu (pencere açmadan test edilebilir).
+- `imshark` — yalnızca `src/main.cpp` (GLFW penceresi ve döngü).
+- `imshark_tests` — GoogleTest; `imshark_core` ve `imshark_ui`'ya bağlanır.
 
 ## 3. Veri modeli: `PacketInfo`
 
 ```cpp
+struct Field {                       // protokol ağacının bir düğümü
+    std::string text;
+    uint32_t offset, length;         // raw_data içindeki mutlak bayt aralığı
+    std::vector<Field> children;
+};
+
 struct PacketInfo {
-    int number; double time;                 // göreli zaman (ilk pakete göre)
+    int number; double time;         // göreli zaman (ilk pakete göre)
     std::string source, destination, protocol, info;
     uint32_t length;
-    std::variant<EthernetHeader> l2_header;
-    std::variant<ARPHeader, IPv6Header, IPHeader> l3_header;
-    std::variant<ICMPHeader, TCPHeader, UDPHeader> l4_header;
-    std::variant<DHCPHeader, DNSHeader> l7_header;
+    uint32_t link_type; uint16_t l2_size; std::vector<uint16_t> vlan_ids;
+    std::variant<...> l2_header, l3_header, l4_header, l7_header;   // ham başlık kopyaları
     std::vector<char> raw_data;
+    std::vector<Field> fields;       // Frame, Ethernet, IP, TCP/UDP, DNS … (en dıştan içe)
 };
 ```
 
-UI, `std::visit` ile varyantları gezerek "katman ağacını" ve hex panelindeki vurgulanacak bayt aralıklarını (`packetState` haritası) üretir.
+Arayüz artık `fields` ağacını çizer; başlık `variant`'ları yalnızca testler ve özet hesapları için tutulur.
 
 ## 4. Ayrıştırma hattı
 
-1. **Dosya türü**: `isPcapng()` ilk 4 baytı `0x0A0D0D0A` ile karşılaştırır; değilse klasik pcap varsayılır.
-2. **pcap** (`processPcapFile`): 24 baytlık global header okunur, magic `0xa1b2c3d4` değilse reddedilir; sonra `PacketHeader + incl_len` bayt döngüsü.
-3. **pcapng** (`processPcapngFile`): `BlockHeader` okunur, `block_type`'a göre SHB/IDB/SPB/ISB/EPB/NRB işlenir, bilinmeyen bloklar atlanır.
-4. **`PacketParser::parsePacket`**: EtherType'a göre (0x0800 IPv4, 0x86DD IPv6, 0x0806 ARP, 0x8035 RARP) L3 başlığı çözülür, `parseProtocolPacket` IP protokol numarasına göre (1, 6, 17, 58) L4'e geçer.
+1. **Dosya türü** (`ui/loader.cpp`): ilk 4 bayt `0x0A0D0D0A` ise pcapng, değilse klasik pcap.
+2. **pcap** (`processPcapFile`): magic'ten byte order ve mikro/nano-saniye belirlenir; her kayıt dosya boyutuna ve üst sınıra karşı doğrulanır; link type her pakete yazılır.
+3. **pcapng** (`processPcapngFile`): her blok tamamen belleğe alınıp sınır denetimli okunur. SHB byte order'ı, IDB link type ve `if_tsresol`'u, EPB `captured_length`'i, SPB içeriği işlenir; diğer bloklar atlanır. Hatalı kuyruğa kadar okunan paketler korunur.
+4. **`PacketParser::parsePacket`**: link type'a göre (Ethernet+VLAN, NULL/Loopback, Raw, SLL/SLL2) L3'ün başlangıcı ve protokolü bulunur; EtherType'a göre IPv4/IPv6 (uzantı başlıkları dahil)/ARP çözülür, `parseProtocolPacket` IP protokol numarasına göre (1, 6, 17, 58) L4'e geçer. Her okuma uzunluk denetimlidir.
 5. **L7** yalnızca **port numarasına** bakılarak seçilir (23, 25, 179, 53, 67/68, 161/162).
 6. Sonuç `PacketInfo`'ya yazılır ve vektöre eklenir.
 
-## 5. Arayüz (`src/main.cpp`)
+## 5. Arayüz (`src/ui/`)
 
-- `main()` → GLFW/OpenGL 3.2 core penceresi, ImGui başlatma, kare döngüsü.
-- `ShowFileOpenDialog` → ana menü (File: Open / Close File / Exit) ve ImGuiFileDialog; seçilen dosyayı **doğrudan UI iş parçacığında** işler.
-- `HexView` → tam pencere; içinde `displayPackets`:
-  - üst bölüm: 7 sütunlu paket tablosu, çoklu seçim,
-  - sürüklenebilir ayırıcı (splitter),
-  - alt bölüm: `processL2/L3/L4/L7` ile doldurulan ağaç + `RenderHexEditor` (hex ve ASCII alanı, bayt aralığı seçimi/vurgulama).
-- Durum **global değişkenlerde** tutulur (`packetState`, `selectedPacket`, `selected_byte*`, `selectedIndices`, `splitter_size`, `top_height`).
+- `AppState` (`app_state.h`): paketler, yükleme durumu, seçili paket/alan/bayt aralığı, bölücü yüksekliği; global değişken yok.
+- `chrome.cpp`: ana menü (File, Ctrl+O), ImGuiFileDialog, durum çubuğu, yükleme sorunu popup'ı.
+- `packet_list.cpp`: 7 sütunlu tablo, `ImGuiListClipper` ile yalnızca görünen satırlar çizilir.
+- `details.cpp`: `fields` ağacı (alan tıklanınca bayt aralığı seçilir) ve hex/ASCII görünümü (bayta tıklayınca en özel alan seçilip ağaçta açılır).
+- `main_window.cpp`: yerleşim ve liste/ayrıntı bölücüsü.
 
 ## 6. Mimari gözlemler
 
 **Güçlü yanlar**
-- Katmanlı dizin yapısı (l2/l3/l4/l7) ve `PacketInfo` ile ayrıştırıcı/arayüz ayrımı doğru yönde.
-- Hex panelinde alan↔bayt eşlemesi, ürünün en değerli kısmı ve iyi bir temel.
-- Bağımlılıklar az; vendored ImGui ile kurulum basit.
+- Çekirdek UI'dan bağımsız ve testli; ayrıştırıcı sanitizer altında fuzz edilir.
+- Alan ağacı sayesinde ayrıştırma ve arayüz arasındaki sözleşme net (ad + bayt aralığı).
+- Bağımlılıklar az; vcpkg veya sistem paketleriyle kurulur.
 
-**Zayıf yanlar** (ayrıntı: [KNOWN_ISSUES.md](KNOWN_ISSUES.md))
-- Çekirdek kütüphane UI'dan bağımsız değil (ImGui/GLFW `imshark_core` içinde); ayrıştırıcı tek başına test edilemez veya yeniden kullanılamaz.
-- `main.cpp` monolitik ve global durumlu.
-- Ayrıştırıcı güvensiz: sınır denetimi yok, ham `reinterpret_cast` ile okuma.
-- Tüm dosya senkron okunur, her paket ham baytıyla birlikte RAM'de tutulur; büyük yakalamalarda UI donar.
-- Test, CI ve dokümantasyon yoktu.
+**Kalan zayıf yanlar** (ayrıntı: [KNOWN_ISSUES.md](KNOWN_ISSUES.md))
+- `PacketParser` hâlâ tek sınıf; protokol eklemek için kayıt defterli dissector arayüzü yok.
+- Dosya tamamen eşzamanlı yüklenir; her paket ham baytıyla RAM'de tutulur (v0.4).
+- POSIX'e bağımlı (`arpa/inet.h`); Windows henüz yok.
 
-## 7. Önerilen hedef mimari
+## 7. Hedef mimari
 
 ```
 libimshark (statik, UI bağımsız)         imshark (uygulama)
 ├─ io/       pcap_reader, pcapng_reader   ├─ app/     pencere, ana döngü
-│            (endian, tsresol, linktype)  ├─ ui/      paket tablosu, detay, hex
-├─ dissect/  ethernet, ip, tcp, dns…      └─ model/   PacketStore, filtre, seçim durumu
-│            (bounds-checked, registry)
-└─ model/    Packet, Field tree (ofset+uzunluk)
+├─ dissect/  ethernet, ip, tcp, dns…      ├─ ui/      paket listesi, detay, hex
+│            (registry: EtherType/IP proto/port)
+└─ model/    Packet, Field (ad + ofset + uzunluk)
 ```
 
-- Dissector'lar `span<const uint8_t>` alıp `FieldTree` (ad, değer, bayt aralığı) üretir; UI `std::visit` yerine bu ağacı çizer.
-- Dosya yükleme arka plan iş parçacığında, paketler artımlı olarak (indeks + mmap) sunulur.
-- Protokol eklemek = tek bir dissector kaydetmek.
+- Dissector'lar `span<const uint8_t>` alıp `Field` üretir; protokol eklemek = tek bir dissector kaydetmek (**henüz yapılmadı**).
+- Yükleme arka plan iş parçacığında, paketler indeks + `mmap` ile tembel okunur (v0.4).

@@ -22,12 +22,12 @@ Hedef: hiçbir girdi dosyası uygulamayı çökertmesin, gösterilen veri doğru
 
 Hedef: çekirdek UI'dan bağımsız, test edilebilir; geliştirme güvenli ve hızlı.
 
-- [ ] `imshark_core`'dan ImGui/GLFW/ImGuiFileDialog'u ayır; UI bağımsız **statik** `libimshark` (io + dissect + model) (#22) — **M**
-- [ ] Dissector arayüzü + kayıt defteri: `span<const uint8_t>` → `FieldTree` (ad, değer, ofset, uzunluk); port/EtherType tabanlı seçim — **L**
-- [ ] `main.cpp`'yi `app/ ui/ model/` olarak böl, global durumu tek bir `AppState`'e taşı, `RenderHexEditor` kopyalarını kaldır (#20, #21) — **M**
-- [ ] Test altyapısı (GoogleTest veya Catch2): dissector birim testleri, bozuk/kırpılmış pcap "golden" fixture'ları, fuzz hedefi (libFuzzer) — **M**
-- [ ] CI (GitHub Actions): macOS + Linux derleme, test, `-Wall -Wextra`, ASan/UBSan — **S**
-- [ ] CMake: `FetchContent`/alt modül ile ImGui ve GLFW yönetimi, `file(GLOB)` yerine açık dosya listesi, `.clang-format` — **S**
+- [x] `imshark_core`'dan ImGui/GLFW/ImGuiFileDialog'u ayır; UI bağımsız **statik** `libimshark` (io + dissect + model) (#22) — **M**
+- [ ] Dissector arayüzü + kayıt defteri; port/EtherType tabanlı seçim. *(FieldTree — ad, ofset, uzunluk — ve UI'nın onu çizmesi tamamlandı; ayrıştırma hâlâ tek `PacketParser` sınıfında)* — **L**
+- [x] `main.cpp`'yi böl (`main.cpp` + `src/ui/`), global durumu `AppState`'e taşı, hex görünümü kopyalarını kaldır (#21) — **M**
+- [x] Test altyapısı (GoogleTest): birim testleri, bozuk/kırpık girdiler, mutasyon-fuzz, UI duman testleri. *(libFuzzer hedefi yapılmadı)* — **M**
+- [x] CI (GitHub Actions): macOS + Linux derleme, test, `-Wall -Wextra`, ASan/UBSan — **S**
+- [x] CMake: GLFW için vcpkg manifesti + presets, `file(GLOB)` yerine açık dosya listesi, `.clang-format` — **S**
 - [ ] Windows desteği (`arpa/inet.h` yerine taşınabilir byte-order yardımcıları, MSVC/MinGW CI) — **M**
 
 ## v0.4 — Performans ve kullanılabilirlik

@@ -2,7 +2,7 @@
 
 Statik kod incelemesiyle tespit edilmiştir (derleme/çalıştırma ile ayrıca doğrulanmadı). Önem: **K** = kritik (çökme/güvenlik/yanlış veri), **O** = orta, **D** = düşük.
 
-> **Durum (v0.2):** #1–#14, #16, #18, #19 (include kısmı), #23 (pencere başlığı, `std::cout` temizliği) ve #24 giderildi. Geriye kalanlar ROADMAP'teki sonraki sürümlerde: IPv4 parçalanma/yeniden birleştirme, tam DNS/DHCP kayıt türleri (#15), `PacketInfo` kopyaları (#20, #21), CMake/ImGui ayrımı (#22), test/CI (#23). Düzeltmeler ASan/UBSan altında çalıştırılan fuzz testleriyle (rastgele ve kırpılmış paketler/dosyalar) doğrulandı; UI kodu ise yalnızca derleme (sözdizimi) düzeyinde doğrulandı.
+> **Durum (v0.3):** #1–#14, #16, #18–#24 giderildi (#20: `raw_data` kopyaları hâlâ var, v0.4'te ele alınacak). Kalanlar: IPv4 parçalanma/yeniden birleştirme, tam DNS/DHCP kayıt türleri (#15), eşzamanlı yükleme ve bellek kullanımı (v0.4), Windows desteği, dissector kayıt defteri. Düzeltmeler ASan/UBSan altında çalışan birim/mutasyon-fuzz testleriyle ve pencere açmadan çalışan ImGui duman testleriyle doğrulandı; arayüz görsel olarak (ekran görüntüsüyle) incelenmedi.
 
 ## Güvenlik ve sağlamlık
 
