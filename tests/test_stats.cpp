@@ -3,6 +3,7 @@
 #include <functional>
 #include <map>
 #include <numeric>
+#include <set>
 
 #include <core.h>
 #include <filter/filter.h>

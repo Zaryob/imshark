@@ -20,7 +20,7 @@ Bytes cat(Bytes a, const Bytes &b) {
 }
 
 void putLe(Bytes &b, uint64_t v, int n) {
-    for (int i = 0; i < n; ++i) b.push_back(static_cast<uint8_t>(v >> (8 * i)));
+    for (int i = 0; i < n; ++i) b.push_back(i < 8 ? static_cast<uint8_t>(v >> (8 * i)) : 0);
 }
 
 // usbmon header; `setup` (8 bytes) is present when given, `payload` is the captured data (dataLen = its size)
