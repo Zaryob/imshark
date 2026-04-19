@@ -12,10 +12,10 @@ This document details the file formats, link types, encapsulation methods, and p
 
 ## 2. Recognized File Formats (Diagnostic Support)
 
-Files with known magic numbers produce specific diagnostic messages (`Desteklenmeyen dosya biçimi: <Biçim>`):
+Files with known magic numbers produce specific diagnostic messages (`Desteklenmeyen dosya biçimi: <Biçim>`). These formats are detected only; there are no readers for them:
 - **Microsoft Network Monitor** (`.cap`, `GMBU`)
 - **Sun snoop** (`snoop\0\0\0`)
-- **Endace ERF** (record-based header)
+- **Endace ERF** (record-based header heuristic: type 1-27, record length >= 16, wire length <= record length)
 - **AIX iptrace** (`iptrace 1.0` / `iptrace 2.0`)
 
 ---
@@ -31,14 +31,14 @@ Files with known magic numbers produce specific diagnostic messages (`Desteklenm
 | 108 | **OpenBSD Loopback** | 4-byte AF family in network byte order |
 | 113 | **Linux Cooked v1 (SLL)** | 16-byte Linux cooked packet capture header |
 | 127 | **IEEE 802.11 + Radiotap** | Radiotap header (TSFT, flags, rate, channel, dBm signal/noise) |
-| 187 | **Bluetooth HCI H4** | UART H4 transport indicator, Command, ACL, SCO, Event |
-| 189 | **USB Linux** | Linux USB mon header |
+| 187 | **Bluetooth HCI H4** | H4 indicator; Command, Event, ACL (handle, PB/BC, lengths), SCO/ISO type only; L2CAP header and ATT opcode/MTU/handle |
+| 189 | **USB Linux** | usbmon 48-byte header, setup packet, descriptors of GET_DESCRIPTOR completions |
 | 192 | **IEEE 802.11 + PPI** | Packetized Peripheral Interface header and TLVs |
-| 195, 215 | **IEEE 802.15.4** | Wireless PAN MAC data / ack frames |
-| 220 | **USB Linux mmapped** | Memory-mapped Linux USB URB capture |
-| 227 | **SocketCAN** | Linux SocketCAN frames (Standard and Extended IDs) |
-| 249 | **USBPcap** | USBPcap bulk, control, interrupt header |
-| 254 | **Bluetooth Linux Monitor** | Linux Bluetooth subsystem monitor packets |
+| 195, 215, 230 | **IEEE 802.15.4** | MAC Frame Control and sequence number; 195 with 2-byte FCS, 215 with the non-ASK PHY header, 230 without FCS |
+| 220 | **USB Linux mmapped** | usbmon 64-byte header with the mmapped extension |
+| 227 | **SocketCAN** | Linux SocketCAN frames: Standard and Extended IDs, RTR/error flags, data; CAN FD (72 bytes) |
+| 249 | **USBPcap** | USBPcap 27-byte header, control stage, setup packet, descriptors of GET_DESCRIPTOR completions |
+| 254 | **Bluetooth Linux Monitor** | 4-byte big-endian adapter id + opcode pseudo header, HCI command/event/ACL payload |
 | 276 | **Linux Cooked v2 (SLL2)** | 20-byte Linux cooked capture v2 header |
 
 ---
@@ -95,12 +95,12 @@ Files with known magic numbers produce specific diagnostic messages (`Desteklenm
 | **PostgreSQL** | Startup / SSLRequest (+ TLS follow) / Cancel, typed messages by direction, queries, authentication types, ErrorResponse SQLSTATE | Yes (TCP) | `pgsql`, `pgsql.type`, `pgsql.query`, `pgsql.user`, `pgsql.code`, `pgsql.ssl_request` |
 | **MySQL** | Direction-aware: greeting, login (no password hash), SSLRequest (+ TLS follow), commands, OK / ERR / EOF, result set packets | Yes (TCP) | `mysql`, `mysql.command`, `mysql.query`, `mysql.error_code`, `mysql.version`, `mysql.user`, `mysql.packet_number`, `mysql.from_server`, `mysql.ssl_request` |
 | **TDS (SQL Server)**| Pre-Login options, wrapped TLS handshake, Login7 (password masked), SQL Batch, RPC, response tokens (ERROR number) | Yes (TCP) | `tds`, `tds.type`, `tds.status`, `tds.spid`, `tds.query`, `tds.user`, `tds.encryption`, `tds.error_number` |
-| **SIP / SDP** | Request (INVITE, BYE...), Response codes, Call-ID, Content-Length, SDP | Yes (TCP) / UDP | `sip`, `sip.method`, `sip.status_code`, `sip.call_id` |
-| **RTP / RTCP** | RTP v2 header (PT, Seq, Timestamp, SSRC), RTCP SR/RR packets | N/A (UDP) | `rtp`, `rtp.pt`, `rtp.ssrc`, `rtcp`, `rtcp.pt` |
-| **Modbus/TCP** | MBAP header (Transaction ID, Unit ID), Function Codes, Registers | Yes (TCP) | `modbus`, `modbus.func_code`, `modbus.unit_id` |
-| **DNP3** | Link 0x0564 sync, CRC-16, Source/Dest, Transport/Application FCs | Yes (TCP) / UDP | `dnp3`, `dnp3.func_code` |
-| **USB** | Linux & USBPcap URB transfer types, Setup packet, Descriptors | N/A (USB) | `usb`, `usb.device` |
-| **Bluetooth** | HCI H4, Linux Monitor, L2CAP, ATT/GATT | N/A (BT) | `bt.handle` |
+| **SIP / SDP** | Request/status line (validated), CSeq, Call-ID, From, To (case-insensitive, compact forms), SDP lines | Yes (TCP, Content-Length bounded to 64 KiB) / UDP | none yet (see KNOWN_ISSUES) |
+| **RTP / RTCP** | RTP v2 fixed header (PT, Seq, Timestamp, SSRC), RTCP common header + SSRC | N/A (UDP, Decode As only) | none yet (see KNOWN_ISSUES) |
+| **Modbus/TCP** | MBAP header (Transaction ID, Unit ID), function and exception codes | Yes (TCP) | none yet (see KNOWN_ISSUES) |
+| **DNP3** | Link 0x0564 start, length, control, source/destination, first application function code (CRC shown, not verified) | Yes (TCP) / UDP | none yet (see KNOWN_ISSUES) |
+| **USB** | Linux & USBPcap URB/IRP: request vs completion, IN/OUT, transfer types, setup packet, descriptors (GET_DESCRIPTOR completions) | N/A (USB) | `usb`, `usb.device` |
+| **Bluetooth** | HCI H4 and Linux Monitor, L2CAP header, ATT opcode/MTU/handle; host / controller / ACL handle addresses | N/A (BT) | `bt.handle`, `bt.addr` |
 
 ---
 
