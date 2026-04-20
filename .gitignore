@@ -11,6 +11,5 @@ imgui.ini
 .cache/
 build-cov/
 .omc/
-tools/bench_driver
-tests/data/bench_500k.pcap
 .codegraph/
+tests/data/bench_*.pcap

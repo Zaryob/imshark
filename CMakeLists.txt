@@ -16,6 +16,7 @@ endif()
 # targets created after it, so putting them below would leave imshark_core (and ImGui) uninstrumented.
 option(IMSHARK_BUILD_TESTS "Build the unit tests (requires GoogleTest)" ON)
 option(IMSHARK_SANITIZE "Build with AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
+option(IMSHARK_BUILD_BENCH "Build tools/bench_driver (headless load + filter benchmark, see tools/benchmark.py)" OFF)
 option(IMSHARK_COVERAGE "Instrument for source based code coverage (clang): see tools/coverage.sh" OFF)
 if(IMSHARK_COVERAGE)
     if(NOT CMAKE_CXX_COMPILER_ID MATCHES "Clang")
@@ -75,6 +76,11 @@ add_executable(imshark src/main.cpp)
 target_link_libraries(imshark PRIVATE imshark_ui)
 if(APPLE)
     target_compile_definitions(imshark PRIVATE GL_SILENCE_DEPRECATION)
+endif()
+
+if(IMSHARK_BUILD_BENCH)
+    add_executable(bench_driver tools/bench_driver.cpp)
+    target_link_libraries(bench_driver PRIVATE imshark_core)   # same link line as the application's core dependencies
 endif()
 
 if(IMSHARK_BUILD_TESTS)
