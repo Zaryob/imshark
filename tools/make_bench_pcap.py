@@ -5,7 +5,7 @@ Usage:
     python3 tools/make_bench_pcap.py --output FILE [--profile dns|mixed] [--packets N | --size-mb MB]
 
 Profiles
-  dns    (default) every packet is the same Ethernet/IPv4/UDP/DNS query (83 bytes on the wire). One flow, no
+  dns    (default) every packet is the same Ethernet/IPv4/UDP/DNS query (71 bytes on the wire, 87 bytes in the file with the record header). One flow, no
          payload variety: it measures the per-packet cost of the load pass and nothing else.
   mixed  many flows: TCP segments (2000 connections, advancing sequence numbers, payload of 0..1448 random bytes),
          UDP DNS queries with varying names and ids, and 512 byte UDP datagrams to varying ports. The payloads are

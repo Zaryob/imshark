@@ -1,43 +1,60 @@
 #!/usr/bin/env bash
-# make_appimage.sh — linuxdeploy ile AppImage oluşturma scripti
-# Kullanım: ./tools/make_appimage.sh [build_dir]
+# make_appimage.sh - builds an AppImage by hand with linuxdeploy. NOT part of CI or CPack: the release workflow only
+# publishes the TGZ and DEB packages. Run it on a Linux machine after building.
+#
+# Usage: LINUXDEPLOY=/path/to/linuxdeploy-x86_64.AppImage ./tools/make_appimage.sh [build_dir] [icon.png]
+#
+# linuxdeploy is not downloaded by this script (an unverified download of a "continuous" build would end up in a
+# release artifact): obtain it yourself, check its signature or checksum, and point LINUXDEPLOY at it. The icon is
+# optional; without one a plain placeholder PNG is generated (the project has no icon artwork yet).
 set -euo pipefail
 
 BUILD_DIR="${1:-build}"
+ICON_SRC="${2:-}"
 APP_DIR="AppDir"
+LINUXDEPLOY="${LINUXDEPLOY:-linuxdeploy-x86_64.AppImage}"
 
 if [ ! -f "$BUILD_DIR/imshark" ]; then
-    echo "Hata: $BUILD_DIR/imshark bulunamadı. Önce cmake --build $BUILD_DIR çalıştırın." >&2
+    echo "Error: $BUILD_DIR/imshark not found. Run cmake --build $BUILD_DIR first." >&2
+    exit 1
+fi
+if ! command -v "$LINUXDEPLOY" &>/dev/null; then
+    echo "Error: linuxdeploy not found ('$LINUXDEPLOY'). Set LINUXDEPLOY to its path." >&2
     exit 1
 fi
 
-if ! command -v linuxdeploy-x86_64.AppImage &>/dev/null; then
-    echo "linuxdeploy-x86_64.AppImage bulunamadı, indiriliyor..."
-    wget -c -nv "https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage"
-    chmod +x linuxdeploy-x86_64.AppImage
-    LINUXDEPLOY="./linuxdeploy-x86_64.AppImage"
-else
-    LINUXDEPLOY="linuxdeploy-x86_64.AppImage"
-fi
-
 rm -rf "$APP_DIR"
-mkdir -p "$APP_DIR/usr/bin"
-mkdir -p "$APP_DIR/usr/share/applications"
-mkdir -p "$APP_DIR/usr/share/icons/hicolor/256x256/apps"
+mkdir -p "$APP_DIR/usr/bin" "$APP_DIR/usr/share/applications" "$APP_DIR/usr/share/icons/hicolor/256x256/apps"
+ICON="$APP_DIR/usr/share/icons/hicolor/256x256/apps/imshark.png"
 
 cp "$BUILD_DIR/imshark" "$APP_DIR/usr/bin/"
 
-cat > "$APP_DIR/usr/share/applications/imshark.desktop" <<EOF
+cat > "$APP_DIR/usr/share/applications/imshark.desktop" <<DESKTOP
 [Desktop Entry]
 Name=ImShark
 Exec=imshark
 Icon=imshark
 Type=Application
 Categories=Network;
-EOF
+DESKTOP
 
-touch "$APP_DIR/usr/share/icons/hicolor/256x256/apps/imshark.png"
+if [ -n "$ICON_SRC" ]; then
+    cp "$ICON_SRC" "$ICON"
+else
+    # placeholder: a valid 256x256 single colour PNG (a 0-byte file makes linuxdeploy fail)
+    python3 - "$ICON" <<'PY'
+import struct, sys, zlib
+def chunk(t, d):
+    c = struct.pack(">I", len(d)) + t + d
+    return c + struct.pack(">I", zlib.crc32(t + d) & 0xFFFFFFFF)
+row = b"\x00" + bytes([0x2E, 0x5E, 0x8C]) * 256
+png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 256, 256, 8, 2, 0, 0, 0)) \
+    + chunk(b"IDAT", zlib.compress(row * 256)) + chunk(b"IEND", b"")
+open(sys.argv[1], "wb").write(png)
+PY
+fi
 
-$LINUXDEPLOY --appdir "$APP_DIR" --output appimage -d "$APP_DIR/usr/share/applications/imshark.desktop" -i "$APP_DIR/usr/share/icons/hicolor/256x256/apps/imshark.png"
+"$LINUXDEPLOY" --appdir "$APP_DIR" --output appimage \
+    -d "$APP_DIR/usr/share/applications/imshark.desktop" -i "$ICON"
 
-echo "Oluşturuldu: ImShark-*.AppImage"
+echo "Created: ImShark-*.AppImage"

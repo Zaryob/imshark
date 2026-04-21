@@ -1,9 +1,20 @@
+# Release workflow. It runs when a tag matching v* is pushed (the workflow itself never creates a tag) and attaches
+# the CPack packages of each platform to the GitHub release of that tag:
+#   Linux   build/*.tar.gz, build/*.deb      (CPack TGZ;DEB)
+#   macOS   build/*.dmg                      (CPack DragNDrop; imshark.app at the top of the image)
+#   Windows build/*.zip                      (CPack ZIP)
+# Not produced here: an AppImage (tools/make_appimage.sh is a manual helper), code signing / notarization, and
+# packages that bundle GLFW or OpenSSL. The workflow has not been run on GitHub yet.
 name: Release
 
 on:
   push:
     tags:
       - 'v*'
+
+# softprops/action-gh-release creates the release and uploads assets with GITHUB_TOKEN: it needs write access.
+permissions:
+  contents: write
 
 jobs:
   release:
@@ -14,14 +25,29 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-            artifact_name: imshark-linux
+            assets: |
+              build/*.tar.gz
+              build/*.deb
           - os: macos-latest
-            artifact_name: imshark-macos
+            assets: |
+              build/*.dmg
           - os: windows-latest
-            artifact_name: imshark-windows
+            assets: |
+              build/*.zip
 
     steps:
       - uses: actions/checkout@v4
+
+      # The package file names carry the CMake project version, so the tag has to agree with it.
+      - name: Check the tag against the project version
+        shell: bash
+        run: |
+          project_version=$(sed -nE 's/^project\(imshark VERSION ([0-9]+(\.[0-9]+)*).*/\1/p' CMakeLists.txt)
+          tag_version="${GITHUB_REF_NAME#v}"
+          if [ "$project_version" != "$tag_version" ]; then
+            echo "Tag $GITHUB_REF_NAME does not match project(imshark VERSION $project_version) in CMakeLists.txt" >&2
+            exit 1
+          fi
 
       - name: Install dependencies (Linux)
         if: runner.os == 'Linux'
@@ -31,12 +57,14 @@ jobs:
 
       - name: Install dependencies (macOS)
         if: runner.os == 'macOS'
-        run: brew install glfw googletest pkg-config openssl@3 create-dmg
+        run: brew install glfw googletest pkg-config openssl@3
 
       - name: Configure (non-Windows)
         if: runner.os != 'Windows'
         run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DIMSHARK_BUILD_TESTS=ON
 
+      # Same configuration as ci.yml: GLFW and GoogleTest come from the vcpkg manifest; live capture and TLS
+      # decryption are the "not available" stubs.
       - name: Configure (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
@@ -48,51 +76,15 @@ jobs:
       - name: Build
         run: cmake --build build --config Release --parallel
 
-      - name: Test (non-Windows)
-        if: runner.os != 'Windows'
-        run: ctest --test-dir build --output-on-failure
-
-      - name: Test (Windows)
-        if: runner.os == 'Windows'
+      - name: Test
         run: ctest --test-dir build -C Release --output-on-failure
 
-      - name: Package (non-Windows)
-        if: runner.os != 'Windows'
-        run: |
-          cd build
-          cpack -C Release
-
-      - name: Package (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          cd build
-          cpack -C Release
-
-      - name: Create macOS DMG
-        if: runner.os == 'macOS'
-        run: |
-          APP_PATH="build/imshark.app"
-          if [ -d "$APP_PATH" ]; then
-            create-dmg \
-              --volname "ImShark" \
-              --window-pos 200 120 \
-              --window-size 600 300 \
-              --icon-size 100 \
-              --app-drop-link 425 120 \
-              "imshark-macos.dmg" \
-              "$APP_PATH" || true
-          fi
-          # Fallback: TGZ from CPack
-          ls build/*.dmg build/*.tar.gz 2>/dev/null || true
+      - name: Package
+        run: cpack -C Release
+        working-directory: build
 
       - name: Upload release assets
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            build/*.dmg
-            build/*.tar.gz
-            build/*.deb
-            build/*.zip
-            imshark-macos.dmg
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          files: ${{ matrix.assets }}
+          fail_on_unmatched_files: true

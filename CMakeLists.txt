@@ -88,7 +88,6 @@ if(IMSHARK_BUILD_TESTS)
     add_subdirectory(tests)
 endif()
 
-install(TARGETS imshark RUNTIME DESTINATION bin)
 
 # macOS .app bundle
 if(APPLE)
@@ -101,6 +100,11 @@ if(APPLE)
         MACOSX_BUNDLE_COPYRIGHT "GPL-3.0"
     )
 endif()
+
+# The install rule must come after MACOSX_BUNDLE is set on the target: CMake decides RUNTIME vs BUNDLE when install()
+# is processed. On macOS BUNDLE DESTINATION puts imshark.app at the top of the package (otherwise the DragNDrop image
+# holds bin/imshark.app); elsewhere the executable goes to bin/. Shared libraries (GLFW, OpenSSL) are not bundled.
+install(TARGETS imshark RUNTIME DESTINATION bin BUNDLE DESTINATION .)
 
 # CPack packaging
 set(CPACK_PACKAGE_NAME "imshark")
