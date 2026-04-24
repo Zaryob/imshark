@@ -1,131 +1,176 @@
-# Adding a New Protocol Dissector to ImShark
+# Adding a Protocol Dissector to ImShark
 
-This guide explains how to write a new protocol dissector, register it, add display filter support, and test it in ImShark.
+This guide describes how dissectors are really written in this repository: where the files go, how a dissector is
+registered, how load-time state and detail building (Replay) interact, how filter fields are added, and which tests a
+delivery needs. Read it together with the "Ortak teslim kuralları" section of `ROADMAP.md`, which is the binding
+list of delivery rules.
 
-## What is a Dissector?
+## What a dissector is
 
-In ImShark, a dissector is a function responsible for parsing a specific network protocol. It receives a byte buffer representing the protocol payload and is expected to:
-1. Populate summary fields for the packet list.
-2. Build a protocol tree (`Field` tree) for the packet details view.
-3. Hand off the remaining payload to the next layer (if applicable) via the `Registry`.
+A dissector decodes `length` bytes starting at `data` and never reads beyond them. It fills the packet summary
+(`ctx.pack`: protocol, Info text, `app_*` facts, addresses where it owns them), optionally builds the field tree for the
+details pane, and may hand the payload to the next layer through `ctx.registry`. The signature is (`core/src/dissect/context.h`):
 
-A dissector function matches the following signature (defined in `core/src/dissect/context.h`):
 ```cpp
 using Dissector = std::function<void(Context &ctx, const char *data, size_t length)>;
 ```
 
-### The `Context` Object
+### The `Context`
 
-The `Context` object (`ctx`) provides everything needed during parsing:
-- `ctx.pack`: The `PacketInfo` struct to fill with summary data and tree fields.
-- `ctx.frame` & `ctx.frameLength`: The absolute start and length of the captured frame.
-- `ctx.tcp`: TCP state tracking (for relative sequence/acknowledgment numbers).
-- `ctx.registry`: The registry used to look up and invoke the next dissector in the stack.
-- `ctx.mode`: The current `ParseMode`. If `ctx.wantFields()` is false, the dissector should skip building the field tree for performance.
-- `ctx.addLayer()`: Helper to create a new top-level protocol layer in the tree.
+- `ctx.pack` is the `packet::PacketInfo` being filled in. It is deliberately small (a `static_assert` in
+  `tests/test_reader.cpp` caps it at 336 bytes): do **not** add members. Use `app_type`, `app_flags`, `app_code`,
+  `app_stream`, `app_text`, `app_text2`, existing unions, or a session table (below).
+- `ctx.frame` / `ctx.frameLength` are the captured frame; `ctx.offsetOf(p)` turns a pointer into an absolute offset for
+  field nodes.
+- `ctx.mode` is a `ParseMode`: `Summary` (load pass: list columns only, no tree), `Full` (summary and tree, used by
+  tests and tools) or `Replay` (details of one packet of an already loaded capture). `ctx.wantFields()` is false in
+  `Summary`; skip tree building then.
+- `ctx.sessions` is the `core::SessionTables`; `ctx.streams`, `ctx.reassembler` and the `completed*` members carry TCP and
+  IP reassembly. `ctx.tcpStreamSeq` identifies a stream message.
+- `ctx.addLayer(name, offset, length)` appends a top-level tree layer and returns a `Field &`; `Field::add(text, offset,
+  length)` adds a child node. Every node must lie inside the frame.
+- `ctx.markMalformed(reason)` flags the packet (it feeds Expert Info). Call it after you set the summary, because the
+  Info text is overwritten.
 
-## Step 1: Create the Dissector File
+## The two passes: load pass and Replay
 
-Protocol dissectors are placed in `core/src/dissect/`. Create a new `.cpp` file (e.g., `myproto.cpp`) and declare your dissector in `core/src/dissect/protocols.h`.
+This is the rule that matters most. A capture is dissected **once, in order, in `Summary` mode** (the load pass). Later,
+when the user selects a packet, that single packet is dissected again in `Replay` mode with the tables frozen.
 
-Example `core/src/dissect/myproto.cpp`:
+- Everything that depends on earlier packets (a TLS upgrade, a MySQL greeting that tells the server direction, a USB
+  control request whose completion has no setup, reassembly) is **decided in the load pass and stored**: in
+  `app_flags` / `app_type` / `app_code` or in `SessionTables` (`core/src/dissect/session.h`).
+- Replay only **reads** that state. `SessionTables::freeze()` makes the tables refuse writes during Replay; a dissector
+  must not recompute cross-packet state from the single packet, or the details would differ from the list.
+- State needs a bound: the tables have a memory budget and record a "state lost" flag when it is exceeded.
+- The Info column text comes from `pack.info` in both passes, so the list and the details agree.
+
+TCP protocols whose messages span segments (or share one) register a `StreamProtocol` (framer + dissector for one
+complete message); datagram reassembly uses `network::DatagramReassembler`. Existing examples: `ldap.cpp`
+(`frameLdap`), `postgres.cpp`, `tds.cpp`, `dtls.cpp`.
+
+## Step 1: the dissector file
+
+Dissectors live in `core/src/dissect/`, one file per protocol (a few related ones share a file, e.g. `voip.cpp`,
+`industrial.cpp`). Declare the entry point in the protocol's own header (`igmp.h`, `ospf.h`, ...) or, for older
+dissectors, in `protocols.h`. Use the bounds-checked helpers instead of raw pointer arithmetic:
+
+- `reader.h`: `ByteReader` (`u8`, `u16_be`/`u16_le`, `u24_be`, `u32_be`/`u32_le`, `skip`, `sub(len)`; once a read would pass the
+  end it enters a failed state, `ok()` is false).
+- `asn1.h` (BER/DER), `xdr.h` (XDR), `util.h` (`be16`, `ip4`, `hexString`, `printableText` for bounded printable text),
+  `checksum.h` (Internet checksum, CRC-32C, pseudo headers).
+
+A minimal sketch:
 
 ```cpp
-#include "protocols.h"
-#include <network/utils.h>
+#include "myproto.h"
+#include "reader.h"
+#include "util.h"
 
 using packet::Field;
 
-namespace dissect {
+void dissect::dissectMyProto(Context &ctx, const char *data, size_t length) {
+    auto &pack = ctx.pack;
+    pack.protocol = "MYPROTO";
 
-void dissectMyProto(Context &ctx, const char *data, size_t length) {
-    if (length < 4) return; // Malformed or truncated
-
-    // 1. Populate Summary Fields
-    ctx.pack.protocol = "MYPROTO";
-    ctx.pack.info = "MyProto Message";
-
-    // You can use app_* fields to store protocol-specific data for filters
-    uint16_t msg_type = be16(data);
-    ctx.pack.app_type = msg_type; 
-    ctx.pack.app_text = "Type " + std::to_string(msg_type);
-
-    // 2. Build the Field Tree (only if needed)
-    if (ctx.wantFields()) {
-        size_t offset = ctx.offsetOf(data);
-        Field& layer = ctx.addLayer("My Protocol", offset, length);
-
-        layer.children.push_back({"Message Type: " + std::to_string(msg_type), static_cast<uint32_t>(offset), 2, {}});
-        
-        uint16_t payload_len = be16(data + 2);
-        layer.children.push_back({"Payload Length: " + std::to_string(payload_len), static_cast<uint32_t>(offset + 2), 2, {}});
+    ByteReader r(data, length);
+    const uint16_t type = r.u16_be();
+    const uint16_t len = r.u16_be();
+    if (!r.ok()) {                       // shorter than the fixed header
+        pack.info = "MyProto [Truncated]";
+        ctx.markMalformed("MyProto header truncated");
+        return;
     }
+    pack.app_type = type;                // facts the filter reads (summary only, no tree)
+    pack.info = "MyProto message type " + std::to_string(type);
 
-    // 3. Hand off to the next layer (optional)
-    // If MyProto encapsulates another protocol, invoke it via ctx.registry
-    // Example: next_dissector(ctx, data + 4, length - 4);
+    if (ctx.wantFields()) {
+        const size_t o = ctx.offsetOf(data);
+        Field &l = ctx.addLayer("My Protocol", o, length);
+        l.add("Type: " + std::to_string(type), o, 2);
+        l.add("Length: " + std::to_string(len), o + 2, 2);
+    }
 }
-
-} // namespace dissect
 ```
 
-## Step 2: Register the Dissector
+Claim a port or payload only when the content validates (a wrong claim hides what the packet really is); otherwise
+decline and let the generic UDP/TCP path show it. Mark data that is encrypted or protected as such; never present it
+as plain text.
 
-Once the dissector is written, it needs to be registered so ImShark knows when to invoke it. This is done in `core/src/dissect/registry.cpp` within the `Registry::builtin()` method.
+## Step 2: register it
 
-The `Registry` supports multiple registration methods based on the transport layer:
-- **Link Layer:** `registerLinkType(type, dissector)`
-- **Network Layer:** `registerEtherType(type, dissector)`
-- **Transport Layer:** `registerIpProtocol(protocol, dissector)`
-- **Application Layer (Port-based):** 
-  - `registerTcpPort(port, dissector)`
-  - `registerUdpPort(port, dissector)`
-- **Application Layer (Heuristic):**
-  - `registerTcpHeuristic(heuristic_dissector)`
-  - `registerUdpHeuristic(heuristic_dissector)`
+`core/src/dissect/registry.cpp` (`Registry::builtin()`):
 
-Example registration in `registry.cpp`:
-```cpp
-registry.registerUdpPort(12345, dissectMyProto);
-```
+- Link layer / network / transport: `registerLinkType`, `registerEtherType`, `registerIpProtocol`.
+- Application: `registerTcpPort`, `registerUdpPort`; heuristics `registerTcpHeuristic`, `registerUdpHeuristic`.
+- TCP message streams: `registerTcpStream(port, StreamProtocol{name, framer, dissect})` and
+  `registerTcpStreamHeuristic`.
+- Decode As: `registerProtocolName(name, Handlers{udp, tcp, stream})` makes the protocol selectable by name for any
+  port. A protocol that is never dispatched automatically (RTP/RTCP) is reachable **only** through this.
 
-## Step 3: Add Display Filter Fields
+Source lists are explicit: add the `.cpp` to `core/CMakeLists.txt` (`imshark_core`) and the test file to
+`tests/CMakeLists.txt`. CMake does not glob.
 
-ImShark filters operate **only on summary fields** (data stored directly in `PacketInfo`), not the field tree. This allows lightning-fast filtering without touching the PCAP file.
+## Step 3: filter fields
 
-To make your protocol filterable, add field definitions to `core/src/filter/fields.cpp` in the `buildTable()` function.
-
-1. Ensure your dissector populates `PacketInfo` fields like `app_type`, `app_flags`, `app_code`, `app_text`, or `app_text2`.
-2. Add a new row to the table in `fields.cpp`:
+Display filters read **summary** data (`PacketInfo`), never the field tree. Fields live in the central table in
+`core/src/filter/fields.cpp` (`buildTable()`); the table is built once before any filter is compiled or any packet is
+dissected. Add rows there:
 
 ```cpp
 {"myproto", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (p.protocol == "MYPROTO") o.addU(1); }, "My Protocol"},
 {"myproto.type", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.protocol == "MYPROTO") o.addU(p.app_type); }, "My Protocol Message Type"},
 ```
 
-## Step 4: State Management and Session Tables
+Gate every extractor on the protocol (an ungated field matches unrelated packets). `filter::registerField` exists for
+fields that are not part of the built-in table (plugins, tests); dissectors do not call it and must not register fields
+lazily from their own function. Not every dissector has filter fields yet: `docs/KNOWN_ISSUES.md` lists the gaps.
 
-For protocols that span multiple packets or require state tracking (e.g., handshake completion, sessions), use the `SessionTables` inside the `Context`.
+Also add the protocol to the hierarchy and application names in `core/src/stats/statistics.cpp` if it should appear
+under its own name in Statistics.
 
-- TCP reassembly and connection tracking are automatically handled by `network::TCPConnection` and `TcpStreams`.
-- For application-level sessions (like TLS or DTLS), look at `core/src/dissect/session.h` (`ctx.sessions`).
-- Remember that ImShark reads packets in multiple passes. Store state keyed by invariant identifiers (like `tcpStreamSeq` + `pack.number` or endpoint addresses) so it behaves correctly during single-packet replays (`ParseMode::Replay`).
+## Step 4: tests
 
-## Step 5: Testing
+`ctest` runs one GoogleTest binary (`tests/`). Three kinds of test are expected for a dissector:
 
-ImShark uses rigorous testing. You must provide tests for your new dissector.
+1. **Real captures, optional.** Entries of kind `real` in `tests/corpus/manifest.json` (source URL, SHA-256, expected
+   counts, facts) are read from the directory in `IMSHARK_CORPUS_DIR` and skipped when it is not set; nothing is ever
+   downloaded. A dissector test can look for manifest entries naming its protocol (`framesweep::checkCorpus`,
+   `*.RealCapturesWhenAvailable` tests). The manifest also holds a few synthetic files generated by
+   `tools/make_corpus.py` for capture-format and IP edge cases. For the v1.1 to v1.9 protocols no real capture is in the
+   manifest yet, so these hooks currently skip.
+2. **Hand-built messages with an independent oracle.** Build the bytes from the specification (RFC examples, vendor
+   documents), and compute the expected numbers by another route than the code under test: a Python stdlib
+   computation, `openssl asn1parse`, a published test vector. Say in a comment how the vector was obtained.
+3. **Truncation and mutation sweep.** Cut the frame at every length and flip seeded random bytes, and assert that nothing
+   crashes (run it under ASan) and that every field offset + length stays inside the frame. Use the shared helpers:
+   `tests/frame_sweep.h` (`framesweep::sweep`, `expectInside`, frame builders for Ethernet/IPv4/IPv6/UDP, any link
+   type) and, for TCP conversations, `tests/app_flow.h` (`appflow::Flow`, `expectReplayEqualsLoad`, `sweepPayload`).
 
-1. **Synthetic Tests:** Generate synthetic PCAP files using `tools/make_corpus.py`. Define the expected output (summary, tree, filters) in `tests/corpus/manifest.json`. The CI will automatically run the PCAP through the pipeline and assert the output matches.
-2. **Fuzzing:** The dissector is automatically fuzz-tested under ASan/UBSan via the core fuzzing targets. Ensure you check buffer lengths strictly (`length < expected`) to prevent out-of-bounds reads.
+If the dissector keeps cross-packet state, also test that Replay equals the load pass (`expectReplayEqualsLoad`).
 
-## Delivery Checklist
+Build and run the sanitizer configuration before you commit:
 
-Before opening a PR, ensure you have:
-- [ ] Created the dissector file in `core/src/dissect/`.
-- [ ] Registered the dissector in `core/src/dissect/registry.cpp`.
-- [ ] Added relevant summary data to `PacketInfo`.
-- [ ] Added filter definitions to `core/src/filter/fields.cpp`.
-- [ ] Handled `ctx.wantFields() == false` correctly to skip tree building.
-- [ ] Added a synthetic test PCAP and expectations to `manifest.json`.
-- [ ] Run `ctest` locally with ASan and UBSan enabled.
-- [ ] Verified that display filters for your protocol work as expected.
+```bash
+cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=Debug -DIMSHARK_SANITIZE=ON
+cmake --build build-asan -j && (cd build-asan && ctest --output-on-failure)   # run serially
+```
+
+There is no separate fuzzing harness; the mutation sweeps above, run under ASan/UBSan, are the memory-safety check.
+
+## Delivery checklist (apply it to every protocol)
+
+This is a template, not a one-time task: go through it for each dissector you deliver.
+
+- [ ] Specification and version named in `docs/PROTOCOLS.md`, with known deviations stated honestly.
+- [ ] Dissector file in `core/src/dissect/`, header, entry in `core/CMakeLists.txt`, registration in `registry.cpp`
+      (and a Decode As name if appropriate).
+- [ ] Cross-packet state decided in the load pass and stored; Replay only reads it; `PacketInfo` did not grow.
+- [ ] `ctx.wantFields() == false` skips the tree; the Info text is the same in both passes.
+- [ ] Filter fields in `core/src/filter/fields.cpp`, gated on the protocol; hierarchy name in `statistics.cpp`.
+- [ ] Tests: hand-built messages with an independent oracle, truncation/mutation sweep, corpus hook (skipping when
+      `IMSHARK_CORPUS_DIR` is not set), Replay equality for stateful protocols.
+- [ ] Encrypted or protected content is labelled and never shown as plain text.
+- [ ] Full `ctest` passes in a normal build and in `-DIMSHARK_SANITIZE=ON`.
+- [ ] `docs/KNOWN_ISSUES.md` (functional limits), `docs/SUPPORT_MATRIX.md`, `docs/PROTOCOLS.md` and the README feature
+      list describe exactly what the code does, including what it does not do.
