@@ -23,7 +23,7 @@ void dissect::dissectDhcp(Context &ctx, const char *data, size_t length) {
     if (dhcp.op == 1) oss << "Request";
     else if (dhcp.op == 2) oss << "Reply";
 
-    oss << ", XID: 0x" << std::hex << ntohl(dhcp.xid) << std::dec;
+    oss << ", XID: 0x" << std::hex << network::ntoh32(dhcp.xid) << std::dec;
     oss << ", Client IP: " << ip4(dhcp.cip_addr);
     oss << ", Your IP: " << ip4(dhcp.yip_addr);
     oss << ", Server IP: " << ip4(dhcp.sip_addr);
@@ -41,9 +41,9 @@ void dissect::dissectDhcp(Context &ctx, const char *data, size_t length) {
     l.add("Hardware type: " + hexString(dhcp.hw_type, 2), p + 1, 1);
     l.add("Hardware address length: " + std::to_string(dhcp.hw_len), p + 2, 1);
     l.add("Hops: " + std::to_string(dhcp.hops), p + 3, 1);
-    l.add("Transaction ID: " + hexString(ntohl(dhcp.xid), 8), p + 4, 4);
-    l.add("Seconds elapsed: " + std::to_string(ntohs(dhcp.secs)), p + 8, 2);
-    l.add("Flags: " + hexString(ntohs(dhcp.flags), 4), p + 10, 2);
+    l.add("Transaction ID: " + hexString(network::ntoh32(dhcp.xid), 8), p + 4, 4);
+    l.add("Seconds elapsed: " + std::to_string(network::ntoh16(dhcp.secs)), p + 8, 2);
+    l.add("Flags: " + hexString(network::ntoh16(dhcp.flags), 4), p + 10, 2);
     l.add("Client IP address: " + ip4(dhcp.cip_addr), p + 12, 4);
     l.add("Your (client) IP address: " + ip4(dhcp.yip_addr), p + 16, 4);
     l.add("Next server IP address: " + ip4(dhcp.sip_addr), p + 20, 4);

@@ -29,14 +29,14 @@ void dissect::dissectIPv4(Context &ctx, const char *base, size_t len) {
     }
 
     const size_t o = ctx.offsetOf(base);
-    const size_t totalLen = ntohs(ipHeader.tot_length);
+    const size_t totalLen = network::ntoh16(ipHeader.tot_length);
     {
         Field &l = ctx.addLayer("Internet Protocol Version 4, Src: " + pack.source + ", Dst: " + pack.destination, o, ipHeaderLen);
         l.add("Version: " + std::to_string(ipHeader.version), o, 1);
         l.add("Header Length: " + std::to_string(ipHeaderLen) + " bytes (" + std::to_string(ipHeader.ihl) + ")", o, 1);
         l.add("Differentiated Services: " + hexString(ipHeader.tos, 2), o + 1, 1);
         l.add("Total Length: " + std::to_string(totalLen), o + 2, 2);
-        l.add("Identification: " + hexString(ntohs(ipHeader.id), 4) + " (" + std::to_string(ntohs(ipHeader.id)) + ")", o + 4, 2);
+        l.add("Identification: " + hexString(network::ntoh16(ipHeader.id), 4) + " (" + std::to_string(network::ntoh16(ipHeader.id)) + ")", o + 4, 2);
         Field &flags = l.add("Flags: " + hexString(ipHeader.flags(), 1) + ((ipHeader.flags() & 2) ? ", Don't fragment" : "") +
                                  ((ipHeader.flags() & 1) ? ", More fragments" : ""), o + 6, 1);
         flags.add(std::string("Don't fragment: ") + ((ipHeader.flags() & 2) ? "Set" : "Not set"), o + 6, 1);
@@ -44,7 +44,7 @@ void dissect::dissectIPv4(Context &ctx, const char *base, size_t len) {
         l.add("Fragment Offset: " + std::to_string(ipHeader.fragmentOffset() * 8), o + 6, 2);
         l.add("Time to Live: " + std::to_string(ipHeader.ttl), o + 8, 1);
         l.add("Protocol: " + std::to_string(ipHeader.protocol), o + 9, 1);
-        l.add("Header Checksum: " + hexString(ntohs(ipHeader.check), 4), o + 10, 2);
+        l.add("Header Checksum: " + hexString(network::ntoh16(ipHeader.check), 4), o + 10, 2);
         l.add("Source Address: " + pack.source, o + 12, 4);
         l.add("Destination Address: " + pack.destination, o + 16, 4);
         if (ipHeaderLen > sizeof(network::IPHeader)) l.add("Options", o + 20, ipHeaderLen - sizeof(network::IPHeader));
@@ -80,7 +80,7 @@ void dissect::dissectIPv6(Context &ctx, const char *base, size_t len) {
                << ", Hop Limit: " << (int) ipv6Header.hop_limit;
     pack.info = infoStream.str();
 
-    pack.length = ntohs(ipv6Header.payload_len); // payload only, no need to subtract the header size
+    pack.length = network::ntoh16(ipv6Header.payload_len); // payload only, no need to subtract the header size
     size_t next = sizeof(network::IPv6Header);   // offset of the next header, relative to `base`
     size_t avail = std::min<size_t>(pack.length, len - next);
     uint8_t nextHeader = ipv6Header.next_header;
@@ -91,7 +91,7 @@ void dissect::dissectIPv6(Context &ctx, const char *base, size_t len) {
     l.add("Version: " + std::to_string(ipv6Header.version()), o, 1);
     l.add("Traffic Class: " + hexString(ipv6Header.trafficClass(), 2), o, 2);
     l.add("Flow Label: " + hexString(ipv6Header.flowLabel(), 5), o + 1, 3);
-    l.add("Payload Length: " + std::to_string(ntohs(ipv6Header.payload_len)), o + 4, 2);
+    l.add("Payload Length: " + std::to_string(network::ntoh16(ipv6Header.payload_len)), o + 4, 2);
     l.add("Next Header: " + std::to_string(ipv6Header.next_header), o + 6, 1);
     l.add("Hop Limit: " + std::to_string(ipv6Header.hop_limit), o + 7, 1);
     l.add("Source Address: " + pack.source, o + 8, 16);

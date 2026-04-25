@@ -56,7 +56,7 @@ GLFW, önce CMake paket yapılandırmasıyla (`find_package(glfw3)`), bulunamazs
 
 `python3 tools/make_sample_pcap.py` örnek yakalama dosyasını (`tests/data/sample.pcap`) yeniden üretir: ARP, ICMP, DNS, TCP (seçeneklerle), SMTP, IPv6, VLAN, bilinmeyen EtherType ve kırpık paket içerir.
 
-Not: kod `<arpa/inet.h>` kullandığı için şu an yalnızca POSIX (macOS/Linux) hedeflidir (Windows, yol haritasında).
+Windows (MSVC): vcpkg yolu kullanılır — `cmake --preset vcpkg` ardından `cmake --build --preset vcpkg --config Release`. Çekirdek hiçbir POSIX/Winsock başlığına bağımlı değildir (bayt sırası ve IP adres biçimlendirme `core/src/network/byteorder.h` içindedir). **Not:** Windows derlemesi bu depoda henüz bir Windows makinesinde denenmedi; CI işi eklendi ama ilk çalıştırmada düzeltme gerekebilir.
 
 ## Test
 

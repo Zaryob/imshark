@@ -71,9 +71,9 @@ void dissect::dissectTcp(Context &ctx, const char *data, size_t length) {
     int64_t seq = -1, ack = -1;
     ctx.tcp.trackTCPConnections(seq, ack, pack.source, pack.destination, tcpHeader);
 
-    const uint16_t window = ntohs(tcpHeader.window);
-    const uint16_t srcPort = ntohs(tcpHeader.src_port);
-    const uint16_t dstPort = ntohs(tcpHeader.dest_port);
+    const uint16_t window = network::ntoh16(tcpHeader.window);
+    const uint16_t srcPort = network::ntoh16(tcpHeader.src_port);
+    const uint16_t dstPort = network::ntoh16(tcpHeader.dest_port);
     const std::string flagNames = tcpFlagNames(tcpHeader.flags);
     const std::string options = describeTcpOptions(data + sizeof(network::TCPHeader), headerLen - sizeof(network::TCPHeader));
     pack.info = std::to_string(srcPort) + " -> " + std::to_string(dstPort) + " [" + flagNames + "] " +
@@ -89,9 +89,9 @@ void dissect::dissectTcp(Context &ctx, const char *data, size_t length) {
         l.add("Source Port: " + std::to_string(srcPort), o, 2);
         l.add("Destination Port: " + std::to_string(dstPort), o + 2, 2);
         l.add("Sequence Number: " + (seq >= 0 ? std::to_string(seq) + " (relative), " : std::string()) +
-                  std::to_string(ntohl(tcpHeader.seq_num)) + " (raw)", o + 4, 4);
+                  std::to_string(network::ntoh32(tcpHeader.seq_num)) + " (raw)", o + 4, 4);
         l.add("Acknowledgment Number: " + (ack >= 0 ? std::to_string(ack) + " (relative), " : std::string()) +
-                  std::to_string(ntohl(tcpHeader.ack_num)) + " (raw)", o + 8, 4);
+                  std::to_string(network::ntoh32(tcpHeader.ack_num)) + " (raw)", o + 8, 4);
         l.add("Header Length: " + std::to_string(headerLen) + " bytes", o + 12, 1);
         Field &f = l.add("Flags: " + hexString(tcpHeader.flags, 3) + " (" + flagNames + ")", o + 13, 1);
         static const std::pair<uint8_t, const char *> bits[] = {
@@ -101,8 +101,8 @@ void dissect::dissectTcp(Context &ctx, const char *data, size_t length) {
             f.add(std::string(name) + ": " + ((tcpHeader.flags & bit) ? "Set" : "Not set"), o + 13, 1);
         }
         l.add("Window: " + std::to_string(window), o + 14, 2);
-        l.add("Checksum: " + hexString(ntohs(tcpHeader.checksum), 4), o + 16, 2);
-        l.add("Urgent Pointer: " + std::to_string(ntohs(tcpHeader.urgent_pointer)), o + 18, 2);
+        l.add("Checksum: " + hexString(network::ntoh16(tcpHeader.checksum), 4), o + 16, 2);
+        l.add("Urgent Pointer: " + std::to_string(network::ntoh16(tcpHeader.urgent_pointer)), o + 18, 2);
         if (headerLen > sizeof(network::TCPHeader)) {
             l.add("Options:" + (options.empty() ? std::string(" (no decoded options)") : options), o + 20,
                   headerLen - sizeof(network::TCPHeader));

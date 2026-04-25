@@ -170,6 +170,14 @@ TEST(PcapngReader, ByteOrderTimestampResolutionAndPadding) {
     }
 }
 
+TEST(PcapngReader, NanosecondTimestampsKeepFullPrecisionAtEpochScale) {
+    const uint64_t base = 1700000000ull * 1000000000ull; // a 2023 epoch time in nanoseconds
+    auto r = load("p.pcapng", pcapngFile(false, 9, {base, base + 1, base + 1500000000ull}, false), true);
+    ASSERT_EQ(r.packets.size(), 3u);
+    EXPECT_NEAR(r.packets[1].time, 1e-9, 1e-12);
+    EXPECT_NEAR(r.packets[2].time, 1.5, 1e-9);
+}
+
 TEST(PcapngReader, InvalidBlocksAreReported) {
     auto good = pcapngFile(false, -1, {1});
     {

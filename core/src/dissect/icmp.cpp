@@ -19,10 +19,10 @@ void dissect::dissectIcmp(Context &ctx, const char *data, size_t length, bool v6
     std::ostringstream oss;
     switch (icmp.type) {
         case 8: // Echo Request (Ping)
-            oss << "ICMP Echo Request, Identifier=" << ntohs(icmp.identifier) << ", Sequence=" << ntohs(icmp.sequence);
+            oss << "ICMP Echo Request, Identifier=" << network::ntoh16(icmp.identifier) << ", Sequence=" << network::ntoh16(icmp.sequence);
             break;
         case 0: // Echo Reply
-            oss << "ICMP Echo Reply, Identifier=" << ntohs(icmp.identifier) << ", Sequence=" << ntohs(icmp.sequence);
+            oss << "ICMP Echo Reply, Identifier=" << network::ntoh16(icmp.identifier) << ", Sequence=" << network::ntoh16(icmp.sequence);
             break;
         case 3: // Destination Unreachable
             oss << "ICMP Destination Unreachable, Code=" << (int) icmp.code;
@@ -40,9 +40,9 @@ void dissect::dissectIcmp(Context &ctx, const char *data, size_t length, bool v6
     Field &l = ctx.addLayer(v6 ? "Internet Control Message Protocol v6" : "Internet Control Message Protocol", o, length);
     l.add("Type: " + std::to_string(icmp.type), o, 1);
     l.add("Code: " + std::to_string(icmp.code), o + 1, 1);
-    l.add("Checksum: " + hexString(ntohs(icmp.checksum), 4), o + 2, 2);
-    l.add("Identifier: " + std::to_string(ntohs(icmp.identifier)), o + 4, 2);
-    l.add("Sequence Number: " + std::to_string(ntohs(icmp.sequence)), o + 6, 2);
+    l.add("Checksum: " + hexString(network::ntoh16(icmp.checksum), 4), o + 2, 2);
+    l.add("Identifier: " + std::to_string(network::ntoh16(icmp.identifier)), o + 4, 2);
+    l.add("Sequence Number: " + std::to_string(network::ntoh16(icmp.sequence)), o + 6, 2);
     if (length > sizeof(icmp)) {
         l.add("Data (" + std::to_string(length - sizeof(icmp)) + " bytes)", o + sizeof(icmp), length - sizeof(icmp));
     }

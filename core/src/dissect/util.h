@@ -8,7 +8,7 @@
 #include <sstream>
 #include <string>
 
-#include <arpa/inet.h>
+#include <network/byteorder.h>
 
 namespace dissect {
     /// Copies a T out of [base, base + avail) at `off`. Returns false if it does not fit.
@@ -23,20 +23,18 @@ namespace dissect {
     inline uint16_t be16(const char *p) {
         uint16_t v;
         std::memcpy(&v, p, sizeof(v));
-        return ntohs(v);
+        return network::ntoh16(v);
     }
 
     inline uint32_t be32(const char *p) {
         uint32_t v;
         std::memcpy(&v, p, sizeof(v));
-        return ntohl(v);
+        return network::ntoh32(v);
     }
 
     /// `addr` points to 4 bytes in network byte order.
     inline std::string ip4(const void *addr) {
-        char buf[INET_ADDRSTRLEN];
-        inet_ntop(AF_INET, addr, buf, sizeof(buf));
-        return buf;
+        return network::formatIPv4(addr);
     }
 
     inline std::string ip4(uint32_t addr) { return ip4(&addr); }

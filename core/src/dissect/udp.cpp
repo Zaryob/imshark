@@ -17,9 +17,9 @@ void dissect::dissectUdp(Context &ctx, const char *data, size_t length) {
     }
     pack.l4_header = udpHeader;
 
-    const uint16_t srcPort = ntohs(udpHeader.src_port);
-    const uint16_t dstPort = ntohs(udpHeader.dest_port);
-    const size_t udpLen = ntohs(udpHeader.len);
+    const uint16_t srcPort = network::ntoh16(udpHeader.src_port);
+    const uint16_t dstPort = network::ntoh16(udpHeader.dest_port);
+    const size_t udpLen = network::ntoh16(udpHeader.len);
     pack.length = udpLen;
     if (udpLen < sizeof(network::UDPHeader)) {
         pack.protocol = "UDP";
@@ -36,7 +36,7 @@ void dissect::dissectUdp(Context &ctx, const char *data, size_t length) {
     l.add("Source Port: " + std::to_string(srcPort), o, 2);
     l.add("Destination Port: " + std::to_string(dstPort), o + 2, 2);
     l.add("Length: " + std::to_string(udpLen), o + 4, 2);
-    l.add("Checksum: " + hexString(ntohs(udpHeader.checksum), 4), o + 6, 2);
+    l.add("Checksum: " + hexString(network::ntoh16(udpHeader.checksum), 4), o + 6, 2);
     if (payloadLen > 0) l.add("UDP payload (" + std::to_string(payloadLen) + " bytes)", o + 8, payloadLen);
 
     if (const Dissector *app = ctx.registry.findUdpPort(srcPort, dstPort)) {

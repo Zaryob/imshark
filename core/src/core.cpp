@@ -46,17 +46,21 @@ namespace {
         }
     };
 
-    /// Reports time relative to the first packet that was seen.
+    /// Reports time relative to the first packet that was seen. The split into whole seconds and a
+    /// fraction keeps full precision even where long double is just a double (MSVC).
     struct TimeBase {
         bool set = false;
-        long double base = 0;
+        uint64_t baseSeconds = 0;
+        double baseFraction = 0;
 
-        double relative(long double absolute) {
+        double relative(uint64_t seconds, uint64_t fractionTicks, uint64_t ticksPerSecond) {
+            const double fraction = static_cast<double>(fractionTicks) / static_cast<double>(ticksPerSecond);
             if (!set) {
                 set = true;
-                base = absolute;
+                baseSeconds = seconds;
+                baseFraction = fraction;
             }
-            return static_cast<double>(absolute - base);
+            return static_cast<double>(static_cast<int64_t>(seconds - baseSeconds)) + (fraction - baseFraction);
         }
     };
 
@@ -121,7 +125,7 @@ namespace {
 bool core::FileProcessor::processPcapFile(const std::string &filepath, std::vector<packet::PacketInfo> &packets,
                                           std::string &message) {
     message.clear();
-    std::ifstream file(filepath, std::ios::binary);
+    std::ifstream file(pathFromUtf8(filepath), std::ios::binary);
     if (!file.is_open()) {
         message = "Failed to open file: " + filepath;
         return false;
@@ -138,7 +142,7 @@ bool core::FileProcessor::processPcapFile(const std::string &filepath, std::vect
     Endian e;
     uint32_t magic;
     std::memcpy(&magic, gh, sizeof(magic));
-    double fractionsPerSecond = 1e6;
+    uint64_t fractionsPerSecond = 1000000;
     if (magic == kPcapMagicMicro || magic == kPcapMagicNano) {
         e.swap = false;
     } else if (magic == swap32(kPcapMagicMicro) || magic == swap32(kPcapMagicNano)) {
@@ -147,7 +151,7 @@ bool core::FileProcessor::processPcapFile(const std::string &filepath, std::vect
         message = "Incompatible PCAP file format";
         return false;
     }
-    if (e.u32(gh) == kPcapMagicNano) fractionsPerSecond = 1e9;
+    if (e.u32(gh) == kPcapMagicNano) fractionsPerSecond = 1000000000;
 
     // The low 28 bits of the "network" field are the LINKTYPE (upper bits hold FCS flags).
     const uint32_t linkType = e.u32(gh + 20) & 0x0fffffff;
@@ -179,8 +183,7 @@ bool core::FileProcessor::processPcapFile(const std::string &filepath, std::vect
             break;
         }
 
-        const long double absolute = static_cast<long double>(tsSec) + tsFrac / fractionsPerSecond;
-        addPacket(parser, packets, timeBase.relative(absolute), linkType, std::move(data));
+        addPacket(parser, packets, timeBase.relative(tsSec, tsFrac, fractionsPerSecond), linkType, std::move(data));
     }
 
     return true;
@@ -191,7 +194,7 @@ bool core::FileProcessor::processPcapFile(const std::string &filepath, std::vect
 bool core::FileProcessor::processPcapngFile(const std::string &filepath, std::vector<packet::PacketInfo> &packets,
                                             std::string &message) {
     message.clear();
-    std::ifstream file(filepath, std::ios::binary);
+    std::ifstream file(pathFromUtf8(filepath), std::ios::binary);
     if (!file.is_open()) {
         message = "Failed to open file: " + filepath;
         return false;
@@ -282,7 +285,7 @@ bool core::FileProcessor::processPcapngFile(const std::string &filepath, std::ve
                 const uint64_t tps = interfaceId < interfaces.size()
                                          ? interfaces[interfaceId].ticksPerSecond
                                          : kDefaultTicksPerSecond;
-                lastTime = timeBase.relative(static_cast<long double>(ticks) / tps);
+                lastTime = timeBase.relative(ticks / tps, ticks % tps, tps);
                 const uint32_t linkType = interfaceId < interfaces.size() ? interfaces[interfaceId].linkType : 1;
 
                 // Only captured_length bytes are packet data; the rest is padding and options.

@@ -36,9 +36,7 @@ namespace {
         if (type == 1 && dataLength == 4) { // A record (IPv4)
             oss << " A " << ip4(data + offset);
         } else if (type == 28 && dataLength == 16) { // AAAA record (IPv6)
-            char ipv6Addr[INET6_ADDRSTRLEN];
-            inet_ntop(AF_INET6, data + offset, ipv6Addr, INET6_ADDRSTRLEN);
-            oss << " AAAA " << ipv6Addr;
+            oss << " AAAA " << network::formatIPv6(data + offset);
         } else if (type == 6) { // SOA record
             oss << " SOA";
         }
@@ -58,10 +56,10 @@ void dissect::dissectDns(Context &ctx, const char *data, size_t length) {
         return;
     }
 
-    const uint16_t transactionID = ntohs(dnsHeader.transaction_id);
-    const uint16_t flags = ntohs(dnsHeader.flags);
-    const uint16_t questions = ntohs(dnsHeader.questions);
-    const uint16_t answerRRs = ntohs(dnsHeader.answer_rrs);
+    const uint16_t transactionID = network::ntoh16(dnsHeader.transaction_id);
+    const uint16_t flags = network::ntoh16(dnsHeader.flags);
+    const uint16_t questions = network::ntoh16(dnsHeader.questions);
+    const uint16_t answerRRs = network::ntoh16(dnsHeader.answer_rrs);
 
     {
         const size_t o = ctx.offsetOf(data);
@@ -70,8 +68,8 @@ void dissect::dissectDns(Context &ctx, const char *data, size_t length) {
         l.add("Flags: " + hexString(flags, 4), o + 2, 2);
         l.add("Questions: " + std::to_string(questions), o + 4, 2);
         l.add("Answer RRs: " + std::to_string(answerRRs), o + 6, 2);
-        l.add("Authority RRs: " + std::to_string(ntohs(dnsHeader.authority_rrs)), o + 8, 2);
-        l.add("Additional RRs: " + std::to_string(ntohs(dnsHeader.additional_rrs)), o + 10, 2);
+        l.add("Authority RRs: " + std::to_string(network::ntoh16(dnsHeader.authority_rrs)), o + 8, 2);
+        l.add("Additional RRs: " + std::to_string(network::ntoh16(dnsHeader.additional_rrs)), o + 10, 2);
         if (length > sizeof(network::DNSHeader)) {
             l.add("Records (" + std::to_string(length - sizeof(network::DNSHeader)) + " bytes)", o + sizeof(network::DNSHeader),
                   length - sizeof(network::DNSHeader));
