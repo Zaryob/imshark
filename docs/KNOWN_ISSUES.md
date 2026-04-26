@@ -2,7 +2,7 @@
 
 Statik kod incelemesiyle tespit edilmiştir (derleme/çalıştırma ile ayrıca doğrulanmadı). Önem: **K** = kritik (çökme/güvenlik/yanlış veri), **O** = orta, **D** = düşük.
 
-## Güncel durum (v0.7.2)
+## Güncel durum (v0.7.2 analizinden bu yana; protokol bölümleri v1.9 düzeltmelerine kadar günceldir)
 
 İlk analizdeki #1–#24 giderildi. Aşağıdakiler **hâlâ açık** olanlardır; ilgili ROADMAP sürümü parantez içinde.
 
@@ -28,7 +28,7 @@ Statik kod incelemesiyle tespit edilmiştir (derleme/çalıştırma ile ayrıca 
 - Dışa aktarma mikro-saniye çözünürlüğündedir (nanosaniye yakalamada son 3 hane kaybolur). IP adresleri sayısal değil metin olarak sıralanır. ImGui pencere yerleşimi kalıcı değil.
 
 **Bellek / performans**
-- Paket özeti 336 bayt (testlerde üst sınır 336), `info` metni paket başına ~63 bayt yığın tutar: 500 bin paket ≈ 190 MB, yükleme < 1 sn.
+- Paket özeti 336 bayt (testlerde üst sınır 336), `info` metni paket başına ~63 bayt yığın tutar: 500 bin paket 185 MB (aynı DNS paketi) ile 266 MB (karışık TCP/UDP, çok akışlı) arasında bellek ve 0,7–0,9 sn yükleme süresi tutar (Apple M4, Release, sentetik yakalamalar; yöntem ve ham çıktılar ROADMAP.md v1.0 maddesinde). Gerçek trafikte değerler farklı olabilir.
 
 **Doğrulama boşlukları**
 - Arayüz hiç ekran görüntüsüyle incelenmedi; menü, sağ tık ve sürükle-bırak etkileşimleri otomatik test edilmiyor (`chrome.cpp` kapsamı ≈ %50).

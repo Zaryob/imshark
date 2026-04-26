@@ -2,6 +2,8 @@
 
 This document details the file formats, link types, encapsulation methods, and protocols supported by ImShark across versions v0.1 to v1.9+.
 
+Every row states what the code decodes today. "Filter Fields" lists names that exist in the filter table (`core/src/filter/fields.cpp`); "none yet" means the protocol has no display-filter fields of its own (the details are in the tree and the Info column). Functional limits per area are in [KNOWN_ISSUES.md](KNOWN_ISSUES.md), specifications and implementation files in [PROTOCOLS.md](PROTOCOLS.md). Protocols added in v1.1 to v1.9 have been tested with hand-built messages (checked against independent computations) and truncation/mutation sweeps; no real capture of them was available, so the optional real-capture hooks skip.
+
 ---
 
 ## 1. Supported File Formats
@@ -27,7 +29,8 @@ Files with known magic numbers produce specific diagnostic messages (`Desteklenm
 | 0 | **Null / BSD Loopback** | 4-byte AF family header (AF_INET, AF_INET6) |
 | 1 | **Ethernet** | IEEE 802.3 / Ethernet II with FCS extraction |
 | 12, 14, 101 | **Raw IP** | Raw IPv4 or IPv6 (nibble dispatch) |
-| 105 | **IEEE 802.11** | Direct 802.11 wireless MAC frames |
+| 9 | **PPP** | Point-to-Point Protocol frames (see PPP below) |
+| 105 | **IEEE 802.11** | Direct 802.11 wireless MAC frames (`wlan.*`) |
 | 108 | **OpenBSD Loopback** | 4-byte AF family in network byte order |
 | 113 | **Linux Cooked v1 (SLL)** | 16-byte Linux cooked packet capture header |
 | 127 | **IEEE 802.11 + Radiotap** | Radiotap header (TSFT, flags, rate, channel, dBm signal/noise) |
@@ -53,7 +56,8 @@ Files with known magic numbers produce specific diagnostic messages (`Desteklenm
 - **PPP**: Point-to-Point Protocol (LCP, IPCP, IPv6CP, PAP, CHAP).
 - **LLC / SNAP**: Subnetwork Access Protocol and IEEE 802.2 Logical Link Control.
 - **Ethernet MAC Control**: 802.3x PAUSE and 802.1Qbb PFC frames.
-- **STP / RSTP / MSTP**: Spanning Tree Protocol BPDUs.
+- **STP / RSTP / MSTP**: Spanning Tree Protocol BPDUs (`stp.*`).
+- **LLDP** (`lldp.*`), **LACP** (`lacp.*`, in `slow_protocols.cpp`) and **EAPOL / 802.1X** (`eapol.*`: EAPOL-Key, EAP).
 
 ---
 
@@ -78,14 +82,19 @@ Files with known magic numbers produce specific diagnostic messages (`Desteklenm
 ### Application Layer
 | Protocol | Features | Stream / Message Framing | Filter Fields |
 |---|---|---|---|
-| **DNS / mDNS** | Q/A Sections, Name compression, A/AAAA/TXT/MX/SOA/SRV/OPT | Yes (TCP) | `dns.*`, `dns.flags.*`, `dns.qry.name`, `dns.a`, `dns.cname` |
-| **DHCP / BOOTP** | Message types, Client IP/MAC, Magic Cookie, Options decoding | N/A (UDP) | `dhcp.*`, `dhcp.option.type` |
+| **DNS / mDNS** | Q/A Sections, Name compression, A/AAAA/TXT/MX/SOA/SRV/OPT | Yes (TCP) | `dns`, `dns.qry.name`, `dns.qry.type`, `dns.flags.response`, `dns.flags.rcode`, `dns.flags.truncated` |
+| **DHCP / BOOTP** | Message types, Client IP/MAC, Magic Cookie, Options decoding | N/A (UDP) | `dhcp`, `dhcp.type`, `dhcp.option.hostname` |
 | **HTTP/1.x** | Heuristic detection, Method, URI, Status Code, Chunked framing | Yes (TCP) | `http.*`, `http.request.method`, `http.response.code` |
 | **HTTP/2** | Frames (DATA, HEADERS, SETTINGS, RST...), HPACK static/Huffman | Yes (TCP) | `http2.*`, `http2.type`, `http2.streamid` |
 | **TLS** | TLS 1.0-1.3 records, Hello, SNI, ALPN, Cipher Suites, Keylog decryption | Yes (TCP) | `tls.*`, `tls.handshake.type`, `tls.handshake.extensions_server_name` |
 | **DTLS** | Handshake fragments, HelloVerifyRequest, DTLS 1.2 AES-GCM decryption | Datagram reassembler | `dtls.*` |
 | **NTP** | Timestamps, Leap indicator, Modes, Stratum, Reference ID | N/A (UDP) | `ntp.*` |
-| **SSH** | Banner, KEXINIT algorithms, Message codes | Yes (TCP) | `ssh.*`, `ssh.message_code`, `ssh.protocol`, `ssh.kex_algorithm` |
+| **SSH** | Banner, KEXINIT algorithms, Message codes, encrypted-packet mark | No (one segment at a time) | `ssh.*`, `ssh.message_code`, `ssh.protocol`, `ssh.kex_algorithm` |
+| **SNMP** | v1 / v2c / v3 (USM), PDU types, varbinds, MIB names | N/A (UDP) | `snmp`, `snmp.version`, `snmp.community`, `snmp.pdu_type`, `snmp.request_id`, `snmp.error_status`, `snmp.oid` |
+| **Telnet** | IAC commands, option negotiation, SB/NAWS/Terminal-Type | No | `telnet`, `telnet.cmd`, `telnet.subcmd`, `telnet.data` |
+| **SMTP** | Command/reply split, multi-line replies, addresses, headers, STARTTLS (TLS follows) | No | `smtp`, `smtp.command`, `smtp.param`, `smtp.req`, `smtp.rsp`, `smtp.response.code` |
+| **FTP / FTP-DATA** | Commands, replies, PASV / EPSV / PORT data-connection tracking | No | `ftp`, `ftp.command`, `ftp.arg`, `ftp.req`, `ftp.rsp`, `ftp.response.code`, `ftp_data` |
+| **TFTP** | RRQ/WRQ/DATA/ACK/ERROR/OACK, dynamic UDP TID sessions | N/A (UDP) | `tftp`, `tftp.opcode`, `tftp.block`, `tftp.mode`, `tftp.source_file`, `tftp.error.code` |
 | **BGP** | BGP marker, OPEN, UPDATE, NOTIFICATION, KEEPALIVE, NLRI prefix | Yes (TCP) | `bgp`, `bgp.type`, `bgp.as`, `bgp.nlri`, `bgp.notification.code` |
 | **LDAP** | BER header framing + reassembly, Message ID, Bind (no password), Search (scope, RFC 4515 filter), results with result-code names, Extended / StartTLS (TLS follows) | Yes (TCP) | `ldap`, `ldap.message_id`, `ldap.protocol_op`, `ldap.name`, `ldap.result_code`, `ldap.extended_name` |
 | **Kerberos** | RFC 4120 tags per message type, AS/TGS/AP REQ/REP, KRB-ERROR names, PA-DATA types, principal / realm, UDP + TCP record mark | Yes (TCP) | `kerberos`, `kerberos.msg_type`, `kerberos.error_code`, `kerberos.realm`, `kerberos.cname`, `kerberos.sname` |
@@ -108,4 +117,6 @@ Files with known magic numbers produce specific diagnostic messages (`Desteklenm
 
 - **Decryption:** TLS/DTLS decryption relies on provided session keys (keylog files) or pcapng Decryption Secrets Blocks (DSB); live dynamic key extraction from memory is not supported.
 - **Windows Platform:** While build targets and CI matrix for Windows are configured, native hardware testing has not been performed locally.
-- **Fuzzing & ASan:** All dissectors are verified under Clang AddressSanitizer and UndefinedBehaviorSanitizer with zero leaks and bounds-checked frame offsets.
+- **Memory safety:** the test suite includes truncation and seeded byte-mutation sweeps for the protocols added in v1.1 to v1.9 (and for several older ones) that assert every field offset stays inside the frame, and the whole suite is run under AddressSanitizer and UndefinedBehaviorSanitizer (`-DIMSHARK_SANITIZE=ON`, also what CI builds on Linux and macOS). This is evidence for the inputs the tests generate, not a proof for every dissector: older dissectors have no sweep of their own, and there is no separate fuzzing harness.
+- **Real captures:** none of the v1.1 to v1.9 protocols has a real capture in the corpus manifest. USB, Bluetooth monitor and 802.15.4 (215) decoding follow the published layouts and have not been compared with a real capture or with tshark (not available here).
+- **Encrypted content:** ESP, IKEv2 encrypted payloads and SMB2 transform (encrypted) messages are labelled, not decoded. TLS that starts inside LDAP (StartTLS), PostgreSQL, MySQL or TDS is dissected as TLS from the upgrade on; it can be decrypted with a key log except TLS-in-TDS, whose handshake is wrapped in Pre-Login packets and is not handed to the TLS dissector. TLS/DTLS decryption needs an OpenSSL 3 build and supplied keys.
