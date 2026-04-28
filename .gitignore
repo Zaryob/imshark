@@ -7,3 +7,5 @@ build/
 build-*/
 vcpkg_installed/
 imgui.ini
+
+.cache/

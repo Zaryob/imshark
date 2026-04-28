@@ -63,6 +63,27 @@ Arayüz artık `fields` ağacını çizer; başlık `variant`'ları yalnızca te
 5. **L7** yalnızca **port numarasına** bakılarak seçilir (23, 25, 179, 53, 67/68, 161/162).
 6. Sonuç `PacketInfo`'ya yazılır ve vektöre eklenir.
 
+### Dissector'lar (`core/src/dissect/`)
+
+```cpp
+using Dissector = std::function<void(Context &ctx, const char *data, size_t length)>;
+
+registry.registerEtherType(0x0800, dissectIPv4);      // network layer
+registry.registerIpProtocol(6, dissectTcp);            // transport layer
+registry.registerUdpPort(53, dissectDns);              // application layer
+```
+
+`Context`, o an çözülen `PacketInfo`'yu, çerçevenin başlangıcını (mutlak ofsetler için), TCP takip durumunu ve registry'yi taşır. Bir dissector yalnızca kendisine verilen `length` baytı okur, `ctx.addLayer()` ile alan ağacına katman ekler ve payload'ı `ctx.registry` üzerinden bir sonraki katmana verir. `PacketParser` yalnızca link katmanını (Ethernet+VLAN, NULL/Loopback, Raw, SLL/SLL2) çözer ve EtherType ile registry'ye devreder. Yeni protokol: bir `.cpp` dosyası yaz, `registry.cpp`'de kaydet (veya `Registry::builtin()` kopyasına kendi dissector'ını ekleyip `PacketParser(registry)`'ye ver).
+
+| Dosya | Protokoller |
+|---|---|
+| `ip.cpp` | IPv4, IPv6 (+ uzantı başlıkları) |
+| `arp.cpp` | ARP, RARP |
+| `icmp.cpp` | ICMP, ICMPv6 |
+| `tcp.cpp`, `udp.cpp` | TCP (bayraklar, seçenekler, bağıl seq/ack), UDP |
+| `dns.cpp`, `dhcp.cpp` | DNS (sıkıştırma dahil), DHCP |
+| `simple.cpp` | SNMP, Telnet, SMTP, BGP (yalnızca özet) |
+
 ## 5. Arayüz (`src/ui/`)
 
 - `AppState` (`app_state.h`): paketler, yükleme durumu, seçili paket/alan/bayt aralığı, bölücü yüksekliği; global değişken yok.
@@ -79,9 +100,8 @@ Arayüz artık `fields` ağacını çizer; başlık `variant`'ları yalnızca te
 - Bağımlılıklar az; vcpkg veya sistem paketleriyle kurulur.
 
 **Kalan zayıf yanlar** (ayrıntı: [KNOWN_ISSUES.md](KNOWN_ISSUES.md))
-- `PacketParser` hâlâ tek sınıf; protokol eklemek için kayıt defterli dissector arayüzü yok.
 - Dosya tamamen eşzamanlı yüklenir; her paket ham baytıyla RAM'de tutulur (v0.4).
-- POSIX'e bağımlı (`arpa/inet.h`); Windows henüz yok.
+- Windows derlemesi için gerekli değişiklikler yapıldı ama bir Windows makinesinde henüz doğrulanmadı.
 
 ## 7. Hedef mimari
 
@@ -93,5 +113,5 @@ libimshark (statik, UI bağımsız)         imshark (uygulama)
 └─ model/    Packet, Field (ad + ofset + uzunluk)
 ```
 
-- Dissector'lar `span<const uint8_t>` alıp `Field` üretir; protokol eklemek = tek bir dissector kaydetmek (**henüz yapılmadı**).
+- Dissector'lar `(Context&, data, length)` alıp `PacketInfo`/`Field` üretir; protokol eklemek = tek bir dissector yazıp `Registry`'ye kaydetmek (**yapıldı**, `core/src/dissect/`).
 - Yükleme arka plan iş parçacığında, paketler indeks + `mmap` ile tembel okunur (v0.4).

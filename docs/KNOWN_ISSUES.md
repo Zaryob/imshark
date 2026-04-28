@@ -2,7 +2,7 @@
 
 Statik kod incelemesiyle tespit edilmiştir (derleme/çalıştırma ile ayrıca doğrulanmadı). Önem: **K** = kritik (çökme/güvenlik/yanlış veri), **O** = orta, **D** = düşük.
 
-> **Durum (v0.3):** #1–#14, #16, #18–#24 giderildi (#20: `raw_data` kopyaları hâlâ var, v0.4'te ele alınacak). Kalanlar: IPv4 parçalanma/yeniden birleştirme, tam DNS/DHCP kayıt türleri (#15), eşzamanlı yükleme ve bellek kullanımı (v0.4), Windows desteği, dissector kayıt defteri. Düzeltmeler ASan/UBSan altında çalışan birim/mutasyon-fuzz testleriyle ve pencere açmadan çalışan ImGui duman testleriyle doğrulandı; arayüz görsel olarak (ekran görüntüsüyle) incelenmedi.
+> **Durum (v0.3 tamamlandı):** #1–#14, #16, #18–#24 giderildi (#20: `raw_data` kopyaları hâlâ var, v0.4'te ele alınacak). Kalanlar: IPv4 parçalanma/yeniden birleştirme, tam DNS/DHCP kayıt türleri (#15), eşzamanlı yükleme ve bellek kullanımı (v0.4). Düzeltmeler ASan/UBSan altında çalışan birim/mutasyon-fuzz testleriyle ve pencere açmadan çalışan ImGui duman testleriyle doğrulandı; arayüz görsel olarak (ekran görüntüsüyle) incelenmedi, Windows derlemesi ise bir Windows makinesinde denenmedi.
 
 ## Güvenlik ve sağlamlık
 
