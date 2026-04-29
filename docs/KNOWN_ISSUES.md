@@ -36,7 +36,7 @@ Statik kod incelemesiyle tespit edilmiştir (derleme/çalıştırma ile ayrıca 
 - Gerçek yakalama corpus'u yalnızca `IMSHARK_CORPUS_DIR` ile çalışır; CI'da yalnızca sentetik dosyalar koşar.
 
 **Güvence (neyin nasıl doğrulandığı)**
-- 513 test (3'ü ayrıcalık/libpcap/corpus yokluğunda atlanır) çekirdek dahil ASan+UBSan altında geçer (bir dönem sanitizer çekirdeği kapsamıyordu: CMake seçenek sırası; düzeltildi ve yapılandırma artık denetliyor). Arka plan iş parçacıkları için ThreadSanitizer temiz.
+- 938 test (26'sı ayrıcalık/libpcap/OpenSSL/corpus yokluğunda atlanır; `ctest -N` ve seri `ctest` ile sayıldı) çekirdek dahil ASan+UBSan altında geçer (bir dönem sanitizer çekirdeği kapsamıyordu: CMake seçenek sırası; düzeltildi ve yapılandırma artık denetliyor). Arka plan iş parçacıkları için ThreadSanitizer temiz.
 - Satır kapsamı ≈ %92 (`tools/coverage.sh`).
 
 ## Güvenlik ve sağlamlık
