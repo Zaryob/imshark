@@ -14,6 +14,7 @@ add_executable(imshark_tests
     test_clipboard.cpp
     test_corpus.cpp
     test_color_rules.cpp
+    test_dissector_guide.cpp
     test_dns.cpp
     test_export.cpp
     test_filter.cpp
@@ -95,7 +96,9 @@ if(IMSHARK_SANITIZE)
     target_sources(imshark_tests PRIVATE asan_options.cpp)
 endif()
 target_link_libraries(imshark_tests PRIVATE imshark_core imshark_ui GTest::gtest_main)
-target_compile_definitions(imshark_tests PRIVATE IMSHARK_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data")
+target_compile_definitions(imshark_tests PRIVATE IMSHARK_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data"
+    IMSHARK_DOCS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../docs"
+    IMSHARK_GUIDE_TEST_SOURCE="${CMAKE_CURRENT_SOURCE_DIR}/test_dissector_guide.cpp")
 
 include(GoogleTest)
 gtest_discover_tests(imshark_tests DISCOVERY_MODE PRE_TEST)

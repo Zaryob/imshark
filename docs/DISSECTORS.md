@@ -174,3 +174,80 @@ This is a template, not a one-time task: go through it for each dissector you de
 - [ ] Full `ctest` passes in a normal build and in `-DIMSHARK_SANITIZE=ON`.
 - [ ] `docs/KNOWN_ISSUES.md` (functional limits), `docs/SUPPORT_MATRIX.md`, `docs/PROTOCOLS.md` and the README feature
       list describe exactly what the code does, including what it does not do.
+
+## Worked example (compiled and run by the test suite)
+
+`tests/test_dissector_guide.cpp` holds a complete toy protocol, "TOY": UDP port 40000, a big-endian `u16` type, a `u16`
+payload length, then the payload. It is registered on a private copy of the built-in registry, so it never touches the
+real one. The three code blocks below are not illustrations: the test `DissectorGuide.TheCodeInTheGuideIsTheCodeCompiledHere`
+fails when a block here differs from the marked region of the test file. If you change an API this guide uses, change
+the test and this section together.
+
+The dissector (Step 1). It reads only through `ByteReader`, fills the summary (`protocol`, `info`, `app_type`) in every mode,
+builds the field tree only when `wantFields()` is true, and reports a length that does not fit as malformed:
+
+<!-- guide:dissector -->
+```cpp
+void dissectToy(dissect::Context &ctx, const char *data, size_t length) {
+    auto &pack = ctx.pack;
+    pack.protocol = "TOY";
+
+    dissect::ByteReader r(data, length);
+    const uint16_t type = r.u16_be();
+    const uint16_t len = r.u16_be();
+    if (!r.ok()) {                           // shorter than the 4-byte header
+        pack.info = "Toy [Truncated]";
+        ctx.markMalformed("Toy header truncated");
+        return;
+    }
+    pack.app_type = type;                    // a fact the filter reads: summary data, not the field tree
+    pack.info = "Toy message type " + std::to_string(type);
+    if (len > r.remaining()) {
+        ctx.markMalformed("Toy length exceeds the datagram");
+        return;
+    }
+
+    if (ctx.wantFields()) {
+        const size_t o = ctx.offsetOf(data);
+        Field &layer = ctx.addLayer("Toy Protocol", o, 4 + len);
+        layer.add("Type: " + std::to_string(type), o, 2);
+        layer.add("Length: " + std::to_string(len), o + 2, 2);
+        if (len) layer.add("Payload", o + 4, len);
+    }
+}
+```
+
+Registration (Step 2). `registerUdpPort` makes the port dispatch to it; `registerProtocolName` makes it selectable in
+Decode As (UDP only here, since no TCP handler is given). `Registry` is copyable, which is what makes a private registry
+cheap; `packet::PacketParser parser(registry)` then uses it:
+
+<!-- guide:registry -->
+```cpp
+dissect::Registry toyRegistry() {
+    dissect::Registry r = dissect::Registry::builtin();
+    r.registerUdpPort(40000, dissectToy);
+    r.registerProtocolName("TOY", {dissectToy, nullptr, nullptr});   // Decode As: UDP only
+    return r;
+}
+```
+
+A filter field (Step 3). The extractor is a plain function pointer, gated on the protocol, reading summary data. A
+built-in protocol adds a row to `buildTable()` in `core/src/filter/fields.cpp` instead; `registerField` is the route for
+tests and plugins (it is why the test uses it, and it is why the test for the filter reference ignores the `toy.` field):
+
+<!-- guide:field -->
+```cpp
+void toyType(const packet::PacketInfo &p, const filter::Context &, filter::Values &out) {
+    if (p.protocol == "TOY") out.addU(p.app_type);
+}
+
+bool registerToyField() {
+    static const bool done = filter::registerField({"toy.type", filter::FieldType::Unsigned, toyType, "Toy Protocol Message Type"});
+    return done;
+}
+```
+
+The tests in the same file show what each step buys you: the toy message decodes with a tree in `Full` mode and without
+one in `Summary` mode, the built-in registry is untouched, Decode As moves the protocol to another port, the filter
+`toy.type == 7` matches only TOY packets, and a truncation plus seeded-mutation sweep keeps every field inside the frame.
+Copy the test file as the starting point of a new dissector's test.
