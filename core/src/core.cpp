@@ -83,13 +83,24 @@ namespace {
         return size < 0 ? 0 : static_cast<uint64_t>(size);
     }
 
+    /// Publishes progress; returns true if the load should stop because a cancel was requested.
+    bool reportProgress(core::LoadControl *control, uint64_t bytesProcessed, size_t packetsLoaded) {
+        if (!control) return false;
+        control->bytesProcessed = bytesProcessed;
+        control->packetsLoaded = packetsLoaded;
+        return control->cancelRequested;
+    }
+
+    // Keeps only the summary: the frame bytes stay in the file (file_offset/captured_length) and the field
+    // tree is rebuilt on demand (see core::buildPacketDetails).
     void addPacket(packet::PacketParser &parser, std::vector<packet::PacketInfo> &packets,
-                   double time, uint32_t linkType, std::vector<char> data) {
+                   double time, uint32_t linkType, uint64_t fileOffset, const std::vector<char> &data) {
         packet::PacketInfo pack(static_cast<int>(packets.size()) + 1);
         pack.time = time;
         pack.link_type = linkType;
-        parser.parsePacket(pack, data);
-        pack.raw_data = std::move(data);
+        pack.file_offset = fileOffset;
+        pack.captured_length = static_cast<uint32_t>(data.size());
+        parser.parsePacket(pack, data, dissect::ParseMode::Summary);
         packets.emplace_back(std::move(pack));
     }
 
@@ -123,7 +134,7 @@ namespace {
 /// PCAP FILE PROCESSING
 
 bool core::FileProcessor::processPcapFile(const std::string &filepath, std::vector<packet::PacketInfo> &packets,
-                                          std::string &message) {
+                                          std::string &message, LoadControl *control) {
     message.clear();
     std::ifstream file(pathFromUtf8(filepath), std::ios::binary);
     if (!file.is_open()) {
@@ -131,6 +142,7 @@ bool core::FileProcessor::processPcapFile(const std::string &filepath, std::vect
         return false;
     }
     const uint64_t fileSize = fileSizeOf(file);
+    if (control) control->totalBytes = fileSize;
 
     uint8_t gh[24];
     if (!file.read(reinterpret_cast<char *>(gh), sizeof(gh))) {
@@ -160,6 +172,7 @@ bool core::FileProcessor::processPcapFile(const std::string &filepath, std::vect
     const size_t firstPacket = packets.size();
 
     uint8_t ph[16];
+    uint64_t consumed = sizeof(gh);
     while (true) {
         file.read(reinterpret_cast<char *>(ph), sizeof(ph));
         const auto got = file.gcount();
@@ -183,8 +196,15 @@ bool core::FileProcessor::processPcapFile(const std::string &filepath, std::vect
             break;
         }
 
-        addPacket(parser, packets, timeBase.relative(tsSec, tsFrac, fractionsPerSecond), linkType, std::move(data));
+        const uint64_t dataOffset = consumed + sizeof(ph);
+        consumed = dataOffset + inclLen;
+        addPacket(parser, packets, timeBase.relative(tsSec, tsFrac, fractionsPerSecond), linkType, dataOffset, data);
+        if (reportProgress(control, consumed, packets.size() - firstPacket)) {
+            message = "Cancelled";
+            return false;
+        }
     }
+    reportProgress(control, fileSize, packets.size() - firstPacket);
 
     return true;
 }
@@ -192,7 +212,7 @@ bool core::FileProcessor::processPcapFile(const std::string &filepath, std::vect
 /// PCAPNG FILE PROCESSING
 
 bool core::FileProcessor::processPcapngFile(const std::string &filepath, std::vector<packet::PacketInfo> &packets,
-                                            std::string &message) {
+                                            std::string &message, LoadControl *control) {
     message.clear();
     std::ifstream file(pathFromUtf8(filepath), std::ios::binary);
     if (!file.is_open()) {
@@ -200,6 +220,7 @@ bool core::FileProcessor::processPcapngFile(const std::string &filepath, std::ve
         return false;
     }
     const uint64_t fileSize = fileSizeOf(file);
+    if (control) control->totalBytes = fileSize;
 
     Endian e;
     bool haveSection = false;
@@ -215,6 +236,7 @@ bool core::FileProcessor::processPcapngFile(const std::string &filepath, std::ve
     };
 
     std::vector<uint8_t> block;
+    uint64_t consumed = 0;
     while (true) {
         block.assign(8, 0);
         file.read(reinterpret_cast<char *>(block.data()), 8);
@@ -260,6 +282,13 @@ bool core::FileProcessor::processPcapngFile(const std::string &filepath, std::ve
             return fail("Mismatched block length at end of block. Expected: " + std::to_string(totalLength));
         }
 
+        const uint64_t blockStart = consumed;
+        consumed += totalLength;
+        if (reportProgress(control, consumed, packets.size() - firstPacket)) {
+            message = "Cancelled";
+            return false;
+        }
+
         const uint8_t *body = block.data() + 8;
         const size_t bodySize = totalLength - 12;
 
@@ -290,7 +319,8 @@ bool core::FileProcessor::processPcapngFile(const std::string &filepath, std::ve
 
                 // Only captured_length bytes are packet data; the rest is padding and options.
                 const char *data = reinterpret_cast<const char *>(body + 20);
-                addPacket(parser, packets, lastTime, linkType, std::vector<char>(data, data + capturedLength));
+                addPacket(parser, packets, lastTime, linkType, blockStart + 8 + 20,
+                          std::vector<char>(data, data + capturedLength));
             } break;
             case kBlockSPB: {
                 if (bodySize < 4) return fail("Simple Packet Block too short");
@@ -301,7 +331,7 @@ bool core::FileProcessor::processPcapngFile(const std::string &filepath, std::ve
                 }
                 // SPBs carry no timestamp; reuse the previous packet's time.
                 const char *data = reinterpret_cast<const char *>(body + 4);
-                addPacket(parser, packets, lastTime, interfaces.empty() ? 1 : interfaces[0].linkType,
+                addPacket(parser, packets, lastTime, interfaces.empty() ? 1 : interfaces[0].linkType, blockStart + 8 + 4,
                           std::vector<char>(data, data + captured));
             } break;
             default:
@@ -313,5 +343,25 @@ bool core::FileProcessor::processPcapngFile(const std::string &filepath, std::ve
         message = "Not a pcapng file";
         return false;
     }
+    reportProgress(control, fileSize, packets.size() - firstPacket);
+    return true;
+}
+
+bool core::readPacketBytes(const std::string &filepath, const packet::PacketInfo &summary, std::vector<char> &out) {
+    std::ifstream file(pathFromUtf8(filepath), std::ios::binary);
+    if (!file.is_open()) return false;
+    file.seekg(static_cast<std::streamoff>(summary.file_offset));
+    out.resize(summary.captured_length);
+    return summary.captured_length == 0 || file.read(out.data(), summary.captured_length).good();
+}
+
+bool core::buildPacketDetails(const std::string &filepath, const packet::PacketInfo &summary, packet::PacketInfo &details) {
+    std::vector<char> bytes;
+    if (!readPacketBytes(filepath, summary, bytes)) return false;
+
+    details = summary;
+    packet::PacketParser parser; // fresh parser: TCP numbers come from `summary` (Replay mode)
+    parser.parsePacket(details, bytes, dissect::ParseMode::Replay);
+    details.raw_data = std::move(bytes);
     return true;
 }

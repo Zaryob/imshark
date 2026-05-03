@@ -16,7 +16,6 @@ void dissect::dissectArp(Context &ctx, const char *data, size_t length, bool rev
         pack.protocol = name;
         return;
     }
-    pack.l3_header = arp;
     pack.protocol = name;
     pack.length = sizeof(network::ARPHeader);
     pack.destination = network::getMACAddressString(arp.target_hw_addr);
@@ -43,6 +42,7 @@ void dissect::dissectArp(Context &ctx, const char *data, size_t length, bool rev
     }
     pack.info = oss.str();
 
+    if (!ctx.wantFields()) return;
     const size_t o = ctx.offsetOf(data);
     const uint16_t opcode = network::ntoh16(arp.opcode);
     Field &l = ctx.addLayer(std::string("Address Resolution Protocol (") +

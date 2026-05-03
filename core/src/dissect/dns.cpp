@@ -61,7 +61,7 @@ void dissect::dissectDns(Context &ctx, const char *data, size_t length) {
     const uint16_t questions = network::ntoh16(dnsHeader.questions);
     const uint16_t answerRRs = network::ntoh16(dnsHeader.answer_rrs);
 
-    {
+    if (ctx.wantFields()) {
         const size_t o = ctx.offsetOf(data);
         Field &l = ctx.addLayer(std::string("Domain Name System (") + ((flags & 0x8000) ? "response" : "query") + ")", o, length);
         l.add("Transaction ID: " + hexString(transactionID, 4), o, 2);

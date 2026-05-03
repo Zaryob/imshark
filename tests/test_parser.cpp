@@ -8,6 +8,36 @@
 using support::hex;
 using support::parse;
 
+namespace {
+    using packet::Field;
+
+    const Field *findField(const Field &f, const std::string &prefix) {
+        if (f.text.rfind(prefix, 0) == 0) return &f;
+        for (const auto &c: f.children) {
+            if (auto r = findField(c, prefix)) return r;
+        }
+        return nullptr;
+    }
+
+    const Field *findField(const packet::PacketInfo &p, const std::string &prefix) {
+        for (const auto &l: p.fields) {
+            if (auto r = findField(l, prefix)) return r;
+        }
+        return nullptr;
+    }
+
+    // Every field must lie inside the frame and inside its parent (when the parent has a byte range).
+    void expectWithinFrame(const Field &f, size_t frameLen, const Field *parent = nullptr) {
+        EXPECT_LE(size_t(f.offset) + f.length, frameLen) << f.text;
+        if (parent && parent->length > 0 && f.length > 0) {
+            EXPECT_GE(f.offset, parent->offset) << f.text;
+            EXPECT_LE(size_t(f.offset) + f.length, size_t(parent->offset) + parent->length) << f.text;
+        }
+        for (const auto &c: f.children) expectWithinFrame(c, frameLen, &f);
+    }
+} // namespace
+
+
 TEST(Parser, Arp) {
     auto p = parse(hex(support::kArpRequest));
     EXPECT_EQ(p.protocol, "ARP");
@@ -47,9 +77,8 @@ TEST(Parser, TcpOptionsAndFlags) {
                        "020405b4 01 030307 0402 080a 00000001 00000000"));
     EXPECT_EQ(p.protocol, "TCP");
     EXPECT_EQ(p.info, "8080 -> 443 [SYN]  Seq=0 Win=29200 MSS=1460 WS=7 SACK_PERM TSval=1 TSecr=0");
-    const auto &ip = std::get<network::IPHeader>(p.l3_header);
-    EXPECT_EQ(ip.flags(), 2) << "DF bit";
-    EXPECT_EQ(ip.fragmentOffset(), 0);
+    EXPECT_NE(findField(p, "Flags: 0x2, Don't fragment"), nullptr) << "DF bit";
+    EXPECT_NE(findField(p, "Fragment Offset: 0"), nullptr);
 }
 
 TEST(Parser, Ipv6WithExtensionHeaders) {
@@ -58,10 +87,9 @@ TEST(Parser, Ipv6WithExtensionHeaders) {
                        "3c00 000000000000 1100 000000000000 1234 1235 0008 0000"));
     EXPECT_EQ(p.protocol, "UDP");
     EXPECT_EQ(p.source, "2001:db8::1");
-    const auto &ip6 = std::get<network::IPv6Header>(p.l3_header);
-    EXPECT_EQ(ip6.version(), 6);
-    EXPECT_EQ(ip6.trafficClass(), 1);
-    EXPECT_EQ(ip6.flowLabel(), 0x23456u);
+    EXPECT_NE(findField(p, "Version: 6"), nullptr);
+    EXPECT_NE(findField(p, "Traffic Class: 0x01"), nullptr);
+    EXPECT_NE(findField(p, "Flow Label: 0x23456"), nullptr);
 }
 
 TEST(Parser, LinkTypes) {
@@ -120,35 +148,6 @@ TEST(Parser, RandomisedInputNeverCrashes) {
 }
 
 // ---- protocol tree (Field) ------------------------------------------------------------------------
-
-namespace {
-    using packet::Field;
-
-    const Field *findField(const Field &f, const std::string &prefix) {
-        if (f.text.rfind(prefix, 0) == 0) return &f;
-        for (const auto &c: f.children) {
-            if (auto r = findField(c, prefix)) return r;
-        }
-        return nullptr;
-    }
-
-    const Field *findField(const packet::PacketInfo &p, const std::string &prefix) {
-        for (const auto &l: p.fields) {
-            if (auto r = findField(l, prefix)) return r;
-        }
-        return nullptr;
-    }
-
-    // Every field must lie inside the frame and inside its parent (when the parent has a byte range).
-    void expectWithinFrame(const Field &f, size_t frameLen, const Field *parent = nullptr) {
-        EXPECT_LE(size_t(f.offset) + f.length, frameLen) << f.text;
-        if (parent && parent->length > 0 && f.length > 0) {
-            EXPECT_GE(f.offset, parent->offset) << f.text;
-            EXPECT_LE(size_t(f.offset) + f.length, size_t(parent->offset) + parent->length) << f.text;
-        }
-        for (const auto &c: f.children) expectWithinFrame(c, frameLen, &f);
-    }
-} // namespace
 
 TEST(FieldTree, EthernetIpTcpRangesAreAbsolute) {
     // IPv4 with options (ihl = 6) so that the TCP header starts at 14 + 24 = 38, not 34

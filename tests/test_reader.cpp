@@ -114,7 +114,9 @@ TEST(PcapReader, ByteOrderAndPrecision) {
         EXPECT_DOUBLE_EQ(r.packets[0].time, 0.0);
         EXPECT_NEAR(r.packets[1].time, 0.5, 1e-9);
         EXPECT_EQ(r.packets[0].protocol, "ARP");
-        EXPECT_EQ(r.packets[0].raw_data.size(), kFrame.size());
+        EXPECT_EQ(r.packets[0].captured_length, kFrame.size());
+        EXPECT_TRUE(r.packets[0].raw_data.empty()) << "frame bytes stay in the file";
+        EXPECT_TRUE(r.packets[0].fields.empty()) << "the field tree is built on demand";
     }
     auto nano = load("n.pcap", pcapFile(false, 0xa1b23c4d, {{1000, 0}, {1001, 500000000}}), false);
     ASSERT_EQ(nano.packets.size(), 2u);
@@ -164,7 +166,7 @@ TEST(PcapngReader, ByteOrderTimestampResolutionAndPadding) {
         ASSERT_EQ(r.packets.size(), 3u) << "2 EPB + 1 SPB";
         EXPECT_NEAR(r.packets[1].time, 0.5, 1e-9);
         for (const auto &p: r.packets) {
-            EXPECT_EQ(p.raw_data.size(), kFrame.size()) << "padding/options must not be part of the packet";
+            EXPECT_EQ(p.captured_length, kFrame.size()) << "padding/options must not be part of the packet";
             EXPECT_EQ(p.protocol, "ARP");
         }
     }
@@ -213,6 +215,79 @@ TEST(Readers, CorruptedFilesNeverCrash) {
     }
 }
 
+// ---- on-demand details ----------------------------------------------------------------------------
+
+namespace {
+    bool sameField(const packet::Field &a, const packet::Field &b) {
+        if (a.text != b.text || a.offset != b.offset || a.length != b.length || a.children.size() != b.children.size()) return false;
+        for (size_t i = 0; i < a.children.size(); ++i) {
+            if (!sameField(a.children[i], b.children[i])) return false;
+        }
+        return true;
+    }
+} // namespace
+
+TEST(Details, FrameBytesAreReadBackFromTheFileForBothFormats) {
+    for (bool ng: {false, true}) {
+        SCOPED_TRACE(ng ? "pcapng" : "pcap");
+        const auto bytes = ng ? pcapngFile(true, 9, {100, 200}) : pcapFile(true, 0xa1b2c3d4, {{1, 0}, {2, 0}});
+        const auto path = support::writeTemp("details.bin", bytes);
+        core::FileProcessor fp;
+        std::vector<packet::PacketInfo> packets;
+        std::string message;
+        ASSERT_TRUE(ng ? fp.processPcapngFile(path, packets, message) : fp.processPcapFile(path, packets, message));
+        ASSERT_GE(packets.size(), 2u);
+        for (const auto &summary: packets) {
+            std::vector<char> frame;
+            ASSERT_TRUE(core::readPacketBytes(path, summary, frame));
+            EXPECT_EQ(frame, kFrame);
+            packet::PacketInfo details;
+            ASSERT_TRUE(core::buildPacketDetails(path, summary, details));
+            EXPECT_EQ(details.raw_data, kFrame);
+            EXPECT_FALSE(details.fields.empty());
+            EXPECT_EQ(details.info, summary.info);
+        }
+        std::remove(path.c_str());
+    }
+}
+
+TEST(Details, MissingFileIsReportedNotCrashed) {
+    packet::PacketInfo summary(1), details;
+    summary.captured_length = 10;
+    EXPECT_FALSE(core::buildPacketDetails("/no/such/file.pcap", summary, details));
+}
+
+#ifdef IMSHARK_TEST_DATA_DIR
+// Rebuilding one packet in isolation (Replay) must give exactly what a sequential full parse gives,
+// including the relative TCP numbers that depend on the packets before it.
+TEST(SampleCapture, OnDemandDetailsEqualASequentialFullParse) {
+    const std::string path = IMSHARK_TEST_DATA_DIR "/sample.pcap";
+    core::FileProcessor fp;
+    std::vector<packet::PacketInfo> packets;
+    std::string message;
+    ASSERT_TRUE(fp.processPcapFile(path, packets, message));
+
+    packet::PacketParser sequential;
+    for (const auto &summary: packets) {
+        std::vector<char> frame;
+        ASSERT_TRUE(core::readPacketBytes(path, summary, frame));
+        packet::PacketInfo full(summary.number);
+        full.link_type = summary.link_type;
+        sequential.parsePacket(full, frame); // Full mode, tracks TCP state
+
+        packet::PacketInfo details;
+        ASSERT_TRUE(core::buildPacketDetails(path, summary, details));
+        EXPECT_EQ(details.protocol, full.protocol) << "packet " << summary.number;
+        EXPECT_EQ(details.info, full.info) << "packet " << summary.number;
+        ASSERT_EQ(details.fields.size(), full.fields.size()) << "packet " << summary.number;
+        for (size_t i = 0; i < full.fields.size(); ++i) {
+            EXPECT_TRUE(sameField(details.fields[i], full.fields[i])) << "packet " << summary.number << " layer " << full.fields[i].text;
+        }
+    }
+    EXPECT_NE(packets[9].info.find("Seq=1"), std::string::npos) << "relative numbers are part of the summary";
+}
+#endif
+
 #ifdef IMSHARK_TEST_DATA_DIR
 TEST(SampleCapture, ParsesEverythingInTheSampleFile) {
     core::FileProcessor fp;
@@ -231,3 +306,36 @@ TEST(SampleCapture, ParsesEverythingInTheSampleFile) {
     EXPECT_NE(packets[15].info.find("Malformed"), std::string::npos);
 }
 #endif
+
+TEST(Readers, ProgressAndCancellation) {
+    // progress: totals and counters are published
+    {
+        core::LoadControl control;
+        core::FileProcessor fp;
+        std::vector<packet::PacketInfo> packets;
+        std::string message;
+        const auto bytes = pcapFile(false, 0xa1b2c3d4, {{1, 0}, {2, 0}, {3, 0}});
+        const auto path = support::writeTemp("progress.pcap", bytes);
+        ASSERT_TRUE(fp.processPcapFile(path, packets, message, &control));
+        EXPECT_EQ(control.totalBytes, bytes.size());
+        EXPECT_EQ(control.bytesProcessed, bytes.size());
+        EXPECT_EQ(control.packetsLoaded, 3u);
+        std::remove(path.c_str());
+    }
+    // cancellation requested up-front stops after the first packet / block, for both formats
+    for (bool ng: {false, true}) {
+        core::LoadControl control;
+        control.cancelRequested = true;
+        core::FileProcessor fp;
+        std::vector<packet::PacketInfo> packets;
+        std::string message;
+        const auto bytes = ng ? pcapngFile(false, -1, {1, 2, 3}) : pcapFile(false, 0xa1b2c3d4, {{1, 0}, {2, 0}, {3, 0}});
+        const auto path = support::writeTemp("cancel.bin", bytes);
+        const bool ok = ng ? fp.processPcapngFile(path, packets, message, &control)
+                           : fp.processPcapFile(path, packets, message, &control);
+        EXPECT_FALSE(ok);
+        EXPECT_EQ(message, "Cancelled");
+        EXPECT_LT(packets.size(), 3u);
+        std::remove(path.c_str());
+    }
+}

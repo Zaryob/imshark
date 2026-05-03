@@ -8,6 +8,7 @@ namespace {
 
     // Adds a layer that only shows its payload as raw data
     void addDataLayer(Context &ctx, const std::string &name, const char *payload, size_t length) {
+        if (!ctx.wantFields()) return;
         const size_t o = ctx.offsetOf(payload);
         packet::Field &l = ctx.addLayer(name, o, length);
         if (length > 0) l.add("Data (" + std::to_string(length) + " bytes): " + asciiPreview(payload, length), o, length);

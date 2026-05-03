@@ -10,6 +10,14 @@
 namespace dissect {
     class Registry;
 
+    /// What a parse run produces.
+    enum class ParseMode {
+        Summary, // list columns only (protocol, addresses, info); tracks TCP state; no field tree
+        Full,    // summary + field tree; tracks TCP state (stand-alone use, e.g. tests)
+        Replay,  // summary + field tree for one packet of an already loaded capture: TCP numbers are
+                 // taken from the packet instead of the connection table
+    };
+
     /// Everything a dissector may use while decoding one frame.
     struct Context {
         packet::PacketInfo &pack;           // the packet being filled in
@@ -17,6 +25,10 @@ namespace dissect {
         size_t frameLength;
         network::TCPConnection &tcp;        // per-capture TCP state (relative seq/ack)
         const Registry &registry;           // lookup of the next-layer dissector
+        ParseMode mode = ParseMode::Full;
+
+        /// Dissectors skip building the (comparatively expensive) field tree when this is false.
+        bool wantFields() const { return mode != ParseMode::Summary; }
 
         /// Absolute offset of `p` inside the frame.
         size_t offsetOf(const char *p) const { return static_cast<size_t>(p - frame); }
