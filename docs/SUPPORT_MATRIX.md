@@ -6,6 +6,38 @@ Every row states what the code decodes today. "Filter Fields" lists names that e
 
 ---
 
+## 0. Decode Chains (file format -> link type -> encapsulation -> protocol -> fields / decryption)
+
+This is the path a packet takes through the code, so you can read what a given capture will show. Each step names the
+function that makes the hand-over (`core/src/capture_reader.cpp`, `core/src/packet_parser.cpp`, the registrations in
+`core/src/dissect/registry.cpp`); sections 1 to 5 below hold the details per item.
+
+| File format | Link type (section 3) | Encapsulation (section 4) | Network / transport | Application protocols (section 5) | Decoded fields / decryption |
+|---|---|---|---|---|---|
+| pcap, pcapng, either gzip-compressed | **Ethernet (1)**, with optional FCS | 802.1Q / 802.1ad / 0x9100 tags, then by EtherType: MPLS, PPPoE -> PPP, GRE / ERSPAN, IP-in-IP (via IP), LLC / SNAP (frames with a length field) -> STP | IPv4, IPv6 (fragment reassembly), ICMP, ICMPv6, IGMP, OSPF, SCTP, UDP-Lite, AH / ESP, TCP, UDP | all of section 5 | summary columns, details tree, `filter/fields.cpp` fields where the protocol has them; TLS / DTLS decryption by key log or pcapng DSB |
+| same | **Linux cooked v1 / v2 (113, 276)**, **Null / OpenBSD loopback (0, 108)**, **Raw IP (12, 14, 101)** | the EtherType (cooked) or the address family / IP version nibble (the others) | as above | as above | as above |
+| same | **PPP (9)** | PPP: LCP, IPCP, IPv6CP, PAP, CHAP | IPv4, IPv6 | as above | as above |
+| same | **802.11 (105)**, **Radiotap (127)**, **PPI (192)** | 802.11 MAC frames; Radiotap and PPI headers are unwrapped first; cleartext data frames with LLC / SNAP continue by EtherType (IPv4, IPv6, ARP, EAPOL) | as above | as above | 802.11 header fields (`wlan.*`); WPA decryption is not done, protected frames are shown as protected data |
+| same | **802.15.4 (195, 215, 230)**, **SocketCAN (227)** | none | none | none | MAC / CAN header fields, data bytes |
+| same | **USB Linux (189, 220)**, **USBPcap (249)** | none | none | none | URB / IRP header, setup packet, descriptors (`usb.*`) |
+| same | **Bluetooth HCI H4 (187)**, **Linux Monitor (254)** | none | none | HCI -> L2CAP -> ATT | `bt.*`; no L2CAP reassembly |
+| same | any other id | none | none | none | shown as "Unsupported link type N" |
+
+Within the network / transport column the hand-over to an application protocol is, in order: a stream protocol or a
+dissector registered for the TCP / UDP port (destination port first), a content heuristic (HTTP, TLS, HTTP/2, DNS, DTLS),
+then Decode As rules, which replace the port registration. TLS found inside STARTTLS-style upgrades (SMTP, LDAP, PostgreSQL,
+MySQL) is dissected as TLS from the upgrade on. **Decode As** offers these protocol names (a name is offered for the
+transports it supports):
+`BGP`, `DCERPC`, `DHCP`, `DNP3`, `DNS`, `DTLS`, `FTP`, `FTP-DATA`, `HTTP`, `HTTP2`, `Kerberos`, `LDAP`, `MDNS`, `Modbus`,
+`MySQL`, `NFS`, `NTP`, `PGSQL`, `Portmap`, `RTCP`, `RTP`, `RTSP`, `SIP`, `SMB2`, `SMTP`, `SNMP`, `SSH`, `TDS`, `Telnet`,
+`TFTP`, `TLS`.
+
+Every display-filter field of every row is listed with its type and description in the generated
+[FILTER_FIELDS.md](FILTER_FIELDS.md). Tests in `tests/test_docs.cpp` fail when a field, a decoded link type id or a Decode As
+name is missing from these documents.
+
+---
+
 ## 1. Supported File Formats
 
 - **PCAP** (`.pcap`): Classic libpcap format, little-endian and big-endian, microsecond and nanosecond timestamps.
