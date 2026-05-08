@@ -28,6 +28,11 @@ namespace ui {
     // packet_list.cpp
     void drawPacketList(AppState &state, float height);
 
+    enum class SortColumn : int { Number, Time, Source, Destination, Protocol, Length, Info };
+    /// Fills `order` with the indices of `packets` sorted by `column` (stable: ties keep capture order).
+    void sortPacketOrder(std::vector<uint32_t> &order, const std::vector<packet::PacketInfo> &packets, SortColumn column,
+                         bool ascending);
+
     // details.cpp: protocol tree and hex view of the selected packet
     void drawPacketDetails(AppState &state);
     /// Makes sure `state.detail` belongs to the selected packet (reads it from the capture file).

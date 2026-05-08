@@ -35,6 +35,10 @@ namespace ui {
         int selectionEnd = -1;
         bool revealSelectedField = false;                // expand the tree down to `selectedField` next frame
 
+        // Packet list presentation
+        std::vector<uint32_t> order;        // displayed order: indices into `packets` (rebuilt by the list)
+        bool scrollToSelection = false;      // bring the selected row into view (keyboard navigation)
+
         // Layout
         float listHeight = 300.0f;                       // height of the packet list (user-adjustable splitter)
 
@@ -54,6 +58,15 @@ namespace ui {
             selectedField = nullptr;
             selectionStart = selectionEnd = -1;
             revealSelectedField = false;
+            scrollToSelection = false;
+        }
+
+        /// Selects a packet (no-op if it is already selected) and resets the field/byte selection.
+        void selectPacket(int index) {
+            if (index == selectedPacket) return;
+            selectedPacket = index;
+            selectedField = nullptr;
+            selectionStart = selectionEnd = -1;
         }
     };
 } // namespace ui

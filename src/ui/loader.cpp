@@ -78,6 +78,7 @@ void ui::pollLoad(AppState &state) {
     state.loadMessage = job->message;
     if (job->ok) {
         state.packets = std::move(job->packets);
+        state.order.clear(); // the list rebuilds it
         state.clearSelection();
         state.currentFile = job->path;
         state.loadFailed = false;

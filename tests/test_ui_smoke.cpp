@@ -147,3 +147,49 @@ TEST_F(UiSmoke, CancelledLoadIsNotAnError) {
         EXPECT_FALSE(state.openLoadError);
     }
 }
+
+TEST_F(UiSmoke, SortingOrdersPacketsStably) {
+    ui::AppState state;
+    load(state);
+    std::vector<uint32_t> order;
+
+    ui::sortPacketOrder(order, state.packets, ui::SortColumn::Length, true);
+    ASSERT_EQ(order.size(), state.packets.size());
+    for (size_t i = 1; i < order.size(); ++i) {
+        const auto &a = state.packets[order[i - 1]], &b = state.packets[order[i]];
+        ASSERT_LE(a.length, b.length);
+        if (a.length == b.length) ASSERT_LT(order[i - 1], order[i]) << "ties keep capture order";
+    }
+    ui::sortPacketOrder(order, state.packets, ui::SortColumn::Protocol, false);
+    EXPECT_EQ(state.packets[order.front()].protocol, "UDP");   // largest protocol name first
+    EXPECT_EQ(state.packets[order.back()].protocol, "ARP");
+    ui::sortPacketOrder(order, state.packets, ui::SortColumn::Number, false);
+    EXPECT_EQ(order.front(), state.packets.size() - 1);
+}
+
+TEST_F(UiSmoke, KeyboardNavigationMovesTheSelection) {
+    ui::AppState state;
+    load(state);
+    frames(state);                        // builds the displayed order
+    auto press = [&](ImGuiKey key) {
+        ImGui::GetIO().AddKeyEvent(key, true);
+        frame(state);
+        ImGui::GetIO().AddKeyEvent(key, false);
+        frame(state);
+    };
+    EXPECT_EQ(state.selectedPacket, -1);
+    press(ImGuiKey_DownArrow);
+    EXPECT_EQ(state.selectedPacket, 0);
+    press(ImGuiKey_DownArrow);
+    EXPECT_EQ(state.selectedPacket, 1);
+    press(ImGuiKey_UpArrow);
+    EXPECT_EQ(state.selectedPacket, 0);
+    press(ImGuiKey_End);
+    EXPECT_EQ(state.selectedPacket, 15);
+    press(ImGuiKey_DownArrow);            // clamps at the last packet
+    EXPECT_EQ(state.selectedPacket, 15);
+    press(ImGuiKey_Home);
+    EXPECT_EQ(state.selectedPacket, 0);
+    press(ImGuiKey_PageDown);
+    EXPECT_EQ(state.selectedPacket, 15);
+}

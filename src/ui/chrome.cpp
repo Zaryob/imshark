@@ -17,6 +17,7 @@ void ui::drawMenuAndDialogs(AppState &state) {
             if (ImGui::MenuItem("Close File", nullptr, false, !state.currentFile.empty())) {
                 state.loadJob.reset();
                 state.packets.clear();
+                state.order.clear();
                 state.clearSelection();
                 state.currentFile.clear();
                 state.loadMessage.clear();

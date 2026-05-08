@@ -1,39 +1,120 @@
 #include "ui.h"
 
+#include <algorithm>
+#include <numeric>
 #include <string>
 
 #include <imgui.h>
+
+namespace {
+    template<typename T>
+    int compare(const T &a, const T &b) { return a < b ? -1 : (b < a ? 1 : 0); }
+
+    // Rebuilds the displayed order from the table's sort specs (natural capture order if there are none).
+    void rebuildOrder(ui::AppState &state, const ImGuiTableSortSpecs *specs) {
+        if (!specs || specs->SpecsCount == 0) {
+            state.order.resize(state.packets.size());
+            std::iota(state.order.begin(), state.order.end(), 0u);
+            return;
+        }
+        const ImGuiTableColumnSortSpecs &spec = specs->Specs[0];
+        ui::sortPacketOrder(state.order, state.packets, static_cast<ui::SortColumn>(spec.ColumnUserID),
+                            spec.SortDirection == ImGuiSortDirection_Ascending);
+    }
+
+    // Up/Down/PageUp/PageDown/Home/End move the selection through the displayed rows.
+    void handleKeys(ui::AppState &state) {
+        if (state.order.empty() || ImGui::GetIO().WantTextInput || ImGui::IsPopupOpen("", ImGuiPopupFlags_AnyPopupId)) return;
+
+        int step = 0;
+        bool toStart = false, toEnd = false;
+        if (ImGui::IsKeyPressed(ImGuiKey_DownArrow)) step = 1;
+        else if (ImGui::IsKeyPressed(ImGuiKey_UpArrow)) step = -1;
+        else if (ImGui::IsKeyPressed(ImGuiKey_PageDown)) step = 20;
+        else if (ImGui::IsKeyPressed(ImGuiKey_PageUp)) step = -20;
+        else if (ImGui::IsKeyPressed(ImGuiKey_Home)) toStart = true;
+        else if (ImGui::IsKeyPressed(ImGuiKey_End)) toEnd = true;
+        else return;
+
+        const int last = static_cast<int>(state.order.size()) - 1;
+        int pos = -1; // position of the selected packet in the displayed order
+        if (state.selectedPacket >= 0) {
+            const auto it = std::find(state.order.begin(), state.order.end(), static_cast<uint32_t>(state.selectedPacket));
+            if (it != state.order.end()) pos = static_cast<int>(it - state.order.begin());
+        }
+        if (toStart) pos = 0;
+        else if (toEnd) pos = last;
+        else if (pos < 0) pos = step > 0 ? 0 : last;
+        else pos = std::max(0, std::min(last, pos + step));
+
+        state.selectPacket(static_cast<int>(state.order[pos]));
+        state.scrollToSelection = true;
+    }
+} // namespace
+
+void ui::sortPacketOrder(std::vector<uint32_t> &order, const std::vector<packet::PacketInfo> &packets, SortColumn column,
+                         bool ascending) {
+    order.resize(packets.size());
+    std::iota(order.begin(), order.end(), 0u);
+    std::stable_sort(order.begin(), order.end(), [&](uint32_t ia, uint32_t ib) {
+        const auto &a = packets[ia];
+        const auto &b = packets[ib];
+        int c = 0;
+        switch (column) {
+            case SortColumn::Number: c = compare(a.number, b.number); break;
+            case SortColumn::Time: c = compare(a.time, b.time); break;
+            case SortColumn::Source: c = compare(a.source, b.source); break;
+            case SortColumn::Destination: c = compare(a.destination, b.destination); break;
+            case SortColumn::Protocol: c = compare(a.protocol, b.protocol); break;
+            case SortColumn::Length: c = compare(a.length, b.length); break;
+            case SortColumn::Info: c = compare(a.info, b.info); break;
+        }
+        return ascending ? c < 0 : c > 0;
+    });
+}
 
 void ui::drawPacketList(AppState &state, float height) {
     ImGui::BeginChild("Packet List", ImVec2(0, height), true);
     if (ImGui::BeginTable("Packets", 7,
                           ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable | ImGuiTableFlags_Hideable |
-                              ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg)) {
+                              ImGuiTableFlags_Sortable | ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg)) {
         ImGui::TableSetupScrollFreeze(0, 1);
-        ImGui::TableSetupColumn("No.");
-        ImGui::TableSetupColumn("Time");
-        ImGui::TableSetupColumn("Source");
-        ImGui::TableSetupColumn("Destination");
-        ImGui::TableSetupColumn("Protocol");
-        ImGui::TableSetupColumn("Length");
-        ImGui::TableSetupColumn("Info");
+        ImGui::TableSetupColumn("No.", 0, 0.0f, static_cast<ImGuiID>(SortColumn::Number));
+        ImGui::TableSetupColumn("Time", 0, 0.0f, static_cast<ImGuiID>(SortColumn::Time));
+        ImGui::TableSetupColumn("Source", 0, 0.0f, static_cast<ImGuiID>(SortColumn::Source));
+        ImGui::TableSetupColumn("Destination", 0, 0.0f, static_cast<ImGuiID>(SortColumn::Destination));
+        ImGui::TableSetupColumn("Protocol", 0, 0.0f, static_cast<ImGuiID>(SortColumn::Protocol));
+        ImGui::TableSetupColumn("Length", 0, 0.0f, static_cast<ImGuiID>(SortColumn::Length));
+        ImGui::TableSetupColumn("Info", ImGuiTableColumnFlags_WidthStretch, 0.0f, static_cast<ImGuiID>(SortColumn::Info));
         ImGui::TableHeadersRow();
+
+        ImGuiTableSortSpecs *specs = ImGui::TableGetSortSpecs();
+        if ((specs && specs->SpecsDirty) || state.order.size() != state.packets.size()) {
+            rebuildOrder(state, specs);
+            if (specs) specs->SpecsDirty = false;
+        }
+        handleKeys(state);
 
         // Only the visible rows are laid out, so huge captures stay responsive.
         ImGuiListClipper clipper;
-        clipper.Begin(static_cast<int>(state.packets.size()));
+        clipper.Begin(static_cast<int>(state.order.size()));
+        if (state.scrollToSelection && state.selectedPacket >= 0) {
+            const auto it = std::find(state.order.begin(), state.order.end(), static_cast<uint32_t>(state.selectedPacket));
+            if (it != state.order.end()) clipper.IncludeItemByIndex(static_cast<int>(it - state.order.begin()));
+        }
         while (clipper.Step()) {
-            for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; ++i) {
+            for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row) {
+                const int i = static_cast<int>(state.order[row]);
                 const auto &packet = state.packets[i];
                 ImGui::TableNextRow();
                 ImGui::TableSetColumnIndex(0);
-                if (ImGui::Selectable(std::to_string(packet.number).c_str(), state.selectedPacket == i,
-                                      ImGuiSelectableFlags_SpanAllColumns)) {
-                    if (state.selectedPacket != i) {
-                        state.selectedPacket = i;
-                        state.selectedField = nullptr;
-                        state.selectionStart = state.selectionEnd = -1;
-                    }
+                const bool selected = state.selectedPacket == i;
+                if (ImGui::Selectable(std::to_string(packet.number).c_str(), selected, ImGuiSelectableFlags_SpanAllColumns)) {
+                    state.selectPacket(i);
+                }
+                if (selected && state.scrollToSelection) {
+                    ImGui::SetScrollHereY();
+                    state.scrollToSelection = false;
                 }
                 ImGui::TableSetColumnIndex(1);
                 ImGui::Text("%.6f", packet.time);
@@ -49,6 +130,7 @@ void ui::drawPacketList(AppState &state, float height) {
                 ImGui::TextUnformatted(packet.info.c_str());
             }
         }
+        state.scrollToSelection = false;
         ImGui::EndTable();
     }
     ImGui::EndChild();
