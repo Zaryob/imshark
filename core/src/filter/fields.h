@@ -49,6 +49,10 @@ namespace filter {
     /// A snapshot of every field (built-in and registered), sorted by name.
     std::vector<FieldDef> allFields();
 
+    /// Only the built-in table (no registerField() additions), sorted by name. This is what docs/FILTER_FIELDS.md is
+    /// generated from and checked against.
+    std::vector<FieldDef> builtinFields();
+
     /// Add a field that is not part of the built-in table (a plugin, a test). Thread-safe; the field is stored in
     /// stable storage, so earlier findField() pointers are never invalidated. `name` must point to storage that
     /// outlives the process (a string literal). Returns false, and changes nothing, if the name already exists

@@ -15,6 +15,7 @@ add_executable(imshark_tests
     test_corpus.cpp
     test_color_rules.cpp
     test_dissector_guide.cpp
+    test_docs.cpp
     test_dns.cpp
     test_export.cpp
     test_filter.cpp

@@ -126,6 +126,9 @@ Gate every extractor on the protocol (an ungated field matches unrelated packets
 fields that are not part of the built-in table (plugins, tests); dissectors do not call it and must not register fields
 lazily from their own function. Not every dissector has filter fields yet: `docs/KNOWN_ISSUES.md` lists the gaps.
 
+`docs/FILTER_FIELDS.md` is generated from this table and a test compares them: after adding rows run the tests once
+with `IMSHARK_UPDATE_DOCS=1` (`IMSHARK_UPDATE_DOCS=1 ctest --test-dir build -R Docs`) and commit the regenerated file.
+
 Also add the protocol to the hierarchy and application names in `core/src/stats/statistics.cpp` if it should appear
 under its own name in Statistics.
 
@@ -233,7 +236,8 @@ dissect::Registry toyRegistry() {
 
 A filter field (Step 3). The extractor is a plain function pointer, gated on the protocol, reading summary data. A
 built-in protocol adds a row to `buildTable()` in `core/src/filter/fields.cpp` instead; `registerField` is the route for
-tests and plugins (it is why the test uses it, and it is why the test for the filter reference ignores the `toy.` field):
+tests and plugins (it is why the test uses it; the generated filter reference in `docs/FILTER_FIELDS.md` is built from the
+built-in table only, so such fields never appear there):
 
 <!-- guide:field -->
 ```cpp

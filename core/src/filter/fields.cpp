@@ -492,6 +492,8 @@ namespace filter {
         return all;
     }
 
+    std::vector<FieldDef> builtinFields() { return baseTable(); }
+
     bool registerField(FieldDef field) {
         if (field.name == nullptr || *field.name == '\0' || field.extract == nullptr) return false;
         const std::string_view name = field.name;
