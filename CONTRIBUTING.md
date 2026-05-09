@@ -39,6 +39,15 @@ runner). The Windows build has not been exercised on real hardware by the mainta
 
 ## Building and Testing
 
+`CMakePresets.json` has two configure presets (both Release): `default` (system packages, build directory `build/`) and
+`vcpkg` (dependencies from vcpkg, needs `VCPKG_ROOT`, build directory `build-vcpkg/`):
+
+```bash
+cmake --preset default && cmake --build --preset default
+```
+
+For development a Debug build with the tests is usual:
+
 ```bash
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build -j
@@ -53,6 +62,27 @@ cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=Debug -DIMSHARK_SANITIZE=ON
 cmake --build build-asan -j
 ctest --test-dir build-asan --output-on-failure
 ```
+
+Source based code coverage (needs clang and `llvm-cov`; it configures its own `build-cov/`):
+
+```bash
+tools/coverage.sh           # per-file summary table
+tools/coverage.sh --html    # also writes build-cov/coverage-html/index.html
+```
+
+### Corpus rules
+
+`tests/corpus/` holds small **synthetic** captures made by `tools/make_corpus.py` (their expectations are written there by
+construction, not copied from ImShark's output) and `manifest.json`, which describes every file with its source, SHA-256,
+format, link types, packet count and expected protocols. Rules:
+
+- Do not commit real captures or large files; the repository keeps only the small synthetic ones. A real capture is
+  described in the manifest as kind `real` with its source URL and SHA-256, and found at test time through
+  `IMSHARK_CORPUS_DIR`. The tests never download anything.
+- Check the licence of a real capture before you name it in the manifest, and never add a capture that contains private
+  traffic.
+- Regenerate the manifest with the script (`python3 tools/make_corpus.py`, add `--real-dir DIR` to record real captures
+  you have) rather than editing it by hand, and check in the result together with the change that needs it.
 
 Real sample captures are optional: set `IMSHARK_CORPUS_DIR` to a directory holding the files listed in
 `tests/corpus/manifest.json` (the tests never download anything and skip those checks when it is not set).
@@ -71,6 +101,16 @@ parentheses naming the ROADMAP item or kind of change, for example
 `Clamp SCTP chunk lengths to the packet and test the CRC independently (v1.1 fix)`. Older commits use
 `feat(scope): ...` / `docs: ...`. Either is fine; keep the first line short and imperative, and use the body for a
 bullet list of what changed and why. Split a delivery into small commits that each build and pass their tests.
+
+## Delivery rules for features and protocols
+
+`ROADMAP.md` ("Ortak teslim kuralları", in Turkish) is the binding list. In short: the three kinds of test; a number or
+field is verified by something other than the code under test (an RFC vector, an independent Python computation, the
+`openssl` command line); cross-packet state is decided in the load pass and only read in Replay; `sizeof(packet::PacketInfo)`
+stays within the 336-byte test bound; filter fields go into `core/src/filter/fields.cpp`; and every delivery updates
+`docs/KNOWN_ISSUES.md`, the README feature list and `docs/SUPPORT_MATRIX.md`. Tick a ROADMAP item only when the code meets
+all of it, and say in an italic note what is still missing otherwise. `docs/USER_GUIDE.md` and its generated filter reference
+(`docs/FILTER_FIELDS.md`) are checked by tests: see the `Docs` tests in `tests/test_docs.cpp`.
 
 ## Packaging and Releases
 

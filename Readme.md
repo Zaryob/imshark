@@ -113,7 +113,7 @@ imshark/
 └── .github/workflows/ci.yml
 ```
 
-Mimari ayrıntılar için [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), bilinen sorunlar için [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) dosyalarına bakın.
+Kullanım için [docs/USER_GUIDE.md](docs/USER_GUIDE.md) (süzgeç alanları: [docs/FILTER_FIELDS.md](docs/FILTER_FIELDS.md)), dissector yazmak için [docs/DISSECTORS.md](docs/DISSECTORS.md); mimari ayrıntılar için [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md), bilinen sorunlar için [docs/KNOWN_ISSUES.md](docs/KNOWN_ISSUES.md) dosyalarına bakın.
 
 ## Lisans
 

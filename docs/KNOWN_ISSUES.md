@@ -31,12 +31,12 @@ Statik kod incelemesiyle tespit edilmiştir (derleme/çalıştırma ile ayrıca 
 - Paket özeti 336 bayt (testlerde üst sınır 336), `info` metni paket başına ~63 bayt yığın tutar: 500 bin paket 185 MB (aynı DNS paketi) ile 266 MB (karışık TCP/UDP, çok akışlı) arasında bellek ve 0,7–0,9 sn yükleme süresi tutar (Apple M4, Release, sentetik yakalamalar; yöntem ve ham çıktılar ROADMAP.md v1.0 maddesinde). Gerçek trafikte değerler farklı olabilir.
 
 **Doğrulama boşlukları**
-- Arayüz hiç ekran görüntüsüyle incelenmedi; menü, sağ tık ve sürükle-bırak etkileşimleri otomatik test edilmiyor (`chrome.cpp` kapsamı ≈ %50).
+- Arayüz hiç ekran görüntüsüyle incelenmedi (bu makinede `screencapture` siyah görüntü verdi: Ekran Kaydı izni yok; `docs/USER_GUIDE.md` ekran görüntülerini TODO olarak listeler); menü, sağ tık ve sürükle-bırak etkileşimleri otomatik test edilmiyor (`chrome.cpp` kapsamı ≈ %50).
 - Windows derlemesi bir Windows makinesinde denenmedi.
 - Gerçek yakalama corpus'u yalnızca `IMSHARK_CORPUS_DIR` ile çalışır; CI'da yalnızca sentetik dosyalar koşar.
 
 **Güvence (neyin nasıl doğrulandığı)**
-- 938 test (26'sı ayrıcalık/libpcap/OpenSSL/corpus yokluğunda atlanır; `ctest -N` ve seri `ctest` ile sayıldı) çekirdek dahil ASan+UBSan altında geçer (bir dönem sanitizer çekirdeği kapsamıyordu: CMake seçenek sırası; düzeltildi ve yapılandırma artık denetliyor). Arka plan iş parçacıkları için ThreadSanitizer temiz.
+- 949 test (26'sı ayrıcalık/libpcap/OpenSSL/corpus yokluğunda atlanır; `ctest -N` ve seri `ctest` ile sayıldı) çekirdek dahil ASan+UBSan altında geçer (bir dönem sanitizer çekirdeği kapsamıyordu: CMake seçenek sırası; düzeltildi ve yapılandırma artık denetliyor). Arka plan iş parçacıkları için ThreadSanitizer temiz.
 - Satır kapsamı ≈ %92 (`tools/coverage.sh`).
 
 ## Güvenlik ve sağlamlık
