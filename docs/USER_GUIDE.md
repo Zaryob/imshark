@@ -100,7 +100,7 @@ The **Statistics** menu opens four windows; each has **Limit to displayed packet
   analysis, bad checksums, malformed packets. Double-click a line to apply its filter.
 - **Protocol Hierarchy**: the protocol tree (including encapsulations such as VLAN, MPLS, GRE, IP-in-IP and TLS carrying
   HTTP) with packet and byte counts.
-- **Conversations** and **Endpoints**: tabs per address kind (IPv4, IPv6, TCP, UDP, SCTP, Ethernet, WLAN) with packet and
+- **Conversations** and **Endpoints**: tabs per address kind (IPv4, IPv6, TCP, UDP, SCTP, Ethernet, WLAN, Bluetooth, USB) with packet and
   byte counts per direction. Double-click a row to filter on it; right-click for **Apply as Filter** / **Copy Filter**.
 
 ## Follow stream
