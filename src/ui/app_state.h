@@ -6,6 +6,8 @@
 
 #include <packet/packet_info.h>
 
+#include "settings.h"
+
 namespace ui {
     struct LoadJob; // background load in progress (loader.cpp)
 
@@ -38,6 +40,11 @@ namespace ui {
         // Packet list presentation
         std::vector<uint32_t> order;        // displayed order: indices into `packets` (rebuilt by the list)
         bool scrollToSelection = false;      // bring the selected row into view (keyboard navigation)
+
+        // Preferences, persisted to `settingsPath` when `settingsDirty` is set (see saveSettingsIfDirty)
+        Settings settings;
+        std::string settingsPath;   // empty = do not persist
+        bool settingsDirty = false;
 
         // Layout
         float listHeight = 300.0f;                       // height of the packet list (user-adjustable splitter)

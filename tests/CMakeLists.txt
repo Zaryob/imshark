@@ -10,6 +10,7 @@ endif()
 add_executable(imshark_tests
     test_parser.cpp
     test_reader.cpp
+    test_settings.cpp
     test_tcp.cpp
     test_utils.cpp
     test_ui_smoke.cpp

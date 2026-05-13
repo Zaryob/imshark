@@ -18,6 +18,11 @@ namespace ui {
     /// Blocking variant of startLoad (used by tests and tools).
     void loadCapture(AppState &state, const std::string &path);
 
+    // settings (settings.cpp): load at start-up, save when something changed
+    void initSettings(AppState &state, const std::string &path);
+    void saveSettingsIfDirty(AppState &state);
+    void applyTheme(bool dark);
+
     // chrome.cpp: menu bar, file dialog, status bar and the load error popup
     void drawMenuAndDialogs(AppState &state);
     void drawStatusBar(const AppState &state);

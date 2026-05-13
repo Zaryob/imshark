@@ -35,6 +35,15 @@ int main(int argc, char **argv) {
     ImGui_ImplOpenGL3_Init("#version 150");
 
     ui::AppState state;
+    ui::initSettings(state, ui::defaultSettingsPath());
+    ui::applyTheme(state.settings.darkTheme);
+
+    // Dropping a file on the window opens it
+    glfwSetWindowUserPointer(window, &state);
+    glfwSetDropCallback(window, [](GLFWwindow *w, int count, const char **paths) {
+        if (count > 0) ui::startLoad(*static_cast<ui::AppState *>(glfwGetWindowUserPointer(w)), paths[0]);
+    });
+
     if (argc > 1) ui::startLoad(state, argv[1]); // imshark <capture file>
 
     while (!glfwWindowShouldClose(window)) {
@@ -50,6 +59,7 @@ int main(int argc, char **argv) {
         ui::drawStatusBar(state);
         ui::drawLoadErrorPopup(state);
         ui::drawLoadProgressPopup(state);
+        ui::saveSettingsIfDirty(state);
 
         ImGui::Render();
         int display_w, display_h;
@@ -61,6 +71,8 @@ int main(int argc, char **argv) {
 
         glfwSwapBuffers(window);
     }
+
+    ui::saveSettingsIfDirty(state);
 
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();

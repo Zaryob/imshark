@@ -31,6 +31,7 @@ add_library(imshark_ui STATIC
     src/ui/loader.cpp
     src/ui/main_window.cpp
     src/ui/packet_list.cpp
+    src/ui/settings.cpp
 )
 target_include_directories(imshark_ui PUBLIC src)
 target_link_libraries(imshark_ui PUBLIC imshark_core imshark_imgui)
