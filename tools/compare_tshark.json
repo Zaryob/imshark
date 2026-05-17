@@ -1,0 +1,51 @@
+{
+  "description": "Pinned settings for tools/compare_tshark.py. Everything that can change tshark's decoding is fixed here, so two runs on two machines compare the same thing.",
+  "tshark": {
+    "version_prefix": "4.",
+    "extra_args": ["-n", "-2"],
+    "preferences": [
+      "ip.defragment:TRUE",
+      "ipv6.defragment:TRUE",
+      "tcp.desegment_tcp_streams:TRUE",
+      "tcp.analyze_sequence_numbers:TRUE",
+      "tcp.relative_sequence_numbers:TRUE",
+      "udp.try_heuristic_first:FALSE",
+      "nameres.network_name:FALSE",
+      "nameres.mac_name:FALSE",
+      "nameres.transport_name:FALSE"
+    ],
+    "decode_as": [],
+    "disable_heuristic": [],
+    "protocol_column_field": "_ws.col.protocol"
+  },
+  "protocol_aliases": {
+    "TLSv1": "TLS", "TLSv1.1": "TLS", "TLSv1.2": "TLS", "TLSv1.3": "TLS", "SSL": "TLS", "SSLv2": "TLS", "SSLv3": "TLS",
+    "DTLSv1.0": "DTLS", "DTLSv1.2": "DTLS",
+    "BOOTP": "DHCP",
+    "HTTP/XML": "HTTP", "HTTP/JSON": "HTTP",
+    "SSHv2": "SSH", "SSHv1": "SSH"
+  },
+  "fields": [
+    {"name": "frame.len", "tshark": "frame.len", "imshark": "frame.len", "kind": "uint", "mode": "first"},
+    {"name": "eth.src", "tshark": "eth.src", "imshark": "eth.src", "kind": "mac", "mode": "if_present"},
+    {"name": "ip.src", "tshark": "ip.src", "imshark": "ip.src", "kind": "ip", "mode": "first"},
+    {"name": "ip.dst", "tshark": "ip.dst", "imshark": "ip.dst", "kind": "ip", "mode": "first"},
+    {"name": "ipv6.src", "tshark": "ipv6.src", "imshark": "ipv6.src", "kind": "ip", "mode": "first"},
+    {"name": "ipv6.dst", "tshark": "ipv6.dst", "imshark": "ipv6.dst", "kind": "ip", "mode": "first"},
+    {"name": "ip.proto", "tshark": "ip.proto", "imshark": "ip.proto", "kind": "uint", "mode": "first"},
+    {"name": "tcp.srcport", "tshark": "tcp.srcport", "imshark": "tcp.srcport", "kind": "uint", "mode": "first"},
+    {"name": "tcp.dstport", "tshark": "tcp.dstport", "imshark": "tcp.dstport", "kind": "uint", "mode": "first"},
+    {"name": "udp.srcport", "tshark": "udp.srcport", "imshark": "udp.srcport", "kind": "uint", "mode": "first"},
+    {"name": "udp.dstport", "tshark": "udp.dstport", "imshark": "udp.dstport", "kind": "uint", "mode": "first"},
+    {"name": "dns.qry.name", "tshark": "dns.qry.name", "imshark": "dns.qry.name", "kind": "string", "mode": "first", "ignore_case": true},
+    {"name": "dns.qry.type", "tshark": "dns.qry.type", "imshark": "dns.qry.type", "kind": "uint", "mode": "first"},
+    {"name": "http.host", "tshark": "http.host", "imshark": "http.host", "kind": "string", "mode": "first", "ignore_case": true},
+    {"name": "http.request.method", "tshark": "http.request.method", "imshark": "http.request.method", "kind": "string", "mode": "first"},
+    {"name": "tls.handshake.extensions_server_name", "tshark": "tls.handshake.extensions_server_name", "imshark": "tls.handshake.extensions_server_name", "kind": "string", "mode": "first", "ignore_case": true},
+    {"name": "dhcp.option.hostname", "tshark": "dhcp.option.hostname", "imshark": "dhcp.option.hostname", "kind": "string", "mode": "first"}
+  ],
+  "known_samples": {
+    "pcapng-undefined-interface.pcapng": {"category": "unknown", "reason": "a packet of an interface no IDB defines is kept but not decoded by ImShark"},
+    "http_PPI.cap": {"category": "unknown", "reason": "PPI-encapsulated 802.11 is listed as Unknown by the corpus manifest (snapshot)"}
+  }
+}

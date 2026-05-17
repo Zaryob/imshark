@@ -1,0 +1,35 @@
+[
+  {
+    "_index": "packets-2000-01-01",
+    "_type": "doc",
+    "_score": null,
+    "_source": {
+      "layers": {
+        "frame.number": [
+          "1"
+        ],
+        "_ws.col.protocol": [
+          "UDP"
+        ],
+        "frame.len": [
+          "47"
+        ],
+        "ip.src": [
+          "10.0.0.1"
+        ],
+        "ip.dst": [
+          "10.0.0.2"
+        ],
+        "ip.proto": [
+          "17"
+        ],
+        "udp.srcport": [
+          "1000"
+        ],
+        "udp.dstport": [
+          "2000"
+        ]
+      }
+    }
+  }
+]

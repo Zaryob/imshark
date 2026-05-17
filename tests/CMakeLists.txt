@@ -1,3 +1,15 @@
+# tools/compare_tshark.py: the comparator against hand-written tshark JSON (always), and the real corpus comparison
+# (only where tshark is installed: the script exits 77 without it, which CTest reports as skipped).
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND AND TARGET imshark_dump)
+    add_test(NAME compare_tshark_fixtures COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_compare_tshark.py)
+    set_tests_properties(compare_tshark_fixtures PROPERTIES ENVIRONMENT "IMSHARK_DUMP=$<TARGET_FILE:imshark_dump>")
+    add_test(NAME compare_tshark_corpus
+             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/../tools/compare_tshark.py
+                     --imshark-dump $<TARGET_FILE:imshark_dump> ${CMAKE_CURRENT_SOURCE_DIR}/corpus)
+    set_tests_properties(compare_tshark_corpus PROPERTIES SKIP_RETURN_CODE 77 LABELS tshark)
+endif()
+
 find_package(GTest CONFIG QUIET)
 if(NOT GTest_FOUND)
     find_package(GTest QUIET) # FindGTest module as a fallback

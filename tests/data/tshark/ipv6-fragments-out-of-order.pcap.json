@@ -1,0 +1,86 @@
+[
+  {
+    "_index": "packets-2000-01-01",
+    "_type": "doc",
+    "_score": null,
+    "_source": {
+      "layers": {
+        "frame.number": [
+          "1"
+        ],
+        "_ws.col.protocol": [
+          "IPv6"
+        ],
+        "frame.len": [
+          "67"
+        ],
+        "ipv6.src": [
+          "2001:db8::1"
+        ],
+        "ipv6.dst": [
+          "2001:db8::2"
+        ]
+      }
+    }
+  },
+  {
+    "_index": "packets-2000-01-01",
+    "_type": "doc",
+    "_score": null,
+    "_source": {
+      "layers": {
+        "frame.number": [
+          "2"
+        ],
+        "_ws.col.protocol": [
+          "IPv6"
+        ],
+        "frame.len": [
+          "78"
+        ],
+        "ipv6.src": [
+          "2001:db8::1"
+        ],
+        "ipv6.dst": [
+          "2001:db8::2"
+        ]
+      }
+    }
+  },
+  {
+    "_index": "packets-2000-01-01",
+    "_type": "doc",
+    "_score": null,
+    "_source": {
+      "layers": {
+        "frame.number": [
+          "3"
+        ],
+        "_ws.col.protocol": [
+          "DNS"
+        ],
+        "frame.len": [
+          "78"
+        ],
+        "ipv6.src": [
+          "2001:db8::1"
+        ],
+        "ipv6.dst": [
+          "2001:db8::2"
+        ],
+        "udp.srcport": [
+          "50000"
+        ],
+        "udp.dstport": [
+          "53"
+        ],
+        "dns.qry.name": [
+          "example.com"
+        ],
+        "dns.qry.type": [
+          "1"
+        ]
+      }
+    }
+  }
+]

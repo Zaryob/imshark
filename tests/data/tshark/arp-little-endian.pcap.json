@@ -1,0 +1,50 @@
+[
+  {
+    "_index": "packets-2000-01-01",
+    "_type": "doc",
+    "_score": null,
+    "_source": {
+      "layers": {
+        "frame.number": [
+          "1"
+        ],
+        "_ws.col.protocol": [
+          "ARP"
+        ],
+        "frame.len": [
+          "42"
+        ],
+        "eth.src": [
+          "00:11:22:33:44:55"
+        ],
+        "eth.dst": [
+          "ff:ff:ff:ff:ff:ff"
+        ]
+      }
+    }
+  },
+  {
+    "_index": "packets-2000-01-01",
+    "_type": "doc",
+    "_score": null,
+    "_source": {
+      "layers": {
+        "frame.number": [
+          "2"
+        ],
+        "_ws.col.protocol": [
+          "ARP"
+        ],
+        "frame.len": [
+          "42"
+        ],
+        "eth.src": [
+          "00:11:22:33:44:55"
+        ],
+        "eth.dst": [
+          "ff:ff:ff:ff:ff:ff"
+        ]
+      }
+    }
+  }
+]
