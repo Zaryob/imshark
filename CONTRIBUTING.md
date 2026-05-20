@@ -129,6 +129,28 @@ synthetic capture in a temporary directory, loads it the way the application doe
 load time, filter time and peak RSS; the capture is deleted afterwards. Never commit capture files. The measured
 numbers and the machine they were taken on are in `ROADMAP.md` (v1.0, performance reference).
 
+## Comparing with tshark
+
+`tools/compare_tshark.py` compares ImShark's decoding of captures with Wireshark's `tshark` on a pinned field set:
+packet loss (frame count and numbers), misclassification (tshark's `_ws.col.protocol` against ImShark's protocol) and
+field mismatches (frame length, MAC/IP addresses, ports, `dns.qry.name`/`type`, `http.host`, `http.request.method`, TLS
+SNI, DHCP host name). The ImShark side is `imshark_dump` (`tools/imshark_dump.cpp`, built by default; CMake option
+`IMSHARK_BUILD_TOOLS`), which prints the display filter fields of every packet as JSON. Everything that can change
+tshark's decoding (version prefix, `-o` preferences, Decode As, disabled heuristics, field list, protocol aliases) and
+the known `Unknown`/encrypted/intentionally malformed samples (reported in a separate section, not counted) are in
+`tools/compare_tshark.json`. To compare the whole regression corpus on a machine that has tshark 4.x:
+
+    cmake -S . -B build && cmake --build build --target imshark_dump
+    python3 tools/compare_tshark.py --imshark-dump build/imshark_dump tests/corpus "$IMSHARK_CORPUS_DIR"
+
+Add `--save-tshark-json DIR` to keep tshark's raw output (a recorded `DIR/<capture name>.json` can later be compared
+without tshark through `--tshark-json-dir DIR`; `tests/data/tshark` holds small hand-written ones). Exit codes: 0 equal,
+1 differences, 2 usage error, 3 no `imshark_dump`, 4 tshark version differs from the pin, 77 tshark not installed.
+ctest runs `compare_tshark_fixtures` (the comparator against the recorded fixtures, `tests/test_compare_tshark.py`) and
+`compare_tshark_corpus` (the command above on `tests/corpus`; skipped through code 77 without tshark; label `tshark`).
+The Decode As entries of the config are passed to tshark only: `imshark_dump` has no Decode As option, so leave the list
+empty unless ImShark's defaults already agree.
+
 ## Pre-Pull Request Checklist
 
 Before submitting a Pull Request, please ensure you have completed the following:
