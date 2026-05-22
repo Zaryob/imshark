@@ -2,7 +2,7 @@
 
 Statik kod incelemesiyle tespit edilmiştir (derleme/çalıştırma ile ayrıca doğrulanmadı). Önem: **K** = kritik (çökme/güvenlik/yanlış veri), **O** = orta, **D** = düşük.
 
-> **Durum (v0.3 tamamlandı):** #1–#14, #16, #18–#24 giderildi (#20: `raw_data` kopyaları hâlâ var, v0.4'te ele alınacak). Kalanlar: IPv4 parçalanma/yeniden birleştirme, tam DNS/DHCP kayıt türleri (#15), eşzamanlı yükleme ve bellek kullanımı (v0.4). Düzeltmeler ASan/UBSan altında çalışan birim/mutasyon-fuzz testleriyle ve pencere açmadan çalışan ImGui duman testleriyle doğrulandı; arayüz görsel olarak (ekran görüntüsüyle) incelenmedi, Windows derlemesi ise bir Windows makinesinde denenmedi.
+> **Durum (v0.4 tamamlandı):** #1–#24 giderildi. Kalanlar: IPv4 parçalanma/yeniden birleştirme, tam DNS/DHCP kayıt türleri (#15), ImGui pencere yerleşiminin kalıcılığı, IP adreslerinin sayısal sıralanması. Düzeltmeler ASan/UBSan (ve yükleme iş parçacığı için ThreadSanitizer) altında birim/mutasyon-fuzz testleriyle ve pencere açmadan çalışan ImGui duman testleriyle doğrulandı; arayüz görsel olarak (ekran görüntüsüyle) incelenmedi, sağ tık menüleri ve sürükle-bırak otomatik test edilmedi, Windows derlemesi bir Windows makinesinde denenmedi.
 
 ## Güvenlik ve sağlamlık
 

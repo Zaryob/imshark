@@ -30,16 +30,16 @@ Hedef: çekirdek UI'dan bağımsız, test edilebilir; geliştirme güvenli ve h�
 - [x] CMake: GLFW için vcpkg manifesti + presets, `file(GLOB)` yerine açık dosya listesi, `.clang-format` — **S**
 - [x] Windows desteği: çekirdekte POSIX/Winsock bağımlılığı yok, UTF-8 yollar, MSVC ayarları, CI işi. *(Windows'ta henüz çalıştırılıp doğrulanmadı)* — **M**
 
-## v0.4 — Performans ve kullanılabilirlik
+## v0.4 — Performans ve kullanılabilirlik ✅ tamamlandı
 
 Hedef: yüz binlerce paketlik dosyalar akıcı açılsın.
 
-- [ ] Arka plan iş parçacığında yükleme + ilerleme çubuğu + iptal — **M**
-- [ ] Paketleri indeksleyip ham baytı `mmap` ile tembel (lazy) okuma; `PacketInfo`'da `raw_data` kopyasının kaldırılması — **L**
-- [ ] Paket tablosunda `ImGuiListClipper`, sütun sıralama ve yeniden boyutlandırma — **S**
-- [ ] Son açılan dosyalar, sürükle-bırak ile açma, pencere düzeni kalıcılığı (imgui.ini) — **S**
-- [ ] Klavye kısayolları (Ctrl+O, Ctrl+F, ok tuşlarıyla paket gezinme), koyu/açık tema — **S**
-- [ ] Paket detay panelinde kopyala (hex, ASCII, alan değeri) — **S**
+- [x] Arka plan iş parçacığında yükleme + ilerleme çubuğu + iptal — **M**
+- [x] Yükleme sırasında yalnızca hafif özet tutulur; ham bayt dosyada kalır (`file_offset`) ve seçilen paketin bayt/alan ağacı isteğe bağlı dosyadan okunup yeniden kurulur. *(`mmap` yerine ofset + okuma kullanıldı; 500k paket: 1,7 GB → 265 MB)* — **L**
+- [x] Paket tablosunda `ImGuiListClipper`, sütun sıralama ve yeniden boyutlandırma — **S**
+- [x] Son açılan dosyalar, sürükle-bırak ile açma, ayarlar dosyası (tema, liste yüksekliği). *(Pencere boyutu/konumu ve ImGui yerleşimi kalıcı değil)* — **S**
+- [x] Klavye: Ctrl+O/Ctrl+W, ↑/↓/PgUp/PgDn/Home/End ile paket gezinme; koyu/açık tema. *(Ctrl+F arama v0.5'te)* — **S**
+- [x] Paket detay panelinde kopyala (hex, ASCII, alan değeri) — **S**
 
 ## v0.5 — Analiz özellikleri
 

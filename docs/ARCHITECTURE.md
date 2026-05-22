@@ -9,7 +9,7 @@
                                         └─► TCPConnection (bağıl seq/ack)
 ```
 
-Akış hâlâ **tek iş parçacıklı ve eşzamanlıdır**: kullanıcı dosya seçtiğinde ana (UI) döngüsünde dosyanın tamamı okunur, ayrıştırılır ve `std::vector<PacketInfo>` içine konur. Sonraki her karede arayüz bu vektörü çizer.
+Dosya **arka plan iş parçacığında** okunur (`LoadJob`): okuyucular ilerleme bildirir ve iptal isteğini dinler (`core::LoadControl`, atomikler). Yükleme sırasında her pakette yalnızca **özet** (liste sütunları + dosya ofseti) tutulur; ham bayt dosyada kalır. Kullanıcı bir paketi seçince o paket dosyadan okunur ve alan ağacıyla yeniden çözülür (`core::buildPacketDetails`).
 
 ## 2. Modüller
 
@@ -37,31 +37,22 @@ Akış hâlâ **tek iş parçacıklı ve eşzamanlıdır**: kullanıcı dosya se
 ```cpp
 struct Field {                       // protokol ağacının bir düğümü
     std::string text;
-    uint32_t offset, length;         // raw_data içindeki mutlak bayt aralığı
+    uint32_t offset, length;         // çerçeve içindeki mutlak bayt aralığı
     std::vector<Field> children;
 };
 
-struct PacketInfo {
+struct PacketInfo {                  // yüklü bir yakalamada yalnızca özet (~232 bayt)
     int number; double time;         // göreli zaman (ilk pakete göre)
     std::string source, destination, protocol, info;
-    uint32_t length;
-    uint32_t link_type; uint16_t l2_size; std::vector<uint16_t> vlan_ids;
-    std::variant<...> l2_header, l3_header, l4_header, l7_header;   // ham başlık kopyaları
-    std::vector<char> raw_data;
-    std::vector<Field> fields;       // Frame, Ethernet, IP, TCP/UDP, DNS … (en dıştan içe)
+    uint32_t length, link_type; uint16_t l2_size; std::vector<uint16_t> vlan_ids;
+    int64_t tcp_relative_seq, tcp_relative_ack;   // yükleme sırasında hesaplanır, ayrıntıda yeniden kullanılır
+    uint64_t file_offset; uint32_t captured_length;  // çerçevenin dosyadaki yeri
+    std::vector<char> raw_data;      // yüklemede boş; ayrıntı kurulunca dolar
+    std::vector<Field> fields;       // yüklemede boş; ayrıntı kurulunca dolar
 };
 ```
 
-Arayüz artık `fields` ağacını çizer; başlık `variant`'ları yalnızca testler ve özet hesapları için tutulur.
-
-## 4. Ayrıştırma hattı
-
-1. **Dosya türü** (`ui/loader.cpp`): ilk 4 bayt `0x0A0D0D0A` ise pcapng, değilse klasik pcap.
-2. **pcap** (`processPcapFile`): magic'ten byte order ve mikro/nano-saniye belirlenir; her kayıt dosya boyutuna ve üst sınıra karşı doğrulanır; link type her pakete yazılır.
-3. **pcapng** (`processPcapngFile`): her blok tamamen belleğe alınıp sınır denetimli okunur. SHB byte order'ı, IDB link type ve `if_tsresol`'u, EPB `captured_length`'i, SPB içeriği işlenir; diğer bloklar atlanır. Hatalı kuyruğa kadar okunan paketler korunur.
-4. **`PacketParser::parsePacket`**: link type'a göre (Ethernet+VLAN, NULL/Loopback, Raw, SLL/SLL2) L3'ün başlangıcı ve protokolü bulunur; EtherType'a göre IPv4/IPv6 (uzantı başlıkları dahil)/ARP çözülür, `parseProtocolPacket` IP protokol numarasına göre (1, 6, 17, 58) L4'e geçer. Her okuma uzunluk denetimlidir.
-5. **L7** yalnızca **port numarasına** bakılarak seçilir (23, 25, 179, 53, 67/68, 161/162).
-6. Sonuç `PacketInfo`'ya yazılır ve vektöre eklenir.
+`PacketParser::parsePacket` üç modda çalışır (`dissect::ParseMode`): **Summary** (liste sütunları, alan ağacı yok; TCP durumunu izler), **Full** (özet + ağaç, testlerde ve tek başına kullanımda) ve **Replay** (yüklü yakalamadan tek bir paket için ağaç kurar; TCP numaralarını bağlantı tablosu yerine pakette saklanan değerlerden alır). Bir testte her paket için Replay sonucunun sıralı Full ayrıştırmayla birebir aynı olduğu doğrulanır.
 
 ### Dissector'lar (`core/src/dissect/`)
 
@@ -86,9 +77,12 @@ registry.registerUdpPort(53, dissectDns);              // application layer
 
 ## 5. Arayüz (`src/ui/`)
 
-- `AppState` (`app_state.h`): paketler, yükleme durumu, seçili paket/alan/bayt aralığı, bölücü yüksekliği; global değişken yok.
+- `AppState` (`app_state.h`): paket özetleri, görüntü sırası, yükleme işi/durumu, seçili paket + onun ayrıntısı (`detail`), seçili alan/bayt aralığı, ayarlar; global değişken yok.
+- `loader.cpp`: `LoadJob` (arka plan iş parçacığı), ilerleme popup'ı, `pollLoad` ile sonucun yayımlanması; başarısız/iptal edilen yükleme açık yakalamayı bozmaz.
+- `settings.cpp`: tema, liste yüksekliği, son dosyalar (platforma göre yapılandırma klasöründe `settings.ini`).
+- `clipboard.cpp`: kopyalama biçimlendirme yardımcıları (saf fonksiyonlar).
 - `chrome.cpp`: ana menü (File, Ctrl+O), ImGuiFileDialog, durum çubuğu, yükleme sorunu popup'ı.
-- `packet_list.cpp`: 7 sütunlu tablo, `ImGuiListClipper` ile yalnızca görünen satırlar çizilir.
+- `packet_list.cpp`: 7 sütunlu, sıralanabilir tablo (`sortPacketOrder`), klavyeyle gezinme, `ImGuiListClipper` ile yalnızca görünen satırlar çizilir.
 - `details.cpp`: `fields` ağacı (alan tıklanınca bayt aralığı seçilir) ve hex/ASCII görünümü (bayta tıklayınca en özel alan seçilip ağaçta açılır).
 - `main_window.cpp`: yerleşim ve liste/ayrıntı bölücüsü.
 
@@ -100,7 +94,6 @@ registry.registerUdpPort(53, dissectDns);              // application layer
 - Bağımlılıklar az; vcpkg veya sistem paketleriyle kurulur.
 
 **Kalan zayıf yanlar** (ayrıntı: [KNOWN_ISSUES.md](KNOWN_ISSUES.md))
-- Dosya tamamen eşzamanlı yüklenir; her paket ham baytıyla RAM'de tutulur (v0.4).
 - Windows derlemesi için gerekli değişiklikler yapıldı ama bir Windows makinesinde henüz doğrulanmadı.
 
 ## 7. Hedef mimari
@@ -114,4 +107,4 @@ libimshark (statik, UI bağımsız)         imshark (uygulama)
 ```
 
 - Dissector'lar `(Context&, data, length)` alıp `PacketInfo`/`Field` üretir; protokol eklemek = tek bir dissector yazıp `Registry`'ye kaydetmek (**yapıldı**, `core/src/dissect/`).
-- Yükleme arka plan iş parçacığında, paketler indeks + `mmap` ile tembel okunur (v0.4).
+- Yükleme arka plan iş parçacığında, paketler özet + dosya ofseti ile tutulur (**yapıldı**, v0.4).
