@@ -115,3 +115,7 @@ target_compile_definitions(imshark_tests PRIVATE IMSHARK_TEST_DATA_DIR="${CMAKE_
 
 include(GoogleTest)
 gtest_discover_tests(imshark_tests DISCOVERY_MODE PRE_TEST)
+
+# `imshark --version` prints the project version and git describe without opening a window.
+add_test(NAME imshark_version COMMAND imshark --version)
+set_tests_properties(imshark_version PROPERTIES PASS_REGULAR_EXPRESSION "^imshark ${PROJECT_VERSION} \\(.+\\)")

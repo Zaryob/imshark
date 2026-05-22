@@ -1,4 +1,5 @@
 #include <iostream>
+#include <string_view>
 
 #include <GLFW/glfw3.h>
 #include <imgui.h>
@@ -6,8 +7,14 @@
 #include <imgui_impl_opengl3.h>
 
 #include "ui/ui.h"
+#include "version.h"
 
 int main(int argc, char **argv) {
+    // Handled before any window system call so it works headless (and in the packaged app, see ctest imshark_version).
+    if (argc > 1 && (std::string_view(argv[1]) == "--version" || std::string_view(argv[1]) == "-V")) {
+        std::cout << "imshark " << IMSHARK_VERSION << " (" << IMSHARK_GIT_DESCRIBE << ")" << std::endl;
+        return 0;
+    }
     if (!glfwInit()) {
         std::cerr << "Failed to initialize GLFW" << std::endl;
         return -1;

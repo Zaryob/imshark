@@ -73,7 +73,23 @@ add_library(imshark_ui STATIC
 target_include_directories(imshark_ui PUBLIC src)
 target_link_libraries(imshark_ui PUBLIC imshark_core imshark_imgui)
 
+# Version string for `imshark --version`: the project version plus `git describe` captured at configure time
+# ("unknown" outside a git checkout, e.g. a source tarball). Re-run cmake to refresh it after new commits.
+find_package(Git QUIET)
+set(IMSHARK_GIT_DESCRIBE "unknown")
+if(GIT_FOUND AND EXISTS "${CMAKE_SOURCE_DIR}/.git")
+    execute_process(COMMAND "${GIT_EXECUTABLE}" describe --tags --always --dirty
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        OUTPUT_VARIABLE _git_describe OUTPUT_STRIP_TRAILING_WHITESPACE
+        RESULT_VARIABLE _git_rc ERROR_QUIET)
+    if(_git_rc EQUAL 0 AND NOT _git_describe STREQUAL "")
+        set(IMSHARK_GIT_DESCRIBE "${_git_describe}")
+    endif()
+endif()
+configure_file(src/version.h.in "${CMAKE_BINARY_DIR}/generated/version.h" @ONLY)
+
 add_executable(imshark src/main.cpp)
+target_include_directories(imshark PRIVATE "${CMAKE_BINARY_DIR}/generated")
 target_link_libraries(imshark PRIVATE imshark_ui)
 if(APPLE)
     target_compile_definitions(imshark PRIVATE GL_SILENCE_DEPRECATION)
