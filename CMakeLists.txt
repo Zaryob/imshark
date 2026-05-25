@@ -125,8 +125,26 @@ endif()
 
 # The install rule must come after MACOSX_BUNDLE is set on the target: CMake decides RUNTIME vs BUNDLE when install()
 # is processed. On macOS BUNDLE DESTINATION puts imshark.app at the top of the package (otherwise the DragNDrop image
-# holds bin/imshark.app); elsewhere the executable goes to bin/. Shared libraries (GLFW, OpenSSL) are not bundled.
+# holds bin/imshark.app); elsewhere the executable goes to bin/.
 install(TARGETS imshark RUNTIME DESTINATION bin BUNDLE DESTINATION .)
+
+# macOS: make the installed bundle self-contained. fixup_bundle copies every non-system dylib the executable links
+# (GLFW, OpenSSL libcrypto, libpcap/zlib if they are not system ones) into Contents/Frameworks and rewrites the install
+# names, so the app no longer needs Homebrew on the target machine. Linux and Windows packages still rely on system
+# or vcpkg-provided libraries (the Linux AppImage job in release.yml bundles them with linuxdeploy).
+if(APPLE)
+    install(CODE "
+        include(BundleUtilities)
+        set(_app \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/imshark.app\")
+        fixup_bundle(\"\${_app}\" \"\" \"/opt/homebrew/lib;/usr/local/lib\")
+        # install_name_tool invalidated the signatures, and Apple Silicon kills unsigned code: re-sign ad hoc.
+        # This is NOT a Developer ID signature and the image is not notarized (Gatekeeper still warns on download).
+        execute_process(COMMAND codesign --force --deep --sign - \"\${_app}\" RESULT_VARIABLE _sign_rc)
+        if(NOT _sign_rc EQUAL 0)
+            message(FATAL_ERROR \"ad-hoc codesign of the bundle failed (\${_sign_rc})\")
+        endif()
+    ")
+endif()
 
 # CPack packaging
 set(CPACK_PACKAGE_NAME "imshark")
