@@ -92,3 +92,97 @@ TEST(AddressFormat, Ipv6MatchesInetNtop) {
     }
 }
 #endif // _WIN32
+
+// ---- IP address parsing ----------------------------------------------------------------------------
+
+#include <network/address.h>
+
+TEST(AddressParse, Ipv4) {
+    EXPECT_EQ(*network::parseIPv4("10.0.0.1"), (std::array<uint8_t, 4>{10, 0, 0, 1}));
+    EXPECT_EQ(*network::parseIPv4("255.255.255.255"), (std::array<uint8_t, 4>{255, 255, 255, 255}));
+    for (const char *bad: {"", "1.2.3", "1.2.3.4.5", "256.1.1.1", "1.2.3.04", "a.b.c.d", "1.2.3.4 ", " 1.2.3.4", "1..2.3", "1.2.3.", "01.2.3.4", "1.2.3.4/8"}) {
+        EXPECT_FALSE(network::parseIPv4(bad)) << bad;
+    }
+}
+
+TEST(AddressParse, Ipv6) {
+    EXPECT_EQ(network::formatIPv6(network::parseIPv6("2001:db8::1")->data()), "2001:db8::1");
+    EXPECT_EQ(network::formatIPv6(network::parseIPv6("::")->data()), "::");
+    EXPECT_EQ(network::formatIPv6(network::parseIPv6("::1")->data()), "::1");
+    EXPECT_EQ(network::formatIPv6(network::parseIPv6("::ffff:1.2.3.4")->data()), "::ffff:1.2.3.4");
+    EXPECT_EQ(network::formatIPv6(network::parseIPv6("1:2:3:4:5:6:7:8")->data()), "1:2:3:4:5:6:7:8");
+    for (const char *bad: {"", ":", ":::", "1:2:3:4:5:6:7", "1:2:3:4:5:6:7:8:9", "1::2::3", "12345::", "g::1", ":1:2:3:4:5:6:7",
+                           "1:2:3:4:5:6:7:8::", "::1.2.3", "1.2.3.4", "1:2:3:4:5:6:7::8"}) {
+        EXPECT_FALSE(network::parseIPv6(bad)) << bad;
+    }
+}
+
+TEST(AddressParse, Cidr) {
+    const auto net = network::parseIpNetwork("10.0.0.0/8");
+    ASSERT_TRUE(net);
+    EXPECT_TRUE(net->contains(*network::parseIpAddress("10.255.1.2")));
+    EXPECT_FALSE(net->contains(*network::parseIpAddress("11.0.0.1")));
+    EXPECT_FALSE(net->contains(*network::parseIpAddress("::1"))) << "families never match";
+
+    const auto odd = network::parseIpNetwork("192.168.1.128/25");
+    EXPECT_TRUE(odd->contains(*network::parseIpAddress("192.168.1.200")));
+    EXPECT_FALSE(odd->contains(*network::parseIpAddress("192.168.1.100")));
+
+    const auto v6 = network::parseIpNetwork("2001:db8::/32");
+    EXPECT_TRUE(v6->contains(*network::parseIpAddress("2001:db8:ffff::1")));
+    EXPECT_FALSE(v6->contains(*network::parseIpAddress("2001:db9::1")));
+
+    EXPECT_EQ(network::parseIpNetwork("1.2.3.4")->prefix, 32);
+    EXPECT_EQ(network::parseIpNetwork("::1")->prefix, 128);
+    EXPECT_TRUE(network::parseIpNetwork("0.0.0.0/0")->contains(*network::parseIpAddress("8.8.8.8")));
+    for (const char *bad: {"10.0.0.0/33", "10.0.0.0/", "10.0.0.0/-1", "10.0.0.0/8x", "::/129", "/8"}) {
+        EXPECT_FALSE(network::parseIpNetwork(bad)) << bad;
+    }
+}
+
+#ifndef _WIN32
+#include <cctype>
+#include <cstring>
+#include <random>
+
+// Differential test: the strict parsers agree with inet_pton wherever the latter is well defined
+TEST(AddressParse, Ipv6AgreesWithInetPton) {
+    std::mt19937 rng(5);
+    const char *alphabet[] = {"0", "1", "a", "ff", "db8", "2001", "ffff", "0000", ":", "::", ":", ".", "1.2.3.4"};
+    for (int i = 0; i < 40000; ++i) {
+        std::string s;
+        for (int n = rng() % 12; n > 0; --n) s += alphabet[rng() % (sizeof(alphabet) / sizeof(*alphabet))];
+        // macOS' inet_pton accepts groups with more than 4 hex digits ("0000ff::"); RFC 4291 (and glibc) do not
+        bool longGroup = false;
+        for (size_t a = 0, run = 0; a <= s.size(); ++a) {
+            if (a < s.size() && std::isxdigit(static_cast<unsigned char>(s[a]))) { if (++run > 4) longGroup = true; }
+            else run = 0;
+        }
+        // ... and an embedded IPv4 part with a leading zero ("::01.2.3.4"), which the strict parser rejects
+        for (size_t a = 0; a + 1 < s.size(); ++a) {
+            if (s[a] == '0' && std::isdigit(static_cast<unsigned char>(s[a + 1])) && (a == 0 || !std::isxdigit(static_cast<unsigned char>(s[a - 1])))
+                && s.find('.', a) != std::string::npos && s.find(':', a) == std::string::npos) longGroup = true;
+        }
+        if (longGroup) continue;
+
+        uint8_t ref[16];
+        const bool refOk = inet_pton(AF_INET6, s.c_str(), ref) == 1;
+        const auto mine = network::parseIPv6(s);
+        ASSERT_EQ(refOk, mine.has_value()) << "'" << s << "'";
+        if (refOk) ASSERT_EQ(std::memcmp(ref, mine->data(), 16), 0) << s;
+    }
+}
+
+TEST(AddressParse, Ipv4AgreesWithInetPtonOnCanonicalForms) {
+    std::mt19937 rng(6);
+    for (int i = 0; i < 5000; ++i) {
+        const std::string s = std::to_string(rng() % 300) + "." + std::to_string(rng() % 300) + "." +
+                              std::to_string(rng() % 300) + "." + std::to_string(rng() % 300);
+        uint8_t ref[4];
+        const bool refOk = inet_pton(AF_INET, s.c_str(), ref) == 1;
+        const auto mine = network::parseIPv4(s);
+        ASSERT_EQ(refOk, mine.has_value()) << s;
+        if (refOk) ASSERT_EQ(std::memcmp(ref, mine->data(), 4), 0);
+    }
+}
+#endif
