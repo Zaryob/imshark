@@ -1,10 +1,13 @@
 # Release workflow. It runs when a tag matching v* is pushed (the workflow itself never creates a tag) and attaches
 # the CPack packages of each platform to the GitHub release of that tag:
 #   Linux   build/*.tar.gz, build/*.deb      (CPack TGZ;DEB)
-#   macOS   build/*.dmg                      (CPack DragNDrop; imshark.app at the top of the image)
+#           ImShark-*.AppImage               (tools/make_appimage.sh with linuxdeploy, fetched by the job at run time)
+#   macOS   build/*.dmg                      (CPack DragNDrop; imshark.app at the top of the image, GLFW and OpenSSL
+#                                             copied in by fixup_bundle, ad-hoc signed)
 #   Windows build/*.zip                      (CPack ZIP)
-# Not produced here: an AppImage (tools/make_appimage.sh is a manual helper), code signing / notarization, and
-# packages that bundle GLFW or OpenSSL. The workflow has not been run on GitHub yet.
+# Release notes and draft status: the release is created as a DRAFT so the maintainer reviews and publishes it.
+# Not produced here: Developer ID signing / notarization (macOS) and Windows code signing. The workflow has not
+# been run on GitHub yet, so the AppImage job in particular is untested.
 name: Release
 
 on:
@@ -28,6 +31,7 @@ jobs:
             assets: |
               build/*.tar.gz
               build/*.deb
+              ImShark-*.AppImage
           - os: macos-latest
             assets: |
               build/*.dmg
@@ -83,8 +87,21 @@ jobs:
         run: cpack -C Release
         working-directory: build
 
+      # linuxdeploy is a third-party binary: it is pinned to a release tag (not "continuous") and only fetched here,
+      # in CI. APPIMAGE_EXTRACT_AND_RUN lets it run on a runner without FUSE.
+      - name: Build the AppImage (Linux)
+        if: runner.os == 'Linux'
+        env:
+          LINUXDEPLOY_URL: https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20240109-1/linuxdeploy-x86_64.AppImage
+          APPIMAGE_EXTRACT_AND_RUN: 1
+        run: |
+          curl -fsSL -o linuxdeploy-x86_64.AppImage "$LINUXDEPLOY_URL"
+          chmod +x linuxdeploy-x86_64.AppImage
+          VERSION="${GITHUB_REF_NAME#v}" LINUXDEPLOY=./linuxdeploy-x86_64.AppImage bash tools/make_appimage.sh build
+
       - name: Upload release assets
         uses: softprops/action-gh-release@v2
         with:
+          draft: true
           files: ${{ matrix.assets }}
           fail_on_unmatched_files: true

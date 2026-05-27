@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# make_appimage.sh - builds an AppImage by hand with linuxdeploy. NOT part of CI or CPack: the release workflow only
-# publishes the TGZ and DEB packages. Run it on a Linux machine after building.
+# make_appimage.sh - builds an AppImage with linuxdeploy. Not part of CPack. The release workflow
+# (.github/workflows/release.yml) calls it on the Linux runner after the build; you can also run it by hand on a
+# Linux machine after building. Set VERSION to put the version in the file name (ImShark-<VERSION>-x86_64.AppImage).
 #
 # Usage: LINUXDEPLOY=/path/to/linuxdeploy-x86_64.AppImage ./tools/make_appimage.sh [build_dir] [icon.png]
 #
-# linuxdeploy is not downloaded by this script (an unverified download of a "continuous" build would end up in a
-# release artifact): obtain it yourself, check its signature or checksum, and point LINUXDEPLOY at it. The icon is
+# linuxdeploy is not downloaded by this script: the release workflow fetches a pinned release, and by hand you obtain
+# it yourself, check its signature or checksum, and point LINUXDEPLOY at it. The icon is
 # optional; without one a plain placeholder PNG is generated (the project has no icon artwork yet).
 set -euo pipefail
 
