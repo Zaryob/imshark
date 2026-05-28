@@ -54,6 +54,12 @@ void packet::PacketParser::parsePacket(packet::PacketInfo &pack, const std::vect
                                        dissect::ParseMode mode) {
     pack.vlan_ids.clear();
     pack.fields.clear();
+    pack.ether_type = 0;
+    pack.ip_version = 0;
+    pack.ip_protocol = 0;
+    pack.ttl = 0;
+    pack.tcp_flags = 0;
+    pack.src_port = pack.dst_port = 0;
     pack.protocol.clear();
     pack.info.clear();
     pack.source.clear();
@@ -147,6 +153,7 @@ void packet::PacketParser::parsePacket(packet::PacketInfo &pack, const std::vect
     pack.l2_size = static_cast<uint16_t>(l3Offset);
     if (ctx.wantFields() && !haveEthernet && l3Offset > 0) ctx.addLayer(linkTypeName(pack.link_type) + " link header", 0, l3Offset);
 
+    pack.ether_type = etherType;
     if (const dissect::Dissector *network = registry_->findEtherType(etherType)) {
         (*network)(ctx, base + l3Offset, len - l3Offset);
         return;

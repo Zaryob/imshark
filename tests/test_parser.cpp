@@ -248,3 +248,53 @@ TEST(Registry, CustomDissectorsAreUsedForPortsAndEtherTypes) {
     EXPECT_EQ(parse(udp).protocol, "UDP");
     EXPECT_EQ(parse(local).protocol, "Ethernet");
 }
+
+// ---- summary facts used by the display filter -----------------------------------------------------
+
+TEST(SummaryFacts, TcpOverIpv4) {
+    auto p = parse(hex("001122334455 aabbccddeeff 0800 4500003c123440004006 0000 0a000001 0a000002"
+                       "1f90 01bb 00000064 00000000 a002 7210 0000 0000 020405b4"));
+    EXPECT_EQ(p.ether_type, 0x0800);
+    EXPECT_EQ(p.ip_version, 4);
+    EXPECT_EQ(p.ip_protocol, 6);
+    EXPECT_EQ(p.ttl, 64);
+    EXPECT_EQ(p.tcp_flags, 0x02) << "the SYN flag; the data offset nibble is not part of it";
+    EXPECT_EQ(p.src_port, 8080);
+    EXPECT_EQ(p.dst_port, 443);
+    EXPECT_NE(p.info.find("Malformed"), std::string::npos) << "the options are cut short in this frame";
+}
+
+TEST(SummaryFacts, SynFlagsArePreserved) {
+    auto p = parse(hex("001122334455 aabbccddeeff 0800 4500002800000000 4006 0000 0a000001 0a000002 1f90 01bb 00000001 00000000 5002 2000 0000 0000"));
+    EXPECT_EQ(p.tcp_flags, 0x02);
+}
+
+TEST(SummaryFacts, UdpIpv6VlanArpAndUnknown) {
+    auto udp = parse(hex(std::string("001122334455aabbccddeeff 8100 0064 0800 ") +
+                         "4500001c00000000 3f11 0000 0a0000010a000002 1234 0035 0008 0000"));
+    EXPECT_EQ(udp.ether_type, 0x0800) << "the inner type after the VLAN tag";
+    EXPECT_EQ(udp.ip_protocol, 17);
+    EXPECT_EQ(udp.ttl, 63);
+    EXPECT_EQ(udp.src_port, 0x1234);
+    EXPECT_EQ(udp.dst_port, 53);
+
+    auto v6 = parse(hex("001122334455 aabbccddeeff 86dd 60000000 0008 11 40 20010db8000000000000000000000001 20010db8000000000000000000000002 1234 1235 0008 0000"));
+    EXPECT_EQ(v6.ip_version, 6);
+    EXPECT_EQ(v6.ip_protocol, 17);
+    EXPECT_EQ(v6.ttl, 64) << "hop limit";
+
+    auto arp = parse(hex(support::kArpRequest));
+    EXPECT_EQ(arp.ether_type, 0x0806);
+    EXPECT_EQ(arp.ip_version, 0);
+    EXPECT_EQ(arp.src_port, 0);
+
+    auto other = parse(hex("001122334455 aabbccddeeff 88cc 0207"));
+    EXPECT_EQ(other.ether_type, 0x88cc);
+    EXPECT_EQ(other.ip_protocol, 0);
+}
+
+TEST(SummaryFacts, ExtensionHeadersReportTheTransportProtocol) {
+    auto p = parse(hex("001122334455 aabbccddeeff 86dd 60000000 0018 00 40 20010db8000000000000000000000001 20010db8000000000000000000000002"
+                       "3c00 000000000000 1100 000000000000 1234 1235 0008 0000"));
+    EXPECT_EQ(p.ip_protocol, 17) << "not 0 (hop-by-hop) or 60 (destination options)";
+}

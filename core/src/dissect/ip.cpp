@@ -19,6 +19,8 @@ void dissect::dissectIPv4(Context &ctx, const char *base, size_t len) {
     }
     pack.destination = ip4(ipHeader.dst_addr);
     pack.source = ip4(ipHeader.src_addr);
+    pack.ip_version = 4;
+    pack.ttl = ipHeader.ttl;
 
     const size_t ipHeaderLen = static_cast<size_t>(ipHeader.ihl) * 4;
     if (ipHeaderLen < sizeof(network::IPHeader) || ipHeaderLen > len) {
@@ -51,6 +53,7 @@ void dissect::dissectIPv4(Context &ctx, const char *base, size_t len) {
 
     pack.length = totalLen >= ipHeaderLen ? totalLen - ipHeaderLen : 0;
     const size_t avail = std::min<size_t>(pack.length, len - ipHeaderLen); // drops Ethernet padding
+    pack.ip_protocol = ipHeader.protocol;
     if (const Dissector *next = ctx.registry.findIpProtocol(ipHeader.protocol)) {
         (*next)(ctx, base + ipHeaderLen, avail);
     } else {
@@ -70,6 +73,8 @@ void dissect::dissectIPv6(Context &ctx, const char *base, size_t len) {
     pack.source = network::getIPv6AddressString(ipv6Header.src_addr);
     pack.destination = network::getIPv6AddressString(ipv6Header.dst_addr);
     pack.protocol = "IPv6";
+    pack.ip_version = 6;
+    pack.ttl = ipv6Header.hop_limit;
 
     std::ostringstream infoStream;
     infoStream << "IPv6 Version: " << (int) ipv6Header.version()
@@ -115,6 +120,7 @@ void dissect::dissectIPv6(Context &ctx, const char *base, size_t len) {
         nextHeader = following;
     }
 
+    pack.ip_protocol = nextHeader;
     if (const Dissector *d = ctx.registry.findIpProtocol(nextHeader)) {
         (*d)(ctx, base + next, avail);
     } else {
