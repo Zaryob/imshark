@@ -117,10 +117,13 @@ all of it, and say in an italic note what is still missing otherwise. `docs/USER
 `cpack -C Release` in the build directory produces the platform package: a `.dmg` on macOS (DragNDrop, `imshark.app` at
 the top of the image), `.tar.gz` and `.deb` on Linux, `.zip` on Windows. `.github/workflows/release.yml` runs the build,
 the tests and `cpack` for a pushed `v*` tag and attaches those files to the GitHub release; it refuses a tag that differs
-from the `project(imshark VERSION ...)` in `CMakeLists.txt`. Things that are **not** done: an AppImage is not built in CI
-(`tools/make_appimage.sh` is a manual helper that needs a linuxdeploy you provide), the packages do not bundle GLFW or
-OpenSSL (the macOS app links the Homebrew libraries), nothing is signed or notarized, and the workflow has not been run
-on GitHub yet. `tools/make_dmg.sh` makes a DMG by hand from the build tree.
+from the `project(imshark VERSION ...)` in `CMakeLists.txt`, builds an `ImShark-*.AppImage` on Linux (linuxdeploy fetched
+at run time, `tools/make_appimage.sh`) and creates the release as a draft. On macOS the install step runs `fixup_bundle`,
+so GLFW and OpenSSL are copied into `imshark.app/Contents/Frameworks` (check with `otool -L`), and the bundle is signed
+ad hoc. `imshark --version` prints the project version and `git describe` captured at configure time. Things that are
+**not** done: no Developer ID signing or notarization (Gatekeeper warns on a downloaded image), the Linux tar.gz/deb and
+the Windows zip do not bundle their libraries, and the workflow has not been run on GitHub yet (the AppImage job is
+untested). `tools/make_dmg.sh` makes a DMG by hand from the build tree (it does not bundle libraries).
 
 ## Benchmark
 
