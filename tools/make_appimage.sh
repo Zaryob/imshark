@@ -6,7 +6,8 @@
 # Usage: LINUXDEPLOY=/path/to/linuxdeploy-x86_64.AppImage ./tools/make_appimage.sh [build_dir] [icon.png]
 #
 # linuxdeploy is not downloaded by this script: the release workflow fetches a pinned release, and by hand you obtain
-# it yourself, check its signature or checksum, and point LINUXDEPLOY at it. The icon is
+# it yourself, check its signature or checksum, and point LINUXDEPLOY at it. `--output appimage` also needs the
+# executable linuxdeploy-plugin-appimage on PATH. The icon is
 # optional; without one a plain placeholder PNG is generated (the project has no icon artwork yet).
 set -euo pipefail
 

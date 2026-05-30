@@ -87,17 +87,28 @@ jobs:
         run: cpack -C Release
         working-directory: build
 
-      # linuxdeploy is a third-party binary: it is pinned to a release tag (not "continuous") and only fetched here,
-      # in CI. APPIMAGE_EXTRACT_AND_RUN lets it run on a runner without FUSE.
+      # linuxdeploy and its AppImage output plugin are third-party binaries, fetched only here, in CI. linuxdeploy is
+      # pinned to a release tag; the plugin only publishes a rolling "continuous" release, so it cannot be pinned
+      # (the sha256 sums are printed into the log for auditing). `linuxdeploy --output appimage` runs
+      # linuxdeploy-plugin-appimage, which it looks up as an executable named linuxdeploy-plugin-appimage on PATH.
+      # APPIMAGE_EXTRACT_AND_RUN=1 makes AppImages unpack themselves instead of mounting via FUSE (absent on runners);
+      # it is inherited by the plugin. `set -e` (the default bash -e of Actions) plus curl -f keep any failure loud.
       - name: Build the AppImage (Linux)
         if: runner.os == 'Linux'
         env:
           LINUXDEPLOY_URL: https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20240109-1/linuxdeploy-x86_64.AppImage
+          LINUXDEPLOY_PLUGIN_APPIMAGE_URL: https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/continuous/linuxdeploy-plugin-appimage-x86_64.AppImage
           APPIMAGE_EXTRACT_AND_RUN: 1
         run: |
-          curl -fsSL -o linuxdeploy-x86_64.AppImage "$LINUXDEPLOY_URL"
-          chmod +x linuxdeploy-x86_64.AppImage
-          VERSION="${GITHUB_REF_NAME#v}" LINUXDEPLOY=./linuxdeploy-x86_64.AppImage bash tools/make_appimage.sh build
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/linuxdeploy"
+          curl -fsSL -o "$RUNNER_TEMP/linuxdeploy/linuxdeploy" "$LINUXDEPLOY_URL"
+          curl -fsSL -o "$RUNNER_TEMP/linuxdeploy/linuxdeploy-plugin-appimage" "$LINUXDEPLOY_PLUGIN_APPIMAGE_URL"
+          chmod +x "$RUNNER_TEMP/linuxdeploy/linuxdeploy" "$RUNNER_TEMP/linuxdeploy/linuxdeploy-plugin-appimage"
+          sha256sum "$RUNNER_TEMP/linuxdeploy/linuxdeploy" "$RUNNER_TEMP/linuxdeploy/linuxdeploy-plugin-appimage"
+          export PATH="$RUNNER_TEMP/linuxdeploy:$PATH"
+          VERSION="${GITHUB_REF_NAME#v}" LINUXDEPLOY=linuxdeploy bash tools/make_appimage.sh build
+          ls -l ImShark-*.AppImage
 
       - name: Upload release assets
         uses: softprops/action-gh-release@v2
