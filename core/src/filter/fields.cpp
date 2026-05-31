@@ -60,6 +60,14 @@ namespace filter {
         // Wireshark's numbering of *.checksum.status: 0 = bad, 1 = good, 2 = unverified, 3 = not present
         uint32_t checksumStatusNumber(uint8_t state) { return state == dissect::kChecksumBad ? 0 : state == dissect::kChecksumGood ? 1 : state == dissect::kChecksumUnverified ? 2 : 3; }
 
+        // DNP3 keeps two 2-bit states in app_flags (dissectDnp3): bits 0-1 link header CRC, bits 2-3 all data block CRCs
+        uint8_t dnp3CrcState(const PacketInfo &p, bool header, bool data) {
+            const uint8_t h = header ? (p.app_flags & 3) : dissect::kChecksumNone, d = data ? ((p.app_flags >> 2) & 3) : dissect::kChecksumNone;
+            if (h == dissect::kChecksumBad || d == dissect::kChecksumBad) return dissect::kChecksumBad;
+            if (h == dissect::kChecksumUnverified || d == dissect::kChecksumUnverified) return dissect::kChecksumUnverified;
+            return h == dissect::kChecksumGood || d == dissect::kChecksumGood ? dissect::kChecksumGood : dissect::kChecksumNone;
+        }
+
         std::string_view httpMethodName(uint16_t code) {
             static const char *names[] = {"", "GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS", "PATCH", "CONNECT", "TRACE"};
             return code < sizeof(names) / sizeof(*names) ? names[code] : "";
@@ -135,6 +143,10 @@ namespace filter {
                 {"igmp", FieldType::Boolean, proto<[](const PacketInfo &p) { return p.protocol == "IGMP" || p.ip_protocol == 2; }>, "Internet Group Management Protocol"},
                 {"igmp.type", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.protocol == "IGMP" && p.app_type != 0) o.addU(p.app_type); }, "IGMP Message Type (0x11 Query, 0x12 v1 Report, 0x16 v2 Report, 0x17 Leave, 0x22 v3 Report)"},
                 {"igmp.group", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (p.protocol == "IGMP" && !p.app_text.empty()) o.addS(p.app_text); }, "IGMP Multicast Group Address"},
+                {"dnp3", FieldType::Boolean, proto<[](const PacketInfo &p) { return p.protocol == "DNP3"; }>, "Distributed Network Protocol 3.0"},
+                {"dnp3.checksum.status", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.protocol == "DNP3") o.addU(checksumStatusNumber(dnp3CrcState(p, true, true))); }, "DNP3 CRC-16 of the link header and all data blocks: 0 = bad (any), 1 = good, 2 = unverified (block cut by the capture)"},
+                {"dnp3.header.checksum.status", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.protocol == "DNP3") o.addU(checksumStatusNumber(dnp3CrcState(p, true, false))); }, "DNP3 link header CRC-16: 0 = bad, 1 = good"},
+                {"dnp3.data.checksum.status", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.protocol == "DNP3") o.addU(checksumStatusNumber(dnp3CrcState(p, false, true))); }, "DNP3 CRC-16 of all user data blocks: 0 = bad (any block), 1 = good, 2 = unverified, 3 = not present (no user data)"},
                 {"ospf", FieldType::Boolean, proto<[](const PacketInfo &p) { return p.protocol == "OSPF" || p.ip_protocol == 89; }>, "Open Shortest Path First"},
                 {"ospf.version", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.protocol == "OSPF") o.addU(p.app_code); }, "OSPF Version (2 or 3)"},
                 {"ospf.type", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.protocol == "OSPF") o.addU(p.app_type); }, "OSPF Packet Type (1=Hello, 2=DD, 3=LSR, 4=LSU, 5=LSAck)"},

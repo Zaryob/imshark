@@ -53,7 +53,7 @@ const Bytes kModbusException = {0x00, 0x01, 0x00, 0x00, 0x00, 0x03, 0x11, 0x83, 
 // of those 8 bytes (little endian), then the user data followed by its own CRC. The CRCs come from an independent
 // bitwise CRC-16/DNP written in Python (poly 0x3D65 reflected, init 0, xorout 0xFFFF; it reproduces the catalogue check
 // value 0xEA82 for "123456789"): header 05 64 08 c4 01 00 02 00 -> 0x0d39, data c0 c0 01 -> 0xa06d,
-// header 05 64 0a 44 02 00 01 00 -> 0xf010, data c0 c0 81 00 00 -> 0xe89c. The dissector does not verify them.
+// header 05 64 0a 44 02 00 01 00 -> 0xf010, data c0 c0 81 00 00 -> 0xe89c. The dissector verifies them (Dnp3CrcVerification).
 const Bytes kDnp3Read = {0x05, 0x64, 0x08, 0xc4, 0x01, 0x00, 0x02, 0x00, 0x39, 0x0d,
                          0xc0, 0xc0, 0x01, 0x6d, 0xa0};  // transport C0, application control C0, function 1 (Read)
 const Bytes kDnp3Response = {0x05, 0x64, 0x0a, 0x44, 0x02, 0x00, 0x01, 0x00, 0x10, 0xf0,
@@ -65,6 +65,23 @@ Bytes canFrame(uint32_t id, uint8_t dlc, const Bytes &data) {
     Bytes d = data;
     d.resize(8, 0);
     return cat(b, d);
+}
+
+bool dnp3Matches(const std::string &expr, const packet::PacketInfo &pkt) {
+    auto f = filter::Filter::compile(expr);
+    EXPECT_TRUE(f.ok) << expr;
+    return f.ok && f.filter.matches(pkt);
+}
+
+// 20 user data bytes (1..20) in two blocks: header 05 64 19 c4 01 00 02 00 -> 0xc01f, block 1 (01..10) -> 0xa5f2, block 2
+// (11 12 13 14) -> 0x7b29; every CRC from the bitwise Python CRC-16/DNP described above (see also Crc16DnpCheckValues).
+Bytes dnp3TwoBlocks() {
+    Bytes b = {0x05, 0x64, 0x19, 0xc4, 0x01, 0x00, 0x02, 0x00, 0x1f, 0xc0};
+    for (int i = 1; i <= 16; ++i) b.push_back(static_cast<uint8_t>(i));
+    b.push_back(0xf2); b.push_back(0xa5);
+    for (int i = 17; i <= 20; ++i) b.push_back(static_cast<uint8_t>(i));
+    b.push_back(0x29); b.push_back(0x7b);
+    return b;
 }
 
 } // namespace
@@ -148,9 +165,62 @@ TEST(Industrial, Dnp3ReadRequestAndResponse) {
     EXPECT_EQ(resp.app_type, 0x81);
 }
 
+TEST(Industrial, Dnp3CrcVerification) {
+    const auto good = framesweep::parseEthernet(overTcp(54321, 20000, kDnp3Read));
+    EXPECT_TRUE(dnp3Matches("dnp3 && dnp3.checksum.status == 1 && dnp3.header.checksum.status == 1 && dnp3.data.checksum.status == 1", good));
+    EXPECT_NE(findNode(good.fields, "Header CRC: 0x0d39 [correct]"), nullptr);
+    EXPECT_NE(findNode(good.fields, "Data CRC: 0xa06d [correct]"), nullptr);
+    EXPECT_EQ(good.info, "DNP3 (Src 2 -> Dst 1), Read");
+
+    // wrong header CRC: only the header is bad
+    Bytes badHeader = kDnp3Read;
+    badHeader[8] ^= 0x01;
+    const auto bh = framesweep::parseEthernet(overTcp(54321, 20000, badHeader));
+    EXPECT_TRUE(dnp3Matches("dnp3.checksum.status == 0 && dnp3.header.checksum.status == 0 && dnp3.data.checksum.status == 1", bh));
+    EXPECT_NE(findNode(bh.fields, "Header CRC: 0x0d38 [incorrect, should be 0x0d39]"), nullptr);
+    EXPECT_NE(findNode(bh.fields, "[Expert Info (Warning/Checksum): bad DNP3 link header CRC-16]"), nullptr);
+    EXPECT_NE(bh.info.find("[Bad CRC]"), std::string::npos);
+
+    // a flipped user data byte: the data block CRC no longer matches
+    Bytes badData = kDnp3Read;
+    badData[12] ^= 0x40;
+    const auto bd = framesweep::parseEthernet(overTcp(54321, 20000, badData));
+    EXPECT_TRUE(dnp3Matches("dnp3.checksum.status == 0 && dnp3.header.checksum.status == 1 && dnp3.data.checksum.status == 0", bd));
+    EXPECT_NE(findNode(bd.fields, "[Expert Info (Warning/Checksum): bad DNP3 data block CRC-16]"), nullptr);
+
+    // two blocks (16 + 4 bytes), each with its own CRC
+    const auto two = framesweep::parseEthernet(overUdp(20000, dnp3TwoBlocks()));
+    EXPECT_TRUE(dnp3Matches("dnp3.checksum.status == 1", two));
+    EXPECT_NE(findNode(two.fields, "Data Block 1 (16 bytes)"), nullptr);
+    const auto *second = findNode(two.fields, "Data Block 2 (4 bytes)");
+    ASSERT_NE(second, nullptr);
+    EXPECT_EQ(second->offset, 42u + 28u);
+    Bytes badSecond = dnp3TwoBlocks();
+    badSecond[32] ^= 0x80;   // the second block's CRC
+    EXPECT_TRUE(dnp3Matches("dnp3.checksum.status == 0 && dnp3.header.checksum.status == 1", framesweep::parseEthernet(overUdp(20000, badSecond))));
+    Bytes badFirst = dnp3TwoBlocks();
+    badFirst[15] ^= 0x01;   // user byte inside the first block
+    EXPECT_TRUE(dnp3Matches("dnp3.data.checksum.status == 0", framesweep::parseEthernet(overUdp(20000, badFirst))));
+
+    // a link header without user data (LEN 5) has no data CRC at all
+    const Bytes headerOnly = {0x05, 0x64, 0x05, 0xc0, 0x01, 0x00, 0x02, 0x00, 0x00, 0x00};
+    const auto ho = framesweep::parseEthernet(overTcp(54321, 20000, headerOnly));
+    EXPECT_TRUE(dnp3Matches("dnp3.data.checksum.status == 3", ho));
+
+    // the capture ends inside the second block: the first block is still checked, the rest cannot be decided
+    Bytes cut = dnp3TwoBlocks();
+    cut.resize(cut.size() - 3);
+    const auto cutPkt = framesweep::parseEthernet(overUdp(20000, cut));
+    EXPECT_TRUE(dnp3Matches("dnp3.checksum.status == 2 && dnp3.header.checksum.status == 1", cutPkt));
+    EXPECT_FALSE(dnp3Matches("dnp3.checksum.status == 0", cutPkt));
+    Bytes cutBadFirst = badFirst;
+    cutBadFirst.resize(cutBadFirst.size() - 3);
+    EXPECT_TRUE(dnp3Matches("dnp3.checksum.status == 0", framesweep::parseEthernet(overUdp(20000, cutBadFirst))));
+}
+
 TEST(Industrial, Dnp3WithoutApplicationBytesShowsNoFunctionCode) {
     // LEN 6 = control + addresses + only the transport header byte: the byte at offset 11 is the block CRC, not a function code
-    const Bytes transportOnly = {0x05, 0x64, 0x06, 0xc4, 0x01, 0x00, 0x02, 0x00, 0x00, 0x00, 0xc0, 0x01, 0x00};
+    const Bytes transportOnly = {0x05, 0x64, 0x06, 0xc4, 0x01, 0x00, 0x02, 0x00, 0x3c, 0xfc, 0xc0, 0x1d, 0x0a};   // CRCs 0xfc3c and 0x0a1d (Python, as above)
     const auto pkt = framesweep::parseEthernet(overTcp(54321, 20000, transportOnly));
     EXPECT_EQ(pkt.protocol, "DNP3");
     EXPECT_EQ(pkt.info, "DNP3 (Src 2 -> Dst 1)");
@@ -224,6 +294,8 @@ TEST(Industrial, TruncationAndMutationStayInsideTheFrame) {
     framesweep::sweep(overTcp(502, 54321, kModbusException), 53);
     framesweep::sweep(overTcp(54321, 20000, kDnp3Read), 54);
     framesweep::sweep(overUdp(20000, kDnp3Response), 55);
+    framesweep::sweep(overUdp(20000, dnp3TwoBlocks()), 58);
+    framesweep::sweep(overTcp(54321, 20000, dnp3TwoBlocks()), 59);
     framesweep::sweep(canFrame(0x80000000u | 0x12345678u, 4, {1, 2, 3, 4}), 56, 400, 227);
     Bytes fd = {0x00, 0x00, 0x07, 0xff, 12, 0x01, 0, 0};
     fd.resize(72, 7);

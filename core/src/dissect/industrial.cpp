@@ -1,9 +1,11 @@
 #include "industrial.h"
+#include "checksum.h"
 #include "reader.h"
 #include "util.h"
 #include <algorithm>
 #include <cstdio>
 #include <string>
+#include <vector>
 
 namespace dissect {
 
@@ -164,6 +166,33 @@ void dissectDnp3(Context &ctx, const char *data, size_t length) {
 
     ctx.pack.protocol = "DNP3";
 
+    // CRC-16/DNP (IEEE 1815): over the first 8 header bytes, and after every block of up to 16 user data bytes
+    // (LEN = 5 + user data). A block cut by the end of the capture cannot be decided. The states go to app_flags
+    // (bits 0-1 header, bits 2-3 all data blocks: Bad wins over Unverified, which wins over Good) for the filter.
+    const uint16_t calcLinkCrc = crc16dnp(data, 8);
+    const uint8_t headerState = calcLinkCrc == linkCrc ? kChecksumGood : kChecksumBad;
+    struct Block { size_t off, len; uint16_t stored, calc; uint8_t state; };
+    std::vector<Block> blocks;
+    uint8_t dataState = kChecksumNone;
+    if (dnpLen > 5) {
+        size_t left = dnpLen - 5, at = 10;
+        while (left > 0) {
+            Block b{at, std::min<size_t>(left, 16), 0, 0, kChecksumUnverified};
+            if (at + b.len + 2 <= length) {
+                b.stored = static_cast<uint16_t>(bytes[at + b.len] | (bytes[at + b.len + 1] << 8));
+                b.calc = crc16dnp(data + at, b.len);
+                b.state = b.stored == b.calc ? kChecksumGood : kChecksumBad;
+            }
+            auto rank = [](uint8_t st) { return st == kChecksumBad ? 3 : st == kChecksumUnverified ? 2 : st == kChecksumGood ? 1 : 0; };
+            if (rank(b.state) > rank(dataState)) dataState = b.state;
+            blocks.push_back(b);
+            at += b.len + 2;
+            left -= b.len;
+        }
+    }
+    ctx.pack.app_flags = static_cast<uint16_t>(headerState | (dataState << 2));
+    const bool crcBad = headerState == kChecksumBad || dataState == kChecksumBad;
+
     std::string summary = "DNP3 (Src " + std::to_string(src) + " -> Dst " + std::to_string(dest) + ")";
 
     // Transport header, application control and function code are the first three user data bytes (LEN = 5 + user data)
@@ -176,6 +205,7 @@ void dissectDnp3(Context &ctx, const char *data, size_t length) {
         }
     }
 
+    if (crcBad) summary += " [Bad CRC]";
     ctx.pack.info = summary;
 
     if (ctx.wantFields()) {
@@ -186,11 +216,26 @@ void dissectDnp3(Context &ctx, const char *data, size_t length) {
         root.add("Control: " + hexString(ctrl, 2), o + 3, 1);
         root.add("Destination: " + std::to_string(dest), o + 4, 2);
         root.add("Source: " + std::to_string(src), o + 6, 2);
-        root.add("Header CRC: " + hexString(linkCrc, 4) + " [unverified]", o + 8, 2);
+        auto &hc = root.add("Header CRC: " + hexString(linkCrc, 4) + (headerState == kChecksumGood ? " [correct]" : " [incorrect, should be " + hexString(calcLinkCrc, 4) + "]"), o + 8, 2);
+        hc.add(std::string("[Checksum Status: ") + checksumStateText(headerState) + "]", o + 8, 2);
+        if (headerState == kChecksumBad) hc.add("[Expert Info (Warning/Checksum): bad DNP3 link header CRC-16]", o + 8, 2);
         if (dnpLen >= 8 && length >= 13) {
             root.add("Transport Header: " + hexString(bytes[10], 2), o + 10, 1);
             root.add("Application Control: " + hexString(bytes[11], 2), o + 11, 1);
             root.add("Application Function Code: " + std::to_string(bytes[12]), o + 12, 1);
+        }
+        for (size_t i = 0; i < blocks.size(); ++i) {
+            const Block &b = blocks[i];
+            if (b.off >= length) break;
+            const size_t shown = std::min(b.len, length - b.off);
+            auto &bf = root.add("Data Block " + std::to_string(i + 1) + " (" + std::to_string(b.len) + " bytes)", o + b.off, shown);
+            if (b.state == kChecksumUnverified) {
+                bf.add("[Checksum Status: Unverified]", o + b.off, shown);
+                continue;
+            }
+            auto &cf = bf.add("Data CRC: " + hexString(b.stored, 4) + (b.state == kChecksumGood ? " [correct]" : " [incorrect, should be " + hexString(b.calc, 4) + "]"), o + b.off + b.len, 2);
+            cf.add(std::string("[Checksum Status: ") + checksumStateText(b.state) + "]", o + b.off + b.len, 2);
+            if (b.state == kChecksumBad) cf.add("[Expert Info (Warning/Checksum): bad DNP3 data block CRC-16]", o + b.off + b.len, 2);
         }
     }
 }
