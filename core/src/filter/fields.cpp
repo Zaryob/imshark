@@ -1,0 +1,110 @@
+#include "fields.h"
+
+#include <algorithm>
+
+namespace filter {
+    namespace {
+        using packet::PacketInfo;
+
+        bool ipv4(const PacketInfo &p) { return p.ip_version == 4; }
+        bool ipv6(const PacketInfo &p) { return p.ip_version == 6; }
+        bool hasTcp(const PacketInfo &p) { return p.ip_version != 0 && p.ip_protocol == 6; }
+        bool hasUdp(const PacketInfo &p) { return p.ip_version != 0 && p.ip_protocol == 17; }
+
+        // protocol presence: one value (1) when present, none otherwise
+        template<bool (*Present)(const PacketInfo &)>
+        void proto(const PacketInfo &p, const Context &, Values &out) { if (Present(p)) out.addU(1); }
+
+        bool isProtocol(const PacketInfo &p, const char *name) { return p.protocol == name; }
+
+        template<uint8_t Bit>
+        void tcpFlag(const PacketInfo &p, const Context &, Values &out) { if (hasTcp(p)) out.addU((p.tcp_flags & Bit) ? 1 : 0); }
+
+        void addr(const PacketInfo &p, const Context &, Values &out, bool wantV6, bool src, bool dst) {
+            if (p.ip_version != (wantV6 ? 6 : 4)) return;
+            if (src) if (auto a = network::parseIpAddress(p.source)) out.addA(*a);
+            if (dst) if (auto a = network::parseIpAddress(p.destination)) out.addA(*a);
+        }
+
+        std::vector<FieldDef> buildTable() {
+            std::vector<FieldDef> t = {
+                // ---- frame
+                {"frame.number", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { o.addU(static_cast<uint64_t>(p.number)); }, "Packet number (1-based)"},
+                {"frame.len", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { o.addU(p.frame_length); }, "Length of the frame on the wire"},
+                {"frame.cap_len", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { o.addU(p.captured_length); }, "Number of bytes captured"},
+                {"frame.time_relative", FieldType::Float, [](const PacketInfo &p, const Context &, Values &o) { o.addD(p.time); }, "Seconds since the first packet"},
+                {"frame.time_delta", FieldType::Float, [](const PacketInfo &p, const Context &c, Values &o) { o.addD(c.previous ? p.time - c.previous->time : 0.0); }, "Seconds since the previous captured packet"},
+                {"frame.time_epoch", FieldType::Float, [](const PacketInfo &p, const Context &c, Values &o) { o.addD(c.captureStartEpoch + p.time); }, "Arrival time as UTC epoch seconds"},
+                {"_ws.col.protocol", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { o.addS(p.protocol); }, "Protocol column"},
+                {"protocol", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { o.addS(p.protocol); }, "Protocol column (alias of _ws.col.protocol)"},
+                {"_ws.col.info", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { o.addS(p.info); }, "Info column"},
+                {"info", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { o.addS(p.info); }, "Info column (alias of _ws.col.info)"},
+                // ---- link layer
+                {"eth", FieldType::Boolean, proto<[](const PacketInfo &p) { return p.link_type == 1; }>, "Ethernet frame"},
+                {"eth.type", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.ether_type) o.addU(p.ether_type); }, "EtherType"},
+                {"vlan", FieldType::Boolean, proto<[](const PacketInfo &p) { return !p.vlan_ids.empty(); }>, "802.1Q VLAN tagged"},
+                {"vlan.id", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { for (size_t i = 0; i < p.vlan_ids.size() && i < 2; ++i) o.addU(p.vlan_ids[i]); }, "VLAN ID (outermost two tags)"},
+                // ---- network layer
+                {"arp", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "ARP") || isProtocol(p, "RARP")) o.addU(1); }, "ARP / RARP"},
+                {"ip", FieldType::Boolean, proto<ipv4>, "IPv4"},
+                {"ipv6", FieldType::Boolean, proto<ipv6>, "IPv6"},
+                {"ip.version", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (ipv4(p)) o.addU(4); }, "IPv4 version"},
+                {"ip.ttl", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (ipv4(p)) o.addU(p.ttl); }, "IPv4 time to live"},
+                {"ip.proto", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (ipv4(p)) o.addU(p.ip_protocol); }, "IPv4 protocol number"},
+                {"ip.src", FieldType::Ipv4, [](const PacketInfo &p, const Context &c, Values &o) { addr(p, c, o, false, true, false); }, "IPv4 source address"},
+                {"ip.dst", FieldType::Ipv4, [](const PacketInfo &p, const Context &c, Values &o) { addr(p, c, o, false, false, true); }, "IPv4 destination address"},
+                {"ip.addr", FieldType::Ipv4, [](const PacketInfo &p, const Context &c, Values &o) { addr(p, c, o, false, true, true); }, "IPv4 source or destination address"},
+                {"ipv6.hlim", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (ipv6(p)) o.addU(p.ttl); }, "IPv6 hop limit"},
+                {"ipv6.nxt", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (ipv6(p)) o.addU(p.ip_protocol); }, "IPv6 next header (after extension headers)"},
+                {"ipv6.src", FieldType::Ipv6, [](const PacketInfo &p, const Context &c, Values &o) { addr(p, c, o, true, true, false); }, "IPv6 source address"},
+                {"ipv6.dst", FieldType::Ipv6, [](const PacketInfo &p, const Context &c, Values &o) { addr(p, c, o, true, false, true); }, "IPv6 destination address"},
+                {"ipv6.addr", FieldType::Ipv6, [](const PacketInfo &p, const Context &c, Values &o) { addr(p, c, o, true, true, true); }, "IPv6 source or destination address"},
+                // ---- transport layer
+                {"tcp", FieldType::Boolean, proto<hasTcp>, "TCP"},
+                {"udp", FieldType::Boolean, proto<hasUdp>, "UDP"},
+                {"icmp", FieldType::Boolean, proto<[](const PacketInfo &p) { return ipv4(p) && p.ip_protocol == 1; }>, "ICMP"},
+                {"icmpv6", FieldType::Boolean, proto<[](const PacketInfo &p) { return ipv6(p) && p.ip_protocol == 58; }>, "ICMPv6"},
+                {"tcp.srcport", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (hasTcp(p)) o.addU(p.src_port); }, "TCP source port"},
+                {"tcp.dstport", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (hasTcp(p)) o.addU(p.dst_port); }, "TCP destination port"},
+                {"tcp.port", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (hasTcp(p)) { o.addU(p.src_port); o.addU(p.dst_port); } }, "TCP source or destination port"},
+                {"tcp.flags", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (hasTcp(p)) o.addU(p.tcp_flags); }, "TCP flag byte"},
+                {"tcp.flags.fin", FieldType::Boolean, tcpFlag<0x01>, "TCP FIN flag"},
+                {"tcp.flags.syn", FieldType::Boolean, tcpFlag<0x02>, "TCP SYN flag"},
+                {"tcp.flags.rst", FieldType::Boolean, tcpFlag<0x04>, "TCP RST flag"},
+                {"tcp.flags.push", FieldType::Boolean, tcpFlag<0x08>, "TCP PSH flag"},
+                {"tcp.flags.ack", FieldType::Boolean, tcpFlag<0x10>, "TCP ACK flag"},
+                {"tcp.flags.urg", FieldType::Boolean, tcpFlag<0x20>, "TCP URG flag"},
+                {"tcp.flags.ece", FieldType::Boolean, tcpFlag<0x40>, "TCP ECE flag"},
+                {"tcp.flags.cwr", FieldType::Boolean, tcpFlag<0x80>, "TCP CWR flag"},
+                {"tcp.len", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (hasTcp(p)) o.addU(p.length); }, "TCP payload length"},
+                {"tcp.seq", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (hasTcp(p) && p.tcp_relative_seq >= 0) o.addU(static_cast<uint64_t>(p.tcp_relative_seq)); }, "TCP relative sequence number"},
+                {"tcp.ack", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (hasTcp(p) && p.tcp_relative_ack >= 0) o.addU(static_cast<uint64_t>(p.tcp_relative_ack)); }, "TCP relative acknowledgment number"},
+                {"udp.srcport", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (hasUdp(p)) o.addU(p.src_port); }, "UDP source port"},
+                {"udp.dstport", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (hasUdp(p)) o.addU(p.dst_port); }, "UDP destination port"},
+                {"udp.port", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (hasUdp(p)) { o.addU(p.src_port); o.addU(p.dst_port); } }, "UDP source or destination port"},
+                // ---- application protocols (by the protocol column)
+                {"dns", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "DNS")) o.addU(1); }, "DNS"},
+                {"dhcp", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "DHCP")) o.addU(1); }, "DHCP"},
+                {"snmp", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "SNMP")) o.addU(1); }, "SNMP"},
+                {"telnet", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "Telnet")) o.addU(1); }, "Telnet"},
+                {"smtp", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "SMTP")) o.addU(1); }, "SMTP"},
+                {"bgp", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "BGP")) o.addU(1); }, "BGP"},
+                {"malformed", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isProtocol(p, "Malformed") || p.info.find("[Malformed Packet") != std::string::npos) o.addU(1); }, "Packet that could not be fully decoded"},
+            };
+            std::sort(t.begin(), t.end(), [](const FieldDef &a, const FieldDef &b) { return std::string_view(a.name) < b.name; });
+            return t;
+        }
+    } // namespace
+
+    const std::vector<FieldDef> &allFields() {
+        static const std::vector<FieldDef> table = buildTable();
+        return table;
+    }
+
+    const FieldDef *findField(std::string_view lowerName) {
+        const auto &t = allFields();
+        const auto it = std::lower_bound(t.begin(), t.end(), lowerName,
+                                         [](const FieldDef &f, std::string_view n) { return std::string_view(f.name) < n; });
+        return (it != t.end() && std::string_view(it->name) == lowerName) ? &*it : nullptr;
+    }
+} // namespace filter

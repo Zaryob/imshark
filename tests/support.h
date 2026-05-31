@@ -31,6 +31,7 @@ namespace support {
         info.link_type = linkType;
         std::vector<char> data = frame;
         parser.parsePacket(info, data);
+        info.captured_length = info.frame_length = static_cast<uint32_t>(frame.size());
         return info;
     }
 

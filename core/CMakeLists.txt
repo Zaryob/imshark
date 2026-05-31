@@ -13,6 +13,8 @@ add_library(imshark_core STATIC
     src/dissect/dns.cpp
     src/dissect/dhcp.cpp
     src/dissect/simple.cpp
+    src/filter/fields.cpp
+    src/filter/filter.cpp
 )
 set_target_properties(imshark_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
