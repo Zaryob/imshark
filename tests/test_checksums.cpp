@@ -307,3 +307,61 @@ TEST(Checksum, SctpCrc32cVerification) {
     EXPECT_FALSE(dissect::checkSctpCrc32c(sctpPkt.data(), sctpPkt.size(), &stored, &calculated));
     EXPECT_NE(stored, calculated);
 }
+
+// CRC-32C catalogue check value (also the test in test_sctp.cpp's comment): crc32c(b"123456789") == 0xe3069283.
+TEST(Checksum, Crc32cCatalogueCheckValue) {
+    EXPECT_EQ(dissect::crc32c("123456789", 9), 0xe3069283U);
+    EXPECT_EQ(dissect::crc32c("", 0), 0u);
+}
+
+// CRC-16/DNP catalogue check value (reveng catalogue, poly 0x3d65 refin/refout init 0 xorout 0xffff): "123456789" -> 0xea82.
+// The other values come from a bitwise Python (stdlib) implementation of the same parameters:
+//   def crc(d): c = 0; [c := c ^ x, [c := (c >> 1) ^ 0xA6BC if c & 1 else c >> 1 for _ in range(8)] for x in d]; return ~c & 0xffff
+//   crc(bytes([5, 0x64, 25, 0xc4, 1, 0, 2, 0])) == 0xc01f; crc(bytes(range(1, 17))) == 0xa5f2; crc(bytes(range(17, 21))) == 0x7b29
+TEST(Checksum, Crc16DnpCheckValues) {
+    EXPECT_EQ(dissect::crc16dnp("123456789", 9), 0xea82);
+    EXPECT_EQ(dissect::crc16dnp("", 0), 0xffff);
+    const uint8_t header[] = {5, 0x64, 25, 0xc4, 1, 0, 2, 0};
+    EXPECT_EQ(dissect::crc16dnp(reinterpret_cast<const char *>(header), sizeof(header)), 0xc01f);
+    uint8_t block[20];
+    for (int i = 0; i < 20; ++i) block[i] = static_cast<uint8_t>(i + 1);
+    EXPECT_EQ(dissect::crc16dnp(reinterpret_cast<const char *>(block), 16), 0xa5f2);
+    EXPECT_EQ(dissect::crc16dnp(reinterpret_cast<const char *>(block + 16), 4), 0x7b29);
+}
+
+// Fletcher (RFC 905 Annex B, modulo 255). Published sums: Fletcher-16 of "abcde" is 0xC8F0 (c1 = 0xC8, c0 = 0xF0) and of
+// "abcdef" 0x2057 (Wikipedia, Fletcher's checksum). The check bytes for a field inside a buffer come from this stdlib
+// Python (RFC 2328 12.1.7: the LSA without its age, checksum at index 14 of the rest):
+//   def fl(b): c0 = c1 = 0; [(c0 := (c0 + x) % 255, c1 := (c1 + c0) % 255) for x in b]; return c0, c1
+//   b = lsa[2:] with b[14:16] = 0; c0, c1 = fl(b); L = len(b); n = 15
+//   x = ((L - n) * c0 - c1) % 255 or 255; y = (c1 - (L - n + 1) * c0) % 255 or 255; fl(b with x, y filled in) == (0, 0)
+//   header 00 01 02 01 01 01 01 01 01 01 01 01 80 00 00 01 .. .. 00 14 -> 0x2b34
+//   header 0e 10 02 05 c0 a8 00 00 01 01 01 01 80 00 00 07 .. .. 00 14 -> 0x638c
+TEST(Checksum, FletcherSumsAndCheckBytes) {
+    auto sums = dissect::fletcherSums("abcde", 5);
+    EXPECT_EQ(sums.c0, 0xf0);
+    EXPECT_EQ(sums.c1, 0xc8);
+    sums = dissect::fletcherSums("abcdef", 6);
+    EXPECT_EQ((sums.c1 << 8) | sums.c0, 0x2057);
+
+    uint8_t lsa[20] = {0, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0x80, 0, 0, 1, 0, 0, 0, 20};
+    const char *body = reinterpret_cast<const char *>(lsa + 2);
+    EXPECT_EQ(dissect::fletcherCheckBytes(body, 18, 14), 0x2b34);
+    lsa[16] = 0x2b;
+    lsa[17] = 0x34;
+    EXPECT_TRUE(dissect::fletcherValid(body, 18));
+    EXPECT_EQ(dissect::checkFletcher(body, 18, 14).state, dissect::kChecksumGood);
+    lsa[17] = 0x35;
+    EXPECT_FALSE(dissect::fletcherValid(body, 18));
+    const auto bad = dissect::checkFletcher(body, 18, 14);
+    EXPECT_EQ(bad.state, dissect::kChecksumBad);
+    EXPECT_EQ(bad.expected, 0x2b34);
+    lsa[17] = 0x34;
+    lsa[5] ^= 0x10;   // any other byte flipping is detected
+    EXPECT_FALSE(dissect::fletcherValid(body, 18));
+
+    // a router LSA with one link (length 36): 0xf33a
+    uint8_t router[36] = {0, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1, 0x80, 0, 0, 1, 0, 0, 0, 36,
+                          0, 0, 0, 1, 2, 2, 2, 2, 10, 0, 0, 1, 3, 0, 0, 10};
+    EXPECT_EQ(dissect::fletcherCheckBytes(reinterpret_cast<const char *>(router + 2), 34, 14), 0xf33a);
+}

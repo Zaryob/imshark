@@ -158,16 +158,66 @@ namespace dissect {
         return stored == calculated;
     }
 
-    /// Fletcher-16 checksum (RFC 905 / RFC 2328 / Annex B of ISO 8473), modulo 255.
-    /// Used for OSPF LSA checksum verification.
-    inline uint16_t fletcher16(const char *data, size_t n, size_t skipOffset = 0, size_t skipLen = 0) {
+    /// CRC-16/DNP (IEEE 1815 / IEC 60870-5-1): polynomial 0x3D65 reflected (0xA6BC), initial value 0, final xor 0xFFFF.
+    /// The catalogue check value for "123456789" is 0xEA82. DNP3 stores it little endian after the link header and after
+    /// every block of up to 16 user data bytes.
+    inline uint16_t crc16dnp(const char *data, size_t n) {
+        uint16_t crc = 0;
+        const auto *p = reinterpret_cast<const uint8_t *>(data);
+        for (size_t i = 0; i < n; ++i) {
+            crc ^= p[i];
+            for (int bit = 0; bit < 8; ++bit) crc = (crc & 1) ? static_cast<uint16_t>((crc >> 1) ^ 0xA6BC) : static_cast<uint16_t>(crc >> 1);
+        }
+        return static_cast<uint16_t>(~crc);
+    }
+
+    /// The two running sums of the Fletcher checksum (RFC 905 Annex B / ISO 8473, modulo 255): c0 is the sum of the
+    /// bytes, c1 the sum of the running c0. For "abcde" they are c0 = 0xF0 and c1 = 0xC8.
+    struct FletcherSums { uint8_t c0 = 0, c1 = 0; };
+
+    inline FletcherSums fletcherSums(const char *data, size_t n) {
         uint32_t c0 = 0, c1 = 0;
         const auto *p = reinterpret_cast<const uint8_t *>(data);
         for (size_t i = 0; i < n; ++i) {
-            uint32_t byteVal = (i >= skipOffset && i < skipOffset + skipLen) ? 0 : p[i];
-            c0 = (c0 + byteVal) % 255;
+            c0 = (c0 + p[i]) % 255;
             c1 = (c1 + c0) % 255;
         }
-        return static_cast<uint16_t>((c0 << 8) | c1);
+        return {static_cast<uint8_t>(c0), static_cast<uint8_t>(c1)};
+    }
+
+    /// A buffer carries a valid Fletcher checksum when both sums over all of it, check bytes included, are zero.
+    inline bool fletcherValid(const char *data, size_t n) {
+        const FletcherSums s = fletcherSums(data, n);
+        return s.c0 == 0 && s.c1 == 0;
+    }
+
+    /// The two check bytes (X high, Y low) RFC 905 Annex B puts at zero-based offset `field` of an `n` byte buffer so
+    /// that fletcherValid() holds; the two bytes at `field` are taken as zero whatever they hold. A result byte of 0 is
+    /// sent as 255 (both are zero modulo 255). OSPF LSAs (RFC 2328 12.1.7) use it from the byte after the LS age.
+    inline uint16_t fletcherCheckBytes(const char *data, size_t n, size_t field) {
+        uint32_t c0 = 0, c1 = 0;
+        const auto *p = reinterpret_cast<const uint8_t *>(data);
+        for (size_t i = 0; i < n; ++i) {
+            c0 = (c0 + ((i == field || i == field + 1) ? 0 : p[i])) % 255;
+            c1 = (c1 + c0) % 255;
+        }
+        const int64_t k = static_cast<int64_t>(n) - static_cast<int64_t>(field) - 1;   // L - n in the RFC, n being 1-based
+        int64_t x = (k % 255 * c0 - c1) % 255;
+        int64_t y = (c1 - (k + 1) % 255 * c0) % 255;
+        if (x < 0) x += 255;
+        if (y < 0) y += 255;
+        if (x == 0) x = 255;
+        if (y == 0) y = 255;
+        return static_cast<uint16_t>((x << 8) | y);
+    }
+
+    /// Verdict for a Fletcher checksum stored at `field`: Good when the sums over the buffer are zero (a stored 00 and a
+    /// computed FF are the same value modulo 255, so both are accepted); `expected` is what the field should hold.
+    inline ChecksumResult checkFletcher(const char *data, size_t n, size_t field) {
+        ChecksumResult r;
+        r.stored = static_cast<uint16_t>((static_cast<uint8_t>(data[field]) << 8) | static_cast<uint8_t>(data[field + 1]));
+        r.expected = fletcherCheckBytes(data, n, field);
+        r.state = fletcherValid(data, n) ? kChecksumGood : kChecksumBad;
+        return r;
     }
 } // namespace dissect
