@@ -224,3 +224,95 @@ TEST_F(UiSmoke, ThemesCanBeSwitched) {
     ui::applyTheme(true);
     frames(state);
 }
+
+// ---- display filter integration ---------------------------------------------------------------------
+
+TEST_F(UiSmoke, AppliedFilterRestrictsTheDisplayedPackets) {
+    ui::AppState state;
+    load(state);
+    frames(state);
+    EXPECT_EQ(state.displayedCount(), 16u);
+
+    ASSERT_TRUE(ui::applyFilter(state, "tcp"));
+    EXPECT_TRUE(state.filter.active);
+    EXPECT_EQ(state.displayedCount(), 7u);
+    frames(state);
+    EXPECT_EQ(state.order, (std::vector<uint32_t>{6, 7, 8, 9, 10, 11, 15}));
+
+    ASSERT_TRUE(ui::applyFilter(state, "tcp.flags.syn && !tcp.flags.ack"));
+    frames(state);
+    EXPECT_EQ(state.order, (std::vector<uint32_t>{6}));
+
+    ASSERT_TRUE(ui::applyFilter(state, "frame.number > 100"));
+    frames(state);
+    EXPECT_TRUE(state.order.empty()) << "no match: an empty list, not the full one";
+    EXPECT_EQ(state.displayedCount(), 0u);
+
+    ASSERT_TRUE(ui::applyFilter(state, ""));
+    EXPECT_FALSE(state.filter.active);
+    frames(state);
+    EXPECT_EQ(state.order.size(), 16u);
+}
+
+TEST_F(UiSmoke, InvalidFilterKeepsThePreviousOneAndReportsTheError) {
+    ui::AppState state;
+    load(state);
+    ASSERT_TRUE(ui::applyFilter(state, "udp"));
+    EXPECT_FALSE(ui::applyFilter(state, "udp &&"));
+    EXPECT_FALSE(state.filter.previewOk);
+    EXPECT_NE(state.filter.previewError.message.find("ends unexpectedly"), std::string::npos);
+    EXPECT_EQ(state.filter.appliedText, "udp");
+    EXPECT_EQ(state.displayedCount(), 4u);
+    frames(state);                      // the red bar and the message are drawn without problems
+
+    state.filter.text = "tcp.port ==";
+    frames(state);                      // live validation of what is being typed
+    EXPECT_FALSE(state.filter.previewOk);
+    state.filter.text = "tcp";
+    frames(state);
+    EXPECT_TRUE(state.filter.previewOk);
+}
+
+TEST_F(UiSmoke, FilterSurvivesReloadAndDropsHiddenSelection) {
+    ui::AppState state;
+    load(state);
+    state.selectedPacket = 0;                        // ARP
+    frames(state);
+    ASSERT_TRUE(ui::applyFilter(state, "tcp"));
+    EXPECT_EQ(state.selectedPacket, -1) << "the selected packet is no longer displayed";
+
+    state.selectedPacket = 6;                        // a TCP packet stays selected
+    ASSERT_TRUE(ui::applyFilter(state, "tcp.port == 80"));
+    EXPECT_EQ(state.selectedPacket, 6);
+
+    load(state);                                     // open the capture again
+    EXPECT_TRUE(state.filter.active) << "a display filter stays active on a new capture";
+    EXPECT_EQ(state.displayedCount(), 5u);
+    frames(state);
+}
+
+TEST_F(UiSmoke, FilterHistoryIsRememberedAndHelpIsDrawn) {
+    ui::AppState state;
+    load(state);
+    ui::applyFilter(state, "tcp");
+    ui::applyFilter(state, "udp");
+    ui::applyFilter(state, "tcp");
+    EXPECT_EQ(state.settings.filterHistory, (std::vector<std::string>{"tcp", "udp"}));
+    state.filter.showHelp = true;
+    frames(state);
+    state.filter.helpSearch = "flags";
+    frames(state);
+    state.filter.showHelp = false;
+}
+
+TEST_F(UiSmoke, FilterAndSortingCombine) {
+    ui::AppState state;
+    load(state);
+    ASSERT_TRUE(ui::applyFilter(state, "tcp"));
+    frames(state);
+    ui::sortOrder(state.order, state.packets, ui::SortColumn::Length, false);
+    ASSERT_EQ(state.order.size(), 7u);
+    for (size_t i = 1; i < state.order.size(); ++i) {
+        EXPECT_GE(state.packets[state.order[i - 1]].length, state.packets[state.order[i]].length);
+    }
+}

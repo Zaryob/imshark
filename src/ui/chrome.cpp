@@ -57,7 +57,7 @@ void ui::drawMenuAndDialogs(AppState &state) {
             if (ImGui::MenuItem("Close File", "Ctrl+W", false, !state.currentFile.empty())) {
                 state.loadJob.reset();
                 state.packets.clear();
-                state.order.clear();
+                refilter(state);
                 state.clearSelection();
                 state.currentFile.clear();
                 state.loadMessage.clear();
@@ -85,7 +85,7 @@ void ui::drawMenuAndDialogs(AppState &state) {
     if (ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_W, false) && !state.currentFile.empty()) {
         state.loadJob.reset();
         state.packets.clear();
-        state.order.clear();
+        refilter(state);
         state.clearSelection();
         state.currentFile.clear();
         state.loadMessage.clear();
@@ -116,7 +116,11 @@ void ui::drawStatusBar(const AppState &state) {
         } else if (state.currentFile.empty()) {
             ImGui::TextUnformatted("No file loaded. Use File > Open.");
         } else {
-            ImGui::Text("%s  |  %zu packets", state.currentFile.c_str(), state.packets.size());
+            if (state.filter.active) {
+                ImGui::Text("%s  |  Displayed: %zu / %zu packets", state.currentFile.c_str(), state.displayedCount(), state.packets.size());
+            } else {
+                ImGui::Text("%s  |  %zu packets", state.currentFile.c_str(), state.packets.size());
+            }
         }
         if (!state.loadMessage.empty()) {
             ImGui::SameLine();

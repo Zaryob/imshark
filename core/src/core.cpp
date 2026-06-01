@@ -62,6 +62,8 @@ namespace {
             }
             return static_cast<double>(static_cast<int64_t>(seconds - baseSeconds)) + (fraction - baseFraction);
         }
+
+        double startEpoch() const { return set ? static_cast<double>(baseSeconds) + baseFraction : 0.0; }
     };
 
     struct Interface {
@@ -138,6 +140,7 @@ namespace {
 bool core::FileProcessor::processPcapFile(const std::string &filepath, std::vector<packet::PacketInfo> &packets,
                                           std::string &message, LoadControl *control) {
     message.clear();
+    captureStart_ = 0;
     std::ifstream file(pathFromUtf8(filepath), std::ios::binary);
     if (!file.is_open()) {
         message = "Failed to open file: " + filepath;
@@ -207,6 +210,7 @@ bool core::FileProcessor::processPcapFile(const std::string &filepath, std::vect
             return false;
         }
     }
+    captureStart_ = timeBase.startEpoch();
     reportProgress(control, fileSize, packets.size() - firstPacket);
 
     return true;
@@ -217,6 +221,7 @@ bool core::FileProcessor::processPcapFile(const std::string &filepath, std::vect
 bool core::FileProcessor::processPcapngFile(const std::string &filepath, std::vector<packet::PacketInfo> &packets,
                                             std::string &message, LoadControl *control) {
     message.clear();
+    captureStart_ = 0;
     std::ifstream file(pathFromUtf8(filepath), std::ios::binary);
     if (!file.is_open()) {
         message = "Failed to open file: " + filepath;
@@ -346,6 +351,7 @@ bool core::FileProcessor::processPcapngFile(const std::string &filepath, std::ve
         message = "Not a pcapng file";
         return false;
     }
+    captureStart_ = timeBase.startEpoch();
     reportProgress(control, fileSize, packets.size() - firstPacket);
     return true;
 }

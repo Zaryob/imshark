@@ -49,6 +49,8 @@ ui::Settings ui::loadSettings(const std::string &path) {
                 const float h = std::stof(value);
                 if (h >= 50.0f && h <= 5000.0f) settings.listHeight = h;
             } catch (...) { /* damaged value: keep the default */ }
+        } else if (key == "filter" && !value.empty() && settings.filterHistory.size() < Settings::kMaxFilterHistory) {
+            settings.filterHistory.push_back(value);
         } else if (key == "recent" && !value.empty() && settings.recentFiles.size() < Settings::kMaxRecentFiles) {
             settings.recentFiles.push_back(value);
         }
@@ -66,6 +68,7 @@ bool ui::saveSettings(const Settings &settings, const std::string &path) {
     out << "theme=" << (settings.darkTheme ? "dark" : "light") << "\n";
     out << "list_height=" << settings.listHeight << "\n";
     for (const auto &recent: settings.recentFiles) out << "recent=" << recent << "\n";
+    for (const auto &f: settings.filterHistory) out << "filter=" << f << "\n";
     return static_cast<bool>(out);
 }
 
@@ -74,4 +77,12 @@ void ui::addRecentFile(Settings &settings, const std::string &path) {
     r.erase(std::remove(r.begin(), r.end(), path), r.end());
     r.insert(r.begin(), path);
     if (r.size() > Settings::kMaxRecentFiles) r.resize(Settings::kMaxRecentFiles);
+}
+
+void ui::addFilterHistory(Settings &settings, const std::string &filterText) {
+    if (filterText.empty() || filterText.find('\n') != std::string::npos) return;
+    auto &h = settings.filterHistory;
+    h.erase(std::remove(h.begin(), h.end(), filterText), h.end());
+    h.insert(h.begin(), filterText);
+    if (h.size() > Settings::kMaxFilterHistory) h.resize(Settings::kMaxFilterHistory);
 }

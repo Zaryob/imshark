@@ -41,5 +41,11 @@ namespace core {
 
         bool processPcapngFile(const std::string &filepath, std::vector<packet::PacketInfo> &packets,
                                std::string &message, LoadControl *control = nullptr);
+
+        /// UTC epoch seconds of the first packet of the last processed file (0 if there was none).
+        double captureStartEpoch() const { return captureStart_; }
+
+    private:
+        double captureStart_ = 0;
     };
 } // namespace core

@@ -63,3 +63,18 @@ TEST(Settings, DefaultPathIsInsideAnImsharkDirectory) {
     EXPECT_NE(p.find("imshark"), std::string::npos);
     EXPECT_EQ(std::filesystem::path(p).filename(), "settings.ini");
 }
+
+TEST(Settings, FilterHistoryRoundTripsAndIsCapped) {
+    ui::Settings s;
+    for (int i = 0; i < 20; ++i) ui::addFilterHistory(s, "tcp.port == " + std::to_string(i));
+    ui::addFilterHistory(s, "");                       // empty filters are not remembered
+    ui::addFilterHistory(s, "a\nb");                   // nor are ones that would break the file format
+    EXPECT_EQ(s.filterHistory.size(), ui::Settings::kMaxFilterHistory);
+    EXPECT_EQ(s.filterHistory.front(), "tcp.port == 19");
+
+    const auto path = tempPath("filters");
+    ASSERT_TRUE(ui::saveSettings(s, path));
+    const auto loaded = ui::loadSettings(path);
+    EXPECT_EQ(loaded.filterHistory, s.filterHistory);
+    std::filesystem::remove_all(std::filesystem::path(path).parent_path());
+}

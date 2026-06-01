@@ -29,6 +29,7 @@ add_library(imshark_ui STATIC
     src/ui/chrome.cpp
     src/ui/clipboard.cpp
     src/ui/details.cpp
+    src/ui/filter_bar.cpp
     src/ui/loader.cpp
     src/ui/main_window.cpp
     src/ui/packet_list.cpp
