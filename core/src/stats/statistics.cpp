@@ -199,6 +199,7 @@ namespace stats {
             {Severity::Error, "UDP: bad checksum", "udp.checksum.status == 0"},
             {Severity::Error, "ICMP: bad checksum", "icmp.checksum.status == 0 || icmpv6.checksum.status == 0"},
             {Severity::Error, "DNP3: bad CRC-16 (link header or data block)", "dnp3.checksum.status == 0"},
+            {Severity::Error, "OSPF: bad LSA Fletcher checksum", "ospf.lsa.checksum.status == 0"},
             {Severity::Warn, "TCP: previous segment not captured", "tcp.analysis.lost_segment"},
             {Severity::Warn, "TCP: retransmission", "tcp.analysis.retransmission"},
             {Severity::Warn, "TCP: out-of-order segment", "tcp.analysis.out_of_order"},

@@ -117,9 +117,49 @@ void dissect::dissectOspf(Context &ctx, const char *data, size_t length) {
         setTransportChecksumState(pack, csumState);
     }
 
+    // LSA checksums (RFC 2328 12.1.7): Fletcher over the whole LSA except its age, the check bytes sit at offset 16 of the
+    // LSA. LSUs carry whole LSAs, so those are verified; DD and LSAck packets carry only the 20-byte headers, which
+    // cannot be checked unless the LSA is that short (Unverified). The worst state of the packet goes to app_flags
+    // (Bad, then Unverified, then Good) for ospf.lsa.checksum.status; bodies are not decoded.
+    struct Lsa { size_t off, len; uint8_t state; uint16_t stored, expected; };
+    std::vector<Lsa> lsas;
+    size_t lsuCount = 0;
+    if (version == 2 && body >= headerLen + 4) {
+        auto addLsa = [&](size_t off, bool whole) {
+            Lsa x{off, readU16(bytes + off + 18), kChecksumUnverified, readU16(bytes + off + 16), 0};
+            if (x.len < 20) { lsas.push_back(x); return false; }   // not an LSA length: nothing to check
+            if ((whole || x.len == 20) && off + x.len <= body) {
+                const ChecksumResult r = checkFletcher(data + off + 2, x.len - 2, 14);
+                x.state = r.state;
+                x.expected = r.expected;
+            }
+            lsas.push_back(x);
+            return true;
+        };
+        if (type == 2 && body >= 32) {
+            for (size_t off = 32; off + 20 <= body; off += 20) addLsa(off, false);
+        } else if (type == 5) {
+            for (size_t off = 24; off + 20 <= body; off += 20) addLsa(off, false);
+        } else if (type == 4) {
+            lsuCount = readU32(bytes + 24);
+            size_t off = 28;
+            for (size_t i = 0; i < lsuCount && off + 20 <= body; ++i) {
+                if (!addLsa(off, true)) break;
+                off += lsas.back().len;
+            }
+        }
+    }
+    uint8_t lsaState = kChecksumNone;
+    for (const Lsa &x: lsas) {
+        auto rank = [](uint8_t st) { return st == kChecksumBad ? 3 : st == kChecksumUnverified ? 2 : st == kChecksumGood ? 1 : 0; };
+        if (x.len >= 20 && rank(x.state) > rank(lsaState)) lsaState = x.state;
+    }
+    pack.app_flags = lsaState;
+
     std::string typeStr = ospfPacketTypeName(type);
     pack.info = "OSPFv" + std::to_string(version) + " " + typeStr +
                 ", Router ID: " + routerId + ", Area: " + areaId;
+    if (lsaState == kChecksumBad) pack.info += " [Bad LSA checksum]";
     if (malformed) ctx.markMalformed(malformed);   // after the summary: it replaces it
 
     if (ctx.wantFields()) {
@@ -143,6 +183,30 @@ void dissect::dissectOspf(Context &ctx, const char *data, size_t length) {
             l.add("Auth Type: " + std::to_string(authType) + " (" + authName + ")", o + 14, 2);
             l.add("Authentication Data", o + 16, 8);
         }
+
+        // One LSA (or LSA header) with its Fletcher checksum verdict.
+        auto addLsaNode = [&](Field &parent, const Lsa &x) {
+            const auto *lb = bytes + x.off;
+            const uint16_t lsaAge = readU16(lb);
+            const uint8_t lsaType = lb[3];
+            const std::string linkStateId = formatIpv4(lb + 4);
+            const std::string advRouter = formatIpv4(lb + 8);
+            const uint32_t lsaSeq = readU32(lb + 12);
+            const size_t shown = std::min<size_t>(std::max<size_t>(x.len, 20), body - x.off);
+            Field &lf = parent.add(std::string(type == 4 ? "LSA: " : "LSA Header: ") + ospfLsaTypeName(lsaType) + ", ID: " + linkStateId, o + x.off, shown);
+            lf.add("Age: " + std::to_string(lsaAge) + " seconds", o + x.off, 2);
+            lf.add("Type: " + std::to_string(lsaType) + " (" + ospfLsaTypeName(lsaType) + ")", o + x.off + 3, 1);
+            lf.add("Link State ID: " + linkStateId, o + x.off + 4, 4);
+            lf.add("Advertising Router: " + advRouter, o + x.off + 8, 4);
+            lf.add("Sequence Number: " + hexString(lsaSeq, 8), o + x.off + 12, 4);
+            Field &lc = lf.add("Checksum: " + hexString(x.stored, 4), o + x.off + 16, 2);
+            lc.add(std::string("[Checksum Status: ") + checksumStateText(x.state) + (x.state == kChecksumUnverified && x.len >= 20 ? " (the LSA body is not in this packet or was cut off)" : "") + "]", o + x.off + 16, 2);
+            if (x.state == kChecksumBad) {
+                lc.add("[Expected Checksum: " + hexString(x.expected, 4) + "]", o + x.off + 16, 2);
+                lc.add("[Expert Info (Warning/Checksum): bad OSPF LSA Fletcher checksum]", o + x.off + 16, 2);
+            }
+            lf.add("Length: " + std::to_string(x.len), o + x.off + 18, 2);
+        };
 
         // Parse Hello payload (type 1)
         if (type == 1 && body >= 44 && version == 2) {
@@ -193,28 +257,18 @@ void dissect::dissectOspf(Context &ctx, const char *data, size_t length) {
             df.add("DD Sequence Number: " + std::to_string(ddSeq), ddo + 4, 4);
 
             // LSA headers in DD (each LSA header is 20 bytes)
-            size_t lsaOff = 32;
-            while (lsaOff + 20 <= body) {
-                const auto *lb = bytes + lsaOff;
-                uint16_t lsaAge = readU16(lb);
-                uint8_t lsaType = lb[3];
-                std::string linkStateId = formatIpv4(lb + 4);
-                std::string advRouter = formatIpv4(lb + 8);
-                uint32_t lsaSeq = readU32(lb + 12);
-                uint16_t lsaCsum = readU16(lb + 16);
-                uint16_t lsaLen = readU16(lb + 18);
-
-                Field &lf = df.add("LSA Header: " + ospfLsaTypeName(lsaType) + ", ID: " + linkStateId, o + lsaOff, 20);
-                lf.add("Age: " + std::to_string(lsaAge) + " seconds", o + lsaOff, 2);
-                lf.add("Type: " + std::to_string(lsaType) + " (" + ospfLsaTypeName(lsaType) + ")", o + lsaOff + 3, 1);
-                lf.add("Link State ID: " + linkStateId, o + lsaOff + 4, 4);
-                lf.add("Advertising Router: " + advRouter, o + lsaOff + 8, 4);
-                lf.add("Sequence Number: " + hexString(lsaSeq, 8), o + lsaOff + 12, 4);
-                lf.add("Checksum: " + hexString(lsaCsum, 4), o + lsaOff + 16, 2);
-                lf.add("Length: " + std::to_string(lsaLen), o + lsaOff + 18, 2);
-
-                lsaOff += 20;
-            }
+            for (const Lsa &x: lsas) addLsaNode(df, x);
+        }
+        // Link State Acknowledgment (type 5): LSA headers only
+        else if (type == 5 && body >= 24 && version == 2) {
+            Field &af = l.add("OSPF Link State Acknowledgment", o + 24, body - 24);
+            for (const Lsa &x: lsas) addLsaNode(af, x);
+        }
+        // Link State Update (type 4): the number of LSAs, then the LSAs themselves (header and body; bodies not decoded)
+        else if (type == 4 && body >= 28 && version == 2) {
+            Field &uf = l.add("OSPF Link State Update", o + 24, body - 24);
+            uf.add("Number of LSAs: " + std::to_string(lsuCount), o + 24, 4);
+            for (const Lsa &x: lsas) addLsaNode(uf, x);
         }
     }
 }

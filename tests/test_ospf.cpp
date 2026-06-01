@@ -233,6 +233,125 @@ TEST(Ospf, TrailingBytesBeyondTheLengthAreNotNeighbors) {
     for (const auto &f: p.fields) EXPECT_FALSE(hasNeighbor(f));
 }
 
+namespace {
+    // Fills the OSPFv2 packet checksum (plain RFC 1071 sum without the authentication field), so only the LSA checksums vary.
+    Bytes withPacketChecksum(Bytes b) {
+        b[12] = b[13] = 0;
+        Bytes c(b.begin(), b.begin() + 16);
+        c.insert(c.end(), b.begin() + 24, b.end());
+        uint32_t sum = 0;
+        for (size_t i = 0; i < c.size(); i += 2) sum += (c[i] << 8) | (i + 1 < c.size() ? c[i + 1] : 0);
+        while (sum >> 16) sum = (sum & 0xffff) + (sum >> 16);
+        b[12] = static_cast<uint8_t>(~sum >> 8);
+        b[13] = static_cast<uint8_t>(~sum);
+        return b;
+    }
+
+    Bytes ospfCommon(uint8_t type, size_t total) {
+        return {0x02, type, static_cast<uint8_t>(total >> 8), static_cast<uint8_t>(total), 10, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
+    }
+
+    // LSA checksums come from stdlib Python (RFC 2328 12.1.7, RFC 905 Annex B; the script is in checksum tests):
+    //   header-only Router LSA  00 01 02 01 01010101 01010101 80000001 .... 0014 -> 0x2b34
+    //   Router LSA with one link (length 36, body 00000001 02020202 0a000001 0300000a) -> 0xf33a
+    //   header 0e10 02 05 c0a80000 01010101 80000007 .... 0014 -> 0x638c
+    Bytes lsaHeader(uint16_t age, uint8_t type, uint16_t csum, uint16_t len, uint32_t seq = 0x80000001u) {
+        return {static_cast<uint8_t>(age >> 8), static_cast<uint8_t>(age), 2, type, 1, 1, 1, 1, 1, 1, 1, 1,
+                static_cast<uint8_t>(seq >> 24), static_cast<uint8_t>(seq >> 16), static_cast<uint8_t>(seq >> 8), static_cast<uint8_t>(seq),
+                static_cast<uint8_t>(csum >> 8), static_cast<uint8_t>(csum), static_cast<uint8_t>(len >> 8), static_cast<uint8_t>(len)};
+    }
+    Bytes routerLsa(uint16_t csum) {
+        Bytes b = lsaHeader(1, 1, csum, 36);
+        b[2] = 2;
+        b.insert(b.end(), {0, 0, 0, 1, 2, 2, 2, 2, 10, 0, 0, 1, 3, 0, 0, 10});
+        return b;
+    }
+    Bytes cat(Bytes a, const Bytes &b) { a.insert(a.end(), b.begin(), b.end()); return a; }
+
+    Bytes lsUpdate(const Bytes &lsa1, const Bytes &lsa2) {
+        Bytes b = ospfCommon(4, 24 + 4 + lsa1.size() + lsa2.size());
+        b.insert(b.end(), {0, 0, 0, 2});
+        return withPacketChecksum(cat(cat(b, lsa1), lsa2));
+    }
+    packet::PacketInfo parseOspf(const Bytes &ospf) { return ospfV2(ospf); }
+    bool lsaMatches(const std::string &expr, const packet::PacketInfo &p) {
+        auto f = filter::Filter::compile(expr);
+        EXPECT_TRUE(f.ok) << expr;
+        return f.ok && f.filter.matches(p);
+    }
+    const packet::Field *findField(const std::vector<packet::Field> &nodes, const std::string &prefix) {
+        for (const auto &n: nodes) {
+            if (n.text.rfind(prefix, 0) == 0) return &n;
+            if (auto *c = findField(n.children, prefix)) return c;
+        }
+        return nullptr;
+    }
+} // namespace
+
+TEST(Ospf, LsUpdateVerifiesTheLsaFletcherChecksums) {
+    const Bytes good = lsUpdate(lsaHeader(0, 1, 0x2b34, 20), routerLsa(0xf33a));
+    const auto p = parseOspf(good);
+    EXPECT_EQ(csumState(p), dissect::kChecksumGood);   // the packet checksum is right too
+    EXPECT_TRUE(lsaMatches("ospf.type == 4 && ospf.lsa.checksum.status == 1", p));
+    EXPECT_NE(findField(p.fields, "Number of LSAs: 2"), nullptr);
+    EXPECT_NE(findField(p.fields, "LSA: Router LSA, ID: 1.1.1.1"), nullptr);
+    EXPECT_NE(findField(p.fields, "[Checksum Status: Good]"), nullptr);
+    EXPECT_EQ(p.info.find("Bad LSA"), std::string::npos);
+
+    // the age is not covered: the same LSAs aged by an hour still verify
+    Bytes aged = good;
+    aged[28] = 0x0e; aged[29] = 0x10;
+    EXPECT_TRUE(lsaMatches("ospf.lsa.checksum.status == 1", parseOspf(withPacketChecksum(aged))));
+
+    // one flipped body byte of the second LSA: bad, with the expected value and an expert line
+    Bytes badBody = good;
+    badBody[28 + 20 + 30] ^= 0x04;
+    const auto bb = parseOspf(withPacketChecksum(badBody));
+    EXPECT_TRUE(lsaMatches("ospf.lsa.checksum.status == 0", bb));
+    EXPECT_NE(findField(bb.fields, "[Expected Checksum: "), nullptr);
+    EXPECT_NE(findField(bb.fields, "[Expert Info (Warning/Checksum): bad OSPF LSA Fletcher checksum]"), nullptr);
+    EXPECT_NE(bb.info.find("[Bad LSA checksum]"), std::string::npos);
+
+    // a wrong stored checksum on the first LSA
+    const auto wrong = parseOspf(lsUpdate(lsaHeader(0, 1, 0x2b35, 20), routerLsa(0xf33a)));
+    EXPECT_TRUE(lsaMatches("ospf.lsa.checksum.status == 0", wrong));
+    EXPECT_NE(findField(wrong.fields, "[Expected Checksum: 0x2b34]"), nullptr);
+
+    // cut inside the second LSA: the first is still checked, the whole stays Unverified
+    Bytes cut = good;
+    cut.resize(cut.size() - 6);
+    EXPECT_TRUE(lsaMatches("ospf.lsa.checksum.status == 2", parseOspf(cut)));
+    Bytes cutBad = lsUpdate(lsaHeader(0, 1, 0x2b35, 20), routerLsa(0xf33a));
+    cutBad.resize(cutBad.size() - 6);
+    EXPECT_TRUE(lsaMatches("ospf.lsa.checksum.status == 0", parseOspf(cutBad)));
+}
+
+TEST(Ospf, LsAckAndDatabaseDescriptionCarryHeadersOnly) {
+    // headers of LSAs longer than 20 bytes cannot be verified without their bodies: Unverified, never Bad
+    Bytes ack = ospfCommon(5, 24 + 40);
+    ack = withPacketChecksum(cat(cat(ack, lsaHeader(0x0e10, 5, 0x638c, 36)), lsaHeader(1, 1, 0xf33a, 36)));
+    const auto a = parseOspf(ack);
+    EXPECT_EQ(a.app_type, 5);
+    EXPECT_TRUE(lsaMatches("ospf.lsa.checksum.status == 2", a));
+    EXPECT_NE(findField(a.fields, "OSPF Link State Acknowledgment"), nullptr);
+    EXPECT_NE(findField(a.fields, "LSA Header: AS-External LSA, ID: 1.1.1.1"), nullptr);
+
+    // a 20-byte LSA is its own header, so it is checked (here: a header with a wrong checksum, then a right one)
+    Bytes ack20 = withPacketChecksum(cat(cat(ospfCommon(5, 24 + 40), lsaHeader(0, 1, 0x2b00, 20)), lsaHeader(0, 1, 0x2b34, 20)));
+    EXPECT_TRUE(lsaMatches("ospf.lsa.checksum.status == 0", parseOspf(ack20)));
+    Bytes ack20Good = withPacketChecksum(cat(ospfCommon(5, 24 + 20), lsaHeader(0, 1, 0x2b34, 20)));
+    EXPECT_TRUE(lsaMatches("ospf.lsa.checksum.status == 1", parseOspf(ack20Good)));
+
+    Bytes dd = ospfCommon(2, 32 + 20);
+    dd.insert(dd.end(), {0x05, 0xdc, 0x02, 0x07, 0x00, 0x00, 0x12, 0x34});
+    const auto d = parseOspf(withPacketChecksum(cat(dd, lsaHeader(0, 1, 0x2b34, 20))));
+    EXPECT_TRUE(lsaMatches("ospf.lsa.checksum.status == 1", d));
+    EXPECT_NE(findField(d.fields, "LSA Header: Router LSA, ID: 1.1.1.1"), nullptr);
+
+    // no LSAs: no status
+    EXPECT_FALSE(lsaMatches("ospf.lsa.checksum.status == 1 || ospf.lsa.checksum.status == 0 || ospf.lsa.checksum.status == 2", ospfV2(helloV2(0x794b))));
+}
+
 TEST(Ospf, TruncationAndMutationStayInsideTheFrame) {
     Bytes dd = {0x02, 0x02, 0x00, 0x34, 10, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x05, 0xdc, 0x02, 0x07, 0x00, 0x00, 0x12, 0x34,
                 0x00, 0x01, 0x02, 0x01, 1, 1, 1, 1, 1, 1, 1, 1, 0x80, 0, 0, 1, 0x12, 0x34, 0x00, 0x14};
@@ -241,6 +360,9 @@ TEST(Ospf, TruncationAndMutationStayInsideTheFrame) {
     framesweep::sweep(framesweep::ethernet(0x0800, framesweep::ipv4Packet(89, helloV2(0x794b), {10, 0, 0, 1}, {224, 0, 0, 5})), 0x05bf0001u);
     framesweep::sweep(framesweep::ethernet(0x0800, framesweep::ipv4Packet(89, withNeighbors, {10, 0, 0, 1}, {224, 0, 0, 5})), 0x05bf0002u);
     framesweep::sweep(framesweep::ethernet(0x0800, framesweep::ipv4Packet(89, dd, {10, 0, 0, 1}, {224, 0, 0, 5})), 0x05bf0003u);
+    framesweep::sweep(framesweep::ethernet(0x0800, framesweep::ipv4Packet(89, lsUpdate(lsaHeader(0, 1, 0x2b34, 20), routerLsa(0xf33a)), {10, 0, 0, 1}, {224, 0, 0, 5})), 0x05bf0005u);
+    Bytes ackSweep = withPacketChecksum(cat(cat(ospfCommon(5, 24 + 40), lsaHeader(0x0e10, 5, 0x638c, 36)), lsaHeader(0, 1, 0x2b34, 20)));
+    framesweep::sweep(framesweep::ethernet(0x0800, framesweep::ipv4Packet(89, ackSweep, {10, 0, 0, 1}, {224, 0, 0, 5})), 0x05bf0006u);
     const Bytes src = {0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
     const Bytes dst = {0xff, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5};
     framesweep::sweep(framesweep::ethernet(0x86dd, framesweep::ipv6Packet(89, helloV3(0xf989), src, dst)), 0x05bf0004u);
