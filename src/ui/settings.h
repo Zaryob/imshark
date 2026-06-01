@@ -3,6 +3,8 @@
 #include <string>
 #include <vector>
 
+#include "color_rules.h"
+
 namespace ui {
     /// User preferences that survive restarts. Stored as a small key=value text file.
     struct Settings {
@@ -13,6 +15,8 @@ namespace ui {
         std::vector<std::string> recentFiles; // most recent first
         std::vector<std::string> filterHistory; // applied display filters, most recent first
         bool darkTheme = true;
+        bool colorize = true;                  // color packet list rows by the coloring rules
+        std::vector<ColorRule> colorRules;     // user's rules; empty = use the built-in defaults
         float listHeight = 300.0f;             // height of the packet list (splitter position)
     };
 

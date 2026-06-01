@@ -7,6 +7,7 @@
 #include <filter/filter.h>
 #include <packet/packet_info.h>
 
+#include "color_rules.h"
 #include "settings.h"
 
 namespace ui {
@@ -52,6 +53,12 @@ namespace ui {
         int selectionStart = -1;                         // highlighted byte range in the hex view (inclusive)
         int selectionEnd = -1;
         bool revealSelectedField = false;                // expand the tree down to `selectedField` next frame
+
+        // Coloring rules in effect (compiled from settings.colorRules or the defaults) and the editor window
+        CompiledColorRules colors;
+        bool showColorRules = false;
+        bool colorRulesWereOpen = false;        // editor window state: to detect "just opened"
+        std::vector<ColorRule> colorRuleEdit;   // working copy while the editor is open
 
         // Display filter and packet list presentation
         FilterState filter;

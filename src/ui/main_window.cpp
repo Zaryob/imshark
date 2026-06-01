@@ -35,4 +35,5 @@ void ui::drawMainWindow(AppState &state) {
     }
     ImGui::End();
     drawFilterHelp(state);
+    drawColorRulesWindow(state);
 }

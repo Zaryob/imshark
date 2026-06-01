@@ -78,3 +78,18 @@ TEST(Settings, FilterHistoryRoundTripsAndIsCapped) {
     EXPECT_EQ(loaded.filterHistory, s.filterHistory);
     std::filesystem::remove_all(std::filesystem::path(path).parent_path());
 }
+
+TEST(Settings, ColorRulesAndColorizeRoundTrip) {
+    ui::Settings s;
+    s.colorize = false;
+    s.colorRules = {{true, "A", "tcp", 0x112233, 0x445566}, {false, "B", "udp && ip.ttl < 5", 0xFFFFFF, 0x000000}};
+    const auto path = tempPath("colors");
+    ASSERT_TRUE(ui::saveSettings(s, path));
+    const auto loaded = ui::loadSettings(path);
+    EXPECT_FALSE(loaded.colorize);
+    EXPECT_EQ(loaded.colorRules, s.colorRules);
+
+    EXPECT_TRUE(ui::loadSettings("/no/such/file").colorRules.empty()) << "empty = built-in defaults";
+    EXPECT_TRUE(ui::loadSettings("/no/such/file").colorize);
+    std::filesystem::remove_all(std::filesystem::path(path).parent_path());
+}

@@ -316,3 +316,25 @@ TEST_F(UiSmoke, FilterAndSortingCombine) {
         EXPECT_GE(state.packets[state.order[i - 1]].length, state.packets[state.order[i]].length);
     }
 }
+
+TEST_F(UiSmoke, ColoringRulesDrawAndCanBeEdited) {
+    ui::AppState state;
+    ui::initSettings(state, "");      // defaults, nothing persisted
+    load(state);
+    EXPECT_TRUE(state.settings.colorize);
+    frames(state);                    // rows are drawn with their colors
+
+    state.showColorRules = true;
+    frames(state);                    // the editor window
+    ASSERT_EQ(state.colorRuleEdit, ui::defaultColorRules());
+
+    state.settings.colorRules = {{true, "only", "arp", 0x00FF00, 0x000000}, {true, "bad", "arp &&", 0, 0}};
+    ui::recompileColorRules(state);
+    EXPECT_EQ(state.colors.problems().size(), 1u);
+    frames(state);
+
+    state.settings.colorize = false;  // "Colorize Packet List" off
+    frames(state);
+    state.showColorRules = false;
+    frames(state);
+}

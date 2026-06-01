@@ -117,6 +117,19 @@ void ui::drawPacketList(AppState &state, float height) {
                 const int i = static_cast<int>(state.order[row]);
                 const auto &packet = state.packets[i];
                 ImGui::TableNextRow();
+                const ColorRule *rule = nullptr;
+                if (state.settings.colorize) {
+                    filter::Context context;
+                    context.previous = i ? &state.packets[i - 1] : nullptr;
+                    context.captureStartEpoch = state.captureStartEpoch;
+                    rule = state.colors.match(packet, context);
+                }
+                if (rule) {
+                    const ImU32 bg = IM_COL32((rule->background >> 16) & 0xFF, (rule->background >> 8) & 0xFF, rule->background & 0xFF, 255);
+                    ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0, bg);
+                    ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg1, bg);
+                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32((rule->foreground >> 16) & 0xFF, (rule->foreground >> 8) & 0xFF, rule->foreground & 0xFF, 255));
+                }
                 ImGui::TableSetColumnIndex(0);
                 const bool selected = state.selectedPacket == i;
                 if (ImGui::Selectable(std::to_string(packet.number).c_str(), selected, ImGuiSelectableFlags_SpanAllColumns)) {
@@ -145,6 +158,7 @@ void ui::drawPacketList(AppState &state, float height) {
                 ImGui::Text("%u", packet.length);
                 ImGui::TableSetColumnIndex(6);
                 ImGui::TextUnformatted(packet.info.c_str());
+                if (rule) ImGui::PopStyleColor();
             }
         }
         state.scrollToSelection = false;
