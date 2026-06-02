@@ -1,0 +1,370 @@
+_ws.col.info	string	Info column	12038	12038	dbbfabc4873b3ac1
+_ws.col.protocol	string	Protocol column	12038	12038	abac8fb7eed7b901
+ah	boolean	IPsec Authentication Header	1043	1043	c9e1d0d630cf7e83
+ah.sequence	unsigned	AH Sequence Number	1043	1043	e1d1bb53a44480a9
+ah.spi	unsigned	AH Security Parameters Index (SPI)	1043	1043	bfa336e75d6be5eb
+arp	boolean	ARP / RARP	316	316	53429b559af9c0c3
+bgp	boolean	BGP	154	154	e266f6bee5070443
+bgp.as	unsigned	BGP Autonomous System number	154	154	9171519d063baebe
+bgp.nlri	string	BGP Network Layer Reachability Information prefix	129	129	d8b540bd649bea0d
+bgp.notification.code	unsigned	BGP notification error code	7	7	5b9957f277035ce1
+bgp.type	unsigned	BGP message type (1 = OPEN, 2 = UPDATE, 3 = NOTIFICATION, 4 = KEEPALIVE, 5 = ROUTE-REFRESH)	154	154	0e159d92b104565a
+bt.addr	string	Bluetooth source or destination: host, controller (hciN), or a connection handle	2700	5026	f7b38c6312c6d702
+bt.handle	string	Bluetooth ACL connection handle (0x0040 form)	391	407	2925d4d68c9b2720
+dcerpc	boolean	DCE/RPC	150	150	a424813429b2c343
+dcerpc.cn_call_id	unsigned	DCE/RPC call id	150	150	fa194ff33b5ff673
+dcerpc.if_uuid	string	DCE/RPC interface UUID of the first presentation context of a Bind / Alter_context	118	118	ea17ea265568a815
+dcerpc.opnum	unsigned	DCE/RPC operation number of a Request	64	64	5973597d318f84b1
+dcerpc.pkt_type	unsigned	DCE/RPC PDU type (0 Request, 2 Response, 3 Fault, 11 Bind, 12 Bind_ack)	150	150	a9a9a6e137fb133f
+dhcp	boolean	DHCP	166	166	8d2da8d065fd2f43
+dhcp.option.hostname	string	DHCP host name option	132	132	d97d9c7850ab36a5
+dhcp.type	unsigned	DHCP message type (1 = Discover, 2 = Offer, 3 = Request, 5 = ACK ...)	156	156	a73f4233bcfe77a8
+dnp3	boolean	Distributed Network Protocol 3.0	185	185	72ed55154b9bc803
+dnp3.checksum.status	unsigned	DNP3 CRC-16 of the link header and all data blocks: 0 = bad (any), 1 = good, 2 = unverified (block cut by the capture)	185	185	c2593c281afdeaa1
+dnp3.data.checksum.status	unsigned	DNP3 CRC-16 of all user data blocks: 0 = bad (any block), 1 = good, 2 = unverified, 3 = not present (no user data)	185	185	d3c189dc96624061
+dnp3.header.checksum.status	unsigned	DNP3 link header CRC-16: 0 = bad, 1 = good	185	185	6f8aad9ecbf65203
+dns	boolean	DNS	151	151	ee71326482699783
+dns.flags.rcode	unsigned	DNS reply code (0 = no error, 3 = NXDOMAIN ...)	293	293	28c991b2b0115209
+dns.flags.response	boolean	DNS message is a response	293	293	80216c2e4c84f6a3
+dns.flags.truncated	boolean	DNS message is truncated	293	293	85df18084fa86c03
+dns.qry.name	string	Name of the first DNS question	246	246	3fb34c87d795b459
+dns.qry.type	unsigned	Type of the first DNS question (1 = A, 28 = AAAA, 15 = MX ...)	246	246	4183482f1706cfa9
+dtls	boolean	Datagram TLS (DTLS)	145	145	65516e98207ff603
+dtls.decrypted	boolean	The packet carries DTLS records that were decrypted with a key log	145	145	c1b883cfa0048142
+dtls.decryption_status	string	What became of the protected DTLS records of the packet: decrypted, tag_failure (wrong key), no_key, unsupported_suite, malformed, unavailable (no OpenSSL), no_handshake, state_lost	1	1	35e62130584cbce2
+dtls.handshake.certificate_subject	string	Common name of the first certificate in a Certificate message	117	117	a49057ce2905f145
+dtls.handshake.cookie_length	unsigned	Length of the cookie of a ClientHello or HelloVerifyRequest	89	89	9c71d89631252bbb
+dtls.handshake.extensions_server_name	string	Server name indication (SNI) of a ClientHello	119	119	be5ee103ab680c82
+dtls.handshake.type	unsigned	First handshake message type (1 = ClientHello, 2 = ServerHello, 3 = HelloVerifyRequest ...)	139	139	db6d454cfe396aca
+dtls.record.content_type	unsigned	Content type of the first DTLS record (22 = handshake, 23 = application data)	124	124	c0bfa3ea0931f084
+dtls.record.epoch	unsigned	Epoch of the first DTLS record	124	124	2d2e535a51ecb1a3
+dtls.record.sequence_number	unsigned	48 bit sequence number of the first DTLS record	124	124	9c5ff4260ff73a68
+dtls.record.version	unsigned	Version of the first DTLS record (0xfefd = DTLS 1.2, 0xfeff = 1.0; 0xfefc for a DTLS 1.3 unified header)	141	141	847f7f2f58437e40
+eap	boolean	Extensible Authentication Protocol	172	172	4d3fb5abeebef0c3
+eap.code	unsigned	EAP code (1 = Request, 2 = Response, 3 = Success, 4 = Failure)	151	151	efcb062e32718a2e
+eap.identity	string	EAP Identity username/string	3	3	125dbd853e05132f
+eap.type	unsigned	EAP type (1 = Identity, 13 = TLS, 25 = PEAP, 43 = FAST)	152	152	20a6f24840a70c80
+eapol	boolean	IEEE 802.1X / EAPOL packet	608	608	06383d40024c49c3
+eapol.keydes.msgnr	unsigned	WPA 4-way handshake message number (1, 2, 3, 4)	4	4	98657868dabfc2fc
+eapol.keydes.type	unsigned	EAPOL-Key descriptor type (1 = RC4, 2 = RSN, 254 = WPA)	4	4	9d083ecb0f90b00d
+eapol.type	unsigned	802.1X packet type (0 = EAP, 1 = Start, 2 = Logoff, 3 = Key)	608	608	26b975b8243552a4
+esp	boolean	IPsec Encapsulating Security Payload	1071	1071	4ea3f7e1c1528183
+esp.sequence	unsigned	ESP Sequence Number	1071	1071	7da3878961695ffd
+esp.spi	unsigned	ESP Security Parameters Index (SPI)	1071	1071	9c6d55172a3319eb
+eth	boolean	Ethernet frame	1121	1121	2529a14c40eab203
+eth.addr	string	Ethernet source or destination address (frames the summary still holds MAC addresses for: not IP packets)	79	86	2869bffdf53a502f
+eth.dst	string	Ethernet destination address (frames the summary still holds MAC addresses for: not IP packets)	38	38	00d4ee9b64de2237
+eth.len	unsigned	IEEE 802.3 length field	253	253	5835bf4e9aeda668
+eth.src	string	Ethernet source address (frames the summary still holds MAC addresses for: not IP packets)	48	48	5928acb3b6c0a323
+eth.type	unsigned	EtherType	3335	3335	12018fd1087b6087
+frame.cap_len	unsigned	Number of bytes captured	12038	12038	04bde8037776fd30
+frame.comment	boolean	The capture file has a comment for this packet (pcapng)	12038	12038	80de670e0117af43
+frame.len	unsigned	Length of the frame on the wire	12038	12038	ff9aa815462169c0
+frame.number	unsigned	Packet number (1-based)	12038	12038	466fe97f1f995e1d
+frame.time_delta	float	Seconds since the previous captured packet	12038	12038	cb17a3a5a842c657
+frame.time_epoch	float	Arrival time as UTC epoch seconds	12038	12038	8e8b4262bbbd8124
+frame.time_relative	float	Seconds since the first packet	12038	12038	3ddf099abb7443be
+ftp	boolean	FTP	155	155	d4a5c8f50877ec83
+ftp.arg	string	FTP command or response argument	131	131	c9f285817678f01c
+ftp.command	string	FTP command name (e.g. USER, PASS, PORT, PASV, RETR)	3	3	700f0161b0228ba1
+ftp.req	boolean	FTP command/request	4	4	21f7fc0071f83ac3
+ftp.response.code	unsigned	FTP response code (e.g. 200, 220, 227, 230, 550)	5	5	ffb1d16950a4cc14
+ftp.rsp	boolean	FTP server response	5	5	4728b634af365f03
+ftp_data	boolean	FTP-DATA	147	147	545d7646a2441e83
+gre	boolean	Generic Routing Encapsulation	2253	2253	dce8369316d0d903
+gre.flags.checksum	boolean	GRE Checksum present flag	2253	2253	be615fa09c4224c3
+gre.flags.key	boolean	GRE Key present flag	2253	2253	d7f01496796a9622
+gre.flags.routing	boolean	GRE Routing present flag	2253	2253	4f31a3942fd94fa2
+gre.flags.sequence	boolean	GRE Sequence Number present flag	2253	2253	56eec25cf2f33c02
+gre.key	unsigned	GRE Key (low 16 bits)	148	148	b85be997b146b8b0
+gre.proto	unsigned	GRE Protocol Type (0x0800 = IPv4, 0x86DD = IPv6, 0x6558 = Ethernet, 0x880B = PPP)	2253	2253	1efff6d38646c800
+gre.sequence_number	unsigned	GRE Sequence Number (low 16 bits)	162	162	c38caade9ca76a1e
+gre.version	unsigned	GRE Version (0 = RFC 2784, 1 = Enhanced GRE/RFC 2637)	2253	2253	fce329d6cd413583
+http	boolean	HTTP/1.x	156	156	6a06615c109d04c3
+http.content_type	string	HTTP response Content-Type	1	1	d9b57571c5ce9f05
+http.host	string	HTTP Host header	124	124	35617c3c78b6dca4
+http.request	boolean	HTTP request	156	156	a479ca5e23547d63
+http.request.method	string	HTTP request method (GET, POST ...)	6	6	82a1131dbb2cd972
+http.request.uri	string	HTTP request URI	6	6	a39403598856bbeb
+http.response	boolean	HTTP response	156	156	d779533efc43d322
+http.response.code	unsigned	HTTP response status code	1	1	67aced0bddddb226
+http2	boolean	HTTP/2	159	159	b07a50fb4a633d83
+http2.flags	unsigned	HTTP/2 frame flags	159	159	7265ee13186ea43a
+http2.headers.method	string	HTTP/2 request method	130	130	69e68ac88009ccca
+http2.headers.path	string	HTTP/2 request path	132	132	e597ee74f4f076ad
+http2.headers.status	unsigned	HTTP/2 response status code	149	149	026aa205e0d53d44
+http2.streamid	unsigned	HTTP/2 stream identifier	159	159	226f768993bccf64
+http2.type	unsigned	HTTP/2 frame type (0 = DATA, 1 = HEADERS, 4 = SETTINGS ...)	159	159	90a4d3c2aacf80a1
+icmp	boolean	ICMP	366	366	62abaa500f33cd43
+icmp.checksum.status	unsigned	ICMP checksum: 0 = bad, 1 = good, 2 = unverified	613	613	9635622a5db539c2
+icmp.code	unsigned	ICMP message code	5	5	a889737b2eb6b4cf
+icmp.type	unsigned	ICMP message type	5	5	d358d23822bbd2d3
+icmpv6	boolean	ICMPv6	345	345	b39a197576abb803
+icmpv6.checksum.status	unsigned	ICMPv6 checksum: 0 = bad, 1 = good, 2 = unverified	582	582	300e4bf5ead21621
+icmpv6.code	unsigned	ICMPv6 message code	48	48	91fb4cf5cb6f2b66
+icmpv6.type	unsigned	ICMPv6 message type	48	48	934f31fcebdd77f4
+igmp	boolean	Internet Group Management Protocol	1036	1036	e55b6c8268726cc3
+igmp.group	string	IGMP Multicast Group Address	115	115	a4e8486dd24b93a1
+igmp.type	unsigned	IGMP Message Type (0x11 Query, 0x12 v1 Report, 0x16 v2 Report, 0x17 Leave, 0x22 v3 Report)	124	124	6736d2f629a6bc81
+ike	boolean	Internet Key Exchange / ISAKMP	300	300	69361d1261f278c3
+ike.exchange_type	unsigned	IKE Exchange Type	300	300	c1036d318ac85109
+ike.version	unsigned	IKE Version (1 or 2)	300	300	91f1d88e6b0576ce
+info	string	Info column (alias of _ws.col.info)	12038	12038	dbbfabc4873b3ac1
+ip	boolean	IPv4	4763	4763	d06f23c951fe5c83
+ip.addr	ipv4	IPv4 source or destination address	2960	3657	36c6a1c80e6ac2ec
+ip.checksum.status	unsigned	IPv4 header checksum: 0 = bad, 1 = good, 2 = unverified (offload or truncated), 3 = not present	4763	4763	c1e23c7588b7b143
+ip.dst	ipv4	IPv4 destination address	1788	1788	300d74c90e6ffc5b
+ip.fragment	boolean	IPv4 fragment (part of a fragmented datagram)	4763	4763	e2bad481e5fe0862
+ip.id	unsigned	IPv4 identification	4763	4763	b5bc3eea1ec9fbb0
+ip.proto	unsigned	IPv4 protocol number	4763	4763	5e159fc086ea86af
+ip.reassembled	boolean	Last IPv4 fragment: the datagram was reassembled here	4763	4763	9493390213d90f22
+ip.src	ipv4	IPv4 source address	1869	1869	8f56de61f9dc2226
+ip.ttl	unsigned	IPv4 time to live	4763	4763	609219a732ff1478
+ip.version	unsigned	IPv4 version	4763	4763	b514f79443a6d086
+ipip	boolean	IP-in-IP tunnel (protocol 4 or 41)	2199	2199	6bbefc5148a4ab83
+ipv6	boolean	IPv6	4794	4794	30fde667ffb9f443
+ipv6.addr	ipv6	IPv6 source or destination address	2991	3680	f431b171c3c6371d
+ipv6.dst	ipv6	IPv6 destination address	1833	1833	df8a31627658cd39
+ipv6.fragment	boolean	IPv6 fragment (part of a fragmented datagram)	4794	4794	dd92f19ee50157a2
+ipv6.fragment.id	unsigned	IPv6 Fragment Header identification	3209	3209	2c1f1d4d37a8eb59
+ipv6.hlim	unsigned	IPv6 hop limit	4794	4794	30772293bdf10b9d
+ipv6.nxt	unsigned	IPv6 next header (after extension headers)	4794	4794	747c0d48929251e8
+ipv6.reassembled	boolean	Last IPv6 fragment: the datagram was reassembled here	4794	4794	ed60f02b7dcd3603
+ipv6.src	ipv6	IPv6 source address	1847	1847	5162c2c6e6bfeef1
+kerberos	boolean	Kerberos	137	137	38ee9af0124e7803
+kerberos.cname	string	Kerberos client principal name	116	116	c32a64f8fb0275dd
+kerberos.error_code	unsigned	Kerberos KRB-ERROR error code (25 = KDC_ERR_PREAUTH_REQUIRED)	2	2	0b4bec3287f23a52
+kerberos.msg_type	unsigned	Kerberos message type (10 AS-REQ, 11 AS-REP, 12 TGS-REQ, 13 TGS-REP, 14 AP-REQ, 15 AP-REP, 30 KRB-ERROR)	137	137	95256489bbb997ce
+kerberos.realm	string	Kerberos realm	105	105	729ec3f13dbc700d
+kerberos.sname	string	Kerberos service principal name	21	21	62a2de0760e8fb18
+lacp	boolean	Link Aggregation Control Protocol	169	169	9ab7a3b0df3ca403
+lacp.actor.port	unsigned	LACP Actor Port number	169	169	9bccf32dbed0fe57
+lacp.actor.state	unsigned	LACP Actor State byte	169	169	0de9b485101a5df3
+lacp.actor.state.activity	boolean	LACP Actor Activity bit	169	169	89c6364dfa49fee3
+lacp.actor.state.collecting	boolean	LACP Actor Collecting bit	169	169	6e58ea5573d195c3
+lacp.actor.state.distributing	boolean	LACP Actor Distributing bit	169	169	d962531efa5e9242
+lacp.actor.state.synchronization	boolean	LACP Actor Synchronization bit	169	169	61780890d5489022
+lacp.actor.system	string	LACP Actor System ID (MAC)	145	145	cd2383a22b48415d
+lacp.partner.port	unsigned	LACP Partner Port number	169	169	5e3c3e0c0930f669
+lacp.partner.state	unsigned	LACP Partner State byte	169	169	4d8d2d1751745e2a
+lacp.partner.system	string	LACP Partner System ID (MAC)	135	135	28c91e280345d1ae
+ldap	boolean	Lightweight Directory Access Protocol	154	154	e5e715b83f320c43
+ldap.extended_name	string	LDAP extended operation OID (1.3.6.1.4.1.1466.20037 is StartTLS)	119	119	8300f162c7b23218
+ldap.message_id	unsigned	LDAP Message ID	154	154	bffeb6756889f402
+ldap.name	string	LDAP Distinguished Name / Target Object	119	119	d5ff705dc6b0072f
+ldap.protocol_op	unsigned	LDAP Protocol Operation (Application tag)	144	144	48e65d1a7df044d4
+ldap.result_code	unsigned	LDAP result code of a response (0 success, 49 invalidCredentials, ...)	60	60	9aaebc45cdb7db19
+llc	boolean	IEEE 802.2 Logical-Link Control	4995	4995	9449e67f865a6283
+llc.control	unsigned	LLC Control Field	758	758	d10381180acd7d6b
+llc.dsap	unsigned	LLC Destination Service Access Point (DSAP)	758	758	de41562e9a3af6ad
+llc.ssap	unsigned	LLC Source Service Access Point (SSAP)	758	758	b684736f18b280bf
+lldp	boolean	Link Layer Discovery Protocol	431	431	ee98762a3d8bed83
+lldp.capabilities	unsigned	LLDP System Capabilities (enabled bits)	431	431	a648059aaee6ae03
+lldp.chassis_id	string	LLDP Chassis ID	343	343	5f8f5b04a9295d82
+lldp.port_id	string	LLDP Port ID	339	339	09d3ca3c82eb4571
+lldp.ttl	unsigned	LLDP Time To Live in seconds	431	431	3c8bf2ea5b4092f6
+mac_control	boolean	Ethernet MAC Control	442	442	1336253c7c2b7043
+mac_control.opcode	unsigned	MAC Control opcode (0x0001 PAUSE, 0x0101 PFC)	442	442	41e14c02da937dd4
+malformed	boolean	Packet that could not be fully decoded	3102	3102	592aaef761d98d43
+mdns	boolean	Multicast DNS	142	142	bacb5bc089ac8143
+mount.path	string	Mount directory path of a MNT / UMNT call	126	126	39f3ca677a3b2bcf
+mpls	boolean	MultiProtocol Label Switching	642	642	5d53dd071310e243
+mpls.bottom_of_stack	boolean	MPLS Bottom of Stack flag (outermost label)	642	642	a3fb16d0842aa282
+mpls.exp	unsigned	MPLS Experimental (TC) Bits	642	642	41a0be2dbd888c02
+mpls.label	unsigned	MPLS Label Value (outermost label)	642	642	be36921394f4ee01
+mpls.label1	unsigned	MPLS Label Value (second label in the stack)	569	569	ec84c9f97464a74b
+mpls.ttl	unsigned	MPLS Time To Live	642	642	fbbc36da473daa21
+mysql	boolean	MySQL client/server protocol	170	170	a995db5792455c43
+mysql.command	unsigned	MySQL command of a client packet (3 COM_QUERY, 2 COM_INIT_DB, 1 COM_QUIT, 22 COM_STMT_PREPARE, ...)	42	42	2d13b3c5f0ac20d3
+mysql.error_code	unsigned	MySQL error code of an ERR packet	65	65	74bc99b43416334f
+mysql.from_server	boolean	MySQL packet sent by the server	170	170	4629f6233a23d7e3
+mysql.packet_number	unsigned	MySQL packet (sequence) number	170	170	a1bf0b45fed35f22
+mysql.query	string	MySQL SQL text of COM_QUERY / COM_STMT_PREPARE (or the schema of COM_INIT_DB)	136	136	9ad07a820cf4c48a
+mysql.ssl_request	boolean	MySQL SSL request (TLS handshake follows)	170	170	cfda4df9670878c2
+mysql.user	string	MySQL user name of the login request	62	62	63a88a586643c282
+mysql.version	string	MySQL server version of the initial handshake	47	47	061c1cda5571c6da
+nfs	boolean	Network File System call	297	297	93fece66d4752003
+nfs.name	string	NFS file name of a LOOKUP / CREATE / MKDIR / REMOVE / RMDIR call	236	236	ff509be9868a4abc
+nfs.proc	unsigned	NFS procedure of a call (v3: 1 GETATTR, 3 LOOKUP, 6 READ, 7 WRITE; v4: 1 COMPOUND)	297	297	63fe22613a586fef
+nfs.version	unsigned	NFS protocol version of a call	297	297	e76f9c80dd7be6cb
+ntp	boolean	NTP	172	172	8bbf68298bc550c3
+ntp.ctrl.opcode	unsigned	Opcode of an NTP control message (2 = read variables)	8	8	1c0e9d892bd8aaae
+ntp.mode	unsigned	NTP mode (3 = client, 4 = server)	172	172	11889a9f5ae90a01
+ntp.priv.reqcode	unsigned	Request code of an NTP private (mode 7) message	4	4	d1a5480c492a5d3a
+ntp.stratum	unsigned	NTP stratum	33	33	4ebb52d5e8b29443
+ntp.version	unsigned	NTP version	172	172	c4f4b38baa748029
+ospf	boolean	Open Shortest Path First	992	992	b165c1a8671cb9c3
+ospf.area_id	string	OSPF Area ID	111	111	29a1307e24389ed0
+ospf.lsa.checksum.status	unsigned	OSPFv2 LSA Fletcher checksum (RFC 2328 12.1.7) of the LSAs in a DD, LSU or LSAck: 0 = bad (any), 1 = good, 2 = unverified (headers only, or cut off); absent without LSAs	89	89	cd7af2e55417db43
+ospf.router_id	string	OSPF Router ID	116	116	0a2160bc399487f5
+ospf.type	unsigned	OSPF Packet Type (1=Hello, 2=DD, 3=LSR, 4=LSU, 5=LSAck)	139	139	28084ffb2a8a7af5
+ospf.version	unsigned	OSPF Version (2 or 3)	139	139	185b9fe2334c11f3
+pause	boolean	Ethernet PAUSE frame	9	9	dbc0ccade5dfec03
+pause.time	unsigned	PAUSE time (units of 512 bit times)	9	9	3d7938dc2d1c9629
+pfc	boolean	Priority Flow Control frame	0	0	236e177ee4bbadc3
+pfc.class_enable	unsigned	PFC Class Enable Vector	0	0	236e177ee4bbadc3
+pgsql	boolean	PostgreSQL frontend/backend protocol	164	164	bdf19dc6d9f0b6c3
+pgsql.code	string	PostgreSQL SQLSTATE of an ErrorResponse / NoticeResponse	0	0	236e177ee4bbadc3
+pgsql.query	string	PostgreSQL SQL text of a SimpleQuery or Parse message	129	129	2ba7faa2dc1af163
+pgsql.ssl_request	boolean	PostgreSQL SSLRequest	164	164	ef7504b064a54582
+pgsql.type	string	PostgreSQL message type letter (Q SimpleQuery, P Parse, R Authentication, Z ReadyForQuery, ...)	0	0	236e177ee4bbadc3
+pgsql.user	string	PostgreSQL user of a StartupMessage	2	2	a331cc2228413e87
+portmap.proc	unsigned	Portmap procedure of a call (3 GETPORT)	159	159	6c1555dbe8782f54
+ppi.dlt	unsigned	PPI encapsulated Data Link Type	11450	11450	cd321a67f092eb2d
+ppp	boolean	Point-to-Point Protocol	8878	8878	771371aa788c0d43
+ppp.ipcp.code	unsigned	IPCP Code	403	403	a6a485cc11085b4e
+ppp.lcp.code	unsigned	LCP Code (1 = Config-Req, 2 = Config-Ack, etc.)	364	364	1ee5d1288821c0a4
+ppp.protocol	unsigned	PPP Protocol ID (0x0021 = IPv4, 0x0057 = IPv6, 0xc021 = LCP, 0x8021 = IPCP)	10858	10858	a02da6d55fb5304b
+pppoe	boolean	PPP-over-Ethernet (Discovery or Session)	1418	1418	8338f0a743e73c43
+pppoe.ac_name	string	PPPoE Access Concentrator (AC) Name tag	1143	1143	1b3d3c8cbe44c332
+pppoe.code	unsigned	PPPoE Code (0x00 = Session, 0x09 = PADI, 0x07 = PADO, 0x19 = PADR, 0x65 = PADS, 0xa7 = PADT)	1418	1418	b368df03e2de002e
+pppoe.service_name	string	PPPoE Service-Name tag	1137	1137	4e1c108008a4f33d
+pppoe.session_id	unsigned	PPPoE Session ID	1418	1418	b3ec4ab0171c6269
+pppoed	boolean	PPPoE Discovery Stage	393	393	471fdcb4f370a403
+pppoes	boolean	PPPoE Session Stage	1163	1163	bb80a793431e6883
+protocol	string	Protocol column (alias of _ws.col.protocol)	12038	12038	abac8fb7eed7b901
+radiotap.channel.freq	unsigned	Radiotap/PPI channel frequency in MHz	11476	11476	5a99cc784afb4174
+radiotap.datarate	float	Radiotap/PPI data rate in Mb/s	11905	11905	3312d96bc0efe6a7
+radiotap.dbm_antsignal	float	Radiotap/PPI antenna signal in dBm	11963	11963	42b55280c2822fcc
+rpc	boolean	ONC RPC (also NFS, Portmap and Mount)	751	751	a57f10dd18654d83
+rpc.msgtyp	unsigned	ONC RPC message type (0 call, 1 reply)	751	751	eb9f5b25d58888e2
+rpc.procedure	unsigned	ONC RPC procedure number of a call	363	363	0205eaca1070f46d
+rpc.program	unsigned	ONC RPC program number of a call (100003 NFS, 100000 Portmap, 100005 Mount)	363	363	5bfd7b86c824b008
+rpc.programversion	unsigned	ONC RPC program version of a call	363	363	46d639b7410f6fec
+rpc.reply_denied	boolean	ONC RPC reply that was denied (RPC_MISMATCH or AUTH_ERROR)	63	63	8ed46fc93ae43e42
+rpc.state_accept	unsigned	ONC RPC accept status of an accepted reply (0 SUCCESS, 1 PROG_UNAVAIL, 2 PROG_MISMATCH, 3 PROC_UNAVAIL ...)	25	25	7cbb5ea0a56f6c15
+rpc.xid	unsigned	ONC RPC transaction id	751	751	b79a95905d6f3059
+sctp	boolean	Stream Control Transmission Protocol	1039	1039	f60a210b635d8983
+sctp.chunk_type	unsigned	SCTP Chunk Type (of the first chunk)	1020	1020	de87d886095ff48f
+sctp.dstport	unsigned	SCTP destination port	1039	1039	358fce4598d2dbc7
+sctp.port	unsigned	SCTP source or destination port	1039	2078	16fc56eb104bddb6
+sctp.srcport	unsigned	SCTP source port	1039	1039	8adc9a6b65364bec
+sctp.vtag	unsigned	SCTP Verification Tag	1039	1039	35e0638b9443ac96
+smb2	boolean	SMB2 / SMB3	152	152	48516f558002a7c3
+smb2.cmd	unsigned	SMB2 command of the first message in the packet (0 Negotiate, 1 Session Setup, 3 Tree Connect, 5 Create, 8 Read, 9 Write)	60	60	19ca3e665990c93a
+smb2.dialect	unsigned	SMB2 dialect revision chosen by a Negotiate response (0x0311 = SMB 3.1.1)	46	46	113379cdc979571d
+smb2.encrypted	boolean	SMB3 message in a Transform header (encrypted, content not shown)	152	152	ad289e6cded4c3c3
+smb2.filename	string	SMB2 file name of a Create request	1	1	5d5de30fec3cc345
+smb2.flags.response	boolean	SMB2 response flag of the first message	60	60	1a05bd075b2a6003
+smb2.flags.signed	boolean	SMB2 signed flag of the first message	60	60	936d43d983d68343
+smb2.nt_status	unsigned	SMB2 NT status of a response (first message)	20	20	8a9860852f07c941
+smb2.tree	string	SMB2 share path of a Tree Connect request	0	0	236e177ee4bbadc3
+smb2.user	string	SMB2 user of an NTLMSSP authenticate message (domain\user)	0	0	236e177ee4bbadc3
+smtp	boolean	SMTP	143	143	62f40c1e9c874183
+smtp.command	string	SMTP command name (e.g. EHLO, MAIL FROM, RCPT TO, DATA)	3	3	afffedaf55dfabd4
+smtp.param	string	SMTP command or response parameter	117	117	fdb6824681cc5e59
+smtp.req	boolean	SMTP command/request	3	3	b7b8b56ba3aae283
+smtp.response.code	unsigned	SMTP response code (e.g. 220, 250, 354, 550)	5	5	cefd969f50c92fa1
+smtp.rsp	boolean	SMTP server response	5	5	83cc2fb87c608303
+snap	boolean	Subnetwork Access Protocol (SNAP)	2123	2123	03b4e0f5d03cbc83
+snap.oui	unsigned	SNAP Organizationally Unique Identifier (OUI)	2123	2123	e9e9cc392f9741a1
+snap.type	unsigned	SNAP Protocol ID / EtherType	2024	2024	3b54739902366bc1
+snmp	boolean	SNMP	153	153	84f1f0bd41e5f803
+snmp.community	string	SNMP community string or v3 user name	121	121	49eb96a854cc4b67
+snmp.error_status	unsigned	SNMP error-status code	153	153	51d8b7aa1bb9c260
+snmp.oid	string	SNMP first variable binding OID	127	127	a318429443673663
+snmp.pdu_type	unsigned	SNMP PDU type (0 = GetRequest, 1 = GetNextRequest, 2 = Response ...)	153	153	c8112632903af3fa
+snmp.request_id	unsigned	SNMP request ID	153	153	f815bcd1b6367b08
+snmp.version	unsigned	SNMP version (0 = v1, 1 = v2c, 3 = v3)	153	153	1bcf50049fdf30a9
+ssh	boolean	SSH	173	173	6d4b62a6360b1503
+ssh.encrypted	boolean	SSH encrypted packet payload	3	3	4a2db65efb278e83
+ssh.encryption_algorithm	string	SSH client-to-server encryption algorithm	0	0	236e177ee4bbadc3
+ssh.kex_algorithm	string	SSH key exchange algorithm	0	0	236e177ee4bbadc3
+ssh.message_code	unsigned	SSH packet message code (e.g. 20 = KEXINIT, 21 = NEWKEYS)	163	163	479e8deeec584352
+ssh.protocol	string	SSH protocol version banner	6	6	ea8a6ae874b2ca4c
+stp	boolean	Spanning Tree Protocol (STP / RSTP / MSTP)	464	464	c9fb9ab3f14d61c3
+stp.bpdu.type	unsigned	STP BPDU Type (0x00 = Config, 0x02 = RST, 0x80 = TCN)	464	464	0c5092a47f571279
+stp.bridge.id	string	STP Bridge Identifier	354	354	e5c1c3dc541a5267
+stp.flags	unsigned	STP BPDU Flags byte	21	21	ece0c5cf8b964529
+stp.flags.agreement	boolean	STP Agreement flag	21	21	fadb25e09d639983
+stp.flags.forwarding	boolean	STP Forwarding flag	21	21	b8d3f1cc07c97da2
+stp.flags.learning	boolean	STP Learning flag	21	21	063ea056efea6f02
+stp.flags.port_role	unsigned	STP Port Role (1 = Alternate/Backup, 2 = Root, 3 = Designated)	21	21	76c1f183a61e55e0
+stp.flags.proposal	boolean	STP Proposal flag	21	21	b4607f3b38a7fa63
+stp.flags.tc	boolean	STP Topology Change flag	21	21	72a9fd63fac14b23
+stp.flags.tc_ack	boolean	STP Topology Change Acknowledgment flag	21	21	2e666e255408bb62
+stp.port	unsigned	STP Port Identifier	21	21	865f93d5450d9ad6
+stp.protocol	unsigned	STP Protocol Identifier	464	464	413d4eabdc8f4143
+stp.root.cost	unsigned	STP Root Path Cost	21	21	a36319c8c9323fcc
+stp.root.id	string	STP Root Identifier	372	372	8b223fd017a775ea
+stp.version	unsigned	STP Protocol Version Identifier (0 = STP, 2 = RSTP, 3 = MSTP)	464	464	ccf4b7ac1f1574e2
+tcp	boolean	TCP	460	460	e7349e58cc1540c3
+tcp.ack	unsigned	TCP relative acknowledgment number	4	4	e71161101faf0664
+tcp.analysis.duplicate_ack	boolean	Duplicate acknowledgment	460	460	6a289c72a44f62e3
+tcp.analysis.duplicate_ack_num	unsigned	Number of the duplicate ACK (#n)	232	232	379a54a77207a0bf
+tcp.analysis.flags	boolean	Any TCP analysis note (retransmission, dup ACK, ...)	460	460	aa65506a8f7c8282
+tcp.analysis.keep_alive	boolean	TCP keep-alive	460	460	6ea4831eff025ee3
+tcp.analysis.lost_segment	boolean	A previous TCP segment was not captured	460	460	405823641f0d7963
+tcp.analysis.out_of_order	boolean	TCP segment arrived out of order	460	460	681fde1f99808b83
+tcp.analysis.retransmission	boolean	TCP segment repeats data that was already seen	460	460	b3f745b48c1a9c82
+tcp.analysis.window_update	boolean	TCP window update	460	460	6b64e6983fc2f982
+tcp.analysis.zero_window	boolean	Zero receive window advertised	460	460	6101e09f944617c2
+tcp.checksum.status	unsigned	TCP checksum: 0 = bad, 1 = good, 2 = unverified (offload or truncated)	900	900	c025b3b463b9ea02
+tcp.dstport	unsigned	TCP destination port	460	460	2833b5caf3c1f737
+tcp.flags	unsigned	TCP flag byte	460	460	df12b0e73a77967b
+tcp.flags.ack	boolean	TCP ACK flag	460	460	06dace7274b5d1c2
+tcp.flags.cwr	boolean	TCP CWR flag	460	460	bf76626fb61d1242
+tcp.flags.ece	boolean	TCP ECE flag	460	460	249fceba5939ffc2
+tcp.flags.fin	boolean	TCP FIN flag	460	460	68938e9bbce6eb43
+tcp.flags.push	boolean	TCP PSH flag	460	460	3b88706a7dfa6682
+tcp.flags.rst	boolean	TCP RST flag	460	460	427f90fa89a1c963
+tcp.flags.syn	boolean	TCP SYN flag	460	460	b62090f2ea200323
+tcp.flags.urg	boolean	TCP URG flag	460	460	5cc13da5dbf0d5e2
+tcp.len	unsigned	TCP payload length	460	460	1189a9e5b6bdb4e8
+tcp.port	unsigned	TCP source or destination port	460	920	aa8cbce9073c4d1d
+tcp.reassembled	boolean	Packet that completes a reassembled TCP message	460	460	ad773f6ec1c69c82
+tcp.reassembled.length	unsigned	Length of the reassembled TCP message	71	71	0d1cc774f5997503
+tcp.reassembled_in	unsigned	Number of the packet that completes the message this segment belongs to	0	0	236e177ee4bbadc3
+tcp.segment	boolean	Segment of a TCP message that is reassembled in a later packet	460	460	d7a62d3840117882
+tcp.seq	unsigned	TCP relative sequence number	6	6	3cd50e78938b7de2
+tcp.srcport	unsigned	TCP source port	460	460	4c2b81c8575135c9
+tds	boolean	Tabular Data Stream (SQL Server)	143	143	75a4829298ed6d83
+tds.encryption	unsigned	TDS Pre-Login ENCRYPTION option (0 OFF, 1 ON, 2 NOT_SUP, 3 REQ)	17	17	f0e981b11a9d6421
+tds.error_number	unsigned	TDS ERROR token number (18456 = login failed)	28	28	a7d89a9ffb4847bb
+tds.query	string	TDS SQL Batch text or RPC procedure name	114	114	f90b33ab05421b9e
+tds.spid	unsigned	TDS server process id of the packet header	143	143	5f69fac0e4b0951a
+tds.status	unsigned	TDS status byte (bit 0 = end of message)	143	143	8c30e57bd1aa4aec
+tds.type	unsigned	TDS packet type (1 SQL Batch, 3 RPC, 4 Tabular Response, 16 Login7, 18 Pre-Login)	143	143	a3bd212be688ca54
+tds.user	string	TDS Login7 user name	27	27	d407c151ad755874
+telnet	boolean	Telnet	144	144	ea7be0d7e9632dc3
+telnet.cmd	unsigned	Telnet command (251 = WILL, 252 = WONT, 253 = DO, 254 = DONT, 250 = SB...)	139	139	9c9613188fbfb61c
+telnet.data	string	Telnet text data or command summary	114	114	e32b3ffaa5c33975
+telnet.subcmd	unsigned	Telnet option code (1 = Echo, 3 = Suppress Go Ahead, 24 = Terminal Type, 31 = NAWS...)	139	139	b9c305839028699c
+tftp	boolean	TFTP	162	162	aec7bd18f10aba43
+tftp.block	unsigned	TFTP block number	6	6	70bb53b61b3d418e
+tftp.error.code	unsigned	TFTP error code	2	2	5c7876ff1b625fde
+tftp.mode	string	TFTP transfer mode (e.g. netascii, octet)	9	9	ddaec25272d4a833
+tftp.opcode	unsigned	TFTP opcode (1 = RRQ, 2 = WRQ, 3 = DATA, 4 = ACK, 5 = ERROR, 6 = OACK)	152	152	49604290490c6bab
+tftp.source_file	string	TFTP filename	6	6	d66e5fb9b626c068
+tls	boolean	TLS / SSL (also HTTP packets that were decrypted from TLS)	215	215	24dcf2a1b67d2783
+tls.decrypted	boolean	The packet carries TLS records that were decrypted with a key log	215	215	2827a946e97874a2
+tls.decryption_status	string	What became of the protected TLS records of the packet: decrypted, tag_failure (wrong key), no_key, unsupported_suite, malformed, unavailable (no OpenSSL), capture_gap, no_handshake, early_data, state_lost	62	62	b565fee27e545a8d
+tls.handshake.certificate_subject	string	Common name of the first certificate in a Certificate message	129	129	a2085ccdfa076727
+tls.handshake.extensions_server_name	string	Server name indication (SNI) of a ClientHello	120	120	8997fa64584ef111
+tls.handshake.type	unsigned	First handshake message type (1 = ClientHello, 2 = ServerHello ...)	145	145	8e1eb55ed0bbb801
+tls.record.content_type	unsigned	Content type of the first TLS record (22 = handshake, 23 = application data)	153	153	b9e2d88e3d0b9a25
+tls.record.version	unsigned	Version of the first TLS record (0x0303 = TLS 1.2)	153	153	d632bfaee5c27cc2
+udp	boolean	UDP	501	501	11d0866e61f90f03
+udp.checksum.status	unsigned	UDP checksum: 0 = bad, 1 = good, 2 = unverified, 3 = not present (zero over IPv4)	878	878	1b4ae2ef985f87e1
+udp.dstport	unsigned	UDP destination port	501	501	07ae1f3c187672b0
+udp.port	unsigned	UDP source or destination port	501	1002	6a60f731c86de929
+udp.srcport	unsigned	UDP source port	501	501	5af68320d7c9a3f0
+udplite	boolean	Lightweight User Datagram Protocol	1028	1028	fee1d347be5866c3
+usb	boolean	USB packet	3350	3350	a73bfdb9ef74cf43
+usb.device	string	USB device address (bus.device)	3274	5653	bbdab12370fab8a3
+vlan	boolean	802.1Q VLAN tagged	5626	5626	ffe1ce54ca9f5843
+vlan.id	unsigned	VLAN ID (outermost two tags)	5626	6450	d3dde21e03ca2be2
+wlan	boolean	IEEE 802.11 wireless frame	11574	11574	b49f2fc67eca8b43
+wlan.bssid	string	802.11 BSSID MAC address	225	225	99466374e6f4e019
+wlan.da	string	802.11 Destination MAC address	259	259	e4bd48fcabde4b75
+wlan.fc.fromds	unsigned	802.11 Frame Control From DS bit	11530	11530	1311b3e78e8aa463
+wlan.fc.protected	unsigned	802.11 Frame Control protected (encrypted) bit	11530	11530	98789972ad7bb4c2
+wlan.fc.retry	unsigned	802.11 Frame Control retry bit	11530	11530	df215f03311bc602
+wlan.fc.subtype	unsigned	802.11 Frame Control subtype	11530	11530	c970285e8854b2e9
+wlan.fc.tods	unsigned	802.11 Frame Control To DS bit	11530	11530	7ffa13afdc5bb663
+wlan.fc.type	unsigned	802.11 Frame Control type (0 = Management, 1 = Control, 2 = Data, 3 = Extension)	11530	11530	98c79d688b989da3
+wlan.ra	string	802.11 Receiver MAC address	259	259	e4bd48fcabde4b75
+wlan.sa	string	802.11 Source MAC address	260	260	c3a9ec22d934e5cc
+wlan.seq	unsigned	802.11 sequence number	11530	11530	283e1bc6eb650ff5
+wlan.ssid	string	802.11 SSID	207	207	dd59ba9e7f82ec13
+wlan.ta	string	802.11 Transmitter MAC address	260	260	c3a9ec22d934e5cc

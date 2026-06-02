@@ -31,6 +31,7 @@ add_executable(imshark_tests
     test_dns.cpp
     test_export.cpp
     test_filter.cpp
+    test_filter_snapshot.cpp
     test_find.cpp
     test_fragments.cpp
     test_gzip.cpp
