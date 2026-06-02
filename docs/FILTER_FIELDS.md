@@ -30,6 +30,10 @@ in the [User Guide](USER_GUIDE.md#display-filters). Names are lower case.
 | `dhcp` | boolean | DHCP |
 | `dhcp.option.hostname` | string | DHCP host name option |
 | `dhcp.type` | unsigned | DHCP message type (1 = Discover, 2 = Offer, 3 = Request, 5 = ACK ...) |
+| `dnp3` | boolean | Distributed Network Protocol 3.0 |
+| `dnp3.checksum.status` | unsigned | DNP3 CRC-16 of the link header and all data blocks: 0 = bad (any), 1 = good, 2 = unverified (block cut by the capture) |
+| `dnp3.data.checksum.status` | unsigned | DNP3 CRC-16 of all user data blocks: 0 = bad (any block), 1 = good, 2 = unverified, 3 = not present (no user data) |
+| `dnp3.header.checksum.status` | unsigned | DNP3 link header CRC-16: 0 = bad, 1 = good |
 | `dns` | boolean | DNS |
 | `dns.flags.rcode` | unsigned | DNS reply code (0 = no error, 3 = NXDOMAIN ...) |
 | `dns.flags.response` | boolean | DNS message is a response |
@@ -202,6 +206,7 @@ in the [User Guide](USER_GUIDE.md#display-filters). Names are lower case.
 | `ntp.version` | unsigned | NTP version |
 | `ospf` | boolean | Open Shortest Path First |
 | `ospf.area_id` | string | OSPF Area ID |
+| `ospf.lsa.checksum.status` | unsigned | OSPFv2 LSA Fletcher checksum (RFC 2328 12.1.7) of the LSAs in a DD, LSU or LSAck: 0 = bad (any), 1 = good, 2 = unverified (headers only, or cut off); absent without LSAs |
 | `ospf.router_id` | string | OSPF Router ID |
 | `ospf.type` | unsigned | OSPF Packet Type (1=Hello, 2=DD, 3=LSR, 4=LSU, 5=LSAck) |
 | `ospf.version` | unsigned | OSPF Version (2 or 3) |
@@ -375,4 +380,4 @@ in the [User Guide](USER_GUIDE.md#display-filters). Names are lower case.
 | `wlan.ssid` | string | 802.11 SSID |
 | `wlan.ta` | string | 802.11 Transmitter MAC address |
 
-365 fields.
+370 fields.

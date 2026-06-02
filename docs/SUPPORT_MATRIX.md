@@ -103,7 +103,7 @@ Files with known magic numbers produce specific diagnostic messages (`Desteklenm
 | **ARP / RARP** | Hardware/Protocol types, Sender/Target HW & IP | N/A | `arp` |
 | **ICMP / ICMPv6** | Type/Code, Quoted payload, Checksum, NDP | N/A | `icmp.*`, `icmpv6.*` |
 | **IGMP / MLD** | IGMPv1/v2/v3 Query/Report/Leave header and group address, v3 record count, checksum (no v3 group records) | N/A | `igmp`, `igmp.type`, `igmp.group` |
-| **OSPF** | OSPFv2 Hello, DD with LSA headers; OSPFv3 common header; packet checksum (v2 RFC 2328 D.4, v3 pseudo header). No LSR/LSU/LSAck, LSA bodies or LSA checksum | N/A | `ospf`, `ospf.version`, `ospf.type`, `ospf.router_id`, `ospf.area_id` |
+| **OSPF** | OSPFv2 Hello, DD, LSAck and LSU with LSA headers; OSPFv3 common header; packet checksum (v2 RFC 2328 D.4, v3 pseudo header); LSA Fletcher checksum where the whole LSA is present (LSU). No LSR or LSA bodies | N/A | `ospf`, `ospf.version`, `ospf.type`, `ospf.router_id`, `ospf.area_id`, `ospf.lsa.checksum.status` |
 | **IPsec (AH / ESP)** | SPI, Sequence, ICV, encrypted-payload mark; ESP-in-UDP (4500). No inner protocol chaining (AH Next Header only shown); IPv6 AH not dissected | N/A | `ah`, `ah.spi`, `ah.sequence`, `esp`, `esp.spi`, `esp.sequence` |
 | **IKEv1 / IKEv2** | ISAKMP/IKEv2 header, generic payload chain, NAT-T keepalive and Non-ESP marker, content-validated on ports 500/4500. No payload contents or fragmentation | N/A | `ike`, `ike.version`, `ike.exchange_type` |
 | **TCP** | Options (MSS, WS, SACK, TS), Relative Seq/Ack, Flags, Analysis | TCP stream reassembly | `tcp.*`, `tcp.port`, `tcp.flags.*`, `tcp.analysis.*` |
@@ -139,7 +139,7 @@ Files with known magic numbers produce specific diagnostic messages (`Desteklenm
 | **SIP / SDP** | Request/status line (validated), CSeq, Call-ID, From, To (case-insensitive, compact forms), SDP lines | Yes (TCP, Content-Length bounded to 64 KiB) / UDP | none yet (see KNOWN_ISSUES) |
 | **RTP / RTCP** | RTP v2 fixed header (PT, Seq, Timestamp, SSRC), RTCP common header + SSRC | N/A (UDP, Decode As only) | none yet (see KNOWN_ISSUES) |
 | **Modbus/TCP** | MBAP header (Transaction ID, Unit ID), function and exception codes | Yes (TCP) | none yet (see KNOWN_ISSUES) |
-| **DNP3** | Link 0x0564 start, length, control, source/destination, first application function code (CRC shown, not verified) | Yes (TCP) / UDP | none yet (see KNOWN_ISSUES) |
+| **DNP3** | Link 0x0564 start, length, control, source/destination, first application function code; link header and data block CRC-16 verified | Yes (TCP) / UDP | `dnp3`, `dnp3.checksum.status`, `dnp3.header.checksum.status`, `dnp3.data.checksum.status` |
 | **USB** | Linux & USBPcap URB/IRP: request vs completion, IN/OUT, transfer types, setup packet, descriptors (GET_DESCRIPTOR completions) | N/A (USB) | `usb`, `usb.device` |
 | **Bluetooth** | HCI H4 and Linux Monitor, L2CAP header, ATT opcode/MTU/handle; host / controller / ACL handle addresses | N/A (BT) | `bt.handle`, `bt.addr` |
 
