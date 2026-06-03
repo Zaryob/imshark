@@ -16,6 +16,7 @@ void ui::drawMainWindow(AppState &state) {
                                    ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoSavedSettings;
     if (ImGui::Begin("ImShark", nullptr, flags)) {
         drawFilterBar(state);
+        drawFindBar(state);
         const float available = ImGui::GetContentRegionAvail().y;
         const float splitter = 6.0f;
 

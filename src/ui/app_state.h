@@ -8,6 +8,7 @@
 #include <packet/packet_info.h>
 
 #include "color_rules.h"
+#include "find.h"
 #include "settings.h"
 
 namespace ui {
@@ -26,6 +27,16 @@ namespace ui {
         bool focusRequested = false;       // put the keyboard cursor into the bar next frame
         bool showHelp = false;
         std::string helpSearch;            // search box of the reference window
+    };
+
+    /// The "Find Packet" bar (Ctrl+F).
+    struct FindState {
+        bool open = false;
+        bool focusRequested = false;
+        FindMode mode = FindMode::Text;
+        std::string text;
+        std::string message;      // result of the last search ("Found ...", "No match", filter error)
+        bool messageIsError = false;
     };
 
     /// Everything the UI needs to remember between frames.
@@ -62,6 +73,7 @@ namespace ui {
 
         // Display filter and packet list presentation
         FilterState filter;
+        FindState find;
         double captureStartEpoch = 0;       // UTC epoch seconds of the first packet
         bool orderDirty = true;             // `order` must be rebuilt (new capture or new filter)
         std::vector<uint32_t> order;        // displayed order: indices into `packets` (rebuilt by the list)
