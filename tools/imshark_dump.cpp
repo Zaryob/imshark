@@ -85,6 +85,7 @@ namespace {
 } // namespace
 
 int main(int argc, char **argv) {
+    filter::initFields(); // the field table is complete before any name is looked up
     std::string path;
     std::string fieldList = kDefaultFields;
     for (int i = 1; i < argc; ++i) {

@@ -68,6 +68,7 @@ add_library(imshark_core STATIC
     src/dissect/mac_control.cpp
     src/export/export.cpp
     src/filter/fields.cpp
+    src/filter/field_modules.cpp
     src/filter/filter.cpp
     src/stats/statistics.cpp
     src/stream/follow.cpp

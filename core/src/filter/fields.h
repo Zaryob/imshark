@@ -3,7 +3,10 @@
 // The field table of the display filter: name -> type -> how to read the value(s) from a summary.
 
 #include <network/address.h>
+#include <initializer_list>
+#include <string>
 #include <string_view>
+#include <vector>
 
 #include <filter/filter.h>
 
@@ -36,12 +39,43 @@ namespace filter {
         const char *description;
     };
 
-    // Where fields live (B4): the protocols' fields are rows of the table in fields.cpp, built once on first use,
-    // before any filter is compiled and before any packet is dissected. A dissector must NOT register its fields
-    // lazily from its own function: that made a field appear only after the first packet of its protocol and
-    // modified the table while filters and worker threads were using it.
+    /// Collects the field definitions of the built-in protocols while the table is built. Each protocol has a field
+    /// module (core/src/dissect/<protocol>_fields.cpp, a registerXxxFields(FieldRegistry &) function) that adds the
+    /// fields of that protocol; filter/field_modules.cpp lists all modules explicitly. add() refuses an incomplete
+    /// definition and a name that is already taken, and remembers the problem: the table is never built from a
+    /// registry that has problems (see problems()).
+    class FieldRegistry {
+    public:
+        /// False, and nothing is added, if the name is empty or already taken or the extractor is missing.
+        bool add(const FieldDef &field);
+        void addAll(std::initializer_list<FieldDef> fields) { for (const auto &f: fields) add(f); }
+        void addAll(const std::vector<FieldDef> &fields) { for (const auto &f: fields) add(f); }
+
+        size_t size() const { return fields_.size(); }
+        /// One line per rejected definition ("duplicate field name: tcp.port"). Empty when everything was accepted.
+        const std::vector<std::string> &problems() const { return problems_; }
+        /// The accepted fields, sorted by name.
+        std::vector<FieldDef> sorted() const;
+
+    private:
+        std::vector<FieldDef> fields_;
+        std::vector<std::string> problems_;
+    };
+
+    // Where fields live (B4): every protocol declares its filter fields next to its dissector, in a field module. The
+    // modules are registered once, from the explicit list in filter/field_modules.cpp, into a FieldRegistry that becomes
+    // the built-in table; after that the table is immutable. A dissector must NOT register fields from its own
+    // dissection function: that made a field appear only after the first packet of its protocol and modified the table
+    // while filters and worker threads were using it.
+    //
+    // The table is complete before any use: it is built by the first call of initFields(), findField(), allFields() or
+    // builtinFields() (a function-local static, thread-safe), and the program entry points (imshark, imshark_dump) call
+    // initFields() first thing. A duplicate name or an incomplete definition aborts the process with a message on stderr.
     //
     // A FieldDef pointer returned by findField() stays valid for the life of the process.
+
+    /// Builds the built-in table now (idempotent). Nothing else is needed to make the fields available.
+    void initFields();
 
     /// nullptr if unknown. Names are matched case-insensitively (the table is lower case).
     const FieldDef *findField(std::string_view lowerName);

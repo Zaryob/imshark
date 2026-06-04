@@ -8,6 +8,7 @@
 
 #include <core.h>
 #include <filter/filter.h>
+#include <filter/field_modules.h>
 #include <filter/fields.h>
 
 #include "support.h"
@@ -379,3 +380,39 @@ TEST(FilterFields, ConcurrentRegistrationAndLookup) {
     for (const char *name: names) EXPECT_NE(filter::findField(name), nullptr);
 }
 
+
+// ---- the field registry (B4): modules register into a FieldRegistry, duplicates and incomplete rows are refused
+
+namespace {
+    void noValue(const packet::PacketInfo &, const filter::Context &, filter::Values &) {}
+}
+
+TEST(FieldRegistry, RefusesDuplicatesAndIncompleteDefinitionsAndSaysSo) {
+    filter::FieldRegistry r;
+    EXPECT_TRUE(r.add({"x.one", filter::FieldType::Unsigned, noValue, "first"}));
+    EXPECT_FALSE(r.add({"x.one", filter::FieldType::String, noValue, "second"}));
+    EXPECT_FALSE(r.add({"", filter::FieldType::Unsigned, noValue, "no name"}));
+    EXPECT_FALSE(r.add({nullptr, filter::FieldType::Unsigned, noValue, "null name"}));
+    EXPECT_FALSE(r.add({"x.two", filter::FieldType::Unsigned, nullptr, "no extractor"}));
+    EXPECT_EQ(r.size(), 1u);
+    ASSERT_EQ(r.problems().size(), 4u);
+    EXPECT_EQ(r.problems()[0], "duplicate field name: x.one");
+    EXPECT_STREQ(r.sorted()[0].description, "first");
+}
+
+TEST(FieldRegistry, SortedReturnsFieldsByName) {
+    filter::FieldRegistry r;
+    r.addAll({{"b.b", filter::FieldType::Unsigned, noValue, "b"}, {"a.a", filter::FieldType::Unsigned, noValue, "a"}, {"c.c", filter::FieldType::Unsigned, noValue, "c"}});
+    const auto s = r.sorted();
+    ASSERT_EQ(s.size(), 3u);
+    EXPECT_STREQ(s[0].name, "a.a");
+    EXPECT_STREQ(s[2].name, "c.c");
+}
+
+TEST(FieldRegistry, TheBuiltInModulesRegisterWithoutAnyProblem) {
+    // the same call that builds the table, on a registry of its own: no duplicate between modules, nothing incomplete
+    filter::FieldRegistry r;
+    filter::registerBuiltinFields(r);
+    EXPECT_TRUE(r.problems().empty()) << (r.problems().empty() ? "" : r.problems()[0]);
+    EXPECT_LE(r.size(), filter::builtinFields().size());
+}

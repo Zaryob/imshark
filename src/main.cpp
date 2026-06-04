@@ -6,6 +6,8 @@
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 
+#include <filter/fields.h>
+
 #include "ui/ui.h"
 #include "version.h"
 
@@ -15,6 +17,8 @@ int main(int argc, char **argv) {
         std::cout << "imshark " << IMSHARK_VERSION << " (" << IMSHARK_GIT_DESCRIBE << ")" << std::endl;
         return 0;
     }
+    // The display filter field table is built here, before the UI exists and before any loader thread starts.
+    filter::initFields();
     if (!glfwInit()) {
         std::cerr << "Failed to initialize GLFW" << std::endl;
         return -1;
