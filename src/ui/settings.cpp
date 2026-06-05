@@ -42,7 +42,9 @@ ui::Settings ui::loadSettings(const std::string &path) {
         if (eq == std::string::npos) continue;
         const std::string key = line.substr(0, eq);
         const std::string value = line.substr(eq + 1);
-        if (key == "colorize") {
+        if (key == "time_format") {
+            settings.timeFormat = timeFormatFromKey(value);
+        } else if (key == "colorize") {
             settings.colorize = value != "0";
         } else if (key == "colorrule") {
             ColorRule rule;
@@ -71,6 +73,7 @@ bool ui::saveSettings(const Settings &settings, const std::string &path) {
     std::ofstream out(file, std::ios::trunc);
     if (!out) return false;
     out << "theme=" << (settings.darkTheme ? "dark" : "light") << "\n";
+    out << "time_format=" << timeFormatKey(settings.timeFormat) << "\n";
     out << "colorize=" << (settings.colorize ? 1 : 0) << "\n";
     out << "list_height=" << settings.listHeight << "\n";
     for (const auto &rule: settings.colorRules) out << "colorrule=" << serializeColorRule(rule) << "\n";

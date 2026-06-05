@@ -93,3 +93,13 @@ TEST(Settings, ColorRulesAndColorizeRoundTrip) {
     EXPECT_TRUE(ui::loadSettings("/no/such/file").colorize);
     std::filesystem::remove_all(std::filesystem::path(path).parent_path());
 }
+
+TEST(Settings, TimeFormatRoundTrips) {
+    ui::Settings s;
+    EXPECT_EQ(s.timeFormat, ui::TimeFormat::SinceCaptureStart);
+    s.timeFormat = ui::TimeFormat::UtcDateTime;
+    const auto path = tempPath("timefmt");
+    ASSERT_TRUE(ui::saveSettings(s, path));
+    EXPECT_EQ(ui::loadSettings(path).timeFormat, ui::TimeFormat::UtcDateTime);
+    std::filesystem::remove_all(std::filesystem::path(path).parent_path());
+}

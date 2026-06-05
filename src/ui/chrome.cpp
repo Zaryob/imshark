@@ -79,6 +79,16 @@ void ui::drawMenuAndDialogs(AppState &state) {
                 applyTheme(false);
             }
             ImGui::Separator();
+            if (ImGui::BeginMenu("Time Display Format")) {
+                for (auto f: {TimeFormat::SinceCaptureStart, TimeFormat::SincePrevious, TimeFormat::UtcDateTime, TimeFormat::EpochSeconds}) {
+                    if (ImGui::MenuItem(timeFormatName(f), nullptr, state.settings.timeFormat == f)) {
+                        state.settings.timeFormat = f;
+                        state.settingsDirty = true;
+                    }
+                }
+                ImGui::EndMenu();
+            }
+            ImGui::Separator();
             if (ImGui::MenuItem("Colorize Packet List", nullptr, state.settings.colorize)) {
                 state.settings.colorize = !state.settings.colorize;
                 state.settingsDirty = true;

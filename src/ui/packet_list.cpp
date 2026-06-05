@@ -7,6 +7,7 @@
 #include <imgui.h>
 
 #include "clipboard.h"
+#include "time_format.h"
 
 namespace {
     template<typename T>
@@ -147,7 +148,8 @@ void ui::drawPacketList(AppState &state, float height) {
                     state.scrollToSelection = false;
                 }
                 ImGui::TableSetColumnIndex(1);
-                ImGui::Text("%.6f", packet.time);
+                ImGui::TextUnformatted(formatPacketTime(packet, i ? &state.packets[i - 1] : nullptr, state.captureStartEpoch,
+                                                        state.settings.timeFormat).c_str());
                 ImGui::TableSetColumnIndex(2);
                 ImGui::TextUnformatted(packet.source.c_str());
                 ImGui::TableSetColumnIndex(3);
