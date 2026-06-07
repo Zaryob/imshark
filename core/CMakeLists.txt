@@ -67,6 +67,12 @@ add_library(imshark_core STATIC
     src/dissect/slow_protocols.cpp
     src/dissect/mac_control.cpp
     src/export/export.cpp
+    src/dissect/frame_fields.cpp
+    src/dissect/ethernet_fields.cpp
+    src/dissect/arp_fields.cpp
+    src/dissect/ip_fields.cpp
+    src/dissect/icmp_fields.cpp
+    src/dissect/igmp_fields.cpp
     src/filter/fields.cpp
     src/filter/field_modules.cpp
     src/filter/filter.cpp

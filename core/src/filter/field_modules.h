@@ -9,4 +9,12 @@ namespace filter {
     /// Registers every module below, in one explicit list (see field_modules.cpp). The only caller is the code that
     /// builds the built-in table; tests may call it on a registry of their own.
     void registerBuiltinFields(FieldRegistry &registry);
+
+    // One module per protocol (defined in core/src/dissect/<name>_fields.cpp)
+    void registerFrameFields(FieldRegistry &registry);
+    void registerEthernetFields(FieldRegistry &registry);
+    void registerArpFields(FieldRegistry &registry);
+    void registerIpFields(FieldRegistry &registry);
+    void registerIcmpFields(FieldRegistry &registry);
+    void registerIgmpFields(FieldRegistry &registry);
 } // namespace filter
