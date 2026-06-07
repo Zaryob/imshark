@@ -2,7 +2,7 @@
 
 Statik kod incelemesiyle tespit edilmiştir (derleme/çalıştırma ile ayrıca doğrulanmadı). Önem: **K** = kritik (çökme/güvenlik/yanlış veri), **O** = orta, **D** = düşük.
 
-> **Durum (v0.4 tamamlandı):** #1–#24 giderildi. Kalanlar: IPv4 parçalanma/yeniden birleştirme, tam DNS/DHCP kayıt türleri (#15), ImGui pencere yerleşiminin kalıcılığı, IP adreslerinin sayısal sıralanması. Düzeltmeler ASan/UBSan (ve yükleme iş parçacığı için ThreadSanitizer) altında birim/mutasyon-fuzz testleriyle ve pencere açmadan çalışan ImGui duman testleriyle doğrulandı; arayüz görsel olarak (ekran görüntüsüyle) incelenmedi, sağ tık menüleri ve sürükle-bırak otomatik test edilmedi, Windows derlemesi bir Windows makinesinde denenmedi.
+> **Durum (v0.5 tamamlandı):** #1–#24 giderildi. Kalanlar: IPv4 parçalanma/yeniden birleştirme, filtrede yalnızca özetteki alanlar kullanılabiliyor (DNS sorgu adı, HTTP alanları vb. yeni dissector'larla gelecek), `matches` (std::regex) 500 bin ppakette ~1,7 s sürüyor ve arayüz iş parçacığında çalışıyor, tam DNS/DHCP kayıt türleri (#15), ImGui pencere yerleşiminin kalıcılığı, IP adreslerinin sayısal sıralanması. Düzeltmeler ASan/UBSan (ve yükleme iş parçacığı için ThreadSanitizer) altında birim/mutasyon-fuzz testleriyle ve pencere açmadan çalışan ImGui duman testleriyle doğrulandı; arayüz görsel olarak (ekran görüntüsüyle) incelenmedi, sağ tık menüleri ve sürükle-bırak otomatik test edilmedi, Windows derlemesi bir Windows makinesinde denenmedi.
 
 ## Güvenlik ve sağlamlık
 

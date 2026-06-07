@@ -75,6 +75,10 @@ registry.registerUdpPort(53, dissectDns);              // application layer
 | `dns.cpp`, `dhcp.cpp` | DNS (sıkıştırma dahil), DHCP |
 | `simple.cpp` | SNMP, Telnet, SMTP, BGP (yalnızca özet) |
 
+### Görüntüleme filtresi (`core/src/filter/`)
+
+`Filter::compile(text)` bir ifadeyi (`&& || ! and or not`, `== != < > <= >=`, `contains`, `matches`, `in {…}`, CIDR) ayrıştırıp değerlendirilebilir bir ağaca çevirir; hata durumunda ileti ve bayt konumu döner. Alanlar `fields.cpp`'deki sıralı bir tabloda tanımlıdır (ad, tür, özetten değer okuyan fonksiyon, açıklama) ve **yalnızca paket özetini** kullanır (`PacketInfo`'daki EtherType, IP sürümü/protokolü, TTL, TCP bayrakları, portlar, adresler, zaman…), bu yüzden bir yakalamayı filtrelemek dosyaya hiç dokunmaz. Yeni bir alan eklemek = tabloya bir satır. `!=` daima `==`'in tam olumsuzudur (alan yoksa da). Aynı motor renklendirme kurallarında ve "Paket bul" aramasında kullanılır.
+
 ## 5. Arayüz (`src/ui/`)
 
 - `AppState` (`app_state.h`): paket özetleri, görüntü sırası, yükleme işi/durumu, seçili paket + onun ayrıntısı (`detail`), seçili alan/bayt aralığı, ayarlar; global değişken yok.
@@ -82,7 +86,11 @@ registry.registerUdpPort(53, dissectDns);              // application layer
 - `settings.cpp`: tema, liste yüksekliği, son dosyalar (platforma göre yapılandırma klasöründe `settings.ini`).
 - `clipboard.cpp`: kopyalama biçimlendirme yardımcıları (saf fonksiyonlar).
 - `chrome.cpp`: ana menü (File, Ctrl+O), ImGuiFileDialog, durum çubuğu, yükleme sorunu popup'ı.
-- `packet_list.cpp`: 7 sütunlu, sıralanabilir tablo (`sortPacketOrder`), klavyeyle gezinme, `ImGuiListClipper` ile yalnızca görünen satırlar çizilir.
+- `filter_bar.cpp`: filtre çubuğu (canlı doğrulama, geçmiş, başvuru penceresi), `applyFilter`/`refilter` görünür paket kümesini hesaplar.
+- `find.cpp`/`find_bar.cpp`: Ctrl+F paket bulma (saf `findPacket` fonksiyonu + çubuk).
+- `color_rules.cpp`/`color_editor.cpp`: renklendirme kuralları (filtre motoruyla eşleşir) ve düzenleme penceresi.
+- `time_format.cpp`: Time sütunu biçimleri (UTC dönüşümü platformdan bağımsız).
+- `packet_list.cpp`: 7 sütunlu, sıralanabilir tablo; gösterilen sıra = filtreyi geçenler + sıralama; klavyeyle gezinme; `ImGuiListClipper` ile yalnızca görünen satırlar çizilir.
 - `details.cpp`: `fields` ağacı (alan tıklanınca bayt aralığı seçilir) ve hex/ASCII görünümü (bayta tıklayınca en özel alan seçilip ağaçta açılır).
 - `main_window.cpp`: yerleşim ve liste/ayrıntı bölücüsü.
 
