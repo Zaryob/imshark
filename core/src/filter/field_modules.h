@@ -17,4 +17,11 @@ namespace filter {
     void registerIpFields(FieldRegistry &registry);
     void registerIcmpFields(FieldRegistry &registry);
     void registerIgmpFields(FieldRegistry &registry);
+    void registerTcpFields(FieldRegistry &registry);
+    void registerUdpFields(FieldRegistry &registry);
+    void registerSctpFields(FieldRegistry &registry);
+    void registerTlsFields(FieldRegistry &registry);
+    void registerDtlsFields(FieldRegistry &registry);
+    void registerHttpFields(FieldRegistry &registry);
+    void registerHttp2Fields(FieldRegistry &registry);
 } // namespace filter

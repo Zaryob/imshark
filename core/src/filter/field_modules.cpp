@@ -10,5 +10,12 @@ namespace filter {
         registerIpFields(registry);
         registerIcmpFields(registry);
         registerIgmpFields(registry);
+        registerTcpFields(registry);
+        registerUdpFields(registry);
+        registerSctpFields(registry);
+        registerTlsFields(registry);
+        registerDtlsFields(registry);
+        registerHttpFields(registry);
+        registerHttp2Fields(registry);
     }
 } // namespace filter

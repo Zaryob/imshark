@@ -73,6 +73,13 @@ add_library(imshark_core STATIC
     src/dissect/ip_fields.cpp
     src/dissect/icmp_fields.cpp
     src/dissect/igmp_fields.cpp
+    src/dissect/tcp_fields.cpp
+    src/dissect/udp_fields.cpp
+    src/dissect/sctp_fields.cpp
+    src/dissect/tls_fields.cpp
+    src/dissect/dtls_fields.cpp
+    src/dissect/http_fields.cpp
+    src/dissect/http2_fields.cpp
     src/filter/fields.cpp
     src/filter/field_modules.cpp
     src/filter/filter.cpp
