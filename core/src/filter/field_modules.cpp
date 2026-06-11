@@ -17,5 +17,16 @@ namespace filter {
         registerDtlsFields(registry);
         registerHttpFields(registry);
         registerHttp2Fields(registry);
+        registerIndustrialFields(registry);
+        registerOspfFields(registry);
+        registerIpsecFields(registry);
+        registerLdapFields(registry);
+        registerKerberosFields(registry);
+        registerPostgresFields(registry);
+        registerMysqlFields(registry);
+        registerTdsFields(registry);
+        registerSmb2Fields(registry);
+        registerDcerpcFields(registry);
+        registerNfsFields(registry);
     }
 } // namespace filter

@@ -80,6 +80,17 @@ add_library(imshark_core STATIC
     src/dissect/dtls_fields.cpp
     src/dissect/http_fields.cpp
     src/dissect/http2_fields.cpp
+    src/dissect/industrial_fields.cpp
+    src/dissect/ospf_fields.cpp
+    src/dissect/ipsec_fields.cpp
+    src/dissect/ldap_fields.cpp
+    src/dissect/kerberos_fields.cpp
+    src/dissect/postgres_fields.cpp
+    src/dissect/mysql_fields.cpp
+    src/dissect/tds_fields.cpp
+    src/dissect/smb2_fields.cpp
+    src/dissect/dcerpc_fields.cpp
+    src/dissect/nfs_fields.cpp
     src/filter/fields.cpp
     src/filter/field_modules.cpp
     src/filter/filter.cpp

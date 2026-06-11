@@ -24,4 +24,15 @@ namespace filter {
     void registerDtlsFields(FieldRegistry &registry);
     void registerHttpFields(FieldRegistry &registry);
     void registerHttp2Fields(FieldRegistry &registry);
+    void registerIndustrialFields(FieldRegistry &registry);
+    void registerOspfFields(FieldRegistry &registry);
+    void registerIpsecFields(FieldRegistry &registry);
+    void registerLdapFields(FieldRegistry &registry);
+    void registerKerberosFields(FieldRegistry &registry);
+    void registerPostgresFields(FieldRegistry &registry);
+    void registerMysqlFields(FieldRegistry &registry);
+    void registerTdsFields(FieldRegistry &registry);
+    void registerSmb2Fields(FieldRegistry &registry);
+    void registerDcerpcFields(FieldRegistry &registry);
+    void registerNfsFields(FieldRegistry &registry);
 } // namespace filter
