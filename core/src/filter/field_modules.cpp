@@ -28,5 +28,15 @@ namespace filter {
         registerSmb2Fields(registry);
         registerDcerpcFields(registry);
         registerNfsFields(registry);
+        registerDhcpFields(registry);
+        registerNtpFields(registry);
+        registerDnsFields(registry);
+        registerSnmpFields(registry);
+        registerTelnetFields(registry);
+        registerSmtpFields(registry);
+        registerFtpFields(registry);
+        registerTftpFields(registry);
+        registerBgpFields(registry);
+        registerSshFields(registry);
     }
 } // namespace filter

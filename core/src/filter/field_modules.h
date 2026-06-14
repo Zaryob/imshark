@@ -35,4 +35,14 @@ namespace filter {
     void registerSmb2Fields(FieldRegistry &registry);
     void registerDcerpcFields(FieldRegistry &registry);
     void registerNfsFields(FieldRegistry &registry);
+    void registerDhcpFields(FieldRegistry &registry);
+    void registerNtpFields(FieldRegistry &registry);
+    void registerDnsFields(FieldRegistry &registry);
+    void registerSnmpFields(FieldRegistry &registry);
+    void registerTelnetFields(FieldRegistry &registry);
+    void registerSmtpFields(FieldRegistry &registry);
+    void registerFtpFields(FieldRegistry &registry);
+    void registerTftpFields(FieldRegistry &registry);
+    void registerBgpFields(FieldRegistry &registry);
+    void registerSshFields(FieldRegistry &registry);
 } // namespace filter

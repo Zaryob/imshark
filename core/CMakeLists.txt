@@ -91,6 +91,16 @@ add_library(imshark_core STATIC
     src/dissect/smb2_fields.cpp
     src/dissect/dcerpc_fields.cpp
     src/dissect/nfs_fields.cpp
+    src/dissect/dhcp_fields.cpp
+    src/dissect/ntp_fields.cpp
+    src/dissect/dns_fields.cpp
+    src/dissect/snmp_fields.cpp
+    src/dissect/telnet_fields.cpp
+    src/dissect/smtp_fields.cpp
+    src/dissect/ftp_fields.cpp
+    src/dissect/tftp_fields.cpp
+    src/dissect/bgp_fields.cpp
+    src/dissect/ssh_fields.cpp
     src/filter/fields.cpp
     src/filter/field_modules.cpp
     src/filter/filter.cpp
