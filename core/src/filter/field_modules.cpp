@@ -38,5 +38,21 @@ namespace filter {
         registerTftpFields(registry);
         registerBgpFields(registry);
         registerSshFields(registry);
+        registerWlanFields(registry);
+        registerRadiotapFields(registry);
+        registerPpiFields(registry);
+        registerEapolFields(registry);
+        registerLlcFields(registry);
+        registerStpFields(registry);
+        registerPppFields(registry);
+        registerPppoeFields(registry);
+        registerMplsFields(registry);
+        registerIpipFields(registry);
+        registerGreFields(registry);
+        registerLldpFields(registry);
+        registerSlowProtocolsFields(registry);
+        registerMacControlFields(registry);
+        registerBluetoothFields(registry);
+        registerUsbFields(registry);
     }
 } // namespace filter

@@ -45,4 +45,20 @@ namespace filter {
     void registerTftpFields(FieldRegistry &registry);
     void registerBgpFields(FieldRegistry &registry);
     void registerSshFields(FieldRegistry &registry);
+    void registerWlanFields(FieldRegistry &registry);
+    void registerRadiotapFields(FieldRegistry &registry);
+    void registerPpiFields(FieldRegistry &registry);
+    void registerEapolFields(FieldRegistry &registry);
+    void registerLlcFields(FieldRegistry &registry);
+    void registerStpFields(FieldRegistry &registry);
+    void registerPppFields(FieldRegistry &registry);
+    void registerPppoeFields(FieldRegistry &registry);
+    void registerMplsFields(FieldRegistry &registry);
+    void registerIpipFields(FieldRegistry &registry);
+    void registerGreFields(FieldRegistry &registry);
+    void registerLldpFields(FieldRegistry &registry);
+    void registerSlowProtocolsFields(FieldRegistry &registry);
+    void registerMacControlFields(FieldRegistry &registry);
+    void registerBluetoothFields(FieldRegistry &registry);
+    void registerUsbFields(FieldRegistry &registry);
 } // namespace filter

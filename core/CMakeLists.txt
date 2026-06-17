@@ -101,6 +101,22 @@ add_library(imshark_core STATIC
     src/dissect/tftp_fields.cpp
     src/dissect/bgp_fields.cpp
     src/dissect/ssh_fields.cpp
+    src/dissect/wlan_fields.cpp
+    src/dissect/radiotap_fields.cpp
+    src/dissect/ppi_fields.cpp
+    src/dissect/eapol_fields.cpp
+    src/dissect/llc_fields.cpp
+    src/dissect/stp_fields.cpp
+    src/dissect/ppp_fields.cpp
+    src/dissect/pppoe_fields.cpp
+    src/dissect/mpls_fields.cpp
+    src/dissect/ipip_fields.cpp
+    src/dissect/gre_fields.cpp
+    src/dissect/lldp_fields.cpp
+    src/dissect/slow_protocols_fields.cpp
+    src/dissect/mac_control_fields.cpp
+    src/dissect/bluetooth_fields.cpp
+    src/dissect/usb_fields.cpp
     src/filter/fields.cpp
     src/filter/field_modules.cpp
     src/filter/filter.cpp
