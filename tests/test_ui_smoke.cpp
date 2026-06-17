@@ -409,3 +409,44 @@ TEST_F(UiSmoke, EveryTimeFormatIsDrawn) {
     }
     EXPECT_GT(state.captureStartEpoch, 1.6e9) << "the readers report the capture start";
 }
+
+// ---- statistics windows -------------------------------------------------------------------------------
+
+TEST_F(UiSmoke, StatisticsWindowsDrawAndFollowTheFilter) {
+    ui::AppState state;
+    load(state);
+    state.stats.showHierarchy = state.stats.showConversations = state.stats.showEndpoints = true;
+    frames(state);
+    ASSERT_TRUE(state.stats.hierarchyValid);
+    EXPECT_EQ(state.stats.hierarchy.packets, 16u);
+
+    EXPECT_TRUE(state.stats.conversationsValid[0]);
+    EXPECT_FALSE(state.stats.conversationsValid[2]) << "only the visible tab is computed";
+    for (int tab = 0; tab < 4; ++tab) {     // every tab's data can be computed and drawn
+        state.stats.selectTab = tab;
+        frames(state);
+        EXPECT_EQ(state.stats.tab, tab);
+        EXPECT_TRUE(state.stats.conversationsValid[tab]);
+        EXPECT_TRUE(state.stats.endpointsValid[tab]);
+    }
+
+    ASSERT_TRUE(ui::applyFilter(state, "tcp"));
+    EXPECT_TRUE(state.stats.dirty);
+    frames(state);
+    EXPECT_EQ(state.stats.hierarchy.packets, 7u) << "limited to the displayed packets";
+
+    state.stats.limitToDisplayed = false;   // the checkbox
+    state.stats.dirty = true;
+    frames(state);
+    EXPECT_EQ(state.stats.hierarchy.packets, 16u);
+
+    state.stats.showHierarchy = state.stats.showConversations = state.stats.showEndpoints = false;
+    frames(state);
+}
+
+TEST_F(UiSmoke, StatisticsOnAnEmptyCaptureDrawNothingBroken) {
+    ui::AppState state;
+    state.stats.showHierarchy = state.stats.showConversations = state.stats.showEndpoints = true;
+    frames(state);
+    EXPECT_EQ(state.stats.hierarchy.packets, 0u);
+}

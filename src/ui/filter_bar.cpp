@@ -43,6 +43,7 @@ void ui::refilter(AppState &state) {
         }
     }
     state.orderDirty = true;
+    state.stats.dirty = true; // statistics "limited to displayed packets" depend on the filter
 }
 
 void ui::drawFilterBar(AppState &state) {

@@ -6,6 +6,7 @@
 
 #include <filter/filter.h>
 #include <packet/packet_info.h>
+#include <stats/statistics.h>
 
 #include "color_rules.h"
 #include "find.h"
@@ -37,6 +38,22 @@ namespace ui {
         std::string text;
         std::string message;      // result of the last search ("Found ...", "No match", filter error)
         bool messageIsError = false;
+    };
+
+    /// The Statistics windows and their cached results (recomputed lazily when `dirty`).
+    struct StatsState {
+        bool showHierarchy = false, showConversations = false, showEndpoints = false;
+        bool limitToDisplayed = true;      // count only the packets that pass the display filter
+        bool dirty = true;                 // capture or filter changed: caches are stale
+        int tab = 0;                       // AddressKind tab that was drawn last in the Conversations / Endpoints windows
+        int selectTab = -1;                // request to switch to this tab (then reset)
+
+        stats::HierarchyNode hierarchy;
+        bool hierarchyValid = false;
+        std::vector<stats::Conversation> conversations[4];
+        bool conversationsValid[4] = {false, false, false, false};
+        std::vector<stats::Endpoint> endpoints[4];
+        bool endpointsValid[4] = {false, false, false, false};
     };
 
     /// Everything the UI needs to remember between frames.
@@ -74,6 +91,7 @@ namespace ui {
         // Display filter and packet list presentation
         FilterState filter;
         FindState find;
+        StatsState stats;
         double captureStartEpoch = 0;       // UTC epoch seconds of the first packet
         bool orderDirty = true;             // `order` must be rebuilt (new capture or new filter)
         std::vector<uint32_t> order;        // displayed order: indices into `packets` (rebuilt by the list)
