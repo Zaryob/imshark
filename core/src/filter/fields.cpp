@@ -1,32 +1,15 @@
 #include "fields.h"
 
 #include <algorithm>
+#include <cstdio>
 #include <cstdlib>
 #include <deque>
 #include <mutex>
 
-#include <cstdio>
-
-#include "field_helpers.h"
 #include "field_modules.h"
 
 namespace filter {
     namespace {
-        using namespace fh;
-        using packet::PacketInfo;
-
-        // The rows that are not in a field module yet (they move out protocol by protocol).
-        std::vector<FieldDef> legacyRows() {
-            std::vector<FieldDef> t = {
-                // ---- frame
-                // ---- link layer
-                // ---- network layer
-                // ---- transport layer
-                // ---- application protocols (by the protocol column)
-            };
-            return t;
-        }
-
         // The built-in table: every field module, registered once. Built on first use (before any filter is compiled and
         // before any packet is dissected) and never changed afterwards, so findField() pointers into it stay valid for the
         // life of the process. registerField() is for fields added later (plugins, tests): it keeps them in a deque,
@@ -35,7 +18,6 @@ namespace filter {
             static const std::vector<FieldDef> table = [] {
                 FieldRegistry registry;
                 registerBuiltinFields(registry);
-                registry.addAll(legacyRows());
                 if (!registry.problems().empty()) {
                     for (const auto &problem: registry.problems()) std::fprintf(stderr, "imshark: filter field table: %s\n", problem.c_str());
                     std::abort();

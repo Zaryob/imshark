@@ -414,5 +414,5 @@ TEST(FieldRegistry, TheBuiltInModulesRegisterWithoutAnyProblem) {
     filter::FieldRegistry r;
     filter::registerBuiltinFields(r);
     EXPECT_TRUE(r.problems().empty()) << (r.problems().empty() ? "" : r.problems()[0]);
-    EXPECT_LE(r.size(), filter::builtinFields().size());
+    EXPECT_EQ(r.size(), filter::builtinFields().size());
 }
