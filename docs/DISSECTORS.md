@@ -113,18 +113,44 @@ Source lists are explicit: add the `.cpp` to `core/CMakeLists.txt` (`imshark_cor
 
 ## Step 3: filter fields
 
-Display filters read **summary** data (`PacketInfo`), never the field tree. Fields live in the central table in
-`core/src/filter/fields.cpp` (`buildTable()`); the table is built once before any filter is compiled or any packet is
-dissected. Add rows there:
+Display filters read **summary** data (`PacketInfo`), never the field tree. Each protocol declares its fields in a
+**field module** next to its dissector: `core/src/dissect/myproto_fields.cpp`, one function that adds the rows to a
+`FieldRegistry`:
 
 ```cpp
-{"myproto", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (p.protocol == "MYPROTO") o.addU(1); }, "My Protocol"},
-{"myproto.type", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.protocol == "MYPROTO") o.addU(p.app_type); }, "My Protocol Message Type"},
+#include <filter/field_helpers.h>   // protocol gates and extractor templates shared by the modules
+#include <filter/field_modules.h>
+
+namespace filter {
+    void registerMyprotoFields(FieldRegistry &registry) {
+        using namespace fh;
+        registry.addAll({
+            {"myproto", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (p.protocol == "MYPROTO") o.addU(1); }, "My Protocol"},
+            {"myproto.type", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.protocol == "MYPROTO") o.addU(p.app_type); }, "My Protocol Message Type"},
+        });
+    }
+}
 ```
+
+Then register the module in two places, both explicit lists (no static initialisers, so nothing depends on link or load
+order): declare it in `core/src/filter/field_modules.h`, call it from `registerBuiltinFields()` in
+`core/src/filter/field_modules.cpp`, and add the `.cpp` to `core/CMakeLists.txt`.
+
+How it behaves: the modules run once, into a registry that becomes the built-in table, which is immutable afterwards.
+The table is built by the first `filter::initFields()`, `findField()`, `allFields()` or `builtinFields()` call (and
+`imshark` and `imshark_dump` call `initFields()` first thing), so it is complete before any filter is compiled and before
+any packet is dissected or loader thread started. `FieldDef` pointers stay valid for the life of the process. A duplicate
+name or an incomplete row makes `FieldRegistry::add()` refuse it, and the process aborts with a message naming it when the
+table is built (the test `FieldRegistry.TheBuiltInModulesRegisterWithoutAnyProblem` catches it in CI).
 
 Gate every extractor on the protocol (an ungated field matches unrelated packets). `filter::registerField` exists for
 fields that are not part of the built-in table (plugins, tests); dissectors do not call it and must not register fields
 lazily from their own function. Not every dissector has filter fields yet: `docs/KNOWN_ISSUES.md` lists the gaps.
+
+A change to an existing field (or a new one) is checked by `FilterSnapshot.FieldTableAndValuesAreUnchanged`, which
+compares the name, type, description and a digest of the values of every field on a fixed set of packets with
+`tests/data/filter_fields.snapshot`; for a deliberate change run it once with `IMSHARK_UPDATE_SNAPSHOT=1` and commit the
+diff of the snapshot.
 
 `docs/FILTER_FIELDS.md` is generated from this table and a test compares them: after adding rows run the tests once
 with `IMSHARK_UPDATE_DOCS=1` (`IMSHARK_UPDATE_DOCS=1 ctest --test-dir build -R Docs`) and commit the regenerated file.
@@ -170,7 +196,7 @@ This is a template, not a one-time task: go through it for each dissector you de
       (and a Decode As name if appropriate).
 - [ ] Cross-packet state decided in the load pass and stored; Replay only reads it; `PacketInfo` did not grow.
 - [ ] `ctx.wantFields() == false` skips the tree; the Info text is the same in both passes.
-- [ ] Filter fields in `core/src/filter/fields.cpp`, gated on the protocol; hierarchy name in `statistics.cpp`.
+- [ ] Filter fields in a field module `core/src/dissect/<name>_fields.cpp`, gated on the protocol, listed in `field_modules.h/.cpp`; hierarchy name in `statistics.cpp`.
 - [ ] Tests: hand-built messages with an independent oracle, truncation/mutation sweep, corpus hook (skipping when
       `IMSHARK_CORPUS_DIR` is not set), Replay equality for stateful protocols.
 - [ ] Encrypted or protected content is labelled and never shown as plain text.
@@ -235,7 +261,7 @@ dissect::Registry toyRegistry() {
 ```
 
 A filter field (Step 3). The extractor is a plain function pointer, gated on the protocol, reading summary data. A
-built-in protocol adds a row to `buildTable()` in `core/src/filter/fields.cpp` instead; `registerField` is the route for
+built-in protocol declares its rows in a field module (`core/src/dissect/<name>_fields.cpp`, Step 3) instead; `registerField` is the route for
 tests and plugins (it is why the test uses it; the generated filter reference in `docs/FILTER_FIELDS.md` is built from the
 built-in table only, so such fields never appear there):
 

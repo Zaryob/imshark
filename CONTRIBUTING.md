@@ -107,7 +107,7 @@ bullet list of what changed and why. Split a delivery into small commits that ea
 `ROADMAP.md` ("Ortak teslim kuralları", in Turkish) is the binding list. In short: the three kinds of test; a number or
 field is verified by something other than the code under test (an RFC vector, an independent Python computation, the
 `openssl` command line); cross-packet state is decided in the load pass and only read in Replay; `sizeof(packet::PacketInfo)`
-stays within the 336-byte test bound; filter fields go into `core/src/filter/fields.cpp`; and every delivery updates
+stays within the 336-byte test bound; filter fields go into the protocol's field module (`core/src/dissect/<name>_fields.cpp`); and every delivery updates
 `docs/KNOWN_ISSUES.md`, the README feature list and `docs/SUPPORT_MATRIX.md`. Tick a ROADMAP item only when the code meets
 all of it, and say in an italic note what is still missing otherwise. `docs/USER_GUIDE.md` and its generated filter reference
 (`docs/FILTER_FIELDS.md`) are checked by tests: see the `Docs` tests in `tests/test_docs.cpp`.

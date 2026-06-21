@@ -1,6 +1,6 @@
 # Display Filter Field Reference
 
-<!-- Generated from core/src/filter/fields.cpp by the test Docs.FilterReferenceIsGeneratedFromTheFieldTable.
+<!-- Generated from the field modules (core/src/dissect/*_fields.cpp) by the test Docs.FilterReferenceIsGeneratedFromTheFieldTable.
      Do not edit by hand: run the tests with IMSHARK_UPDATE_DOCS=1 to rewrite it. -->
 
 Every field the display filter knows (the same list as the `?` button next to the filter bar). A field of type

@@ -31,7 +31,7 @@ namespace {
         for (const auto &f: filter::builtinFields()) builtin.insert(f.name);
         std::ostringstream out;
         out << "# Display Filter Field Reference\n\n"
-               "<!-- Generated from core/src/filter/fields.cpp by the test Docs.FilterReferenceIsGeneratedFromTheFieldTable.\n"
+               "<!-- Generated from the field modules (core/src/dissect/*_fields.cpp) by the test Docs.FilterReferenceIsGeneratedFromTheFieldTable.\n"
                "     Do not edit by hand: run the tests with IMSHARK_UPDATE_DOCS=1 to rewrite it. -->\n\n"
                "Every field the display filter knows (the same list as the `?` button next to the filter bar). A field of type\n"
                "`protocol` is true when the packet contains the protocol; the other types are compared with the operators described\n"

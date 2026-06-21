@@ -73,7 +73,7 @@ tls.handshake.extensions_server_name contains "example"
 ```
 
 **The complete list of fields, with type and description, is [FILTER_FIELDS.md](FILTER_FIELDS.md).** It is generated from
-the field table in `core/src/filter/fields.cpp`, and a test fails when the two differ, so it is always the list this build
+the field modules in `core/src/dissect/*_fields.cpp`, and a test fails when the two differ, so it is always the list this build
 accepts. Field names are lower case.
 
 Filters from statistics windows and from **Follow Stream > Filter Out This Stream** go through the same bar.

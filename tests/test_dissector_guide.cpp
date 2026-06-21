@@ -54,7 +54,7 @@ namespace {
     // [guide:end]
 
     // Step 3: a filter field. FieldDef extractors are plain function pointers (no captures) and must be gated on the
-    // protocol. Built-in protocols add their rows to the table in core/src/filter/fields.cpp instead; registerField
+    // protocol. Built-in protocols declare their rows in a field module (core/src/dissect/<name>_fields.cpp) instead; registerField
     // is the route for tests and plugins.
     // [guide:begin field]
     void toyType(const packet::PacketInfo &p, const filter::Context &, filter::Values &out) {

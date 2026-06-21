@@ -2,7 +2,7 @@
 
 This document details the file formats, link types, encapsulation methods, and protocols supported by ImShark across versions v0.1 to v1.9+.
 
-Every row states what the code decodes today. "Filter Fields" lists names that exist in the filter table (`core/src/filter/fields.cpp`); "none yet" means the protocol has no display-filter fields of its own (the details are in the tree and the Info column). Functional limits per area are in [KNOWN_ISSUES.md](KNOWN_ISSUES.md), specifications and implementation files in [PROTOCOLS.md](PROTOCOLS.md). Protocols added in v1.1 to v1.9 have been tested with hand-built messages (checked against independent computations) and truncation/mutation sweeps; no real capture of them was available, so the optional real-capture hooks skip.
+Every row states what the code decodes today. "Filter Fields" lists names that exist in the filter table (the field modules `core/src/dissect/*_fields.cpp`); "none yet" means the protocol has no display-filter fields of its own (the details are in the tree and the Info column). Functional limits per area are in [KNOWN_ISSUES.md](KNOWN_ISSUES.md), specifications and implementation files in [PROTOCOLS.md](PROTOCOLS.md). Protocols added in v1.1 to v1.9 have been tested with hand-built messages (checked against independent computations) and truncation/mutation sweeps; no real capture of them was available, so the optional real-capture hooks skip.
 
 ---
 
