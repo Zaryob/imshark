@@ -1,0 +1,152 @@
+arp-big-endian.pcap auto ok=1 n=1 digest=2c4a59eff8444e58 fmt="pcap (big endian, microsecond timestamps), version 2.4" ifaces=1 msg=""
+arp-big-endian.pcap pcap ok=1 n=1 digest=2c4a59eff8444e58 fmt="pcap (big endian, microsecond timestamps), version 2.4" ifaces=1 msg=""
+arp-big-endian.pcap pcapng ok=0 n=0 digest=464997c935e313f3 fmt="pcapng" ifaces=0 msg="Not a pcapng file (missing Section Header Block)"
+arp-big-endian.pcap prefixes 82 digest=78885a8bba7b4426
+arp-little-endian.pcap auto ok=1 n=2 digest=974a9a1543529bc8 fmt="pcap (little endian, microsecond timestamps), version 2.4" ifaces=1 msg=""
+arp-little-endian.pcap pcap ok=1 n=2 digest=974a9a1543529bc8 fmt="pcap (little endian, microsecond timestamps), version 2.4" ifaces=1 msg=""
+arp-little-endian.pcap pcapng ok=0 n=0 digest=2d4f0ff4716348ed fmt="pcapng" ifaces=0 msg="Not a pcapng file (missing Section Header Block)"
+arp-little-endian.pcap prefixes 140 digest=91d79b3542c7f834
+arp-nanosecond.pcap auto ok=1 n=2 digest=d79bc10691ca75eb fmt="pcap (little endian, nanosecond timestamps), version 2.4" ifaces=1 msg=""
+arp-nanosecond.pcap pcap ok=1 n=2 digest=d79bc10691ca75eb fmt="pcap (little endian, nanosecond timestamps), version 2.4" ifaces=1 msg=""
+arp-nanosecond.pcap pcapng ok=0 n=0 digest=2d4f0ff4716348ed fmt="pcapng" ifaces=0 msg="Not a pcapng file (missing Section Header Block)"
+arp-nanosecond.pcap prefixes 140 digest=589a47fa3f81a544
+ethernet-fcs.pcap auto ok=1 n=1 digest=40c006723bb161d7 fmt="pcap (little endian, microsecond timestamps), version 2.4" ifaces=1 msg=""
+ethernet-fcs.pcap pcap ok=1 n=1 digest=40c006723bb161d7 fmt="pcap (little endian, microsecond timestamps), version 2.4" ifaces=1 msg=""
+ethernet-fcs.pcap pcapng ok=0 n=0 digest=d2afae2d23dbc077 fmt="pcapng" ifaces=0 msg="Not a pcapng file (missing Section Header Block)"
+ethernet-fcs.pcap prefixes 86 digest=ad56cece99a96475
+ethernet-vlan-qinq.pcap auto ok=1 n=1 digest=d8eb5c57df26a3e0 fmt="pcap (little endian, microsecond timestamps), version 2.4" ifaces=1 msg=""
+ethernet-vlan-qinq.pcap pcap ok=1 n=1 digest=d8eb5c57df26a3e0 fmt="pcap (little endian, microsecond timestamps), version 2.4" ifaces=1 msg=""
+ethernet-vlan-qinq.pcap pcapng ok=0 n=0 digest=eb7bdaf4ffcd197f fmt="pcapng" ifaces=0 msg="Not a pcapng file (missing Section Header Block)"
+ethernet-vlan-qinq.pcap prefixes 94 digest=ce6a86379cdb257e
+ipv4-fragments.pcap auto ok=1 n=3 digest=bf0cf53a59b8a7c5 fmt="pcap (little endian, microsecond timestamps), version 2.4" ifaces=1 msg=""
+ipv4-fragments.pcap pcap ok=1 n=3 digest=bf0cf53a59b8a7c5 fmt="pcap (little endian, microsecond timestamps), version 2.4" ifaces=1 msg=""
+ipv4-fragments.pcap pcapng ok=0 n=0 digest=566d45b27b4f5852 fmt="pcapng" ifaces=0 msg="Not a pcapng file (missing Section Header Block)"
+ipv4-fragments.pcap prefixes 211 digest=3093dbb780e4ab3a
+ipv6-fragments-out-of-order.pcap auto ok=1 n=3 digest=e23e9fd03498c17a fmt="pcap (little endian, microsecond timestamps), version 2.4" ifaces=1 msg=""
+ipv6-fragments-out-of-order.pcap pcap ok=1 n=3 digest=e23e9fd03498c17a fmt="pcap (little endian, microsecond timestamps), version 2.4" ifaces=1 msg=""
+ipv6-fragments-out-of-order.pcap pcapng ok=0 n=0 digest=8d3306340539fd81 fmt="pcapng" ifaces=0 msg="Not a pcapng file (missing Section Header Block)"
+ipv6-fragments-out-of-order.pcap prefixes 295 digest=3815ec891ceb140d
+ipv6-non-first-fragment.pcap auto ok=1 n=1 digest=829080afe8f9da47 fmt="pcap (little endian, microsecond timestamps), version 2.4" ifaces=1 msg=""
+ipv6-non-first-fragment.pcap pcap ok=1 n=1 digest=829080afe8f9da47 fmt="pcap (little endian, microsecond timestamps), version 2.4" ifaces=1 msg=""
+ipv6-non-first-fragment.pcap pcapng ok=0 n=0 digest=35e0614c93a12497 fmt="pcapng" ifaces=0 msg="Not a pcapng file (missing Section Header Block)"
+ipv6-non-first-fragment.pcap prefixes 118 digest=d7575e6658255aa0
+linux-cooked-udp.pcap auto ok=1 n=1 digest=b9db0b1162b5da5e fmt="pcap (little endian, microsecond timestamps), version 2.4" ifaces=1 msg=""
+linux-cooked-udp.pcap pcap ok=1 n=1 digest=b9db0b1162b5da5e fmt="pcap (little endian, microsecond timestamps), version 2.4" ifaces=1 msg=""
+linux-cooked-udp.pcap pcapng ok=0 n=0 digest=6f962894285d9556 fmt="pcapng" ifaces=0 msg="Not a pcapng file (missing Section Header Block)"
+linux-cooked-udp.pcap prefixes 87 digest=de93e7d2975f721a
+pcapng-big-endian-fcs-bits.pcapng auto ok=1 n=1 digest=807da0d685c685a1 fmt="pcapng (big endian), version 1.0" ifaces=1 msg=""
+pcapng-big-endian-fcs-bits.pcapng pcap ok=0 n=0 digest=3447ceef219c1ad4 fmt="" ifaces=0 msg="Incompatible PCAP file format"
+pcapng-big-endian-fcs-bits.pcapng pcapng ok=1 n=1 digest=807da0d685c685a1 fmt="pcapng (big endian), version 1.0" ifaces=1 msg=""
+pcapng-big-endian-fcs-bits.pcapng prefixes 140 digest=0c230070c8f91c65
+pcapng-legacy-packet-block.pcapng auto ok=1 n=1 digest=0eb16c74f32b6252 fmt="pcapng (little endian), version 1.0" ifaces=1 msg=""
+pcapng-legacy-packet-block.pcapng pcap ok=0 n=0 digest=3447ceef219c1ad4 fmt="" ifaces=0 msg="Incompatible PCAP file format"
+pcapng-legacy-packet-block.pcapng pcapng ok=1 n=1 digest=0eb16c74f32b6252 fmt="pcapng (little endian), version 1.0" ifaces=1 msg=""
+pcapng-legacy-packet-block.pcapng prefixes 128 digest=60027bee5e4fa959
+pcapng-two-interfaces-tsoffset.pcapng auto ok=1 n=2 digest=145a2e7d3a431394 fmt="pcapng (little endian), version 1.0" ifaces=2 msg=""
+pcapng-two-interfaces-tsoffset.pcapng pcap ok=0 n=0 digest=3447ceef219c1ad4 fmt="" ifaces=0 msg="Incompatible PCAP file format"
+pcapng-two-interfaces-tsoffset.pcapng pcapng ok=1 n=2 digest=145a2e7d3a431394 fmt="pcapng (little endian), version 1.0" ifaces=2 msg=""
+pcapng-two-interfaces-tsoffset.pcapng prefixes 268 digest=014817a47d700e2f
+pcapng-undefined-interface.pcapng auto ok=1 n=2 digest=0bec66755fea4337 fmt="pcapng (little endian), version 1.0" ifaces=1 msg="1 packet(s) refer to interface 9, which no Interface Description Block defines; they are shown without protocol decoding"
+pcapng-undefined-interface.pcapng pcap ok=0 n=0 digest=3447ceef219c1ad4 fmt="" ifaces=0 msg="Incompatible PCAP file format"
+pcapng-undefined-interface.pcapng pcapng ok=1 n=2 digest=0bec66755fea4337 fmt="pcapng (little endian), version 1.0" ifaces=1 msg="1 packet(s) refer to interface 9, which no Interface Description Block defines; they are shown without protocol decoding"
+pcapng-undefined-interface.pcapng prefixes 204 digest=bafe9a509eae74c5
+truncated-last-record.pcap auto ok=1 n=1 digest=890d47dd80a2eca9 fmt="pcap (little endian, microsecond timestamps), version 2.4" ifaces=1 msg="Truncated or corrupt packet 2"
+truncated-last-record.pcap pcap ok=1 n=1 digest=890d47dd80a2eca9 fmt="pcap (little endian, microsecond timestamps), version 2.4" ifaces=1 msg="Truncated or corrupt packet 2"
+truncated-last-record.pcap pcapng ok=0 n=0 digest=eb365261a2f76e82 fmt="pcapng" ifaces=0 msg="Not a pcapng file (missing Section Header Block)"
+truncated-last-record.pcap prefixes 131 digest=b571704641fa4485
+sample.pcap auto ok=1 n=16 digest=45b48f1c9729f904 fmt="pcap (little endian, microsecond timestamps), version 2.4" ifaces=1 msg=""
+sample.pcap pcap ok=1 n=16 digest=45b48f1c9729f904 fmt="pcap (little endian, microsecond timestamps), version 2.4" ifaces=1 msg=""
+sample.pcap pcapng ok=0 n=0 digest=5847ddceddaa328d fmt="pcapng" ifaces=0 msg="Not a pcapng file (missing Section Header Block)"
+sample.pcap prefixes 406 digest=3acbdf3366bbb366
+empty auto ok=0 n=0 digest=8c4b4993ff7629f1 fmt="" ifaces=0 msg="File is too short to be a PCAP file"
+empty pcap ok=0 n=0 digest=8c4b4993ff7629f1 fmt="" ifaces=0 msg="File is too short to be a PCAP file"
+empty pcapng ok=0 n=0 digest=03d512b10914eae6 fmt="pcapng" ifaces=0 msg="Not a pcapng file"
+empty prefixes 0 digest=14650fb0739d0383
+three-bytes auto ok=0 n=0 digest=8c4b4993ff7629f1 fmt="" ifaces=0 msg="File is too short to be a PCAP file"
+three-bytes pcap ok=0 n=0 digest=8c4b4993ff7629f1 fmt="" ifaces=0 msg="File is too short to be a PCAP file"
+three-bytes pcapng ok=0 n=0 digest=a9697324f1f9dd23 fmt="pcapng" ifaces=0 msg="Truncated block header"
+three-bytes prefixes 3 digest=f5d042c2ce05cd26
+garbage-32 auto ok=0 n=0 digest=3447ceef219c1ad4 fmt="" ifaces=0 msg="Incompatible PCAP file format"
+garbage-32 pcap ok=0 n=0 digest=3447ceef219c1ad4 fmt="" ifaces=0 msg="Incompatible PCAP file format"
+garbage-32 pcapng ok=0 n=0 digest=78104c65d6543801 fmt="pcapng" ifaces=0 msg="Not a pcapng file (missing Section Header Block)"
+garbage-32 prefixes 32 digest=b537fa461a3c353a
+zeros-64 auto ok=0 n=0 digest=3447ceef219c1ad4 fmt="" ifaces=0 msg="Incompatible PCAP file format"
+zeros-64 pcap ok=0 n=0 digest=3447ceef219c1ad4 fmt="" ifaces=0 msg="Incompatible PCAP file format"
+zeros-64 pcapng ok=0 n=0 digest=4e7e330787040ba1 fmt="pcapng" ifaces=0 msg="Not a pcapng file (missing Section Header Block)"
+zeros-64 prefixes 64 digest=c1c27d6a9a4bd95c
+pcap-le-micro auto ok=1 n=4 digest=d35152f60afaa78e fmt="pcap (little endian, microsecond timestamps), version 2.4" ifaces=1 msg=""
+pcap-le-micro pcap ok=1 n=4 digest=d35152f60afaa78e fmt="pcap (little endian, microsecond timestamps), version 2.4" ifaces=1 msg=""
+pcap-le-micro pcapng ok=0 n=0 digest=41d59d0b0614e8cc fmt="pcapng" ifaces=0 msg="Not a pcapng file (missing Section Header Block)"
+pcap-le-micro prefixes 262 digest=b9220f5a4b1d962c
+pcap-be-micro auto ok=1 n=2 digest=dd7c429c7e2658d0 fmt="pcap (big endian, microsecond timestamps), version 2.4" ifaces=1 msg=""
+pcap-be-micro pcap ok=1 n=2 digest=dd7c429c7e2658d0 fmt="pcap (big endian, microsecond timestamps), version 2.4" ifaces=1 msg=""
+pcap-be-micro pcapng ok=0 n=0 digest=a0e8f990836a9c69 fmt="pcapng" ifaces=0 msg="Not a pcapng file (missing Section Header Block)"
+pcap-be-micro prefixes 136 digest=25d8ede5e82fe56a
+pcap-le-nano auto ok=1 n=2 digest=dcfd1d634b644ca5 fmt="pcap (little endian, nanosecond timestamps), version 2.4" ifaces=1 msg=""
+pcap-le-nano pcap ok=1 n=2 digest=dcfd1d634b644ca5 fmt="pcap (little endian, nanosecond timestamps), version 2.4" ifaces=1 msg=""
+pcap-le-nano pcapng ok=0 n=0 digest=4e4fd7fa9e7599a3 fmt="pcapng" ifaces=0 msg="Not a pcapng file (missing Section Header Block)"
+pcap-le-nano prefixes 130 digest=84729ce9e4829086
+pcap-be-nano auto ok=1 n=1 digest=9ba61e4fec93518f fmt="pcap (big endian, nanosecond timestamps), version 2.4" ifaces=1 msg=""
+pcap-be-nano pcap ok=1 n=1 digest=9ba61e4fec93518f fmt="pcap (big endian, nanosecond timestamps), version 2.4" ifaces=1 msg=""
+pcap-be-nano pcapng ok=0 n=0 digest=3e14fc8ae4c21c45 fmt="pcapng" ifaces=0 msg="Not a pcapng file (missing Section Header Block)"
+pcap-be-nano prefixes 100 digest=3da534d5c201be1b
+pcap-fcs-bits auto ok=1 n=2 digest=71c334e7b696b6d7 fmt="pcap (little endian, microsecond timestamps), version 2.4" ifaces=1 msg=""
+pcap-fcs-bits pcap ok=1 n=2 digest=71c334e7b696b6d7 fmt="pcap (little endian, microsecond timestamps), version 2.4" ifaces=1 msg=""
+pcap-fcs-bits pcapng ok=0 n=0 digest=b9cc53ded3a32e70 fmt="pcapng" ifaces=0 msg="Not a pcapng file (missing Section Header Block)"
+pcap-fcs-bits prefixes 177 digest=0e6d1bbe30946d49
+pcap-cooked auto ok=1 n=1 digest=ef66de6bc4cce825 fmt="pcap (little endian, microsecond timestamps), version 2.4" ifaces=1 msg=""
+pcap-cooked pcap ok=1 n=1 digest=ef66de6bc4cce825 fmt="pcap (little endian, microsecond timestamps), version 2.4" ifaces=1 msg=""
+pcap-cooked pcapng ok=0 n=0 digest=80168c973ee6bdb1 fmt="pcapng" ifaces=0 msg="Not a pcapng file (missing Section Header Block)"
+pcap-cooked prefixes 80 digest=106df718f0190788
+pcap-header-only auto ok=1 n=0 digest=0c2f8dd79cda7ad0 fmt="pcap (little endian, microsecond timestamps), version 2.4" ifaces=1 msg=""
+pcap-header-only pcap ok=1 n=0 digest=0c2f8dd79cda7ad0 fmt="pcap (little endian, microsecond timestamps), version 2.4" ifaces=1 msg=""
+pcap-header-only pcapng ok=0 n=0 digest=5f441f9dfa62def9 fmt="pcapng" ifaces=0 msg="Not a pcapng file (missing Section Header Block)"
+pcap-header-only prefixes 24 digest=6e1ca3ac4d5f8c4d
+pcapng-le-rich auto ok=1 n=7 digest=c3d19f3ff7e773b0 fmt="pcapng (little endian), version 1.0" ifaces=3 msg="1 packet(s) refer to interface 7, which no Interface Description Block defines; they are shown without protocol decoding"
+pcapng-le-rich pcap ok=0 n=0 digest=3447ceef219c1ad4 fmt="" ifaces=0 msg="Incompatible PCAP file format"
+pcapng-le-rich pcapng ok=1 n=7 digest=c3d19f3ff7e773b0 fmt="pcapng (little endian), version 1.0" ifaces=3 msg="1 packet(s) refer to interface 7, which no Interface Description Block defines; they are shown without protocol decoding"
+pcapng-le-rich prefixes 359 digest=b297a046f769f583
+pcapng-be-rich auto ok=1 n=7 digest=365c5e2a54c14aaf fmt="pcapng (big endian), version 1.0" ifaces=3 msg="1 packet(s) refer to interface 7, which no Interface Description Block defines; they are shown without protocol decoding"
+pcapng-be-rich pcap ok=0 n=0 digest=3447ceef219c1ad4 fmt="" ifaces=0 msg="Incompatible PCAP file format"
+pcapng-be-rich pcapng ok=1 n=7 digest=365c5e2a54c14aaf fmt="pcapng (big endian), version 1.0" ifaces=3 msg="1 packet(s) refer to interface 7, which no Interface Description Block defines; they are shown without protocol decoding"
+pcapng-be-rich prefixes 359 digest=ac1bcc4469678ae9
+pcap-huge-caplen auto ok=1 n=0 digest=4369923f92c5a88a fmt="pcap (little endian, microsecond timestamps), version 2.4" ifaces=1 msg="Truncated or corrupt packet 1"
+pcap-huge-caplen pcap ok=1 n=0 digest=4369923f92c5a88a fmt="pcap (little endian, microsecond timestamps), version 2.4" ifaces=1 msg="Truncated or corrupt packet 1"
+pcap-huge-caplen pcapng ok=0 n=0 digest=3e14fc8ae4c21c45 fmt="pcapng" ifaces=0 msg="Not a pcapng file (missing Section Header Block)"
+pcap-huge-caplen prefixes 100 digest=e765f38d634a1209
+pcapng-bad-total-length auto ok=1 n=7 digest=be1be7629cbcd700 fmt="pcapng (little endian), version 1.0" ifaces=3 msg="1 packet(s) refer to interface 7, which no Interface Description Block defines; they are shown without protocol decoding"
+pcapng-bad-total-length pcap ok=0 n=0 digest=3447ceef219c1ad4 fmt="" ifaces=0 msg="Incompatible PCAP file format"
+pcapng-bad-total-length pcapng ok=1 n=7 digest=be1be7629cbcd700 fmt="pcapng (little endian), version 1.0" ifaces=3 msg="1 packet(s) refer to interface 7, which no Interface Description Block defines; they are shown without protocol decoding"
+pcapng-bad-total-length prefixes 359 digest=1a8de318996af67b
+pcapng-bad-trailer auto ok=1 n=6 digest=3e84da50b5fee5de fmt="pcapng (little endian), version 1.0" ifaces=3 msg="Mismatched block length at end of block. Expected: 80"
+pcapng-bad-trailer pcap ok=0 n=0 digest=3447ceef219c1ad4 fmt="" ifaces=0 msg="Incompatible PCAP file format"
+pcapng-bad-trailer pcapng ok=1 n=6 digest=3e84da50b5fee5de fmt="pcapng (little endian), version 1.0" ifaces=3 msg="Mismatched block length at end of block. Expected: 80"
+pcapng-bad-trailer prefixes 359 digest=b297a046f769f583
+pcapng-no-shb auto ok=0 n=0 digest=3447ceef219c1ad4 fmt="" ifaces=0 msg="Incompatible PCAP file format"
+pcapng-no-shb pcap ok=0 n=0 digest=3447ceef219c1ad4 fmt="" ifaces=0 msg="Incompatible PCAP file format"
+pcapng-no-shb pcapng ok=0 n=0 digest=f5d096e3101e9665 fmt="pcapng" ifaces=0 msg="Not a pcapng file (missing Section Header Block)"
+pcapng-no-shb prefixes 350 digest=5cd5f4cf150ef8c5
+pcapng-bad-byte-order auto ok=0 n=0 digest=442fa81d90b3da83 fmt="pcapng" ifaces=0 msg="Invalid pcapng byte-order magic"
+pcapng-bad-byte-order pcap ok=0 n=0 digest=3447ceef219c1ad4 fmt="" ifaces=0 msg="Incompatible PCAP file format"
+pcapng-bad-byte-order pcapng ok=0 n=0 digest=442fa81d90b3da83 fmt="pcapng" ifaces=0 msg="Invalid pcapng byte-order magic"
+pcapng-bad-byte-order prefixes 359 digest=674bd75d37e66f07
+netmon auto ok=0 n=0 digest=087da194beb0fdf3 fmt="" ifaces=0 msg="Desteklenmeyen dosya biçimi: Microsoft Network Monitor"
+netmon pcap ok=0 n=0 digest=087da194beb0fdf3 fmt="" ifaces=0 msg="Desteklenmeyen dosya biçimi: Microsoft Network Monitor"
+netmon pcapng ok=0 n=0 digest=b405969fcf1ab963 fmt="pcapng" ifaces=0 msg="Desteklenmeyen dosya biçimi: Microsoft Network Monitor"
+netmon prefixes 25 digest=a4965d973e051dc9
+snoop auto ok=0 n=0 digest=a615f0301babe624 fmt="" ifaces=0 msg="Desteklenmeyen dosya biçimi: Sun snoop"
+snoop pcap ok=0 n=0 digest=a615f0301babe624 fmt="" ifaces=0 msg="Desteklenmeyen dosya biçimi: Sun snoop"
+snoop pcapng ok=0 n=0 digest=959e2c4bd3b52b3d fmt="pcapng" ifaces=0 msg="Desteklenmeyen dosya biçimi: Sun snoop"
+snoop prefixes 24 digest=db5766f171f3523f
+iptrace auto ok=0 n=0 digest=bca17480265d6031 fmt="" ifaces=0 msg="Desteklenmeyen dosya biçimi: AIX iptrace"
+iptrace pcap ok=0 n=0 digest=8c4b4993ff7629f1 fmt="" ifaces=0 msg="File is too short to be a PCAP file"
+iptrace pcapng ok=0 n=0 digest=d2de093a0c6a3275 fmt="pcapng" ifaces=0 msg="Not a pcapng file (missing Section Header Block)"
+iptrace prefixes 20 digest=57ac7e1b155a9818
+erf auto ok=0 n=0 digest=e214a37c00d9170d fmt="" ifaces=0 msg="Desteklenmeyen dosya biçimi: Endace ERF"
+erf pcap ok=0 n=0 digest=e214a37c00d9170d fmt="" ifaces=0 msg="Desteklenmeyen dosya biçimi: Endace ERF"
+erf pcapng ok=0 n=0 digest=4e7e330787040ba1 fmt="pcapng" ifaces=0 msg="Not a pcapng file (missing Section Header Block)"
+erf prefixes 64 digest=76d8c5bfd36eb0b8
+gzip auto ok=0 n=0 digest=8c4b4993ff7629f1 fmt="" ifaces=0 msg="File is too short to be a PCAP file"
+gzip pcap ok=0 n=0 digest=8c4b4993ff7629f1 fmt="" ifaces=0 msg="File is too short to be a PCAP file"
+gzip pcapng ok=0 n=0 digest=d2de093a0c6a3275 fmt="pcapng" ifaces=0 msg="Not a pcapng file (missing Section Header Block)"
+gzip prefixes 20 digest=01e9444250f357c4
