@@ -59,6 +59,10 @@ void packet::PacketParser::parsePacket(packet::PacketInfo &pack, const std::vect
     pack.ip_protocol = 0;
     pack.ttl = 0;
     pack.tcp_flags = 0;
+    if (mode != dissect::ParseMode::Replay) {
+        pack.tcp_analysis = 0; // in Replay mode these come from the summary
+        pack.tcp_dup_ack = 0;
+    }
     pack.src_port = pack.dst_port = 0;
     pack.protocol.clear();
     pack.info.clear();

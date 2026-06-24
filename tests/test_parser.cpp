@@ -3,6 +3,9 @@
 #include <algorithm>
 #include <random>
 
+#include <filter/filter.h>
+#include <network/connection.h>
+
 #include "support.h"
 
 using support::hex;
@@ -297,4 +300,56 @@ TEST(SummaryFacts, ExtensionHeadersReportTheTransportProtocol) {
     auto p = parse(hex("001122334455 aabbccddeeff 86dd 60000000 0018 00 40 20010db8000000000000000000000001 20010db8000000000000000000000002"
                        "3c00 000000000000 1100 000000000000 1234 1235 0008 0000"));
     EXPECT_EQ(p.ip_protocol, 17) << "not 0 (hop-by-hop) or 60 (destination options)";
+}
+
+// ---- TCP analysis at packet level ---------------------------------------------------------------------
+
+namespace {
+    // Ethernet + IPv4 + TCP (20-byte header) followed by `payload` bytes of 0x61
+    std::string tcpFrame(const char *srcIp, const char *dstIp, const char *sport, const char *dport, const char *seq,
+                         const char *ack, const char *flags, size_t payload) {
+        char total[8];
+        snprintf(total, sizeof total, "%04zx", 40 + payload);
+        std::string data;
+        for (size_t i = 0; i < payload; ++i) data += "61";
+        return std::string("001122334455 aabbccddeeff 0800 4500") + total + "0000 0000 4006 0000 " + srcIp + " " + dstIp + " " + sport + " " +
+               dport + " " + seq + " " + ack + " 50" + flags + " 2000 0000 0000 " + data;
+    }
+} // namespace
+
+TEST(TcpAnalysisPackets, RetransmissionShowsInInfoFiltersAndTree) {
+    packet::PacketParser parser;
+    auto run = [&](const std::string &frame, int number) {
+        packet::PacketInfo info(number);
+        std::vector<char> bytes = hex(frame);
+        parser.parsePacket(info, bytes);
+        return info;
+    };
+    const auto syn = run(tcpFrame("0a000001", "0a000002", "1388", "0050", "000003e8", "00000000", "02", 0), 1);
+    const auto data1 = run(tcpFrame("0a000001", "0a000002", "1388", "0050", "000003e9", "00000001", "18", 10), 2);
+    const auto data2 = run(tcpFrame("0a000001", "0a000002", "1388", "0050", "000003e9", "00000001", "18", 10), 3);
+
+    EXPECT_EQ(syn.tcp_analysis, 0);
+    EXPECT_EQ(data1.tcp_analysis, 0);
+    EXPECT_EQ(data2.tcp_analysis, network::kTcpRetransmission);
+    EXPECT_EQ(data2.info.rfind("[TCP Retransmission] 5000 -> 80", 0), 0u) << data2.info;
+    EXPECT_NE(findField(data2, "[SEQ/ACK analysis]"), nullptr);
+    EXPECT_NE(findField(data2, "This frame is a (suspected) retransmission"), nullptr);
+    EXPECT_EQ(findField(data1, "[SEQ/ACK analysis]"), nullptr);
+
+    auto f = filter::Filter::compile("tcp.analysis.retransmission");
+    ASSERT_TRUE(f.ok);
+    EXPECT_FALSE(f.filter.matches(data1));
+    EXPECT_TRUE(f.filter.matches(data2));
+    EXPECT_TRUE(filter::Filter::compile("tcp.analysis.flags && !tcp.analysis.lost_segment").filter.matches(data2));
+    EXPECT_FALSE(filter::Filter::compile("tcp.analysis.flags").filter.matches(parse(hex(support::kArpRequest)))) << "not TCP";
+
+    // Summary parsing keeps the analysis, and a Replay of the packet in isolation reproduces info and tree
+    packet::PacketParser fresh;
+    packet::PacketInfo replayed = data2;
+    std::vector<char> bytes = hex(tcpFrame("0a000001", "0a000002", "1388", "0050", "000003e9", "00000001", "18", 10));
+    fresh.parsePacket(replayed, bytes, dissect::ParseMode::Replay);
+    EXPECT_EQ(replayed.info, data2.info);
+    EXPECT_EQ(replayed.tcp_analysis, data2.tcp_analysis);
+    EXPECT_NE(findField(replayed, "This frame is a (suspected) retransmission"), nullptr);
 }

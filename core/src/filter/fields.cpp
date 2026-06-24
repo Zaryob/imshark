@@ -20,6 +20,10 @@ namespace filter {
         template<uint8_t Bit>
         void tcpFlag(const PacketInfo &p, const Context &, Values &out) { if (hasTcp(p)) out.addU((p.tcp_flags & Bit) ? 1 : 0); }
 
+        // TCP analysis flag (network::TcpAnalysisFlag bit): 0/1 for TCP packets, absent otherwise
+        template<uint16_t Bit>
+        void tcpAnalysis(const PacketInfo &p, const Context &, Values &out) { if (hasTcp(p)) out.addU((p.tcp_analysis & Bit) ? 1 : 0); }
+
         void addr(const PacketInfo &p, const Context &, Values &out, bool wantV6, bool src, bool dst) {
             if (p.ip_version != (wantV6 ? 6 : 4)) return;
             if (src) if (auto a = network::parseIpAddress(p.source)) out.addA(*a);
@@ -79,6 +83,15 @@ namespace filter {
                 {"tcp.len", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (hasTcp(p)) o.addU(p.length); }, "TCP payload length"},
                 {"tcp.seq", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (hasTcp(p) && p.tcp_relative_seq >= 0) o.addU(static_cast<uint64_t>(p.tcp_relative_seq)); }, "TCP relative sequence number"},
                 {"tcp.ack", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (hasTcp(p) && p.tcp_relative_ack >= 0) o.addU(static_cast<uint64_t>(p.tcp_relative_ack)); }, "TCP relative acknowledgment number"},
+                {"tcp.analysis.flags", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (hasTcp(p)) o.addU(p.tcp_analysis != 0); }, "Any TCP analysis note (retransmission, dup ACK, ...)"},
+                {"tcp.analysis.retransmission", FieldType::Boolean, tcpAnalysis<1>, "TCP segment repeats data that was already seen"},
+                {"tcp.analysis.out_of_order", FieldType::Boolean, tcpAnalysis<2>, "TCP segment arrived out of order"},
+                {"tcp.analysis.lost_segment", FieldType::Boolean, tcpAnalysis<4>, "A previous TCP segment was not captured"},
+                {"tcp.analysis.duplicate_ack", FieldType::Boolean, tcpAnalysis<8>, "Duplicate acknowledgment"},
+                {"tcp.analysis.duplicate_ack_num", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (hasTcp(p) && (p.tcp_analysis & 8)) o.addU(p.tcp_dup_ack); }, "Number of the duplicate ACK (#n)"},
+                {"tcp.analysis.zero_window", FieldType::Boolean, tcpAnalysis<16>, "Zero receive window advertised"},
+                {"tcp.analysis.keep_alive", FieldType::Boolean, tcpAnalysis<32>, "TCP keep-alive"},
+                {"tcp.analysis.window_update", FieldType::Boolean, tcpAnalysis<64>, "TCP window update"},
                 {"udp.srcport", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (hasUdp(p)) o.addU(p.src_port); }, "UDP source port"},
                 {"udp.dstport", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (hasUdp(p)) o.addU(p.dst_port); }, "UDP destination port"},
                 {"udp.port", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (hasUdp(p)) { o.addU(p.src_port); o.addU(p.dst_port); } }, "UDP source or destination port"},
