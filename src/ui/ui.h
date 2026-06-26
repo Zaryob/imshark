@@ -52,6 +52,10 @@ namespace ui {
     /// Searches from the selected row (or from the start) and selects the match; updates state.find.message.
     bool findAndSelect(AppState &state, bool forward);
     void drawFindBar(AppState &state);
+    /// Publishes a finished background byte search (selects the match, sets the message). Called every frame.
+    void pollSearch(AppState &state);
+    /// Stops a running byte search and waits for its thread (must happen before `state.packets` changes).
+    void cancelSearch(AppState &state);
 
     // packet_list.cpp
     void drawPacketList(AppState &state, float height);

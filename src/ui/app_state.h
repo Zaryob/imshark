@@ -13,7 +13,8 @@
 #include "settings.h"
 
 namespace ui {
-    struct LoadJob; // background load in progress (loader.cpp)
+    struct LoadJob;    // background load in progress (loader.cpp)
+    struct SearchJob;  // background byte search in progress (find_bar.cpp)
 
     /// The display filter bar: what is typed, what is applied, and which packets pass.
     struct FilterState {
@@ -38,6 +39,7 @@ namespace ui {
         std::string text;
         std::string message;      // result of the last search ("Found ...", "No match", filter error)
         bool messageIsError = false;
+        std::shared_ptr<SearchJob> job;   // non-null while a byte search runs in the background
     };
 
     /// The Statistics windows and their cached results (recomputed lazily when `dirty`).
