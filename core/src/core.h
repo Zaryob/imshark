@@ -10,6 +10,7 @@
 #include <load_control.h>
 #include <packet/packet_parser.h>
 #include <dissect/session.h>
+#include <io/capture_file.h>
 
 namespace core {
     /// Supported and recognized capture file formats (ROADMAP B5).
@@ -127,6 +128,10 @@ namespace core {
         dissect::SessionTables &sessions() { return parser.sessions(); }
 
     private:
+        /// Loads `filepath` through `reader`: the part of a load that is the same for every capture file format.
+        bool load(io::CaptureFileReader &reader, const std::string &filepath, std::vector<packet::PacketInfo> &packets,
+                  std::string &message, LoadControl *control);
+
         double captureStart_ = 0;
         CaptureInfo info_;
         TimeBase liveTime_;

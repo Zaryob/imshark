@@ -33,6 +33,10 @@ namespace core::io {
     /// The first format whose probe accepts the leading bytes, Unknown if none.
     FileFormat identifyFormat(const uint8_t *buf, size_t len);
 
+    /// The built-in readers (also reachable through the registry).
+    std::unique_ptr<CaptureFileReader> makePcapReader();
+    std::unique_ptr<CaptureFileReader> makePcapngReader();
+
     /// A fresh reader for `format`, nullptr if the format has none.
     std::unique_ptr<CaptureFileReader> makeReader(FileFormat format);
 } // namespace core::io

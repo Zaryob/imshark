@@ -5,6 +5,8 @@ add_library(imshark_core STATIC
     src/capture_reader.cpp
     src/core.cpp
     src/io/format_registry.cpp
+    src/io/pcap_reader.cpp
+    src/io/pcapng_reader.cpp
     src/gzip.cpp
     src/packet_parser.cpp
     src/tcp_connection.cpp

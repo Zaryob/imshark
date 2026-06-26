@@ -50,8 +50,8 @@ namespace {
 
 const std::vector<core::io::FormatDescriptor> &core::io::captureFormats() {
     static const std::vector<FormatDescriptor> formats = {
-        {FileFormat::Pcap, "PCAP", matchPcap, nullptr},
-        {FileFormat::Pcapng, "PCAPNG", matchPcapng, nullptr},
+        {FileFormat::Pcap, "PCAP", matchPcap, makePcapReader},
+        {FileFormat::Pcapng, "PCAPNG", matchPcapng, makePcapngReader},
         {FileFormat::NetMon, "Microsoft Network Monitor", matchNetMon, nullptr},
         {FileFormat::Snoop, "Sun snoop", matchSnoop, nullptr},
         {FileFormat::Iptrace, "AIX iptrace", matchIptrace, nullptr},
