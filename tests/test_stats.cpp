@@ -147,3 +147,31 @@ TEST(Stats, EmptyCaptureIsHandled) {
     EXPECT_EQ(root.packets, 0u);
     EXPECT_TRUE(root.children.empty());
 }
+
+TEST(Stats, ExpertInfoCountsWhatTheFiltersFind) {
+    Sample s;
+    const auto items = stats::expertInfo(s.packets, nullptr);
+    auto count = [&](const std::string &filterText) -> uint64_t {
+        for (const auto &i: items) if (i.filter == filterText) return i.count;
+        return 0;
+    };
+    EXPECT_EQ(count("malformed"), 1u) << "the truncated TCP packet of the sample";
+    EXPECT_EQ(count("tcp.flags.syn && !tcp.flags.ack"), 1u);
+    EXPECT_EQ(count("tcp.flags.fin"), 1u);
+    EXPECT_EQ(count("tcp.flags.rst"), 0u) << "items that do not occur are not listed";
+    for (size_t i = 1; i < items.size(); ++i) EXPECT_GE(items[i - 1].severity, items[i].severity) << "most severe first";
+    EXPECT_EQ(items.front().severity, stats::Severity::Error);
+
+    // every item's filter selects exactly `count` packets
+    for (const auto &item: items) {
+        auto f = filter::Filter::compile(item.filter);
+        ASSERT_TRUE(f.ok);
+        uint64_t n = 0;
+        for (const auto &p: s.packets) n += f.filter.matches(p);
+        EXPECT_EQ(n, item.count) << item.summary;
+    }
+
+    std::vector<uint32_t> udpOnly = {4, 5, 12, 13};
+    EXPECT_TRUE(stats::expertInfo(s.packets, &udpOnly).empty());
+    EXPECT_TRUE(stats::expertInfo({}, nullptr).empty());
+}

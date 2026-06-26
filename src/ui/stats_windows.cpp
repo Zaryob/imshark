@@ -32,6 +32,7 @@ namespace {
         if (!s.dirty) return;
         s.dirty = false;
         s.hierarchyValid = false;
+        s.expertValid = false;
         for (int i = 0; i < 4; ++i) s.conversationsValid[i] = s.endpointsValid[i] = false;
     }
 
@@ -78,6 +79,45 @@ namespace {
             for (const auto &c: n.children) hierarchyRow(c, totalPackets, totalBytes);
             ImGui::TreePop();
         }
+    }
+
+    void drawExpert(ui::AppState &state) {
+        auto &s = state.stats;
+        ImGui::SetNextWindowSize(ImVec2(640, 320), ImGuiCond_FirstUseEver);
+        if (!ImGui::Begin("Expert Information", &s.showExpert)) { ImGui::End(); return; }
+        limitCheckbox(state);
+        refreshIfDirty(state);
+        if (!s.expertValid) {
+            s.expert = stats::expertInfo(state.packets, subset(state), state.captureStartEpoch);
+            s.expertValid = true;
+        }
+        if (s.expert.empty()) ImGui::TextDisabled("Nothing noteworthy found.");
+        if (ImGui::BeginTable("expert", 3, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_Resizable)) {
+            ImGui::TableSetupColumn("Severity", ImGuiTableColumnFlags_WidthFixed, 80);
+            ImGui::TableSetupColumn("Summary", ImGuiTableColumnFlags_WidthStretch);
+            ImGui::TableSetupColumn("Packets", ImGuiTableColumnFlags_WidthFixed, 80);
+            ImGui::TableHeadersRow();
+            for (size_t i = 0; i < s.expert.size(); ++i) {
+                const auto &item = s.expert[i];
+                ImGui::TableNextRow();
+                ImGui::TableSetColumnIndex(0);
+                const ImVec4 color = item.severity == stats::Severity::Error ? ImVec4(1.0f, 0.4f, 0.4f, 1.0f)
+                                     : item.severity == stats::Severity::Warn ? ImVec4(1.0f, 0.8f, 0.3f, 1.0f)
+                                     : item.severity == stats::Severity::Note ? ImVec4(0.5f, 0.8f, 1.0f, 1.0f) : ImVec4(0.7f, 0.7f, 0.7f, 1.0f);
+                ImGui::TextColored(color, "%s", stats::severityName(item.severity));
+                ImGui::TableSetColumnIndex(1);
+                ImGui::PushID(static_cast<int>(i));
+                if (ImGui::Selectable(item.summary.c_str(), false, ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowDoubleClick)) {
+                    if (ImGui::IsMouseDoubleClicked(0)) ui::applyFilter(state, item.filter);
+                }
+                if (ImGui::IsItemHovered()) ImGui::SetTooltip("Double-click to filter: %s", item.filter.c_str());
+                ImGui::PopID();
+                ImGui::TableSetColumnIndex(2);
+                ImGui::Text("%llu", static_cast<unsigned long long>(item.count));
+            }
+            ImGui::EndTable();
+        }
+        ImGui::End();
     }
 
     void drawHierarchy(ui::AppState &state) {
@@ -277,6 +317,7 @@ namespace {
 } // namespace
 
 void ui::drawStatsWindows(AppState &state) {
+    if (state.stats.showExpert) drawExpert(state);
     if (state.stats.showHierarchy) drawHierarchy(state);
     if (state.stats.showConversations) drawConversations(state);
     if (state.stats.showEndpoints) drawEndpoints(state);

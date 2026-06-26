@@ -68,6 +68,8 @@ void ui::drawMenuAndDialogs(AppState &state) {
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("Statistics")) {
+            ImGui::MenuItem("Expert Information", nullptr, &state.stats.showExpert);
+            ImGui::Separator();
             ImGui::MenuItem("Protocol Hierarchy", nullptr, &state.stats.showHierarchy);
             ImGui::MenuItem("Conversations", nullptr, &state.stats.showConversations);
             ImGui::MenuItem("Endpoints", nullptr, &state.stats.showEndpoints);

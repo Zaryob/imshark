@@ -74,3 +74,16 @@ TEST(ColorRules, SerializeRoundTrip) {
         EXPECT_FALSE(ui::parseColorRule(bad, unused)) << bad;
     }
 }
+
+TEST(ColorRules, TcpAnalysisProblemsGetTheirOwnColor) {
+    ui::CompiledColorRules rules(ui::defaultColorRules());
+    packet::PacketInfo retrans = parse(hex(kTcpAck));
+    retrans.tcp_analysis = 1; // retransmission
+    const auto *r = rules.match(retrans, {});
+    ASSERT_NE(r, nullptr);
+    EXPECT_EQ(r->name, "TCP problem");
+    retrans.tcp_analysis = 64; // window update: not a problem
+    EXPECT_EQ(rules.match(retrans, {})->name, "TCP");
+    retrans.tcp_analysis = 32; // keep-alive: not a problem either
+    EXPECT_EQ(rules.match(retrans, {})->name, "TCP");
+}

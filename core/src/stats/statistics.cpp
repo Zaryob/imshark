@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <unordered_map>
 
+#include <filter/filter.h>
+
 namespace stats {
     namespace {
         bool applies(const packet::PacketInfo &p, AddressKind kind) {
@@ -130,6 +132,50 @@ namespace stats {
         if (kind == AddressKind::Tcp) f += " && tcp.port == " + std::to_string(e.port);
         else if (kind == AddressKind::Udp) f += " && udp.port == " + std::to_string(e.port);
         return f;
+    }
+
+    const char *severityName(Severity s) {
+        switch (s) {
+            case Severity::Chat: return "Chat";
+            case Severity::Note: return "Note";
+            case Severity::Warn: return "Warning";
+            case Severity::Error: return "Error";
+        }
+        return "";
+    }
+
+    std::vector<ExpertItem> expertInfo(const std::vector<packet::PacketInfo> &packets, Subset subset, double captureStartEpoch) {
+        struct Def { Severity severity; const char *summary; const char *filter; };
+        static const Def defs[] = {
+            {Severity::Error, "Malformed packet", "malformed"},
+            {Severity::Warn, "TCP: previous segment not captured", "tcp.analysis.lost_segment"},
+            {Severity::Warn, "TCP: retransmission", "tcp.analysis.retransmission"},
+            {Severity::Warn, "TCP: out-of-order segment", "tcp.analysis.out_of_order"},
+            {Severity::Warn, "TCP: zero window", "tcp.analysis.zero_window"},
+            {Severity::Warn, "TCP: connection reset (RST)", "tcp.flags.rst"},
+            {Severity::Note, "TCP: duplicate ACK", "tcp.analysis.duplicate_ack"},
+            {Severity::Note, "TCP: keep-alive", "tcp.analysis.keep_alive"},
+            {Severity::Note, "TCP: window update", "tcp.analysis.window_update"},
+            {Severity::Chat, "TCP: connection request (SYN)", "tcp.flags.syn && !tcp.flags.ack"},
+            {Severity::Chat, "TCP: connection finished (FIN)", "tcp.flags.fin"},
+        };
+        std::vector<ExpertItem> out;
+        for (const auto &d: defs) {
+            auto compiled = filter::Filter::compile(d.filter);
+            if (!compiled.ok) continue;
+            ExpertItem item{d.severity, d.summary, d.filter, 0};
+            filter::Context context;
+            context.captureStartEpoch = captureStartEpoch;
+            auto visit = [&](size_t i) {
+                context.previous = i ? &packets[i - 1] : nullptr;
+                if (compiled.filter.matches(packets[i], context)) ++item.count;
+            };
+            if (subset) { for (uint32_t i: *subset) if (i < packets.size()) visit(i); }
+            else { for (size_t i = 0; i < packets.size(); ++i) visit(i); }
+            if (item.count > 0) out.push_back(std::move(item));
+        }
+        std::stable_sort(out.begin(), out.end(), [](const ExpertItem &a, const ExpertItem &b) { return a.severity > b.severity; });
+        return out;
     }
 
     namespace {
