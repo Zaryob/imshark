@@ -70,6 +70,10 @@ void dissect::dissectTcp(Context &ctx, const char *data, size_t length) {
     pack.length = pack.length >= headerLen ? pack.length - headerLen : 0;
     const char *payload = data + headerLen;
     const size_t payloadLen = std::min<size_t>(pack.length, length - headerLen);
+    if (payloadLen > 0) {
+        pack.payload_offset = static_cast<uint32_t>(ctx.offsetOf(payload));
+        pack.payload_length = static_cast<uint32_t>(payloadLen);
+    }
 
     int64_t seq = -1, ack = -1;
     if (ctx.mode == ParseMode::Replay) {

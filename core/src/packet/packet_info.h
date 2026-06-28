@@ -68,6 +68,8 @@ namespace packet {
         uint8_t tcp_flags = 0;       // raw TCP flag byte
         uint16_t src_port = 0;       // TCP/UDP ports (0 if not applicable)
         uint16_t dst_port = 0;
+        uint32_t payload_offset = 0; // TCP/UDP payload inside the captured frame (0/0 if there is none)
+        uint32_t payload_length = 0;
 
         /// The captured frame. Empty for packets of a loaded capture, filled when details are built.
         std::vector<char> raw_data;

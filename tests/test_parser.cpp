@@ -353,3 +353,19 @@ TEST(TcpAnalysisPackets, RetransmissionShowsInInfoFiltersAndTree) {
     EXPECT_EQ(replayed.tcp_analysis, data2.tcp_analysis);
     EXPECT_NE(findField(replayed, "This frame is a (suspected) retransmission"), nullptr);
 }
+
+TEST(SummaryFacts, PayloadPositionInsideTheFrame) {
+    auto tcp = parse(hex("001122334455 aabbccddeeff 0800 4500003000000000 4006 0000 0a000001 0a000002 1f90 01bb 00000001 00000000 5018 2000 0000 0000 6162636465666768"));
+    EXPECT_EQ(tcp.payload_offset, 14u + 20u + 20u);
+    EXPECT_EQ(tcp.payload_length, 8u);
+    auto udp = parse(hex("001122334455 aabbccddeeff 0800 4500001f00000000 4011 0000 0a000001 0a000002 1234 1235 000b 0000 686921"));
+    EXPECT_EQ(udp.payload_offset, 14u + 20u + 8u);
+    EXPECT_EQ(udp.payload_length, 3u);
+    auto ack = parse(hex("001122334455 aabbccddeeff 0800 4500002800000000 4006 0000 0a000001 0a000002 1f90 01bb 00000001 00000000 5010 2000 0000 0000"));
+    EXPECT_EQ(ack.payload_length, 0u);
+    EXPECT_EQ(ack.payload_offset, 0u);
+    auto vlan = parse(hex("001122334455 aabbccddeeff 8100 0064 0800 4500001f00000000 4011 0000 0a000001 0a000002 1234 1235 000b 0000 686921"));
+    EXPECT_EQ(vlan.payload_offset, 14u + 4u + 20u + 8u) << "VLAN tags move the payload";
+    auto ethPadded = parse(hex("001122334455 aabbccddeeff 0800 4500002c00000000 4006 0000 0a000001 0a000002 1f90 01bb 00000001 00000000 5018 2000 0000 0000 61626364 00000000"));
+    EXPECT_EQ(ethPadded.payload_length, 4u) << "frame padding is not payload";
+}
