@@ -22,6 +22,7 @@ namespace core {
         Snoop,      // Sun snoop
         Erf,        // Endace ERF
         Iptrace,    // AIX iptrace (v1.0 / v2.0)
+        Gzip,       // gzip wrapper around a capture file (unpacked by the loader before reading)
     };
 
     /// Returns the human-readable display name of a capture file format.
@@ -30,10 +31,13 @@ namespace core {
     /// Identifies the format of a file from its initial bytes/magic number.
     FileFormat detectFileFormat(const std::string &filepath);
 
-    /// Diagnoses an unrecognized or unsupported capture file format.
-    /// Returns "Desteklenmeyen dosya biçimi: <Name>" if recognized but unsupported,
-    /// or empty string if supported or not a recognized format.
+    /// Diagnoses a file of a recognized format that cannot be read: "Unsupported file format: <Name>".
+    /// Returns an empty string for formats that are readable and for Unknown.
     std::string unsupportedFormatDiagnostic(FileFormat fmt);
+
+    /// Diagnoses a file that matched no known format: "Unsupported file format: unknown magic number 7f 45 4c 46".
+    /// Empty if fewer than 4 bytes are given (too short to carry a magic number).
+    std::string unknownFormatDiagnostic(const uint8_t *buf, size_t len);
 
     /// Reads capture files (classic pcap and pcapng) into a list of parsed packets.
     ///

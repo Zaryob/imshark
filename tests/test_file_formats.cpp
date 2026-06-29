@@ -61,19 +61,19 @@ TEST(FileFormats, FormatIdentificationAndDiagnostics) {
         EXPECT_EQ(core::detectFileFormat(path), core::FileFormat::NetMon);
         EXPECT_EQ(std::string(core::formatName(core::FileFormat::NetMon)), "Microsoft Network Monitor");
         EXPECT_EQ(core::unsupportedFormatDiagnostic(core::FileFormat::NetMon),
-                  "Desteklenmeyen dosya biçimi: Microsoft Network Monitor");
+                  "Unsupported file format: Microsoft Network Monitor");
 
         core::FileProcessor fp;
         std::vector<packet::PacketInfo> packets;
         std::string message;
         bool ok = fp.processFile(path, packets, message);
         EXPECT_FALSE(ok);
-        EXPECT_EQ(message, "Desteklenmeyen dosya biçimi: Microsoft Network Monitor");
+        EXPECT_EQ(message, "Unsupported file format: Microsoft Network Monitor");
 
         // Also test direct processPcapFile invocation
         ok = fp.processPcapFile(path, packets, message);
         EXPECT_FALSE(ok);
-        EXPECT_EQ(message, "Desteklenmeyen dosya biçimi: Microsoft Network Monitor");
+        EXPECT_EQ(message, "Unsupported file format: Microsoft Network Monitor");
         std::remove(path.c_str());
     }
 
@@ -83,14 +83,14 @@ TEST(FileFormats, FormatIdentificationAndDiagnostics) {
         EXPECT_EQ(core::detectFileFormat(path), core::FileFormat::Snoop);
         EXPECT_EQ(std::string(core::formatName(core::FileFormat::Snoop)), "Sun snoop");
         EXPECT_EQ(core::unsupportedFormatDiagnostic(core::FileFormat::Snoop),
-                  "Desteklenmeyen dosya biçimi: Sun snoop");
+                  "Unsupported file format: Sun snoop");
 
         core::FileProcessor fp;
         std::vector<packet::PacketInfo> packets;
         std::string message;
         bool ok = fp.processFile(path, packets, message);
         EXPECT_FALSE(ok);
-        EXPECT_EQ(message, "Desteklenmeyen dosya biçimi: Sun snoop");
+        EXPECT_EQ(message, "Unsupported file format: Sun snoop");
         std::remove(path.c_str());
     }
 
@@ -100,14 +100,14 @@ TEST(FileFormats, FormatIdentificationAndDiagnostics) {
         EXPECT_EQ(core::detectFileFormat(path), core::FileFormat::Erf);
         EXPECT_EQ(std::string(core::formatName(core::FileFormat::Erf)), "Endace ERF");
         EXPECT_EQ(core::unsupportedFormatDiagnostic(core::FileFormat::Erf),
-                  "Desteklenmeyen dosya biçimi: Endace ERF");
+                  "Unsupported file format: Endace ERF");
 
         core::FileProcessor fp;
         std::vector<packet::PacketInfo> packets;
         std::string message;
         bool ok = fp.processFile(path, packets, message);
         EXPECT_FALSE(ok);
-        EXPECT_EQ(message, "Desteklenmeyen dosya biçimi: Endace ERF");
+        EXPECT_EQ(message, "Unsupported file format: Endace ERF");
         std::remove(path.c_str());
     }
 
@@ -117,21 +117,21 @@ TEST(FileFormats, FormatIdentificationAndDiagnostics) {
         EXPECT_EQ(core::detectFileFormat(path1), core::FileFormat::Iptrace);
         EXPECT_EQ(std::string(core::formatName(core::FileFormat::Iptrace)), "AIX iptrace");
         EXPECT_EQ(core::unsupportedFormatDiagnostic(core::FileFormat::Iptrace),
-                  "Desteklenmeyen dosya biçimi: AIX iptrace");
+                  "Unsupported file format: AIX iptrace");
 
         core::FileProcessor fp;
         std::vector<packet::PacketInfo> packets;
         std::string message;
         bool ok = fp.processFile(path1, packets, message);
         EXPECT_FALSE(ok);
-        EXPECT_EQ(message, "Desteklenmeyen dosya biçimi: AIX iptrace");
+        EXPECT_EQ(message, "Unsupported file format: AIX iptrace");
         std::remove(path1.c_str());
 
         const auto path2 = support::writeTemp("sample2.iptrace", makeIptrace2Sample());
         EXPECT_EQ(core::detectFileFormat(path2), core::FileFormat::Iptrace);
         ok = fp.processFile(path2, packets, message);
         EXPECT_FALSE(ok);
-        EXPECT_EQ(message, "Desteklenmeyen dosya biçimi: AIX iptrace");
+        EXPECT_EQ(message, "Unsupported file format: AIX iptrace");
         std::remove(path2.c_str());
     }
 }

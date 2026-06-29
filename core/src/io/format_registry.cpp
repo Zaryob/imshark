@@ -21,6 +21,10 @@ namespace {
         return magic == kBlockSHB;
     }
 
+    // gzip (RFC 1952): 1f 8b, method 8 (deflate), no reserved flag bits. Must be probed before ERF, whose heuristic
+    // would otherwise take a gzip header with a plausible length field for a record.
+    bool matchGzip(const uint8_t *buf, size_t len) { return len >= 4 && buf[0] == 0x1f && buf[1] == 0x8b && buf[2] == 8 && (buf[3] & 0xE0) == 0; }
+
     // Microsoft Network Monitor: "GMBU" (0x55424d47 in big endian)
     bool matchNetMon(const uint8_t *buf, size_t len) { return len >= 4 && std::memcmp(buf, "GMBU", 4) == 0; }
 
@@ -50,12 +54,13 @@ namespace {
 
 const std::vector<core::io::FormatDescriptor> &core::io::captureFormats() {
     static const std::vector<FormatDescriptor> formats = {
-        {FileFormat::Pcap, "PCAP", matchPcap, makePcapReader},
-        {FileFormat::Pcapng, "PCAPNG", matchPcapng, makePcapngReader},
-        {FileFormat::NetMon, "Microsoft Network Monitor", matchNetMon, nullptr},
-        {FileFormat::Snoop, "Sun snoop", matchSnoop, nullptr},
-        {FileFormat::Iptrace, "AIX iptrace", matchIptrace, nullptr},
-        {FileFormat::Erf, "Endace ERF", matchErf, nullptr},
+        {FileFormat::Pcap, "PCAP", matchPcap, makePcapReader, false},
+        {FileFormat::Pcapng, "PCAPNG", matchPcapng, makePcapngReader, false},
+        {FileFormat::Gzip, "gzip", matchGzip, nullptr, true},
+        {FileFormat::NetMon, "Microsoft Network Monitor", matchNetMon, nullptr, false},
+        {FileFormat::Snoop, "Sun snoop", matchSnoop, nullptr, false},
+        {FileFormat::Iptrace, "AIX iptrace", matchIptrace, nullptr, false},
+        {FileFormat::Erf, "Endace ERF", matchErf, nullptr, false},
     };
     return formats;
 }

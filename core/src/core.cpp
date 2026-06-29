@@ -83,19 +83,26 @@ namespace {
 
 const char *core::formatName(FileFormat fmt) {
     if (const auto *f = io::findFormat(fmt)) return f->name;
-    return "Bilinmeyen biçim";
+    return "Unknown format";
 }
 
 std::string core::unsupportedFormatDiagnostic(FileFormat fmt) {
-    switch (fmt) {
-        case FileFormat::NetMon:
-        case FileFormat::Snoop:
-        case FileFormat::Erf:
-        case FileFormat::Iptrace:
-            return "Desteklenmeyen dosya biçimi: " + std::string(formatName(fmt));
-        default:
-            return "";
+    const auto *f = io::findFormat(fmt);
+    if (!f || f->makeReader) return "";
+    if (f->container) return std::string("Unsupported file format: ") + f->name + " compressed capture (decompress it first)";
+    return std::string("Unsupported file format: ") + f->name;
+}
+
+std::string core::unknownFormatDiagnostic(const uint8_t *buf, size_t len) {
+    if (len < 4) return "";
+    static const char *digits = "0123456789abcdef";
+    std::string text = "Unsupported file format: unknown magic number";
+    for (size_t i = 0; i < 4; ++i) {
+        text += ' ';
+        text += digits[buf[i] >> 4];
+        text += digits[buf[i] & 15];
     }
+    return text;
 }
 
 core::FileFormat core::detectFileFormat(const std::string &filepath) {
@@ -202,12 +209,18 @@ bool core::FileProcessor::processFile(const std::string &filepath, std::vector<p
                                       std::string &message, LoadControl *control) {
     const FileFormat fmt = detectFileFormat(filepath);
     if (const auto reader = io::makeReader(fmt)) return load(*reader, filepath, packets, message, control);
-    const std::string diag = unsupportedFormatDiagnostic(fmt);
+    std::string diag = unsupportedFormatDiagnostic(fmt);
+    if (diag.empty() && fmt == FileFormat::Unknown) {
+        std::ifstream file(pathFromUtf8(filepath), std::ios::binary);
+        uint8_t buf[io::kProbeBytes] = {0};
+        file.read(reinterpret_cast<char *>(buf), sizeof(buf));
+        diag = unknownFormatDiagnostic(buf, static_cast<size_t>(file.gcount()));
+    }
     if (!diag.empty()) {
         message = diag;
         return false;
     }
-    // Fall back to attempting pcap read (which produces specific header error if truncated or corrupt)
+    // Too short to carry a magic number (or unreadable): the pcap reader reports it specifically
     return processPcapFile(filepath, packets, message, control);
 }
 

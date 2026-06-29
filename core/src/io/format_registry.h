@@ -22,6 +22,7 @@ namespace core::io {
         const char *name;
         bool (*matches)(const uint8_t *buf, size_t len);   // len <= kProbeBytes: the first bytes of the file
         ReaderFactory makeReader;                           // nullptr: recognised but not readable (yet)
+        bool container;                                     // a wrapper around a capture file (gzip): unpacked first, then the format inside is detected
     };
 
     /// All known formats, in probing order.

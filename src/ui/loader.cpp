@@ -68,7 +68,7 @@ namespace {
         }
 
         job.dataPath = job.path;
-        if (core::isGzipFile(job.path)) {
+        if (core::detectFileFormat(job.path) == core::FileFormat::Gzip) {
             // the packets keep file offsets, so a compressed capture is unpacked to a temporary file first
             job.decompressing = true;
             job.tempPath = makeTempPath();
