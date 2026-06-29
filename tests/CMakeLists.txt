@@ -48,6 +48,7 @@ add_executable(imshark_tests
     test_parser.cpp
     test_reader.cpp
     test_reader_oracle.cpp
+    test_reader_registry.cpp
     test_settings.cpp
     test_snmp.cpp
     test_stats.cpp
