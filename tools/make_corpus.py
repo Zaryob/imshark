@@ -75,6 +75,17 @@ def frag6(payload, off, n, ident, more, nxt=0x11, src="20010db800000000000000000
 def frag4(payload, off, n, ident, more, proto=0x11):
     return eth(0x0800, ipv4(proto, payload[off:off + n], ident=ident, flags_frag=((off // 8) | (0x2000 if more else 0))))
 
+# Sun snoop, RFC 1761 (big endian): 16 byte header "snoop\0\0\0", version, datalink type; then records of
+# original length, included length, record length (24 + data + padding to a multiple of 4), cumulative drops,
+# seconds, microseconds, data, padding.
+def snoop(frames, datalink=4, times=None, version=2):
+    out = b"snoop\0\0\0" + struct.pack(">II", version, datalink)
+    for i, f in enumerate(frames):
+        sec, usec = times[i] if times else (1700000000 + i, 0)
+        pad = b"\0" * ((4 - len(f) % 4) % 4)
+        out += struct.pack(">IIIIII", len(f), len(f), 24 + len(f) + len(pad), 0, sec, usec) + f + pad
+    return out
+
 # ------------------------------------------------------------------------------------- synthetic corpus
 SYNTHETIC = []
 
@@ -110,6 +121,17 @@ add("ethernet-vlan-qinq.pcap", pcap([eth(0x88a8, struct.pack(">H", 100) + struct
     "pcap", [1], 1, {"UDP": 1}, note="two VLAN tags in front of the IP header")
 add("linux-cooked-udp.pcap", pcap([hexb("0000 0001 0006 001122334455 0000 0800") + ipv4(17, udp(1000, 2000, b"sll"))], network=113),
     "pcap", [113], 1, {"UDP": 1})
+
+DNS_FRAME = eth(0x0800, ipv4(17, DGRAM))                              # 71 bytes: the record needs padding
+add("snoop-ethernet.snoop", snoop([ARP, DNS_FRAME, ARP], times=[(1700000000, 0), (1700000001, 250000), (1700000003, 0)]),
+    "snoop", [1], 3, {"ARP": 2, "DNS": 1},
+    facts=[{"packet": 2, "protocol": "DNS", "info_contains": "example.com", "time_relative": 1.25}, {"packet": 3, "time_relative": 3.0}],
+    note="RFC 1761 version 2, datalink type 4 (Ethernet); the 42 and 71 byte frames are padded to 4 bytes")
+add("snoop-token-ring.snoop", snoop([hexb("1040 00" + "00" * 29)], datalink=2), "snoop", [6], 1, {"Unknown": 1},
+    facts=[{"packet": 1, "protocol": "Unknown", "info_contains": "Unsupported link type 6"}],
+    note="datalink type 2 (IEEE 802.5) maps to the Token Ring link type, which has no dissector")
+add("snoop-truncated-last-record.snoop", snoop([ARP, DNS_FRAME])[:-20], "snoop", [1], 1, {"ARP": 1}, message="Truncated or corrupt packet 2",
+    note="a damaged tail keeps the earlier records")
 
 # ------------------------------------------------------------------------------------------ real captures
 WIKI = "https://wiki.wireshark.org/uploads/__moin_import__/attachments/SampleCaptures/"

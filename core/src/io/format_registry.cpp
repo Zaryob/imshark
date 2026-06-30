@@ -58,7 +58,7 @@ const std::vector<core::io::FormatDescriptor> &core::io::captureFormats() {
         {FileFormat::Pcapng, "PCAPNG", matchPcapng, makePcapngReader, false},
         {FileFormat::Gzip, "gzip", matchGzip, nullptr, true},
         {FileFormat::NetMon, "Microsoft Network Monitor", matchNetMon, nullptr, false},
-        {FileFormat::Snoop, "Sun snoop", matchSnoop, nullptr, false},
+        {FileFormat::Snoop, "Sun snoop", matchSnoop, makeSnoopReader, false},
         {FileFormat::Iptrace, "AIX iptrace", matchIptrace, nullptr, false},
         {FileFormat::Erf, "Endace ERF", matchErf, nullptr, false},
     };

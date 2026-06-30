@@ -23,6 +23,7 @@ add_executable(imshark_tests
     test_asn1_reader.cpp
     test_bgp.cpp
     test_capture_info.cpp
+    test_capture_readers.cpp
     test_clipboard.cpp
     test_corpus.cpp
     test_color_rules.cpp

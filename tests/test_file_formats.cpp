@@ -77,20 +77,19 @@ TEST(FileFormats, FormatIdentificationAndDiagnostics) {
         std::remove(path.c_str());
     }
 
-    // 2. Sun snoop
+    // 2. Sun snoop: a reader exists now (tests/test_capture_readers.cpp); the all-zero sample has version 0
     {
         const auto path = support::writeTemp("sample.snoop", makeSnoopSample());
         EXPECT_EQ(core::detectFileFormat(path), core::FileFormat::Snoop);
         EXPECT_EQ(std::string(core::formatName(core::FileFormat::Snoop)), "Sun snoop");
-        EXPECT_EQ(core::unsupportedFormatDiagnostic(core::FileFormat::Snoop),
-                  "Unsupported file format: Sun snoop");
+        EXPECT_EQ(core::unsupportedFormatDiagnostic(core::FileFormat::Snoop), "");
 
         core::FileProcessor fp;
         std::vector<packet::PacketInfo> packets;
         std::string message;
         bool ok = fp.processFile(path, packets, message);
         EXPECT_FALSE(ok);
-        EXPECT_EQ(message, "Unsupported file format: Sun snoop");
+        EXPECT_EQ(message, "Unsupported snoop version 0 (only version 2 is defined)");
         std::remove(path.c_str());
     }
 
@@ -202,7 +201,7 @@ TEST(FileFormats, EveryTruncatedMagicIsEitherItsFormatOrUnknown) {
             std::vector<packet::PacketInfo> packets;
             std::string message;
             const bool ok = fp.processFile(path, packets, message);
-            if (fmt == core::FileFormat::NetMon || fmt == core::FileFormat::Snoop || fmt == core::FileFormat::Iptrace || fmt == core::FileFormat::Erf) {
+            if (fmt == core::FileFormat::NetMon || fmt == core::FileFormat::Iptrace || fmt == core::FileFormat::Erf) {
                 EXPECT_FALSE(ok);
                 EXPECT_EQ(message, core::unsupportedFormatDiagnostic(fmt));
             }
@@ -257,7 +256,11 @@ TEST(FileFormats, CaptureFilesOfTheRepositoryAreDetectedAsTheirFormat) {
         if (e.str("kind") != "synthetic") continue;
         const std::string path = std::string(IMSHARK_TEST_DATA_DIR) + "/../corpus/" + e.str("file");
         if (!std::ifstream(path)) continue;
-        EXPECT_EQ(core::detectFileFormat(path), e.str("format") == "pcapng" ? core::FileFormat::Pcapng : core::FileFormat::Pcap) << e.str("file");
+        const std::string format = e.str("format");
+        const core::FileFormat expected = format == "pcapng" ? core::FileFormat::Pcapng : format == "snoop" ? core::FileFormat::Snoop
+                                          : format == "netmon" ? core::FileFormat::NetMon : format == "erf" ? core::FileFormat::Erf
+                                          : format == "iptrace" ? core::FileFormat::Iptrace : core::FileFormat::Pcap;
+        EXPECT_EQ(core::detectFileFormat(path), expected) << e.str("file");
         ++checked;
     }
     EXPECT_GT(checked, 0);

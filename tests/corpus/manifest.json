@@ -323,6 +323,82 @@
       "note": ""
     },
     {
+      "file": "snoop-ethernet.snoop",
+      "kind": "synthetic",
+      "source": "tools/make_corpus.py",
+      "sha256": "d444c536d02741a6a26b560f82d967ccebc2705a26bfc20aa980729c5d3380d1",
+      "size": 248,
+      "format": "snoop",
+      "link_types": [
+        1
+      ],
+      "packets": 3,
+      "protocols": {
+        "ARP": 2,
+        "DNS": 1
+      },
+      "malformed": 0,
+      "facts": [
+        {
+          "packet": 2,
+          "protocol": "DNS",
+          "info_contains": "example.com",
+          "time_relative": 1.25
+        },
+        {
+          "packet": 3,
+          "time_relative": 3.0
+        }
+      ],
+      "expectation": "by construction",
+      "note": "RFC 1761 version 2, datalink type 4 (Ethernet); the 42 and 71 byte frames are padded to 4 bytes"
+    },
+    {
+      "file": "snoop-token-ring.snoop",
+      "kind": "synthetic",
+      "source": "tools/make_corpus.py",
+      "sha256": "939068c84f438969f30800d9100e29a352fffcea6696402e959f92975c793908",
+      "size": 72,
+      "format": "snoop",
+      "link_types": [
+        6
+      ],
+      "packets": 1,
+      "protocols": {
+        "Unknown": 1
+      },
+      "malformed": 0,
+      "facts": [
+        {
+          "packet": 1,
+          "protocol": "Unknown",
+          "info_contains": "Unsupported link type 6"
+        }
+      ],
+      "expectation": "by construction",
+      "note": "datalink type 2 (IEEE 802.5) maps to the Token Ring link type, which has no dissector"
+    },
+    {
+      "file": "snoop-truncated-last-record.snoop",
+      "kind": "synthetic",
+      "source": "tools/make_corpus.py",
+      "sha256": "01fa7d230cece9ced3f2395ef54e691813001527eb4fafebb022778a5af17d77",
+      "size": 160,
+      "format": "snoop",
+      "link_types": [
+        1
+      ],
+      "packets": 1,
+      "protocols": {
+        "ARP": 1
+      },
+      "malformed": 0,
+      "facts": [],
+      "expectation": "by construction",
+      "note": "a damaged tail keeps the earlier records",
+      "message_contains": "Truncated or corrupt packet 2"
+    },
+    {
       "file": "dhcp.pcap",
       "kind": "real",
       "optional": true,

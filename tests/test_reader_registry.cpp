@@ -122,7 +122,7 @@ namespace {
     }
 } // namespace
 
-TEST(ReaderRegistry, ProbesRunInOrderAndOnlyPcapAndPcapngHaveReaders) {
+TEST(ReaderRegistry, ProbesRunInOrderAndEveryFormatButGzipHasAReader) {
     const auto &formats = captureFormats();
     std::vector<FileFormat> order;
     for (const auto &f: formats) order.push_back(f.format);
@@ -130,7 +130,7 @@ TEST(ReaderRegistry, ProbesRunInOrderAndOnlyPcapAndPcapngHaveReaders) {
                                               FileFormat::Snoop, FileFormat::Iptrace, FileFormat::Erf};
     EXPECT_EQ(order, expected);   // ERF has no magic number: its heuristic comes last
     for (const auto &f: formats) {
-        const bool readable = f.format == FileFormat::Pcap || f.format == FileFormat::Pcapng;
+        const bool readable = f.format == FileFormat::Pcap || f.format == FileFormat::Pcapng || f.format == FileFormat::Snoop;
         EXPECT_EQ(f.makeReader != nullptr, readable) << f.name;
         EXPECT_EQ(makeReader(f.format) != nullptr, readable) << f.name;
         EXPECT_EQ(f.container, f.format == FileFormat::Gzip) << f.name;
@@ -156,7 +156,8 @@ TEST(ReaderRegistry, IdentifiesMagicNumbersAndKeepsGzipApartFromErf) {
 }
 
 TEST(ReaderRegistry, DiagnosticsNameTheFormatOrTheMagicNumber) {
-    EXPECT_EQ(core::unsupportedFormatDiagnostic(FileFormat::Snoop), "Unsupported file format: Sun snoop");
+    EXPECT_EQ(core::unsupportedFormatDiagnostic(FileFormat::NetMon), "Unsupported file format: Microsoft Network Monitor");
+    EXPECT_EQ(core::unsupportedFormatDiagnostic(FileFormat::Snoop), "");
     EXPECT_EQ(core::unsupportedFormatDiagnostic(FileFormat::Gzip), "Unsupported file format: gzip compressed capture (decompress it first)");
     EXPECT_EQ(core::unsupportedFormatDiagnostic(FileFormat::Pcap), "");
     EXPECT_EQ(core::unsupportedFormatDiagnostic(FileFormat::Pcapng), "");

@@ -47,6 +47,17 @@ namespace {
         for (const auto &c: f.children) expectRangesInside(c, frameSize);
     }
 
+    // The registry's display name of a manifest "format" value.
+    std::string formatDisplayName(const std::string &format) {
+        if (format == "pcap") return "PCAP";
+        if (format == "pcapng") return "PCAPNG";
+        if (format == "snoop") return "Sun snoop";
+        if (format == "netmon") return "Microsoft Network Monitor";
+        if (format == "erf") return "Endace ERF";
+        if (format == "iptrace") return "AIX iptrace";
+        return "?" + format;
+    }
+
     // Checks one corpus file against its manifest entry.
     void checkEntry(const testutil::Json &e, const std::string &path) {
         SCOPED_TRACE(e.str("file"));
@@ -55,15 +66,13 @@ namespace {
         EXPECT_EQ(testutil::Sha256::of(bytes), e.str("sha256")) << "the file differs from the one the manifest describes";
         EXPECT_EQ(bytes.size(), static_cast<size_t>(e.num("size")));
 
-        uint32_t magic = 0;
-        std::memcpy(&magic, bytes.data(), std::min<size_t>(4, bytes.size()));
-        const bool ng = magic == 0x0A0D0D0A;
-        EXPECT_EQ(ng ? "pcapng" : "pcap", e.str("format"));
+        // the format the registry recognises is the one the manifest says
+        EXPECT_EQ(core::formatName(core::detectFileFormat(path)), formatDisplayName(e.str("format")));
 
         core::FileProcessor fp;
         std::vector<packet::PacketInfo> packets;
         std::string message;
-        ASSERT_TRUE(ng ? fp.processPcapngFile(path, packets, message) : fp.processPcapFile(path, packets, message)) << message;
+        ASSERT_TRUE(fp.processFile(path, packets, message)) << message;
 
         if (e.has("message_contains")) EXPECT_NE(message.find(e.str("message_contains")), std::string::npos) << "message: " << message;
         else EXPECT_TRUE(message.empty()) << "unexpected message: " << message;

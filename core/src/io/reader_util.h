@@ -6,6 +6,11 @@
 #include <cstring>
 #include <istream>
 #include <algorithm>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include <capture_info.h>
 
 namespace core::io {
     // Upper bound for a single record/block; anything larger is treated as corruption instead of being allocated.
@@ -35,6 +40,51 @@ namespace core::io {
             uint32_t v;
             std::memcpy(&v, p, sizeof(v));
             return swap ? swap32(v) : v;
+        }
+    };
+
+    // Byte order independent field access for the formats that fix their byte order (snoop, iptrace and the ERF
+    // header are big endian, Network Monitor and the ERF timestamp little endian).
+    inline uint16_t be16(const uint8_t *p) { return static_cast<uint16_t>(p[0] << 8 | p[1]); }
+    inline uint32_t be32(const uint8_t *p) { return uint32_t(p[0]) << 24 | uint32_t(p[1]) << 16 | uint32_t(p[2]) << 8 | p[3]; }
+    inline uint16_t le16(const uint8_t *p) { return static_cast<uint16_t>(p[1] << 8 | p[0]); }
+    inline uint32_t le32(const uint8_t *p) { return uint32_t(p[3]) << 24 | uint32_t(p[2]) << 16 | uint32_t(p[1]) << 8 | p[0]; }
+    inline uint64_t le64(const uint8_t *p) { return uint64_t(le32(p + 4)) << 32 | le32(p); }
+
+    /// Link type given to frames whose medium ImShark has no mapping for (LINKTYPE_USER0): the dissector table has no
+    /// entry for it, so the packet list says "Unsupported link type 147" and the details show the bytes as data.
+    constexpr uint32_t kUnmappedLinkType = 147;
+
+    /// Counts the frames of media a reader cannot map and says so once at the end of the load.
+    struct UnmappedMedia {
+        uint64_t frames = 0;
+        std::string first;                   // description of the first unmapped medium seen
+
+        void note(const std::string &medium) {
+            if (frames++ == 0) first = medium;
+        }
+
+        /// Appends "<n> frame(s) of <medium> cannot be decoded ..." to a load message.
+        void report(std::string &message) const {
+            if (frames == 0) return;
+            if (!message.empty()) message += "; ";
+            message += std::to_string(frames) + " frame(s) of unsupported medium (first: " + first + ") are shown as raw data";
+        }
+    };
+
+    /// Finds or appends the capture interface for a (link type, key) pair as a reader meets them.
+    struct InterfaceTable {
+        std::vector<std::pair<uint64_t, int>> index;
+
+        int find(core::CaptureInfo &info, uint64_t key, uint32_t linkType, uint64_t ticksPerSecond, const std::string &name) {
+            for (const auto &[k, i]: index) if (k == key) return i;
+            core::InterfaceInfo itf;
+            itf.linkType = linkType;
+            itf.ticksPerSecond = ticksPerSecond;
+            itf.name = name;
+            info.interfaces.push_back(itf);
+            index.push_back({key, static_cast<int>(info.interfaces.size() - 1)});
+            return index.back().second;
         }
     };
 

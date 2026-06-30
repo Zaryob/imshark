@@ -37,6 +37,7 @@ namespace core::io {
     /// The built-in readers (also reachable through the registry).
     std::unique_ptr<CaptureFileReader> makePcapReader();
     std::unique_ptr<CaptureFileReader> makePcapngReader();
+    std::unique_ptr<CaptureFileReader> makeSnoopReader();
 
     /// A fresh reader for `format`, nullptr if the format has none.
     std::unique_ptr<CaptureFileReader> makeReader(FileFormat format);

@@ -134,10 +134,10 @@ netmon auto ok=0 n=0 digest=49c3e6ae1c2e0631 fmt="" ifaces=0 msg="Unsupported fi
 netmon pcap ok=0 n=0 digest=49c3e6ae1c2e0631 fmt="" ifaces=0 msg="Unsupported file format: Microsoft Network Monitor"
 netmon pcapng ok=0 n=0 digest=cb99192768bc32e1 fmt="pcapng" ifaces=0 msg="Unsupported file format: Microsoft Network Monitor"
 netmon prefixes 25 digest=3d964d8270a577ab
-snoop auto ok=0 n=0 digest=b6b3648ac734a136 fmt="" ifaces=0 msg="Unsupported file format: Sun snoop"
-snoop pcap ok=0 n=0 digest=b6b3648ac734a136 fmt="" ifaces=0 msg="Unsupported file format: Sun snoop"
-snoop pcapng ok=0 n=0 digest=19b09157633a1f97 fmt="pcapng" ifaces=0 msg="Unsupported file format: Sun snoop"
-snoop prefixes 24 digest=e6becb212ce21801
+snoop auto ok=1 n=0 digest=890121def206b50a fmt="Sun snoop, version 2, datalink type 4 (Ethernet)" ifaces=1 msg="Truncated packet header after packet 0"
+snoop pcap ok=0 n=0 digest=3447ceef219c1ad4 fmt="" ifaces=0 msg="Incompatible PCAP file format"
+snoop pcapng ok=0 n=0 digest=5f441f9dfa62def9 fmt="pcapng" ifaces=0 msg="Not a pcapng file (missing Section Header Block)"
+snoop prefixes 24 digest=61673e340dfdc4f2
 iptrace auto ok=0 n=0 digest=5ade1a549e957b5b fmt="" ifaces=0 msg="Unsupported file format: AIX iptrace"
 iptrace pcap ok=0 n=0 digest=8c4b4993ff7629f1 fmt="" ifaces=0 msg="File is too short to be a PCAP file"
 iptrace pcapng ok=0 n=0 digest=d2de093a0c6a3275 fmt="pcapng" ifaces=0 msg="Not a pcapng file (missing Section Header Block)"
