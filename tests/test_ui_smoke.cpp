@@ -510,3 +510,52 @@ TEST_F(UiSmoke, LoadingOrClosingCancelsARunningSearch) {
     EXPECT_FALSE(static_cast<bool>(state.find.job));
     frames(state);
 }
+
+// ---- follow stream ----------------------------------------------------------------------------------------
+
+TEST_F(UiSmoke, FollowStreamFromAPacket) {
+    ui::AppState state;
+    load(state);
+    frames(state);
+    EXPECT_FALSE(ui::startFollow(state, 0)) << "ARP is not a stream";
+    EXPECT_FALSE(state.follow.open);
+    EXPECT_FALSE(ui::startFollow(state, 99));
+
+    ASSERT_TRUE(ui::startFollow(state, 9));          // the HTTP request of the TCP conversation
+    EXPECT_TRUE(state.follow.open);
+    for (int i = 0; i < 3000 && state.follow.job; ++i) {
+        frame(state);                                // drawFollowWindow polls the job
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    ASSERT_FALSE(static_cast<bool>(state.follow.job));
+    ASSERT_TRUE(state.follow.valid);
+    EXPECT_EQ(state.follow.stream.packets, 5);
+    ASSERT_FALSE(state.follow.stream.chunks.empty());
+    EXPECT_EQ(state.follow.stream.chunks[0].data, "GET / HTTP/1.1\r\nHost: example.com\r\n\r\n");
+    EXPECT_NE(state.follow.title.find("TCP"), std::string::npos);
+
+    frames(state);                                   // lines are built and drawn
+    EXPECT_FALSE(state.follow.linesDirty);
+    ASSERT_GE(state.follow.lines.size(), 3u);
+    EXPECT_EQ(state.follow.lines[0].text, "GET / HTTP/1.1");
+
+    state.follow.view = ui::FollowView::HexDump;
+    state.follow.direction = ui::FollowDirection::BtoA;
+    state.follow.linesDirty = true;
+    frames(state);
+    EXPECT_TRUE(state.follow.lines.empty()) << "the server never sent payload in the sample";
+
+    state.follow.open = false;
+    frames(state);
+}
+
+TEST_F(UiSmoke, FollowUdpAndTheJobIsCancelledByLoading) {
+    ui::AppState state;
+    load(state);
+    frames(state);
+    ASSERT_TRUE(ui::startFollow(state, 4));          // DNS over UDP
+    EXPECT_NE(state.follow.title.find("UDP"), std::string::npos);
+    load(state);                                     // replacing the packets must stop the reader first
+    EXPECT_FALSE(static_cast<bool>(state.follow.job));
+    frames(state);
+}

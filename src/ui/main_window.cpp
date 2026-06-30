@@ -38,4 +38,5 @@ void ui::drawMainWindow(AppState &state) {
     drawFilterHelp(state);
     drawColorRulesWindow(state);
     drawStatsWindows(state);
+    drawFollowWindow(state);
 }

@@ -10,11 +10,13 @@
 
 #include "color_rules.h"
 #include "find.h"
+#include "follow_view.h"
 #include "settings.h"
 
 namespace ui {
     struct LoadJob;    // background load in progress (loader.cpp)
     struct SearchJob;  // background byte search in progress (find_bar.cpp)
+    struct FollowJob;  // background stream reassembly in progress (follow_window.cpp)
 
     /// The display filter bar: what is typed, what is applied, and which packets pass.
     struct FilterState {
@@ -60,6 +62,20 @@ namespace ui {
         bool endpointsValid[4] = {false, false, false, false};
     };
 
+    /// The Follow Stream window.
+    struct FollowState {
+        bool open = false;
+        std::shared_ptr<FollowJob> job;    // non-null while the stream is being reassembled
+        bool valid = false;                // `stream` holds a result
+        stream::Stream stream;
+        std::string title;
+        std::string error;
+        FollowView view = FollowView::Ascii;
+        FollowDirection direction = FollowDirection::Both;
+        std::vector<FollowLine> lines;     // what is drawn (rebuilt when stream/direction/view change)
+        bool linesDirty = true;
+    };
+
     /// Everything the UI needs to remember between frames.
     struct AppState {
         std::vector<packet::PacketInfo> packets;
@@ -96,6 +112,7 @@ namespace ui {
         FilterState filter;
         FindState find;
         StatsState stats;
+        FollowState follow;
         double captureStartEpoch = 0;       // UTC epoch seconds of the first packet
         bool orderDirty = true;             // `order` must be rebuilt (new capture or new filter)
         std::vector<uint32_t> order;        // displayed order: indices into `packets` (rebuilt by the list)

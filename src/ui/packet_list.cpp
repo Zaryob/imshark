@@ -137,6 +137,11 @@ void ui::drawPacketList(AppState &state, float height) {
                     state.selectPacket(i);
                 }
                 if (ImGui::BeginPopupContextItem()) {
+                    const bool isTcp = packet.ip_version != 0 && packet.ip_protocol == 6;
+                    const bool isUdp = packet.ip_version != 0 && packet.ip_protocol == 17;
+                    if (isTcp && ImGui::MenuItem("Follow TCP Stream")) { state.selectPacket(i); startFollow(state, i); }
+                    if (isUdp && ImGui::MenuItem("Follow UDP Stream")) { state.selectPacket(i); startFollow(state, i); }
+                    if (isTcp || isUdp) ImGui::Separator();
                     if (ImGui::MenuItem("Copy Row")) ImGui::SetClipboardText(ui::summaryRow(packet).c_str());
                     if (ImGui::MenuItem("Copy Source")) ImGui::SetClipboardText(packet.source.c_str());
                     if (ImGui::MenuItem("Copy Destination")) ImGui::SetClipboardText(packet.destination.c_str());

@@ -48,6 +48,14 @@ namespace ui {
     // stats_windows.cpp
     void drawStatsWindows(AppState &state);
 
+    // follow_window.cpp
+    /// Starts following the TCP/UDP conversation that packet `packetIndex` belongs to. Returns false if the
+    /// packet is not TCP/UDP. The result appears in the Follow Stream window when the background job ends.
+    bool startFollow(AppState &state, int packetIndex);
+    void drawFollowWindow(AppState &state);
+    /// Stops background readers of the capture file (search, follow); required before packets change.
+    void cancelBackgroundJobs(AppState &state);
+
     // find_bar.cpp
     /// Searches from the selected row (or from the start) and selects the match; updates state.find.message.
     bool findAndSelect(AppState &state, bool forward);
