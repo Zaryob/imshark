@@ -9,6 +9,7 @@ add_library(imshark_core STATIC
     src/io/pcapng_reader.cpp
     src/io/snoop_reader.cpp
     src/io/netmon_reader.cpp
+    src/io/erf_reader.cpp
     src/gzip.cpp
     src/packet_parser.cpp
     src/tcp_connection.cpp

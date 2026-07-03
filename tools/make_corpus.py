@@ -107,6 +107,22 @@ def netmon(frames, mac=1, start=1700000000, millis=0, deltas=None, minor=1, majo
     hdr += struct.pack("<12I", pos, len(table), 72 if user_data else 0, len(user_data), 0, 0, 0, 0, 0, 0, 0, 0)
     return hdr + body + table
 
+# Endace ERF (Endace ERF Types Reference): no file header, a sequence of records. Record header of 16 bytes: u64 LITTLE endian
+# 32.32 fixed point timestamp, type (bit 7 = extension header follows), flags (bits 0-1 interface), then BIG endian
+# u16 record length, loss counter, wire length. Extension headers are 8 bytes (top bit of the first byte = another follows);
+# Ethernet records have a 2 byte pad before the frame; records are padded to a multiple of 8 bytes.
+def erf_record(rtype, data, sec=1700000000, frac=0, flags=0, wlen=None, ext=0, pad8=True):
+    body = b""
+    for i in range(ext):
+        body += bytes([0x80 if i < ext - 1 else 0x00]) + b"\0" * 7
+    if rtype in (2, 11, 16, 20): body += b"\0\0"
+    body += data
+    if pad8: body += b"\0" * ((8 - (16 + len(body)) % 8) % 8)
+    t = rtype | (0x80 if ext else 0)
+    return struct.pack("<Q", (sec << 32) | frac) + bytes([t, flags]) + struct.pack(">HHH", 16 + len(body), 0, len(data) if wlen is None else wlen) + body
+
+def erf(*records): return b"".join(records)
+
 # ------------------------------------------------------------------------------------- synthetic corpus
 SYNTHETIC = []
 
@@ -163,6 +179,20 @@ add("netmon-frame-table-order.cap", netmon([DNS_FRAME, ARP], deltas=[5000000, 20
 add("netmon-atm-media.cap", netmon([hexb("00" * 24)], mac=4), "netmon", [147], 1, {"Unknown": 1},
     facts=[{"packet": 1, "info_contains": "Unsupported link type 147"}], message="shown as raw data",
     note="MAC type 4 (ATM) has no mapping: the frame is kept as raw data and the load says so")
+
+IP_DNS = ipv4(17, DGRAM)
+PPP_IP = hexb("ff03 0021") + IP_DNS
+add("erf-mixed.erf", erf(erf_record(2, ARP), erf_record(2, DNS_FRAME, frac=0x40000000, flags=1, ext=2), erf_record(13, hexb("0102030405060708")),
+                         erf_record(22, IP_DNS, sec=1700000003)),
+    "erf", [1, 101], 3, {"ARP": 1, "DNS": 2},
+    facts=[{"packet": 2, "protocol": "DNS", "info_contains": "example.com", "time_relative": 0.25}, {"packet": 3, "protocol": "DNS", "time_relative": 3.0}],
+    note="Ethernet (padded to 8 bytes), Ethernet with two extension headers on interface 1, an IP counter record (no packet, skipped) and a raw IPv4 record")
+add("erf-pos-ppp.erf", erf(erf_record(1, PPP_IP, wlen=len(PPP_IP))), "erf", [9], 1, {"DNS": 1},
+    facts=[{"packet": 1, "protocol": "DNS", "info_contains": "example.com"}],
+    note="packet over SONET with PPP-in-HDLC framing: the ff 03 address and control bytes are dropped, the rest is PPP")
+add("erf-atm-record.erf", erf(erf_record(3, hexb("00" * 52))), "erf", [147], 1, {"Unknown": 1},
+    facts=[{"packet": 1, "info_contains": "Unsupported link type 147"}], message="shown as raw data",
+    note="record type 3 (ATM) has no mapping: the cell is kept as raw data and the load says so")
 
 # ------------------------------------------------------------------------------------------ real captures
 WIKI = "https://wiki.wireshark.org/uploads/__moin_import__/attachments/SampleCaptures/"

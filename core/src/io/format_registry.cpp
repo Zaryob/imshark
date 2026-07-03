@@ -39,7 +39,8 @@ namespace {
     // Endace ERF has no file header: the first record starts at offset 0 and is
     //   uint64_t timestamp; uint8_t type; uint8_t flags; uint16_t rlen; uint16_t lctr; uint16_t wlen   (big endian, 16 bytes)
     // Accepted when the type (bit 7 is the extension header flag) is one of the known 1..27, the record length covers
-    // the header and the wire length does not exceed it. Type 0 (legacy) is not claimed. Being a heuristic it comes last.
+    // the header and the wire length does not exceed it (unless the truncated flag, bit 3 of the flags byte, says the
+    // record holds only the start of a longer frame). Type 0 (legacy) is not claimed. Being a heuristic it comes last.
     bool matchErf(const uint8_t *buf, size_t len) {
         if (len < 16) return false;
         const uint8_t erfType = buf[8] & 0x7F;
@@ -48,7 +49,7 @@ namespace {
         std::memcpy(&wlen, buf + 14, 2);
         rlen = swap16(rlen);
         wlen = swap16(wlen);
-        return erfType >= 1 && erfType <= 27 && rlen >= 16 && wlen <= rlen;
+        return erfType >= 1 && erfType <= 27 && rlen >= 16 && (wlen <= rlen || (buf[9] & 0x08) != 0);
     }
 } // namespace
 
@@ -60,7 +61,7 @@ const std::vector<core::io::FormatDescriptor> &core::io::captureFormats() {
         {FileFormat::NetMon, "Microsoft Network Monitor", matchNetMon, makeNetMonReader, false},
         {FileFormat::Snoop, "Sun snoop", matchSnoop, makeSnoopReader, false},
         {FileFormat::Iptrace, "AIX iptrace", matchIptrace, nullptr, false},
-        {FileFormat::Erf, "Endace ERF", matchErf, nullptr, false},
+        {FileFormat::Erf, "Endace ERF", matchErf, makeErfReader, false},
     };
     return formats;
 }

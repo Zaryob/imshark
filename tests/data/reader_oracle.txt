@@ -142,10 +142,10 @@ iptrace auto ok=0 n=0 digest=5ade1a549e957b5b fmt="" ifaces=0 msg="Unsupported f
 iptrace pcap ok=0 n=0 digest=8c4b4993ff7629f1 fmt="" ifaces=0 msg="File is too short to be a PCAP file"
 iptrace pcapng ok=0 n=0 digest=d2de093a0c6a3275 fmt="pcapng" ifaces=0 msg="Not a pcapng file (missing Section Header Block)"
 iptrace prefixes 20 digest=b9590d6771739061
-erf auto ok=0 n=0 digest=8dda256b45db268f fmt="" ifaces=0 msg="Unsupported file format: Endace ERF"
-erf pcap ok=0 n=0 digest=8dda256b45db268f fmt="" ifaces=0 msg="Unsupported file format: Endace ERF"
+erf auto ok=1 n=1 digest=354a760bd050421b fmt="Endace ERF" ifaces=1 msg=""
+erf pcap ok=0 n=0 digest=3447ceef219c1ad4 fmt="" ifaces=0 msg="Incompatible PCAP file format"
 erf pcapng ok=0 n=0 digest=4e7e330787040ba1 fmt="pcapng" ifaces=0 msg="Not a pcapng file (missing Section Header Block)"
-erf prefixes 64 digest=ea899d6f01b7e3ac
+erf prefixes 64 digest=7f5354940766089f
 gzip auto ok=0 n=0 digest=1e1b57dab54bbae7 fmt="" ifaces=0 msg="Unsupported file format: gzip compressed capture (decompress it first)"
 gzip pcap ok=0 n=0 digest=8c4b4993ff7629f1 fmt="" ifaces=0 msg="File is too short to be a PCAP file"
 gzip pcapng ok=0 n=0 digest=08b5f7aef4f058c2 fmt="pcapng" ifaces=0 msg="Unsupported file format: gzip compressed capture (decompress it first)"

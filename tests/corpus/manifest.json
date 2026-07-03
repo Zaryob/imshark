@@ -485,6 +485,89 @@
       "message_contains": "shown as raw data"
     },
     {
+      "file": "erf-mixed.erf",
+      "kind": "synthetic",
+      "source": "tools/make_corpus.py",
+      "sha256": "05e9cd368f33c3ca7b8ec872edbff638887e87323c54197f5408acd853eb6f06",
+      "size": 280,
+      "format": "erf",
+      "link_types": [
+        1,
+        101
+      ],
+      "packets": 3,
+      "protocols": {
+        "ARP": 1,
+        "DNS": 2
+      },
+      "malformed": 0,
+      "facts": [
+        {
+          "packet": 2,
+          "protocol": "DNS",
+          "info_contains": "example.com",
+          "time_relative": 0.25
+        },
+        {
+          "packet": 3,
+          "protocol": "DNS",
+          "time_relative": 3.0
+        }
+      ],
+      "expectation": "by construction",
+      "note": "Ethernet (padded to 8 bytes), Ethernet with two extension headers on interface 1, an IP counter record (no packet, skipped) and a raw IPv4 record"
+    },
+    {
+      "file": "erf-pos-ppp.erf",
+      "kind": "synthetic",
+      "source": "tools/make_corpus.py",
+      "sha256": "e52c79bc562a49f38c6db46b39d2e2d8c315ead8aa7278155cca7e9f0786b7db",
+      "size": 80,
+      "format": "erf",
+      "link_types": [
+        9
+      ],
+      "packets": 1,
+      "protocols": {
+        "DNS": 1
+      },
+      "malformed": 0,
+      "facts": [
+        {
+          "packet": 1,
+          "protocol": "DNS",
+          "info_contains": "example.com"
+        }
+      ],
+      "expectation": "by construction",
+      "note": "packet over SONET with PPP-in-HDLC framing: the ff 03 address and control bytes are dropped, the rest is PPP"
+    },
+    {
+      "file": "erf-atm-record.erf",
+      "kind": "synthetic",
+      "source": "tools/make_corpus.py",
+      "sha256": "39b0570893cb833abd69f25c64e72c08ddaa1909d9e2e6d5598b3cb53836bc5a",
+      "size": 72,
+      "format": "erf",
+      "link_types": [
+        147
+      ],
+      "packets": 1,
+      "protocols": {
+        "Unknown": 1
+      },
+      "malformed": 0,
+      "facts": [
+        {
+          "packet": 1,
+          "info_contains": "Unsupported link type 147"
+        }
+      ],
+      "expectation": "by construction",
+      "note": "record type 3 (ATM) has no mapping: the cell is kept as raw data and the load says so",
+      "message_contains": "shown as raw data"
+    },
+    {
       "file": "dhcp.pcap",
       "kind": "real",
       "optional": true,

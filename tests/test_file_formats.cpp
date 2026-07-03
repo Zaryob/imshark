@@ -92,15 +92,16 @@ TEST(FileFormats, FormatIdentificationAndDiagnostics) {
         const auto path = support::writeTemp("sample.erf", makeErfSample());
         EXPECT_EQ(core::detectFileFormat(path), core::FileFormat::Erf);
         EXPECT_EQ(std::string(core::formatName(core::FileFormat::Erf)), "Endace ERF");
-        EXPECT_EQ(core::unsupportedFormatDiagnostic(core::FileFormat::Erf),
-                  "Unsupported file format: Endace ERF");
+        EXPECT_EQ(core::unsupportedFormatDiagnostic(core::FileFormat::Erf), "");
 
+        // the sample is one Ethernet record (rlen 64, wlen 60) of zero bytes: a reader exists now, the frame has 46 bytes
         core::FileProcessor fp;
         std::vector<packet::PacketInfo> packets;
         std::string message;
         bool ok = fp.processFile(path, packets, message);
-        EXPECT_FALSE(ok);
-        EXPECT_EQ(message, "Unsupported file format: Endace ERF");
+        EXPECT_TRUE(ok) << message;
+        ASSERT_EQ(packets.size(), 1u);
+        EXPECT_EQ(packets[0].captured_length, 46u);
         std::remove(path.c_str());
     }
 
@@ -195,7 +196,7 @@ TEST(FileFormats, EveryTruncatedMagicIsEitherItsFormatOrUnknown) {
             std::vector<packet::PacketInfo> packets;
             std::string message;
             const bool ok = fp.processFile(path, packets, message);
-            if (fmt == core::FileFormat::Iptrace || fmt == core::FileFormat::Erf) {
+            if (fmt == core::FileFormat::Iptrace) {
                 EXPECT_FALSE(ok);
                 EXPECT_EQ(message, core::unsupportedFormatDiagnostic(fmt));
             }
@@ -239,6 +240,8 @@ TEST(FileFormats, ErfDetectionNeedsAPlausibleFirstRecordHeader) {
     erf[11] = 64;
     erf[15] = 100;    // wire length above the record length
     EXPECT_EQ(detect(erf), kUnknown);
+    erf[9] = 0x08;    // ... which is what a record cut by the capture length looks like: the truncated flag
+    EXPECT_EQ(detect(erf), core::FileFormat::Erf);
 }
 
 TEST(FileFormats, CaptureFilesOfTheRepositoryAreDetectedAsTheirFormat) {

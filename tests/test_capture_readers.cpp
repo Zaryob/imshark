@@ -339,3 +339,161 @@ TEST(NetMonReader, RefusesVersion1AndDamagedTables) {
 TEST(NetMonReader, TruncationAndMutationSweep) {
     sweep(netmonFile({{kArp, 0}, {kUdp, 1250000}, {support::hex("aa bb cc"), 3000000}}), 202);
 }
+
+// ---- Endace ERF -------------------------------------------------------------------------------------------
+namespace {
+    // header: LE 32.32 timestamp, type, flags, BE rlen / lctr / wlen; extension headers (8 bytes) and the 2 byte Ethernet
+    // pad come before the data; the record is padded to a multiple of 8 when `pad8`
+    std::vector<char> erfRecord(uint8_t type, const std::vector<char> &data, uint32_t sec = 1700000000, uint32_t frac = 0, uint8_t flags = 0,
+                                int wlen = -1, int extensions = 0, bool pad8 = true) {
+        std::vector<char> body;
+        for (int i = 0; i < extensions; ++i) body = cat(body, support::hex(i + 1 < extensions ? "80 00 00 00 00 00 00 00" : "00 00 00 00 00 00 00 00"));
+        if (type == 2 || type == 11 || type == 16 || type == 20) body = cat(body, support::hex("00 00"));
+        body = cat(body, data);
+        if (pad8) body.insert(body.end(), (8 - (16 + body.size()) % 8) % 8, 0);
+        std::vector<char> r = le<uint64_t>((uint64_t(sec) << 32) | frac);
+        r.push_back(char(type | (extensions ? 0x80 : 0)));
+        r.push_back(char(flags));
+        r = cat(r, be<uint16_t>(uint16_t(16 + body.size())));
+        r = cat(r, be<uint16_t>(0));
+        r = cat(r, be<uint16_t>(uint16_t(wlen < 0 ? data.size() : size_t(wlen))));
+        return cat(r, body);
+    }
+    const std::vector<char> kIpDns = support::hex("4500 0039 1234 4000 4011 0000 0a000001 0a000002 c350 0035 0025 0000 1234 0100 0001 0000 0000 0000 076578616d706c6503636f6d00 0001 0001");
+} // namespace
+
+TEST(ErfReader, ReadsLittleEndianFixedPointTimeAndBigEndianHeaderFields) {
+    // record 1: Ethernet, padded to 8 (rlen 16 + 2 + 42 + 4 = 64), wire length 42
+    // record 2: Ethernet with two extension headers on interface 2, 0.25 s later (fraction 0x40000000 of 2^32)
+    const auto r1 = erfRecord(2, kArp);
+    const auto r2 = erfRecord(2, kUdp, 1700000001, 0x40000000, 2, -1, 2);
+    const auto file = cat(r1, r2);
+    ASSERT_EQ(r1.size(), 64u);
+    const auto loaded = load(file);
+    ASSERT_TRUE(loaded.ok) << loaded.message;
+    EXPECT_TRUE(loaded.message.empty());
+    ASSERT_EQ(loaded.packets.size(), 2u);
+    ASSERT_EQ(loaded.records.size(), 2u);
+    EXPECT_EQ(loaded.packets[0].file_offset, 16u + 2u);                 // header + Ethernet pad
+    EXPECT_EQ(loaded.packets[0].captured_length, 42u);                  // padding after the frame is dropped
+    EXPECT_EQ(loaded.packets[1].file_offset, 64u + 16u + 16u + 2u);     // two extension headers
+    EXPECT_EQ(loaded.packets[1].captured_length, 71u);
+    EXPECT_EQ(loaded.records[0].seconds, 1700000000u);
+    EXPECT_EQ(loaded.records[1].seconds, 1700000001u);
+    EXPECT_EQ(loaded.records[1].fraction, 0x40000000u);
+    EXPECT_EQ(loaded.records[1].ticksPerSecond, 1ull << 32);
+    EXPECT_NEAR(loaded.packets[1].time, 1.25, 1e-9);
+    EXPECT_EQ(loaded.packets[0].protocol, "ARP");
+    EXPECT_EQ(loaded.packets[1].protocol, "DNS");
+    EXPECT_EQ(loaded.info.format, "Endace ERF");
+    ASSERT_EQ(loaded.info.interfaces.size(), 2u);                       // one per capture interface in the flags
+    EXPECT_EQ(loaded.info.interfaces[0].packets, 1u);
+    EXPECT_EQ(loaded.info.interfaces[1].name, "ERF interface 2");
+    EXPECT_EQ(loaded.info.interfaces[1].ticksPerSecond, 1ull << 32);
+    expectReplayConsistent(file, loaded);
+}
+
+TEST(ErfReader, WireLengthBoundsTheFrameAndTruncatedRecordsKeepTheirWireLength) {
+    // varlen / snap: the record holds 20 bytes of a 1514 byte frame
+    auto file = erfRecord(2, support::hex("ffffffffffff 001122334455 0806 0001 0800 06 04 0001"), 1700000000, 0, 0x08, 1514, 0, false);   // flags: truncated
+    auto loaded = load(file);
+    ASSERT_TRUE(loaded.ok) << loaded.message;
+    ASSERT_EQ(loaded.packets.size(), 1u);
+    EXPECT_EQ(loaded.packets[0].captured_length, 22u);
+    EXPECT_EQ(loaded.packets[0].frame_length, 1514u);
+
+    // wire length 0 (not given): the record's own data is the frame
+    file = erfRecord(2, kArp, 1700000000, 0, 0, 0, 0, false);
+    loaded = load(file);
+    ASSERT_EQ(loaded.packets.size(), 1u);
+    EXPECT_EQ(loaded.packets[0].captured_length, 42u);
+}
+
+TEST(ErfReader, MapsRecordTypesToLinkTypes) {
+    struct Case { uint8_t type; std::vector<char> data; uint32_t linkType; bool note; };
+    const Case cases[] = {
+        {2, kArp, 1, false}, {11, kArp, 1, false}, {16, kArp, 1, false}, {20, kArp, 1, false},
+        {22, kIpDns, 101, false}, {23, kIpDns, 101, false},                           // raw IPv4 / IPv6 (the nibble picks)
+        {1, cat(support::hex("ff 03 00 21"), kIpDns), 9, false},                       // PoS with PPP-in-HDLC framing
+        {10, cat(support::hex("ff 03 00 21"), kIpDns), 9, false},
+        {1, cat(support::hex("0f 00 08 00"), kIpDns), 147, true},                      // Cisco HDLC
+        {3, support::hex("00 11 22 33"), 147, true}, {4, support::hex("00 11 22 33"), 147, true},   // ATM, AAL5
+        {5, support::hex("00 11 22 33"), 147, true}, {21, support::hex("00 11 22 33"), 147, true},  // multi-channel HDLC, InfiniBand
+        {24, support::hex("00 11 22 33"), 147, true},
+    };
+    for (const auto &c: cases) {
+        const auto file = erfRecord(c.type, c.data);
+        const auto loaded = load(file);
+        SCOPED_TRACE("record type " + std::to_string(c.type));
+        ASSERT_TRUE(loaded.ok) << loaded.message;
+        ASSERT_EQ(loaded.packets.size(), 1u);
+        EXPECT_EQ(loaded.packets[0].link_type, c.linkType);
+        EXPECT_EQ(loaded.message.find("shown as raw data") != std::string::npos, c.note) << loaded.message;
+        if (c.linkType == 147) EXPECT_EQ(loaded.packets[0].info, "Unsupported link type 147");
+        expectReplayConsistent(file, loaded);
+    }
+    // PoS: the two bytes ff 03 are not part of the frame, the packet decodes as PPP / IPv4 / DNS
+    const auto pos = load(erfRecord(1, cat(support::hex("ff 03 00 21"), kIpDns), 1, 0, 0, -1, 0, false));
+    ASSERT_EQ(pos.packets.size(), 1u);
+    EXPECT_EQ(pos.packets[0].file_offset, 16u + 2u);
+    EXPECT_EQ(pos.packets[0].captured_length, kIpDns.size() + 2);
+    EXPECT_EQ(pos.packets[0].protocol, "DNS");
+}
+
+TEST(ErfReader, SkipsRecordsThatCarryNoPacket) {
+    // IP counter (13), TCP flow counter (14) and META (26) records sit between packets
+    const auto file = cat(cat(cat(cat(erfRecord(2, kArp), erfRecord(13, support::hex("01 02 03 04 05 06 07 08"))),
+                                  erfRecord(14, support::hex("01 02 03 04 05 06 07 08 09 0a 0b 0c"))), erfRecord(26, support::hex("00 01 00 04 00 00 00 00"))),
+                          erfRecord(2, kArp, 1700000002));
+    const auto loaded = load(file);
+    ASSERT_TRUE(loaded.ok) << loaded.message;
+    EXPECT_EQ(loaded.packets.size(), 2u);
+    EXPECT_TRUE(loaded.message.empty());
+    EXPECT_NEAR(loaded.packets[1].time, 2.0, 1e-9);
+    expectReplayConsistent(file, loaded);
+    // a file of nothing but counters loads as an empty capture
+    const auto empty = load(cat(erfRecord(13, support::hex("01 02 03 04 05 06 07 08")), erfRecord(26, support::hex("00 01 00 04 00 00 00 00"))));
+    EXPECT_TRUE(empty.ok);
+    EXPECT_TRUE(empty.packets.empty());
+}
+
+TEST(ErfReader, DamagedRecordsKeepTheEarlierOnes) {
+    const auto good = cat(erfRecord(2, kArp), erfRecord(2, kArp, 1700000001));
+    // record length below the 16 byte header
+    auto bad = good;
+    bad[64 + 11] = 8;
+    auto loaded = load(bad);
+    EXPECT_TRUE(loaded.ok);
+    EXPECT_EQ(loaded.packets.size(), 1u);
+    EXPECT_EQ(loaded.message, "Corrupt record header after record 1");
+
+    // record length that runs past the end of the file
+    auto cut = good;
+    cut.resize(cut.size() - 5);
+    loaded = load(cut);
+    EXPECT_EQ(loaded.packets.size(), 1u);
+    EXPECT_EQ(loaded.message, "Truncated or corrupt record 2");
+
+    // a header cut in two
+    cut = cat(erfRecord(2, kArp), std::vector<char>(9, 1));
+    loaded = load(cut);
+    EXPECT_EQ(loaded.packets.size(), 1u);
+    EXPECT_EQ(loaded.message, "Truncated record header after record 1");
+
+    // extension headers that do not fit in the record: bit 7 of the type set on a record that is only a header
+    auto ext = erfRecord(22, kIpDns);
+    ext[8] = char(22 | 0x80);
+    ext[16] = char(0x80);   // and the chain says there is one more
+    for (int i = 0; i < 8; ++i) ext[16 + i] = char(i == 0 ? 0x80 : 0);
+    ext.resize(16 + 8 + 4);
+    ext[10] = 0; ext[11] = char(ext.size());
+    loaded = load(cat(erfRecord(2, kArp), ext));
+    EXPECT_EQ(loaded.packets.size(), 1u);
+    EXPECT_EQ(loaded.message, "Record 2 is shorter than its headers");
+}
+
+TEST(ErfReader, TruncationAndMutationSweep) {
+    sweep(cat(cat(cat(erfRecord(2, kArp), erfRecord(2, kUdp, 1700000001, 0x40000000, 1, -1, 2)),
+                  erfRecord(13, support::hex("01 02 03 04 05 06 07 08"))),
+              cat(erfRecord(22, kIpDns, 1700000003), erfRecord(1, cat(support::hex("ff 03 00 21"), kIpDns), 1700000004))), 303);
+}
