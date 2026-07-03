@@ -399,6 +399,92 @@
       "message_contains": "Truncated or corrupt packet 2"
     },
     {
+      "file": "netmon-ethernet.cap",
+      "kind": "synthetic",
+      "source": "tools/make_corpus.py",
+      "sha256": "e7ed0cc39c8d6d485a0bf1c926de2ff24987db29fecddeeec586bf1cfc93617b",
+      "size": 302,
+      "format": "netmon",
+      "link_types": [
+        1
+      ],
+      "packets": 3,
+      "protocols": {
+        "ARP": 2,
+        "DNS": 1
+      },
+      "malformed": 0,
+      "facts": [
+        {
+          "packet": 2,
+          "protocol": "DNS",
+          "info_contains": "example.com",
+          "time_relative": 1.25
+        },
+        {
+          "packet": 3,
+          "time_relative": 3.0
+        }
+      ],
+      "expectation": "by construction",
+      "note": "Network Monitor 2.1, MAC type 1 (Ethernet); a user data area sits between the header and the first frame, the frame table at the end locates the frames"
+    },
+    {
+      "file": "netmon-frame-table-order.cap",
+      "kind": "synthetic",
+      "source": "tools/make_corpus.py",
+      "sha256": "daebeb7d2ba2cb6c1e5570fcfcf7ff9fa075d3b63f444f5d8130981de84403e2",
+      "size": 225,
+      "format": "netmon",
+      "link_types": [
+        1
+      ],
+      "packets": 2,
+      "protocols": {
+        "ARP": 1,
+        "DNS": 1
+      },
+      "malformed": 0,
+      "facts": [
+        {
+          "packet": 1,
+          "protocol": "ARP"
+        },
+        {
+          "packet": 2,
+          "protocol": "DNS",
+          "time_relative": 3.0
+        }
+      ],
+      "expectation": "by construction",
+      "note": "the frame table, not the physical order, is the capture order: the ARP frame is stored second but is packet 1"
+    },
+    {
+      "file": "netmon-atm-media.cap",
+      "kind": "synthetic",
+      "source": "tools/make_corpus.py",
+      "sha256": "451d51f455c5d37184e74feadf2f49d01dfec20d4810a2b418b90d90185e4e73",
+      "size": 116,
+      "format": "netmon",
+      "link_types": [
+        147
+      ],
+      "packets": 1,
+      "protocols": {
+        "Unknown": 1
+      },
+      "malformed": 0,
+      "facts": [
+        {
+          "packet": 1,
+          "info_contains": "Unsupported link type 147"
+        }
+      ],
+      "expectation": "by construction",
+      "note": "MAC type 4 (ATM) has no mapping: the frame is kept as raw data and the load says so",
+      "message_contains": "shown as raw data"
+    },
+    {
       "file": "dhcp.pcap",
       "kind": "real",
       "optional": true,

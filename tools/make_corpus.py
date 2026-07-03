@@ -10,7 +10,7 @@ they come from (URL), their SHA-256 and what is expected; the test runs them whe
 directory that has them and skips them otherwise. For real files the packet count is counted independently by
 this script; the protocol histogram is a snapshot of ImShark's output (marked as such).
 """
-import argparse, hashlib, json, os, struct, sys
+import argparse, datetime, hashlib, json, os, struct, sys
 
 OUT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "tests", "corpus")
 
@@ -86,6 +86,27 @@ def snoop(frames, datalink=4, times=None, version=2):
         out += struct.pack(">IIIIII", len(f), len(f), 24 + len(f) + len(pad), 0, sec, usec) + f + pad
     return out
 
+# Microsoft Network Monitor 2.x (little endian): 72 byte header (magic "GMBU", minor, major, MAC type, SYSTEMTIME of the
+# capture start, then offset/length pairs of the frame table, user data, comment, statistics, network info and
+# conversation statistics), the frame records (u64 microseconds since the start, original length, included length,
+# data), and at the end the frame table: one absolute u32 file offset per frame, in capture order.
+def netmon(frames, mac=1, start=1700000000, millis=0, deltas=None, minor=1, major=2, user_data=b"", order=None):
+    t = datetime.datetime.fromtimestamp(start, datetime.timezone.utc)
+    systemtime = struct.pack("<8H", t.year, t.month, (t.weekday() + 1) % 7, t.day, t.hour, t.minute, t.second, millis)
+    body = user_data                                   # sits between the header and the first frame record
+    offsets = []
+    pos = 72 + len(body)
+    for i, f in enumerate(frames):
+        d = deltas[i] if deltas else i * 1000000
+        offsets.append(pos)
+        rec = struct.pack("<QII", d, len(f), len(f)) + f
+        body += rec
+        pos += len(rec)
+    table = b"".join(struct.pack("<I", offsets[i]) for i in (order if order is not None else range(len(frames))))
+    hdr = b"GMBU" + bytes([minor, major]) + struct.pack("<H", mac) + systemtime
+    hdr += struct.pack("<12I", pos, len(table), 72 if user_data else 0, len(user_data), 0, 0, 0, 0, 0, 0, 0, 0)
+    return hdr + body + table
+
 # ------------------------------------------------------------------------------------- synthetic corpus
 SYNTHETIC = []
 
@@ -132,6 +153,16 @@ add("snoop-token-ring.snoop", snoop([hexb("1040 00" + "00" * 29)], datalink=2), 
     note="datalink type 2 (IEEE 802.5) maps to the Token Ring link type, which has no dissector")
 add("snoop-truncated-last-record.snoop", snoop([ARP, DNS_FRAME])[:-20], "snoop", [1], 1, {"ARP": 1}, message="Truncated or corrupt packet 2",
     note="a damaged tail keeps the earlier records")
+
+add("netmon-ethernet.cap", netmon([ARP, DNS_FRAME, ARP], deltas=[0, 1250000, 3000000], millis=500, user_data=b"user data area."), "netmon", [1], 3, {"ARP": 2, "DNS": 1},
+    facts=[{"packet": 2, "protocol": "DNS", "info_contains": "example.com", "time_relative": 1.25}, {"packet": 3, "time_relative": 3.0}],
+    note="Network Monitor 2.1, MAC type 1 (Ethernet); a user data area sits between the header and the first frame, the frame table at the end locates the frames")
+add("netmon-frame-table-order.cap", netmon([DNS_FRAME, ARP], deltas=[5000000, 2000000], order=[1, 0]), "netmon", [1], 2, {"ARP": 1, "DNS": 1},
+    facts=[{"packet": 1, "protocol": "ARP"}, {"packet": 2, "protocol": "DNS", "time_relative": 3.0}],
+    note="the frame table, not the physical order, is the capture order: the ARP frame is stored second but is packet 1")
+add("netmon-atm-media.cap", netmon([hexb("00" * 24)], mac=4), "netmon", [147], 1, {"Unknown": 1},
+    facts=[{"packet": 1, "info_contains": "Unsupported link type 147"}], message="shown as raw data",
+    note="MAC type 4 (ATM) has no mapping: the frame is kept as raw data and the load says so")
 
 # ------------------------------------------------------------------------------------------ real captures
 WIKI = "https://wiki.wireshark.org/uploads/__moin_import__/attachments/SampleCaptures/"

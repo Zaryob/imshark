@@ -130,10 +130,10 @@ pcapng-bad-byte-order auto ok=0 n=0 digest=442fa81d90b3da83 fmt="pcapng" ifaces=
 pcapng-bad-byte-order pcap ok=0 n=0 digest=3447ceef219c1ad4 fmt="" ifaces=0 msg="Incompatible PCAP file format"
 pcapng-bad-byte-order pcapng ok=0 n=0 digest=442fa81d90b3da83 fmt="pcapng" ifaces=0 msg="Invalid pcapng byte-order magic"
 pcapng-bad-byte-order prefixes 359 digest=674bd75d37e66f07
-netmon auto ok=0 n=0 digest=49c3e6ae1c2e0631 fmt="" ifaces=0 msg="Unsupported file format: Microsoft Network Monitor"
-netmon pcap ok=0 n=0 digest=49c3e6ae1c2e0631 fmt="" ifaces=0 msg="Unsupported file format: Microsoft Network Monitor"
-netmon pcapng ok=0 n=0 digest=cb99192768bc32e1 fmt="pcapng" ifaces=0 msg="Unsupported file format: Microsoft Network Monitor"
-netmon prefixes 25 digest=3d964d8270a577ab
+netmon auto ok=0 n=0 digest=6d52afff1ee283e6 fmt="" ifaces=0 msg="File is too short to be a Network Monitor file"
+netmon pcap ok=0 n=0 digest=3447ceef219c1ad4 fmt="" ifaces=0 msg="Incompatible PCAP file format"
+netmon pcapng ok=0 n=0 digest=fc2a9a04fee4b3d8 fmt="pcapng" ifaces=0 msg="Not a pcapng file (missing Section Header Block)"
+netmon prefixes 25 digest=83b0da4b81442c74
 snoop auto ok=1 n=0 digest=890121def206b50a fmt="Sun snoop, version 2, datalink type 4 (Ethernet)" ifaces=1 msg="Truncated packet header after packet 0"
 snoop pcap ok=0 n=0 digest=3447ceef219c1ad4 fmt="" ifaces=0 msg="Incompatible PCAP file format"
 snoop pcapng ok=0 n=0 digest=5f441f9dfa62def9 fmt="pcapng" ifaces=0 msg="Not a pcapng file (missing Section Header Block)"

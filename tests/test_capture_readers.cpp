@@ -213,3 +213,129 @@ TEST(SnoopReader, TruncationAndMutationSweep) {
     sweep(cat(cat(cat(snoopHeader(4), snoopRecord(kArp, 1700000000, 5)), snoopRecord(kUdp, 1700000001, 250000)),
               snoopRecord(support::hex("aa bb cc"), 1700000002, 0)), 101);
 }
+
+// ---- Microsoft Network Monitor 2.x ----------------------------------------------------------------------
+namespace {
+    struct NetMonFrame { std::vector<char> data; uint64_t delta; uint32_t original = 0; };
+
+    // header (72 bytes), frame records, frame table; `table` lists the frames in capture order (default: physical order)
+    std::vector<char> netmonFile(const std::vector<NetMonFrame> &frames, uint16_t macType = 1, uint8_t major = 2, uint8_t minor = 1,
+                                 const std::vector<uint16_t> &systemTime = {2023, 11, 2, 14, 22, 13, 20, 500},
+                                 const std::vector<size_t> &table = {}) {
+        std::vector<char> body;
+        std::vector<uint32_t> offsets;
+        for (const auto &f: frames) {
+            offsets.push_back(uint32_t(72 + body.size()));
+            body = cat(body, le<uint64_t>(f.delta));
+            body = cat(body, le<uint32_t>(f.original ? f.original : uint32_t(f.data.size())));
+            body = cat(body, le<uint32_t>(uint32_t(f.data.size())));
+            body = cat(body, f.data);
+        }
+        std::vector<char> tableBytes;
+        if (table.empty()) for (auto o: offsets) tableBytes = cat(tableBytes, le<uint32_t>(o));
+        else for (auto i: table) tableBytes = cat(tableBytes, le<uint32_t>(offsets[i]));
+        std::vector<char> h = bytesFrom("GMBU");
+        h.push_back(char(minor));
+        h.push_back(char(major));
+        h = cat(h, le<uint16_t>(macType));
+        for (auto v: systemTime) h = cat(h, le<uint16_t>(v));
+        h = cat(h, le<uint32_t>(uint32_t(72 + body.size())));   // frame table offset
+        h = cat(h, le<uint32_t>(uint32_t(tableBytes.size())));
+        for (int i = 0; i < 10; ++i) h = cat(h, le<uint32_t>(0)); // user data, comment, statistics, network info, conversations
+        return cat(cat(h, body), tableBytes);
+    }
+} // namespace
+
+TEST(NetMonReader, ReadsFramesThroughTheFrameTableWithTheStartTime) {
+    // start 2023-11-14 22:13:20.500 (= 1700000000.5 UTC); frames 0, 1.25 s and 3 s after it
+    const auto file = netmonFile({{kArp, 0}, {kUdp, 1250000, 1514}, {support::hex("aa bb"), 3000000}});
+    const auto loaded = load(file);
+    ASSERT_TRUE(loaded.ok) << loaded.message;
+    EXPECT_TRUE(loaded.message.empty());
+    ASSERT_EQ(loaded.packets.size(), 3u);
+    ASSERT_EQ(loaded.records.size(), 3u);
+    EXPECT_EQ(loaded.packets[0].file_offset, 72u + 16u);
+    EXPECT_EQ(loaded.packets[1].file_offset, 72u + 58u + 16u);
+    EXPECT_EQ(loaded.packets[1].frame_length, 1514u);
+    EXPECT_EQ(loaded.packets[1].captured_length, 71u);
+    EXPECT_EQ(loaded.records[0].seconds, 1700000000u);
+    EXPECT_EQ(loaded.records[0].fraction, 500000u);
+    EXPECT_EQ(loaded.records[1].seconds, 1700000001u);      // .5 + 1.25 = 1.75
+    EXPECT_EQ(loaded.records[1].fraction, 750000u);
+    EXPECT_EQ(loaded.records[2].seconds, 1700000003u);
+    EXPECT_EQ(loaded.records[2].fraction, 500000u);
+    EXPECT_NEAR(loaded.packets[1].time, 1.25, 1e-9);
+    EXPECT_NEAR(loaded.packets[2].time, 3.0, 1e-9);
+    EXPECT_EQ(loaded.packets[1].protocol, "DNS");
+    EXPECT_NE(loaded.info.format.find("Microsoft Network Monitor, version 2.1, MAC type 1 (Ethernet)"), std::string::npos) << loaded.info.format;
+    ASSERT_EQ(loaded.info.interfaces.size(), 1u);
+    EXPECT_EQ(loaded.info.interfaces[0].packets, 3u);
+    expectReplayConsistent(file, loaded);
+}
+
+TEST(NetMonReader, FrameTableOrderIsCaptureOrder) {
+    const auto file = netmonFile({{kUdp, 5000000}, {kArp, 2000000}}, 1, 2, 0, {2023, 11, 2, 14, 22, 13, 20, 0}, {1, 0});
+    const auto loaded = load(file);
+    ASSERT_TRUE(loaded.ok) << loaded.message;
+    ASSERT_EQ(loaded.packets.size(), 2u);
+    EXPECT_EQ(loaded.packets[0].protocol, "ARP");
+    EXPECT_EQ(loaded.packets[1].protocol, "DNS");
+    EXPECT_NEAR(loaded.packets[1].time, 3.0, 1e-9);
+    EXPECT_GT(loaded.packets[0].file_offset, loaded.packets[1].file_offset);   // stored the other way round
+    expectReplayConsistent(file, loaded);
+}
+
+TEST(NetMonReader, MapsMacTypesToLinkTypes) {
+    struct Case { uint16_t mac; uint32_t linkType; bool note; };
+    const Case cases[] = {{1, 1, false}, {2, 6, false}, {3, 10, false}, {0, 147, true}, {4, 147, true}, {6, 147, true}, {200, 147, true}};
+    for (const auto &c: cases) {
+        const auto file = netmonFile({{kArp, 0}}, c.mac);
+        const auto loaded = load(file);
+        SCOPED_TRACE("MAC type " + std::to_string(c.mac));
+        ASSERT_TRUE(loaded.ok) << loaded.message;
+        ASSERT_EQ(loaded.packets.size(), 1u);
+        EXPECT_EQ(loaded.packets[0].link_type, c.linkType);
+        EXPECT_EQ(loaded.message.find("shown as raw data") != std::string::npos, c.note) << loaded.message;
+        if (c.linkType != 1) EXPECT_EQ(loaded.packets[0].info, "Unsupported link type " + std::to_string(c.linkType));
+        expectReplayConsistent(file, loaded);
+    }
+}
+
+TEST(NetMonReader, RefusesVersion1AndDamagedTables) {
+    auto loaded = load(netmonFile({{kArp, 0}}, 1, 1, 1));
+    EXPECT_FALSE(loaded.ok);
+    EXPECT_EQ(loaded.message, "Unsupported Network Monitor version 1.1 (only 2.x is read)");
+
+    // the frame table is at the end: a file cut short has lost it
+    auto cut = netmonFile({{kArp, 0}, {kArp, 1}});
+    cut.resize(cut.size() - 3);
+    loaded = load(cut);
+    EXPECT_FALSE(loaded.ok);
+    EXPECT_EQ(loaded.message, "Network Monitor frame table lies outside the file (the file is damaged or cut short)");
+
+    // a table entry that points outside the file keeps the frames before it
+    auto bad = netmonFile({{kArp, 0}, {kArp, 1}});
+    bad[bad.size() - 1] = char(0x7f);   // second entry becomes 0x7f0000xx
+    loaded = load(bad);
+    EXPECT_TRUE(loaded.ok);
+    EXPECT_EQ(loaded.packets.size(), 1u);
+    EXPECT_EQ(loaded.message, "Frame 2 lies outside the file");
+
+    // a frame whose included length runs past the end of the file
+    bad = netmonFile({{kArp, 0}, {kArp, 1}});
+    bad[72 + 58 + 12] = char(0xff);
+    bad[72 + 58 + 13] = char(0xff);
+    loaded = load(bad);
+    EXPECT_EQ(loaded.packets.size(), 1u);
+    EXPECT_EQ(loaded.message, "Truncated or corrupt frame 2");
+
+    // an impossible date leaves the start at the epoch, the relative times are unaffected
+    loaded = load(netmonFile({{kArp, 0}, {kArp, 2000000}}, 1, 2, 1, {2023, 13, 0, 99, 99, 99, 99, 9999}));
+    ASSERT_EQ(loaded.packets.size(), 2u);
+    EXPECT_EQ(loaded.records[0].seconds, 0u);
+    EXPECT_NEAR(loaded.packets[1].time, 2.0, 1e-9);
+}
+
+TEST(NetMonReader, TruncationAndMutationSweep) {
+    sweep(netmonFile({{kArp, 0}, {kUdp, 1250000}, {support::hex("aa bb cc"), 3000000}}), 202);
+}

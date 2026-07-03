@@ -55,25 +55,19 @@ namespace {
 } // namespace
 
 TEST(FileFormats, FormatIdentificationAndDiagnostics) {
-    // 1. NetMon
+    // 1. NetMon: a reader exists now (tests/test_capture_readers.cpp); the sample has no frame table
     {
         const auto path = support::writeTemp("sample.cap", makeNetMonSample());
         EXPECT_EQ(core::detectFileFormat(path), core::FileFormat::NetMon);
         EXPECT_EQ(std::string(core::formatName(core::FileFormat::NetMon)), "Microsoft Network Monitor");
-        EXPECT_EQ(core::unsupportedFormatDiagnostic(core::FileFormat::NetMon),
-                  "Unsupported file format: Microsoft Network Monitor");
+        EXPECT_EQ(core::unsupportedFormatDiagnostic(core::FileFormat::NetMon), "");
 
         core::FileProcessor fp;
         std::vector<packet::PacketInfo> packets;
         std::string message;
         bool ok = fp.processFile(path, packets, message);
         EXPECT_FALSE(ok);
-        EXPECT_EQ(message, "Unsupported file format: Microsoft Network Monitor");
-
-        // Also test direct processPcapFile invocation
-        ok = fp.processPcapFile(path, packets, message);
-        EXPECT_FALSE(ok);
-        EXPECT_EQ(message, "Unsupported file format: Microsoft Network Monitor");
+        EXPECT_EQ(message, "Network Monitor frame table lies outside the file (the file is damaged or cut short)");
         std::remove(path.c_str());
     }
 
@@ -201,7 +195,7 @@ TEST(FileFormats, EveryTruncatedMagicIsEitherItsFormatOrUnknown) {
             std::vector<packet::PacketInfo> packets;
             std::string message;
             const bool ok = fp.processFile(path, packets, message);
-            if (fmt == core::FileFormat::NetMon || fmt == core::FileFormat::Iptrace || fmt == core::FileFormat::Erf) {
+            if (fmt == core::FileFormat::Iptrace || fmt == core::FileFormat::Erf) {
                 EXPECT_FALSE(ok);
                 EXPECT_EQ(message, core::unsupportedFormatDiagnostic(fmt));
             }
