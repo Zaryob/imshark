@@ -5,6 +5,7 @@ add_library(imshark_core STATIC
     src/core.cpp
     src/packet_parser.cpp
     src/tcp_connection.cpp
+    src/network/ip_reassembly.cpp
     src/dissect/registry.cpp
     src/dissect/ip.cpp
     src/dissect/arp.cpp
