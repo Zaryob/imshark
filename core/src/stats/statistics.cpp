@@ -215,7 +215,9 @@ namespace stats {
             else if (p.protocol == "Malformed" || p.protocol == "Unknown") c.push_back("Malformed / undecoded");
             else c.push_back("Data");
 
-            if (p.ip_version != 0) {
+            if (p.ip_version != 0 && p.ip_frag == 1) {
+                c.push_back("Fragmented IP data");
+            } else if (p.ip_version != 0) {
                 switch (p.ip_protocol) {
                     case 6: c.push_back("Transmission Control Protocol"); break;
                     case 17: c.push_back("User Datagram Protocol"); break;

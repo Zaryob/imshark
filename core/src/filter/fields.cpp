@@ -8,8 +8,9 @@ namespace filter {
 
         bool ipv4(const PacketInfo &p) { return p.ip_version == 4; }
         bool ipv6(const PacketInfo &p) { return p.ip_version == 6; }
-        bool hasTcp(const PacketInfo &p) { return p.ip_version != 0 && p.ip_protocol == 6; }
-        bool hasUdp(const PacketInfo &p) { return p.ip_version != 0 && p.ip_protocol == 17; }
+        // a fragment that is not the last one carries no complete TCP/UDP header to speak of
+        bool hasTcp(const PacketInfo &p) { return p.ip_version != 0 && p.ip_protocol == 6 && p.ip_frag != 1; }
+        bool hasUdp(const PacketInfo &p) { return p.ip_version != 0 && p.ip_protocol == 17 && p.ip_frag != 1; }
 
         // protocol presence: one value (1) when present, none otherwise
         template<bool (*Present)(const PacketInfo &)>
@@ -54,6 +55,9 @@ namespace filter {
                 {"ipv6", FieldType::Boolean, proto<ipv6>, "IPv6"},
                 {"ip.version", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (ipv4(p)) o.addU(4); }, "IPv4 version"},
                 {"ip.ttl", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (ipv4(p)) o.addU(p.ttl); }, "IPv4 time to live"},
+                {"ip.id", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (ipv4(p)) o.addU(p.ip_id); }, "IPv4 identification"},
+                {"ip.fragment", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (ipv4(p)) o.addU(p.ip_frag != 0); }, "IPv4 fragment (part of a fragmented datagram)"},
+                {"ip.reassembled", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (ipv4(p)) o.addU(p.ip_frag == 2); }, "Last IPv4 fragment: the datagram was reassembled here"},
                 {"ip.proto", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (ipv4(p)) o.addU(p.ip_protocol); }, "IPv4 protocol number"},
                 {"ip.src", FieldType::Ipv4, [](const PacketInfo &p, const Context &c, Values &o) { addr(p, c, o, false, true, false); }, "IPv4 source address"},
                 {"ip.dst", FieldType::Ipv4, [](const PacketInfo &p, const Context &c, Values &o) { addr(p, c, o, false, false, true); }, "IPv4 destination address"},

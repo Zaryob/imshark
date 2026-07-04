@@ -4,6 +4,7 @@
 #include <functional>
 #include <string>
 
+#include <network/ip_reassembly.h>
 #include <network/tcp_connection.h>
 #include <packet/packet_info.h>
 
@@ -26,6 +27,14 @@ namespace dissect {
         network::TCPConnection &tcp;        // per-capture TCP state (relative seq/ack)
         const Registry &registry;           // lookup of the next-layer dissector
         ParseMode mode = ParseMode::Full;
+
+        // IPv4 reassembly. While a capture is read in order, `reassembler` collects the fragments and `completed`
+        // receives (fragment packet, completing packet) pairs. In Replay mode of a completing fragment
+        // `reassembledPayload` (and `fragmentNumbers`) hold the whole datagram instead.
+        network::IpReassembler *reassembler = nullptr;
+        std::vector<std::pair<uint32_t, uint32_t>> *completed = nullptr;
+        const std::vector<char> *reassembledPayload = nullptr;
+        const std::vector<uint32_t> *fragmentNumbers = nullptr;
 
         /// Dissectors skip building the (comparatively expensive) field tree when this is false.
         bool wantFields() const { return mode != ParseMode::Summary; }

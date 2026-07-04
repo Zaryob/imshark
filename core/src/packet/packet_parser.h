@@ -27,7 +27,22 @@ namespace packet {
         /// Per-capture TCP state; use one parser per capture so connections do not leak between files.
         network::TCPConnection connection;
 
+        /// (fragment packet number, packet number that completed its datagram) pairs found since the last
+        /// call. The file reader uses them to annotate the earlier fragments.
+        std::vector<std::pair<uint32_t, uint32_t>> takeCompletedReassemblies() { return std::move(completed_); }
+
+        /// For Replay mode of the last fragment of a datagram: the reassembled payload and the numbers of
+        /// the packets it came from (the pointers must stay valid during parsePacket).
+        void setReassembly(const std::vector<char> *payload, const std::vector<uint32_t> *fragmentNumbers) {
+            reassembledPayload_ = payload;
+            fragmentNumbers_ = fragmentNumbers;
+        }
+
     private:
         const dissect::Registry *registry_;
+        network::IpReassembler reassembler_;
+        std::vector<std::pair<uint32_t, uint32_t>> completed_;
+        const std::vector<char> *reassembledPayload_ = nullptr;
+        const std::vector<uint32_t> *fragmentNumbers_ = nullptr;
     };
 } // namespace packet

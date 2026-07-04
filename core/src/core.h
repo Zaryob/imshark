@@ -31,7 +31,11 @@ namespace core {
     /// Builds the full view of one packet of a loaded capture: copies the summary, reads the frame bytes
     /// from `filepath` and dissects it again, this time producing the protocol field tree. (While loading
     /// only summaries are kept so that large captures do not exhaust memory.)
-    bool buildPacketDetails(const std::string &filepath, const packet::PacketInfo &summary, packet::PacketInfo &details);
+    ///
+    /// `allPackets` (the whole loaded capture) is only needed for the last fragment of a reassembled IPv4
+    /// datagram: the other fragments are found in it and read from the file.
+    bool buildPacketDetails(const std::string &filepath, const packet::PacketInfo &summary, packet::PacketInfo &details,
+                            const std::vector<packet::PacketInfo> *allPackets = nullptr);
 
     class FileProcessor {
         packet::PacketParser parser;
