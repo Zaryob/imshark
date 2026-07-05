@@ -123,6 +123,16 @@ def erf_record(rtype, data, sec=1700000000, frac=0, flags=0, wlen=None, ext=0, p
 
 def erf(*records): return b"".join(records)
 
+# AIX iptrace 2.0 (the documented subset, big endian): the 11 characters "iptrace 2.0", then records of a 40 byte header
+# (u32 record length = 40 + frame, 24 bytes not used here with the interface name at 16, interface type at 28, direction
+# at 29, u32 seconds at 32, u32 nanoseconds at 36) followed by the frame.
+def iptrace_record(frame, iftype=6, sec=1700000000, nsec=0, ifname=b"en0", direction=0):
+    head = struct.pack(">I", 40 + len(frame)) + b"\0" * 12 + ifname.ljust(12, b"\0") + bytes([iftype, direction, 0, 0]) + struct.pack(">II", sec, nsec)
+    assert len(head) == 40
+    return head + frame
+
+def iptrace(*records): return b"iptrace 2.0" + b"".join(records)
+
 # ------------------------------------------------------------------------------------- synthetic corpus
 SYNTHETIC = []
 
@@ -193,6 +203,16 @@ add("erf-pos-ppp.erf", erf(erf_record(1, PPP_IP, wlen=len(PPP_IP))), "erf", [9],
 add("erf-atm-record.erf", erf(erf_record(3, hexb("00" * 52))), "erf", [147], 1, {"Unknown": 1},
     facts=[{"packet": 1, "info_contains": "Unsupported link type 147"}], message="shown as raw data",
     note="record type 3 (ATM) has no mapping: the cell is kept as raw data and the load says so")
+
+add("iptrace-ethernet.iptrace", iptrace(iptrace_record(ARP), iptrace_record(DNS_FRAME, 7, 1700000001, 250000000, b"en1", 1), iptrace_record(ARP, sec=1700000003)),
+    "iptrace", [1], 3, {"ARP": 2, "DNS": 1},
+    facts=[{"packet": 2, "protocol": "DNS", "info_contains": "example.com", "time_relative": 1.25}, {"packet": 3, "time_relative": 3.0}],
+    note="interface types 6 (Ethernet) and 7 (IEEE 802.3) on two interfaces, nanosecond timestamps")
+add("iptrace-loopback.iptrace", iptrace(iptrace_record(hexb("00" * 24), iftype=0x18, ifname=b"lo0")), "iptrace", [147], 1, {"Unknown": 1},
+    facts=[{"packet": 1, "info_contains": "Unsupported link type 147"}], message="shown as raw data",
+    note="interface type 0x18 (loopback) has no mapping: the frame is kept as raw data and the load says so")
+add("iptrace-truncated-last-record.iptrace", iptrace(iptrace_record(ARP), iptrace_record(DNS_FRAME))[:-12], "iptrace", [1], 1, {"ARP": 1},
+    message="Truncated or corrupt packet 2", note="a damaged tail keeps the earlier records")
 
 # ------------------------------------------------------------------------------------------ real captures
 WIKI = "https://wiki.wireshark.org/uploads/__moin_import__/attachments/SampleCaptures/"

@@ -60,7 +60,7 @@ const std::vector<core::io::FormatDescriptor> &core::io::captureFormats() {
         {FileFormat::Gzip, "gzip", matchGzip, nullptr, true},
         {FileFormat::NetMon, "Microsoft Network Monitor", matchNetMon, makeNetMonReader, false},
         {FileFormat::Snoop, "Sun snoop", matchSnoop, makeSnoopReader, false},
-        {FileFormat::Iptrace, "AIX iptrace", matchIptrace, nullptr, false},
+        {FileFormat::Iptrace, "AIX iptrace", matchIptrace, makeIptraceReader, false},
         {FileFormat::Erf, "Endace ERF", matchErf, makeErfReader, false},
     };
     return formats;

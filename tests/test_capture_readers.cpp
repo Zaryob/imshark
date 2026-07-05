@@ -497,3 +497,105 @@ TEST(ErfReader, TruncationAndMutationSweep) {
                   erfRecord(13, support::hex("01 02 03 04 05 06 07 08"))),
               cat(erfRecord(22, kIpDns, 1700000003), erfRecord(1, cat(support::hex("ff 03 00 21"), kIpDns), 1700000004))), 303);
 }
+
+// ---- AIX iptrace 2.0 ----------------------------------------------------------------------------------------
+namespace {
+    // 40 byte header: record length, 24 bytes not used, interface type at 28, direction at 29, seconds at 32, nanoseconds at 36
+    std::vector<char> iptraceRecord(const std::vector<char> &frame, uint8_t ifType = 6, uint32_t sec = 1700000000, uint32_t nsec = 0) {
+        std::vector<char> r = be<uint32_t>(uint32_t(40 + frame.size()));
+        r.insert(r.end(), 24, 0);
+        r.push_back(char(ifType));
+        r.push_back(0);
+        r.push_back(0);
+        r.push_back(0);
+        r = cat(r, be<uint32_t>(sec));
+        r = cat(r, be<uint32_t>(nsec));
+        return cat(r, frame);
+    }
+    std::vector<char> iptraceFile(const std::vector<std::vector<char>> &records, const std::string &magic = "iptrace 2.0") {
+        std::vector<char> f = bytesFrom(magic);
+        for (const auto &r: records) f = cat(f, r);
+        return f;
+    }
+} // namespace
+
+TEST(IptraceReader, ReadsRecordsNanosecondsAndInterfaceTypes) {
+    const auto file = iptraceFile({iptraceRecord(kArp, 6, 1700000000, 5), iptraceRecord(kUdp, 7, 1700000001, 250000000),
+                                   iptraceRecord(support::hex("aa bb"), 6, 1700000002, 999999999)});
+    const auto loaded = load(file);
+    ASSERT_TRUE(loaded.ok) << loaded.message;
+    EXPECT_TRUE(loaded.message.empty());
+    ASSERT_EQ(loaded.packets.size(), 3u);
+    ASSERT_EQ(loaded.records.size(), 3u);
+    EXPECT_EQ(loaded.packets[0].file_offset, 11u + 40u);
+    EXPECT_EQ(loaded.packets[1].file_offset, 11u + 82u + 40u);
+    EXPECT_EQ(loaded.packets[1].captured_length, 71u);
+    EXPECT_EQ(loaded.packets[1].frame_length, 71u);                // iptrace stores no wire length
+    EXPECT_EQ(loaded.records[1].seconds, 1700000001u);
+    EXPECT_EQ(loaded.records[1].fraction, 250000000u);
+    EXPECT_EQ(loaded.records[1].ticksPerSecond, 1000000000u);
+    EXPECT_NEAR(loaded.packets[1].time, 1.249999995, 1e-9);
+    EXPECT_NEAR(loaded.packets[2].time, 2.999999994, 1e-9);
+    EXPECT_EQ(loaded.packets[0].protocol, "ARP");
+    EXPECT_EQ(loaded.packets[1].protocol, "DNS");
+    EXPECT_EQ(loaded.info.format, "AIX iptrace 2.0");
+    ASSERT_EQ(loaded.info.interfaces.size(), 2u);                    // interface types 6 and 7
+    EXPECT_EQ(loaded.info.interfaces[0].packets, 2u);
+    EXPECT_EQ(loaded.info.interfaces[1].packets, 1u);
+    EXPECT_EQ(loaded.info.interfaces[1].name, "interface type 0x07");
+    expectReplayConsistent(file, loaded);
+}
+
+TEST(IptraceReader, MapsInterfaceTypesToLinkTypes) {
+    struct Case { uint8_t ifType; uint32_t linkType; bool note; };
+    // 6 Ethernet, 7 IEEE 802.3, 9 token ring, 0x0f FDDI; loopback (0x18), SLIP (0x1c) and the rest have no mapping
+    const Case cases[] = {{6, 1, false}, {7, 1, false}, {9, 6, false}, {0x0f, 10, false}, {0x18, 147, true}, {0x1c, 147, true}, {0, 147, true}};
+    for (const auto &c: cases) {
+        const auto file = iptraceFile({iptraceRecord(kArp, c.ifType)});
+        const auto loaded = load(file);
+        SCOPED_TRACE("interface type " + std::to_string(c.ifType));
+        ASSERT_TRUE(loaded.ok) << loaded.message;
+        ASSERT_EQ(loaded.packets.size(), 1u);
+        EXPECT_EQ(loaded.packets[0].link_type, c.linkType);
+        EXPECT_EQ(loaded.message.find("shown as raw data") != std::string::npos, c.note) << loaded.message;
+        if (c.linkType != 1) EXPECT_EQ(loaded.packets[0].info, "Unsupported link type " + std::to_string(c.linkType));
+        expectReplayConsistent(file, loaded);
+    }
+}
+
+TEST(IptraceReader, RefusesVersion1AndStopsAtDamagedRecords) {
+    auto loaded = load(iptraceFile({iptraceRecord(kArp)}, "iptrace 1.0"));
+    EXPECT_FALSE(loaded.ok);
+    EXPECT_EQ(loaded.message, "Unsupported iptrace version 1.0 (only 2.0 is read)");
+
+    // magic only: a valid empty capture
+    loaded = load(iptraceFile({}));
+    EXPECT_TRUE(loaded.ok);
+    EXPECT_TRUE(loaded.packets.empty());
+
+    // record length below the header size
+    auto bad = iptraceFile({iptraceRecord(kArp), iptraceRecord(kArp)});
+    bad[11 + 82 + 3] = 20;
+    loaded = load(bad);
+    EXPECT_TRUE(loaded.ok);
+    EXPECT_EQ(loaded.packets.size(), 1u);
+    EXPECT_EQ(loaded.message, "Truncated or corrupt packet 2");
+
+    // data that is not in the file
+    auto cut = iptraceFile({iptraceRecord(kArp), iptraceRecord(kUdp)});
+    cut.resize(cut.size() - 10);
+    loaded = load(cut);
+    EXPECT_EQ(loaded.packets.size(), 1u);
+    EXPECT_EQ(loaded.message, "Truncated or corrupt packet 2");
+
+    // a header cut in two
+    cut = cat(iptraceFile({iptraceRecord(kArp)}), std::vector<char>(12, 1));
+    loaded = load(cut);
+    EXPECT_EQ(loaded.packets.size(), 1u);
+    EXPECT_EQ(loaded.message, "Truncated packet header after packet 1");
+}
+
+TEST(IptraceReader, TruncationAndMutationSweep) {
+    sweep(iptraceFile({iptraceRecord(kArp, 6, 1700000000, 5), iptraceRecord(kUdp, 7, 1700000001, 250000000),
+                       iptraceRecord(support::hex("aa bb cc"), 0x18, 1700000002, 0)}), 404);
+}

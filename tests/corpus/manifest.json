@@ -568,6 +568,82 @@
       "message_contains": "shown as raw data"
     },
     {
+      "file": "iptrace-ethernet.iptrace",
+      "kind": "synthetic",
+      "source": "tools/make_corpus.py",
+      "sha256": "6fed19b722848a3275df48cd1e1f3d8fcac7abbae31cf88f3dcb404690a1b3d8",
+      "size": 286,
+      "format": "iptrace",
+      "link_types": [
+        1
+      ],
+      "packets": 3,
+      "protocols": {
+        "ARP": 2,
+        "DNS": 1
+      },
+      "malformed": 0,
+      "facts": [
+        {
+          "packet": 2,
+          "protocol": "DNS",
+          "info_contains": "example.com",
+          "time_relative": 1.25
+        },
+        {
+          "packet": 3,
+          "time_relative": 3.0
+        }
+      ],
+      "expectation": "by construction",
+      "note": "interface types 6 (Ethernet) and 7 (IEEE 802.3) on two interfaces, nanosecond timestamps"
+    },
+    {
+      "file": "iptrace-loopback.iptrace",
+      "kind": "synthetic",
+      "source": "tools/make_corpus.py",
+      "sha256": "57fed14497ff2f08730ab37d367bc5e54120f215a89d0c5362403857d1b8acd5",
+      "size": 75,
+      "format": "iptrace",
+      "link_types": [
+        147
+      ],
+      "packets": 1,
+      "protocols": {
+        "Unknown": 1
+      },
+      "malformed": 0,
+      "facts": [
+        {
+          "packet": 1,
+          "info_contains": "Unsupported link type 147"
+        }
+      ],
+      "expectation": "by construction",
+      "note": "interface type 0x18 (loopback) has no mapping: the frame is kept as raw data and the load says so",
+      "message_contains": "shown as raw data"
+    },
+    {
+      "file": "iptrace-truncated-last-record.iptrace",
+      "kind": "synthetic",
+      "source": "tools/make_corpus.py",
+      "sha256": "c33a2719dc9f666a6b9b4d581d28e0c21e18329359cfdd59e762a7bfa398a168",
+      "size": 192,
+      "format": "iptrace",
+      "link_types": [
+        1
+      ],
+      "packets": 1,
+      "protocols": {
+        "ARP": 1
+      },
+      "malformed": 0,
+      "facts": [],
+      "expectation": "by construction",
+      "note": "a damaged tail keeps the earlier records",
+      "message_contains": "Truncated or corrupt packet 2"
+    },
+    {
       "file": "dhcp.pcap",
       "kind": "real",
       "optional": true,

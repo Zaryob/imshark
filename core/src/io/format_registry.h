@@ -40,6 +40,7 @@ namespace core::io {
     std::unique_ptr<CaptureFileReader> makeSnoopReader();
     std::unique_ptr<CaptureFileReader> makeNetMonReader();
     std::unique_ptr<CaptureFileReader> makeErfReader();
+    std::unique_ptr<CaptureFileReader> makeIptraceReader();
 
     /// A fresh reader for `format`, nullptr if the format has none.
     std::unique_ptr<CaptureFileReader> makeReader(FileFormat format);

@@ -105,27 +105,28 @@ TEST(FileFormats, FormatIdentificationAndDiagnostics) {
         std::remove(path.c_str());
     }
 
-    // 4. AIX iptrace 1.0 & 2.0
+    // 4. AIX iptrace 1.0 & 2.0: the 2.0 reader exists now, 1.0 is refused with a message
     {
         const auto path1 = support::writeTemp("sample1.iptrace", makeIptrace1Sample());
         EXPECT_EQ(core::detectFileFormat(path1), core::FileFormat::Iptrace);
         EXPECT_EQ(std::string(core::formatName(core::FileFormat::Iptrace)), "AIX iptrace");
-        EXPECT_EQ(core::unsupportedFormatDiagnostic(core::FileFormat::Iptrace),
-                  "Unsupported file format: AIX iptrace");
+        EXPECT_EQ(core::unsupportedFormatDiagnostic(core::FileFormat::Iptrace), "");
 
         core::FileProcessor fp;
         std::vector<packet::PacketInfo> packets;
         std::string message;
         bool ok = fp.processFile(path1, packets, message);
         EXPECT_FALSE(ok);
-        EXPECT_EQ(message, "Unsupported file format: AIX iptrace");
+        EXPECT_EQ(message, "Unsupported iptrace version 1.0 (only 2.0 is read)");
         std::remove(path1.c_str());
 
+        // the 2.0 sample is the magic followed by zeros: the first record claims length 0, which is damage, but the file is a valid empty capture
         const auto path2 = support::writeTemp("sample2.iptrace", makeIptrace2Sample());
         EXPECT_EQ(core::detectFileFormat(path2), core::FileFormat::Iptrace);
         ok = fp.processFile(path2, packets, message);
-        EXPECT_FALSE(ok);
-        EXPECT_EQ(message, "Unsupported file format: AIX iptrace");
+        EXPECT_TRUE(ok) << message;
+        EXPECT_TRUE(packets.empty());
+        EXPECT_EQ(message, "Truncated or corrupt packet 1");
         std::remove(path2.c_str());
     }
 }
@@ -190,16 +191,14 @@ TEST(FileFormats, EveryTruncatedMagicIsEitherItsFormatOrUnknown) {
             const auto fmt = detect(cut);
             if (n >= s.magicLength) EXPECT_EQ(fmt, s.format) << "length " << n;
             else EXPECT_TRUE(fmt == s.format || fmt == kUnknown) << "length " << n;
-            // loading never crashes whatever the length, and a diagnosed foreign format is reported, not loaded
+            // loading never crashes whatever the length
             const auto path = support::writeTemp("cut.bin", cut);
             core::FileProcessor fp;
             std::vector<packet::PacketInfo> packets;
             std::string message;
-            const bool ok = fp.processFile(path, packets, message);
-            if (fmt == core::FileFormat::Iptrace) {
-                EXPECT_FALSE(ok);
-                EXPECT_EQ(message, core::unsupportedFormatDiagnostic(fmt));
-            }
+            fp.processFile(path, packets, message);
+            // every recognised format has a reader now: the "unsupported file format" diagnostic is for unknown magic numbers only
+            if (fmt != kUnknown) EXPECT_EQ(message.find("Unsupported file format: " + std::string(core::formatName(fmt))), std::string::npos) << message;
             std::remove(path.c_str());
         }
     }

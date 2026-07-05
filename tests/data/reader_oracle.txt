@@ -138,10 +138,10 @@ snoop auto ok=1 n=0 digest=890121def206b50a fmt="Sun snoop, version 2, datalink 
 snoop pcap ok=0 n=0 digest=3447ceef219c1ad4 fmt="" ifaces=0 msg="Incompatible PCAP file format"
 snoop pcapng ok=0 n=0 digest=5f441f9dfa62def9 fmt="pcapng" ifaces=0 msg="Not a pcapng file (missing Section Header Block)"
 snoop prefixes 24 digest=61673e340dfdc4f2
-iptrace auto ok=0 n=0 digest=5ade1a549e957b5b fmt="" ifaces=0 msg="Unsupported file format: AIX iptrace"
+iptrace auto ok=1 n=0 digest=afa8565dcb4d9f98 fmt="AIX iptrace 2.0" ifaces=0 msg="Truncated packet header after packet 0"
 iptrace pcap ok=0 n=0 digest=8c4b4993ff7629f1 fmt="" ifaces=0 msg="File is too short to be a PCAP file"
 iptrace pcapng ok=0 n=0 digest=d2de093a0c6a3275 fmt="pcapng" ifaces=0 msg="Not a pcapng file (missing Section Header Block)"
-iptrace prefixes 20 digest=b9590d6771739061
+iptrace prefixes 20 digest=e6057532294cf63e
 erf auto ok=1 n=1 digest=354a760bd050421b fmt="Endace ERF" ifaces=1 msg=""
 erf pcap ok=0 n=0 digest=3447ceef219c1ad4 fmt="" ifaces=0 msg="Incompatible PCAP file format"
 erf pcapng ok=0 n=0 digest=4e7e330787040ba1 fmt="pcapng" ifaces=0 msg="Not a pcapng file (missing Section Header Block)"

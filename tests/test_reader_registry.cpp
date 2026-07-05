@@ -130,7 +130,7 @@ TEST(ReaderRegistry, ProbesRunInOrderAndEveryFormatButGzipHasAReader) {
                                               FileFormat::Snoop, FileFormat::Iptrace, FileFormat::Erf};
     EXPECT_EQ(order, expected);   // ERF has no magic number: its heuristic comes last
     for (const auto &f: formats) {
-        const bool readable = f.format == FileFormat::Pcap || f.format == FileFormat::Pcapng || f.format == FileFormat::Snoop || f.format == FileFormat::NetMon || f.format == FileFormat::Erf;
+        const bool readable = f.format != FileFormat::Gzip;   // gzip is a wrapper, every other format has its reader
         EXPECT_EQ(f.makeReader != nullptr, readable) << f.name;
         EXPECT_EQ(makeReader(f.format) != nullptr, readable) << f.name;
         EXPECT_EQ(f.container, f.format == FileFormat::Gzip) << f.name;
@@ -156,10 +156,10 @@ TEST(ReaderRegistry, IdentifiesMagicNumbersAndKeepsGzipApartFromErf) {
 }
 
 TEST(ReaderRegistry, DiagnosticsNameTheFormatOrTheMagicNumber) {
-    EXPECT_EQ(core::unsupportedFormatDiagnostic(FileFormat::Iptrace), "Unsupported file format: AIX iptrace");
-    EXPECT_EQ(core::unsupportedFormatDiagnostic(FileFormat::Snoop), "");
-    EXPECT_EQ(core::unsupportedFormatDiagnostic(FileFormat::NetMon), "");
-    EXPECT_EQ(core::unsupportedFormatDiagnostic(FileFormat::Erf), "");
+    EXPECT_EQ(core::unsupportedFormatDiagnostic(FileFormat::Iptrace), "");
+    for (const auto &f: captureFormats()) {   // a format with a reader is never reported as unsupported
+        if (f.makeReader) EXPECT_EQ(core::unsupportedFormatDiagnostic(f.format), "") << f.name;
+    }
     EXPECT_EQ(core::unsupportedFormatDiagnostic(FileFormat::Gzip), "Unsupported file format: gzip compressed capture (decompress it first)");
     EXPECT_EQ(core::unsupportedFormatDiagnostic(FileFormat::Pcap), "");
     EXPECT_EQ(core::unsupportedFormatDiagnostic(FileFormat::Pcapng), "");
