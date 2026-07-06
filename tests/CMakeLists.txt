@@ -10,6 +10,7 @@ endif()
 add_executable(imshark_tests
     test_clipboard.cpp
     test_color_rules.cpp
+    test_dns.cpp
     test_filter.cpp
     test_find.cpp
     test_fragments.cpp

@@ -71,7 +71,7 @@ TEST(Parser, DnsQueryAndCompressedAnswer) {
     auto p = parse(hex("001122334455 aabbccddeeff 0800 4500" + std::string(total) + "000000004011 0000 08080808 0a000001 0035 c350 " +
                        lens + " 0000 " + dns));
     EXPECT_EQ(p.protocol, "DNS");
-    EXPECT_EQ(p.info, "Standard query response 0x1234 A example.com example.com A 93.184.216.34");
+    EXPECT_EQ(p.info, "Standard query response 0x1234 A example.com A 93.184.216.34");
 }
 
 TEST(Parser, TcpOptionsAndFlags) {

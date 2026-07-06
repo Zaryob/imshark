@@ -10,7 +10,9 @@ namespace dissect {
     void dissectIcmp(Context &ctx, const char *data, size_t length, bool v6);
     void dissectTcp(Context &ctx, const char *data, size_t length);
     void dissectUdp(Context &ctx, const char *data, size_t length);
-    void dissectDns(Context &ctx, const char *data, size_t length);
+    void dissectDns(Context &ctx, const char *data, size_t length);        // DNS over UDP
+    void dissectDnsTcp(Context &ctx, const char *data, size_t length);     // DNS over TCP (2-byte length prefix)
+    void dissectMdns(Context &ctx, const char *data, size_t length);       // multicast DNS
     void dissectDhcp(Context &ctx, const char *data, size_t length);
     void dissectSnmp(Context &ctx, const char *data, size_t length);
     void dissectTelnet(Context &ctx, const char *data, size_t length);

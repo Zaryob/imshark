@@ -19,9 +19,11 @@ const dissect::Registry &dissect::Registry::builtin() {
 
         // application layer, by well-known port
         r.registerTcpPort(23, dissectTelnet);
+        r.registerTcpPort(53, dissectDnsTcp);
         r.registerTcpPort(25, dissectSmtp);
         r.registerTcpPort(179, dissectBgp);
         r.registerUdpPort(53, dissectDns);
+        r.registerUdpPort(5353, dissectMdns);
         r.registerUdpPort(67, dissectDhcp);
         r.registerUdpPort(68, dissectDhcp);
         r.registerUdpPort(161, dissectSnmp);
