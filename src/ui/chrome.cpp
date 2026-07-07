@@ -42,7 +42,7 @@ void ui::drawMenuAndDialogs(AppState &state) {
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("File")) {
             if (ImGui::MenuItem("Open...", "Ctrl+O")) {
-                ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", "Choose File", ".pcapng,.pcap,.cap,.gz,.*");
+                ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", "Choose File", ".pcapng,.pcap,.cap,.snoop,.erf,.iptrace,.gz,.*");
             }
             if (ImGui::BeginMenu("Open Recent", !state.settings.recentFiles.empty())) {
                 std::string chosen;
@@ -124,7 +124,7 @@ void ui::drawMenuAndDialogs(AppState &state) {
     handleCaptureShortcuts(state);
 
     if (ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_O, false)) {
-        ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", "Choose File", ".pcapng,.pcap,.cap,.gz,.*");
+        ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", "Choose File", ".pcapng,.pcap,.cap,.snoop,.erf,.iptrace,.gz,.*");
     }
 
     if (ImGuiFileDialog::Instance()->Display("ChooseFileDlgKey")) {

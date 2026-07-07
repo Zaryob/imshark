@@ -24,9 +24,11 @@ On macOS the Command key takes the place of Ctrl in every shortcut below (Dear I
 
 - **File > Open...** (Ctrl+O) opens a file chooser; **File > Open Recent** lists the last 10 files (**Clear Recent** empties
   it); dropping a file on the window opens it; `imshark capture.pcap` on the command line opens it at start.
-- Readable formats: classic **pcap** (both byte orders, microsecond and nanosecond timestamps), **pcapng**, and either of them
-  compressed with **gzip** (`.gz`). The format is recognised by its magic number, not the extension.
-  Network Monitor, Sun snoop, Endace ERF and AIX iptrace files are recognised only to say "unsupported file format".
+- Readable formats: classic **pcap** (both byte orders, microsecond and nanosecond timestamps), **pcapng**, **Sun snoop**,
+  **Microsoft Network Monitor 2.x** (`.cap`), **Endace ERF** and **AIX iptrace 2.0**, and pcap or pcapng compressed with
+  **gzip** (`.gz`). The format is recognised by its magic number, not the extension (ERF has none: it is recognised by a
+  plausible first record). Frames of a medium ImShark cannot decode (Token Ring, FDDI, ATM, ...) are listed as
+  "Unsupported link type" and their bytes are shown as data; the status bar says how many frames were affected.
 - Loading runs in the background with a progress bar and a Cancel button; the list fills when it is done. Damaged or
   truncated files load as far as they are readable, and problems are shown in the status bar.
 - **File > Close File** (Ctrl+W) closes the capture.

@@ -44,13 +44,16 @@ name is missing from these documents.
 - **PCAPNG** (`.pcapng`): PCAP Next Generation, Section Header Blocks (SHB), Interface Description Blocks (IDB), Enhanced Packet Blocks (EPB), Simple Packet Blocks (SPB), Interface Statistics Blocks (ISB), and Decryption Secrets Blocks (DSB, type `0x544c534b`).
 - **GZIP** (`.gz`): Transparent decompression of `.pcap.gz` and `.pcapng.gz` files via streaming deflate parser.
 
-## 2. Recognized File Formats (Diagnostic Support)
+- **Sun snoop** (`.snoop`, `snoop\0\0\0`): RFC 1761 version 2, big endian, 24 byte record headers with padding to 4 bytes, microsecond timestamps. Datalink types 0 and 4 load as Ethernet, 2 as Token Ring (6) and 8 as FDDI (10) (those two have no dissector: the packet list says "Unsupported link type"); other types are shown as raw data.
+- **Microsoft Network Monitor 2.x** (`.cap`, `GMBU`): little endian, frames located through the frame table at the end of the file, capture start from the header's SYSTEMTIME (taken as UTC) plus the per-frame microsecond offset. MAC type 1 loads as Ethernet, 2 as Token Ring and 3 as FDDI (no dissector); other media (ATM, wireless WAN, ...) are shown as raw data. Version 1.x files are refused with a message.
+- **Endace ERF** (`.erf`, no magic number: recognised by a plausible first record header, type 1-27, record length >= 16, wire length <= record length unless the truncated flag is set): 32.32 fixed point little endian timestamps, big endian record header, extension header chain, Ethernet pad and record padding. Ethernet record types (2, 11, 16, 20) load as Ethernet, IPv4/IPv6 records (22, 23) as raw IP (101), packet over SONET records with PPP-in-HDLC framing (`ff 03`) as PPP (9); counter and META records (13, 14, 26) carry no packet and are skipped; every other record type (ATM, AAL, multi-channel, InfiniBand, Cisco HDLC, ...) is shown as raw data.
+- **AIX iptrace 2.0** (`.iptrace`, `iptrace 2.0`): documented subset (see [KNOWN_ISSUES.md](KNOWN_ISSUES.md)), big endian, 40 byte record headers with nanosecond timestamps and an interface type: 6 and 7 load as Ethernet, 9 as Token Ring and 0x0f as FDDI (no dissector), other types as raw data. iptrace 1.0 is refused with a message.
 
-Files with known magic numbers produce specific diagnostic messages (`Desteklenmeyen dosya biçimi: <Biçim>`). These formats are detected only; there are no readers for them:
-- **Microsoft Network Monitor** (`.cap`, `GMBU`)
-- **Sun snoop** (`snoop\0\0\0`)
-- **Endace ERF** (record-based header heuristic: type 1-27, record length >= 16, wire length <= record length)
-- **AIX iptrace** (`iptrace 1.0` / `iptrace 2.0`)
+Frames of a medium without a mapping get the link type 147 (the "user" link type); the packet list says "Unsupported link type 147", the bytes are visible as data and the load message says how many frames were affected. The format is chosen by the magic number, not the extension.
+
+## 2. Recognized But Not Readable
+
+Only the gzip wrapper is not read by a `CaptureFileReader` of its own (the application's loader unpacks it first). Any other file whose first bytes match no format is reported as `Unsupported file format: unknown magic number xx xx xx xx`.
 
 ---
 
