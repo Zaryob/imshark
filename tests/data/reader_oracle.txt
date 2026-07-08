@@ -45,11 +45,11 @@ pcapng-legacy-packet-block.pcapng prefixes 128 digest=60027bee5e4fa959
 pcapng-two-interfaces-tsoffset.pcapng auto ok=1 n=2 digest=145a2e7d3a431394 fmt="pcapng (little endian), version 1.0" ifaces=2 msg=""
 pcapng-two-interfaces-tsoffset.pcapng pcap ok=0 n=0 digest=3447ceef219c1ad4 fmt="" ifaces=0 msg="Incompatible PCAP file format"
 pcapng-two-interfaces-tsoffset.pcapng pcapng ok=1 n=2 digest=145a2e7d3a431394 fmt="pcapng (little endian), version 1.0" ifaces=2 msg=""
-pcapng-two-interfaces-tsoffset.pcapng prefixes 268 digest=014817a47d700e2f
+pcapng-two-interfaces-tsoffset.pcapng prefixes 268 digest=ea200541d41d7619
 pcapng-undefined-interface.pcapng auto ok=1 n=2 digest=0bec66755fea4337 fmt="pcapng (little endian), version 1.0" ifaces=1 msg="1 packet(s) refer to interface 9, which no Interface Description Block defines; they are shown without protocol decoding"
 pcapng-undefined-interface.pcapng pcap ok=0 n=0 digest=3447ceef219c1ad4 fmt="" ifaces=0 msg="Incompatible PCAP file format"
 pcapng-undefined-interface.pcapng pcapng ok=1 n=2 digest=0bec66755fea4337 fmt="pcapng (little endian), version 1.0" ifaces=1 msg="1 packet(s) refer to interface 9, which no Interface Description Block defines; they are shown without protocol decoding"
-pcapng-undefined-interface.pcapng prefixes 204 digest=bafe9a509eae74c5
+pcapng-undefined-interface.pcapng prefixes 204 digest=5282bf4fd868b0a9
 truncated-last-record.pcap auto ok=1 n=1 digest=890d47dd80a2eca9 fmt="pcap (little endian, microsecond timestamps), version 2.4" ifaces=1 msg="Truncated or corrupt packet 2"
 truncated-last-record.pcap pcap ok=1 n=1 digest=890d47dd80a2eca9 fmt="pcap (little endian, microsecond timestamps), version 2.4" ifaces=1 msg="Truncated or corrupt packet 2"
 truncated-last-record.pcap pcapng ok=0 n=0 digest=eb365261a2f76e82 fmt="pcapng" ifaces=0 msg="Not a pcapng file (missing Section Header Block)"
@@ -105,11 +105,11 @@ pcap-header-only prefixes 24 digest=6e1ca3ac4d5f8c4d
 pcapng-le-rich auto ok=1 n=7 digest=c3d19f3ff7e773b0 fmt="pcapng (little endian), version 1.0" ifaces=3 msg="1 packet(s) refer to interface 7, which no Interface Description Block defines; they are shown without protocol decoding"
 pcapng-le-rich pcap ok=0 n=0 digest=3447ceef219c1ad4 fmt="" ifaces=0 msg="Incompatible PCAP file format"
 pcapng-le-rich pcapng ok=1 n=7 digest=c3d19f3ff7e773b0 fmt="pcapng (little endian), version 1.0" ifaces=3 msg="1 packet(s) refer to interface 7, which no Interface Description Block defines; they are shown without protocol decoding"
-pcapng-le-rich prefixes 359 digest=b297a046f769f583
+pcapng-le-rich prefixes 359 digest=bc3b90dc4be1f417
 pcapng-be-rich auto ok=1 n=7 digest=365c5e2a54c14aaf fmt="pcapng (big endian), version 1.0" ifaces=3 msg="1 packet(s) refer to interface 7, which no Interface Description Block defines; they are shown without protocol decoding"
 pcapng-be-rich pcap ok=0 n=0 digest=3447ceef219c1ad4 fmt="" ifaces=0 msg="Incompatible PCAP file format"
 pcapng-be-rich pcapng ok=1 n=7 digest=365c5e2a54c14aaf fmt="pcapng (big endian), version 1.0" ifaces=3 msg="1 packet(s) refer to interface 7, which no Interface Description Block defines; they are shown without protocol decoding"
-pcapng-be-rich prefixes 359 digest=ac1bcc4469678ae9
+pcapng-be-rich prefixes 359 digest=cc8689955e9bc811
 pcap-huge-caplen auto ok=1 n=0 digest=4369923f92c5a88a fmt="pcap (little endian, microsecond timestamps), version 2.4" ifaces=1 msg="Truncated or corrupt packet 1"
 pcap-huge-caplen pcap ok=1 n=0 digest=4369923f92c5a88a fmt="pcap (little endian, microsecond timestamps), version 2.4" ifaces=1 msg="Truncated or corrupt packet 1"
 pcap-huge-caplen pcapng ok=0 n=0 digest=3e14fc8ae4c21c45 fmt="pcapng" ifaces=0 msg="Not a pcapng file (missing Section Header Block)"
@@ -117,11 +117,11 @@ pcap-huge-caplen prefixes 100 digest=e765f38d634a1209
 pcapng-bad-total-length auto ok=1 n=7 digest=be1be7629cbcd700 fmt="pcapng (little endian), version 1.0" ifaces=3 msg="1 packet(s) refer to interface 7, which no Interface Description Block defines; they are shown without protocol decoding"
 pcapng-bad-total-length pcap ok=0 n=0 digest=3447ceef219c1ad4 fmt="" ifaces=0 msg="Incompatible PCAP file format"
 pcapng-bad-total-length pcapng ok=1 n=7 digest=be1be7629cbcd700 fmt="pcapng (little endian), version 1.0" ifaces=3 msg="1 packet(s) refer to interface 7, which no Interface Description Block defines; they are shown without protocol decoding"
-pcapng-bad-total-length prefixes 359 digest=1a8de318996af67b
-pcapng-bad-trailer auto ok=1 n=6 digest=3e84da50b5fee5de fmt="pcapng (little endian), version 1.0" ifaces=3 msg="Mismatched block length at end of block. Expected: 80"
+pcapng-bad-total-length prefixes 359 digest=a51601ee9301b671
+pcapng-bad-trailer auto ok=1 n=6 digest=8f9b5960c9ae3188 fmt="pcapng (little endian), version 1.0" ifaces=3 msg="Mismatched block length at end of block. Expected: 80"
 pcapng-bad-trailer pcap ok=0 n=0 digest=3447ceef219c1ad4 fmt="" ifaces=0 msg="Incompatible PCAP file format"
-pcapng-bad-trailer pcapng ok=1 n=6 digest=3e84da50b5fee5de fmt="pcapng (little endian), version 1.0" ifaces=3 msg="Mismatched block length at end of block. Expected: 80"
-pcapng-bad-trailer prefixes 359 digest=b297a046f769f583
+pcapng-bad-trailer pcapng ok=1 n=6 digest=8f9b5960c9ae3188 fmt="pcapng (little endian), version 1.0" ifaces=3 msg="Mismatched block length at end of block. Expected: 80"
+pcapng-bad-trailer prefixes 359 digest=bc3b90dc4be1f417
 pcapng-no-shb auto ok=0 n=0 digest=1b27ef4a3db98591 fmt="" ifaces=0 msg="Unsupported file format: unknown magic number 73 65 63 74"
 pcapng-no-shb pcap ok=0 n=0 digest=3447ceef219c1ad4 fmt="" ifaces=0 msg="Incompatible PCAP file format"
 pcapng-no-shb pcapng ok=0 n=0 digest=f5d096e3101e9665 fmt="pcapng" ifaces=0 msg="Not a pcapng file (missing Section Header Block)"

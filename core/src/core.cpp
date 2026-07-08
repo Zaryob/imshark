@@ -145,8 +145,11 @@ bool core::FileProcessor::load(io::CaptureFileReader &reader, const std::string 
             break;
         }
         if (status == io::CaptureFileReader::Status::Error) {
+            // a damaged tail after readable records still ends the load like a complete file (frozen tables, capture
+            // start, final reader notes) and reports the damage in the message
             message = issue.message;
-            return issue.keepRecords;
+            if (!issue.keepRecords) return false;
+            break;
         }
         // a record without a timestamp (pcapng simple packet) takes the time of the previous one
         if (record.hasTimestamp) lastTime = timeBase.relative(record.seconds, record.fraction, record.ticksPerSecond);

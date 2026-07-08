@@ -24,6 +24,7 @@ add_executable(imshark_tests
     test_bgp.cpp
     test_capture_info.cpp
     test_capture_readers.cpp
+    test_truncated_load.cpp
     test_clipboard.cpp
     test_corpus.cpp
     test_color_rules.cpp

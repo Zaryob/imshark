@@ -6,6 +6,10 @@
 // flag, capture info) is condensed into one line per input. tests/data/reader_oracle.txt holds those lines as
 // recorded before the readers moved behind the CaptureFileReader interface; the readers must reproduce them
 // unchanged. Regenerate (only on purpose) with IMSHARK_ORACLE_WRITE=<file>.
+// Deliberate change (task GX, B5 fix): a pcapng damaged after at least one readable packet used to skip the end of the
+// load pass (tables not frozen, capture start 0, so relative times and decoding differed from a complete file); the
+// digests of exactly those inputs (damaged pcapng that still yields packets, and the prefix aggregates of pcapng
+// files) were regenerated. ok, packet count and message of every line are unchanged; complete files are untouched.
 #include <gtest/gtest.h>
 
 #include <algorithm>
