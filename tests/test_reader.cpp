@@ -298,7 +298,8 @@ TEST(SampleCapture, OnDemandDetailsEqualASequentialFullParse) {
             EXPECT_TRUE(sameField(details.fields[i], full.fields[i])) << "packet " << summary.number << " layer " << full.fields[i].text;
         }
     }
-    EXPECT_NE(packets[9].info.find("Seq=1"), std::string::npos) << "relative numbers are part of the summary";
+    EXPECT_EQ(packets[9].tcp_relative_seq, 1) << "relative numbers are part of the summary";
+    EXPECT_EQ(packets[9].info, "GET / HTTP/1.1");
 }
 #endif
 
@@ -312,7 +313,7 @@ TEST(SampleCapture, ParsesEverythingInTheSampleFile) {
 
     std::vector<std::string> protocols;
     for (const auto &p: packets) protocols.push_back(p.protocol);
-    const std::vector<std::string> expected = {"ARP", "ARP", "ICMP", "ICMP", "DNS", "DNS", "TCP", "TCP", "TCP", "TCP",
+    const std::vector<std::string> expected = {"ARP", "ARP", "ICMP", "ICMP", "DNS", "DNS", "TCP", "TCP", "TCP", "HTTP",
                                                "TCP", "SMTP", "UDP", "UDP", "Ethernet", "TCP"};
     EXPECT_EQ(protocols, expected);
     EXPECT_EQ(packets[5].info, "Standard query response 0x1234 A example.com A 93.184.216.34");

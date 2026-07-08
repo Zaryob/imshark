@@ -149,5 +149,11 @@ void dissect::dissectTcp(Context &ctx, const char *data, size_t length) {
         if (payloadLen > 0) l.add("TCP payload (" + std::to_string(payloadLen) + " bytes)", o + headerLen, payloadLen);
     }
 
-    if (const Dissector *app = ctx.registry.findTcpPort(srcPort, dstPort)) (*app)(ctx, payload, payloadLen);
+    if (const Dissector *app = ctx.registry.findTcpPort(srcPort, dstPort)) {
+        (*app)(ctx, payload, payloadLen);
+    } else if (payloadLen > 0) {
+        for (const auto &heuristic: ctx.registry.tcpHeuristics()) {
+            if (heuristic(ctx, payload, payloadLen)) break;
+        }
+    }
 }

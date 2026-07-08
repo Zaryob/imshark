@@ -73,10 +73,15 @@ namespace packet {
         uint32_t reassembled_in = 0; // for a fragment (ip_frag == 1): number of the frame that completed the datagram
         // Facts of the application protocol, filled by its dissector (meaning depends on `protocol`):
         //   DNS/MDNS: app_text = first question name, app_type = its type, app_flags = flags word, app_code = rcode
+        //   HTTP:     app_text = Host, app_text2 = request URI or response Content-Type, app_type = method (1 = GET ...),
+        //             app_code = response status code
+        //   TLS:      app_text = server name (SNI), app_type = first handshake type, app_code = first record content type,
+        //             app_flags = record version
         uint16_t app_type = 0;
         uint16_t app_flags = 0;
         uint16_t app_code = 0;
         std::string app_text;
+        std::string app_text2;       //   HTTP: request URI / response content type; TLS: -
         uint32_t payload_offset = 0; // TCP/UDP payload inside the captured frame (0/0 if there is none)
         uint32_t payload_length = 0;
 
