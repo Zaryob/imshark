@@ -1,0 +1,630 @@
+== sample.pcap 16
+-- IPv4
+E 10.0.0.1 0 12 762 8 501 4 261 | ip.addr == 10.0.0.1
+E 10.0.0.2 0 10 604 3 174 7 430 | ip.addr == 10.0.0.2
+E 8.8.8.8 0 2 158 1 87 1 71 | ip.addr == 8.8.8.8
+C 10.0.0.1 0 10.0.0.2 0 10 604 7 430 3 174 0.500000 3.250000 3 | ip.addr == 10.0.0.1 && ip.addr == 10.0.0.2
+C 10.0.0.1 0 8.8.8.8 0 2 158 1 71 1 87 1.000000 0.250000 5 | ip.addr == 10.0.0.1 && ip.addr == 8.8.8.8
+-- IPv6
+E 2001:db8::1 0 1 66 1 66 0 0 | ipv6.addr == 2001:db8::1
+E 2001:db8::2 0 1 66 0 0 1 66 | ipv6.addr == 2001:db8::2
+C 2001:db8::1 0 2001:db8::2 0 1 66 1 66 0 0 3.000000 0.000000 13 | ipv6.addr == 2001:db8::1 && ipv6.addr == 2001:db8::2
+-- TCP
+E 10.0.0.1 40000 6 415 4 287 2 128 | ip.addr == 10.0.0.1 && tcp.port == 40000
+E 10.0.0.2 80 5 347 2 128 3 219 | ip.addr == 10.0.0.2 && tcp.port == 80
+E 10.0.0.2 25 1 68 0 0 1 68 | ip.addr == 10.0.0.2 && tcp.port == 25
+E 10.0.0.1 0 1 40 1 40 0 0 | ip.addr == 10.0.0.1 && tcp.port == 0
+E 10.0.0.2 0 1 40 0 0 1 40 | ip.addr == 10.0.0.2 && tcp.port == 0
+C 10.0.0.1 40000 10.0.0.2 80 5 347 3 219 2 128 1.500000 1.000000 7 | ip.addr == 10.0.0.1 && ip.addr == 10.0.0.2 && tcp.port == 40000 && tcp.port == 80
+C 10.0.0.1 40000 10.0.0.2 25 1 68 1 68 0 0 2.750000 0.000000 12 | ip.addr == 10.0.0.1 && ip.addr == 10.0.0.2 && tcp.port == 40000 && tcp.port == 25
+C 10.0.0.1 0 10.0.0.2 0 1 40 1 40 0 0 3.750000 0.000000 16 | ip.addr == 10.0.0.1 && ip.addr == 10.0.0.2 && tcp.port == 0 && tcp.port == 0
+-- UDP
+E 10.0.0.1 51000 2 158 1 71 1 87 | ip.addr == 10.0.0.1 && udp.port == 51000
+E 8.8.8.8 53 2 158 1 87 1 71 | ip.addr == 8.8.8.8 && udp.port == 53
+E 2001:db8::1 1234 1 66 1 66 0 0 | ipv6.addr == 2001:db8::1 && udp.port == 1234
+E 2001:db8::2 5678 1 66 0 0 1 66 | ipv6.addr == 2001:db8::2 && udp.port == 5678
+E 10.0.0.1 1000 1 57 1 57 0 0 | ip.addr == 10.0.0.1 && udp.port == 1000
+E 10.0.0.2 2000 1 57 0 0 1 57 | ip.addr == 10.0.0.2 && udp.port == 2000
+C 10.0.0.1 51000 8.8.8.8 53 2 158 1 71 1 87 1.000000 0.250000 5 | ip.addr == 10.0.0.1 && ip.addr == 8.8.8.8 && udp.port == 51000 && udp.port == 53
+C 2001:db8::1 1234 2001:db8::2 5678 1 66 1 66 0 0 3.000000 0.000000 13 | ipv6.addr == 2001:db8::1 && ipv6.addr == 2001:db8::2 && udp.port == 1234 && udp.port == 5678
+C 10.0.0.1 1000 10.0.0.2 2000 1 57 1 57 0 0 3.250000 0.000000 14 | ip.addr == 10.0.0.1 && ip.addr == 10.0.0.2 && udp.port == 1000 && udp.port == 2000
+-- SCTP
+-- Ethernet
+E aa:bb:cc:dd:ee:ff 0 1 42 1 42 0 0 | eth.addr == "aa:bb:cc:dd:ee:ff"
+E 00:11:22:33:44:55 0 1 42 0 0 1 42 | eth.addr == "00:11:22:33:44:55"
+C aa:bb:cc:dd:ee:ff 0 00:11:22:33:44:55 0 1 42 1 42 0 0 0.250000 0.000000 2 | eth.addr == "aa:bb:cc:dd:ee:ff" && eth.addr == "00:11:22:33:44:55"
+-- WLAN
+-- Bluetooth
+-- USB
+-- Hierarchy
+Frame 16 936
+  Ethernet 16 936
+    Internet Protocol Version 4 11 705
+      Transmission Control Protocol 7 455
+        Hypertext Transfer Protocol 1 91
+        Simple Mail Transfer Protocol 1 68
+      User Datagram Protocol 2 158
+        Domain Name System 2 158
+      Internet Control Message Protocol 2 92
+    Address Resolution Protocol 2 84
+    Internet Protocol Version 6 1 66
+      User Datagram Protocol 1 66
+    802.1Q Virtual LAN 1 57
+      Internet Protocol Version 4 1 57
+        User Datagram Protocol 1 57
+    Link Layer Discovery Protocol 1 24
+== arp-big-endian.pcap 1
+-- IPv4
+-- IPv6
+-- TCP
+-- UDP
+-- SCTP
+-- Ethernet
+-- WLAN
+-- Bluetooth
+-- USB
+-- Hierarchy
+Frame 1 42
+  Ethernet 1 42
+    Address Resolution Protocol 1 42
+== arp-little-endian.pcap 2
+-- IPv4
+-- IPv6
+-- TCP
+-- UDP
+-- SCTP
+-- Ethernet
+-- WLAN
+-- Bluetooth
+-- USB
+-- Hierarchy
+Frame 2 84
+  Ethernet 2 84
+    Address Resolution Protocol 2 84
+== arp-nanosecond.pcap 2
+-- IPv4
+-- IPv6
+-- TCP
+-- UDP
+-- SCTP
+-- Ethernet
+-- WLAN
+-- Bluetooth
+-- USB
+-- Hierarchy
+Frame 2 84
+  Ethernet 2 84
+    Address Resolution Protocol 2 84
+== erf-atm-record.erf 1
+-- IPv4
+-- IPv6
+-- TCP
+-- UDP
+-- SCTP
+-- Ethernet
+-- WLAN
+-- Bluetooth
+-- USB
+-- Hierarchy
+Frame 1 52
+  Malformed / undecoded 1 52
+== erf-mixed.erf 3
+-- IPv4
+E 10.0.0.1 0 2 128 2 128 0 0 | ip.addr == 10.0.0.1
+E 10.0.0.2 0 2 128 0 0 2 128 | ip.addr == 10.0.0.2
+C 10.0.0.1 0 10.0.0.2 0 2 128 2 128 0 0 0.250000 2.750000 2 | ip.addr == 10.0.0.1 && ip.addr == 10.0.0.2
+-- IPv6
+-- TCP
+-- UDP
+E 10.0.0.1 50000 2 128 2 128 0 0 | ip.addr == 10.0.0.1 && udp.port == 50000
+E 10.0.0.2 53 2 128 0 0 2 128 | ip.addr == 10.0.0.2 && udp.port == 53
+C 10.0.0.1 50000 10.0.0.2 53 2 128 2 128 0 0 0.250000 2.750000 2 | ip.addr == 10.0.0.1 && ip.addr == 10.0.0.2 && udp.port == 50000 && udp.port == 53
+-- SCTP
+-- Ethernet
+-- WLAN
+-- Bluetooth
+-- USB
+-- Hierarchy
+Frame 3 170
+  Ethernet 2 113
+    Internet Protocol Version 4 1 71
+      User Datagram Protocol 1 71
+        Domain Name System 1 71
+    Address Resolution Protocol 1 42
+  Internet Protocol Version 4 1 57
+    User Datagram Protocol 1 57
+      Domain Name System 1 57
+== erf-pos-ppp.erf 1
+-- IPv4
+E 10.0.0.1 0 1 59 1 59 0 0 | ip.addr == 10.0.0.1
+E 10.0.0.2 0 1 59 0 0 1 59 | ip.addr == 10.0.0.2
+C 10.0.0.1 0 10.0.0.2 0 1 59 1 59 0 0 0.000000 0.000000 1 | ip.addr == 10.0.0.1 && ip.addr == 10.0.0.2
+-- IPv6
+-- TCP
+-- UDP
+E 10.0.0.1 50000 1 59 1 59 0 0 | ip.addr == 10.0.0.1 && udp.port == 50000
+E 10.0.0.2 53 1 59 0 0 1 59 | ip.addr == 10.0.0.2 && udp.port == 53
+C 10.0.0.1 50000 10.0.0.2 53 1 59 1 59 0 0 0.000000 0.000000 1 | ip.addr == 10.0.0.1 && ip.addr == 10.0.0.2 && udp.port == 50000 && udp.port == 53
+-- SCTP
+-- Ethernet
+-- WLAN
+-- Bluetooth
+-- USB
+-- Hierarchy
+Frame 1 59
+  Internet Protocol Version 4 1 59
+    User Datagram Protocol 1 59
+      Domain Name System 1 59
+== ethernet-fcs.pcap 1
+-- IPv4
+-- IPv6
+-- TCP
+-- UDP
+-- SCTP
+-- Ethernet
+-- WLAN
+-- Bluetooth
+-- USB
+-- Hierarchy
+Frame 1 46
+  Ethernet 1 46
+    Address Resolution Protocol 1 46
+== ethernet-vlan-qinq.pcap 1
+-- IPv4
+E 10.0.0.1 0 1 54 1 54 0 0 | ip.addr == 10.0.0.1
+E 10.0.0.2 0 1 54 0 0 1 54 | ip.addr == 10.0.0.2
+C 10.0.0.1 0 10.0.0.2 0 1 54 1 54 0 0 0.000000 0.000000 1 | ip.addr == 10.0.0.1 && ip.addr == 10.0.0.2
+-- IPv6
+-- TCP
+-- UDP
+E 10.0.0.1 1000 1 54 1 54 0 0 | ip.addr == 10.0.0.1 && udp.port == 1000
+E 10.0.0.2 2000 1 54 0 0 1 54 | ip.addr == 10.0.0.2 && udp.port == 2000
+C 10.0.0.1 1000 10.0.0.2 2000 1 54 1 54 0 0 0.000000 0.000000 1 | ip.addr == 10.0.0.1 && ip.addr == 10.0.0.2 && udp.port == 1000 && udp.port == 2000
+-- SCTP
+-- Ethernet
+-- WLAN
+-- Bluetooth
+-- USB
+-- Hierarchy
+Frame 1 54
+  Ethernet 1 54
+    802.1Q Virtual LAN 1 54
+      Internet Protocol Version 4 1 54
+        User Datagram Protocol 1 54
+== iptrace-ethernet.iptrace 3
+-- IPv4
+E 10.0.0.1 0 1 71 1 71 0 0 | ip.addr == 10.0.0.1
+E 10.0.0.2 0 1 71 0 0 1 71 | ip.addr == 10.0.0.2
+C 10.0.0.1 0 10.0.0.2 0 1 71 1 71 0 0 1.250000 0.000000 2 | ip.addr == 10.0.0.1 && ip.addr == 10.0.0.2
+-- IPv6
+-- TCP
+-- UDP
+E 10.0.0.1 50000 1 71 1 71 0 0 | ip.addr == 10.0.0.1 && udp.port == 50000
+E 10.0.0.2 53 1 71 0 0 1 71 | ip.addr == 10.0.0.2 && udp.port == 53
+C 10.0.0.1 50000 10.0.0.2 53 1 71 1 71 0 0 1.250000 0.000000 2 | ip.addr == 10.0.0.1 && ip.addr == 10.0.0.2 && udp.port == 50000 && udp.port == 53
+-- SCTP
+-- Ethernet
+-- WLAN
+-- Bluetooth
+-- USB
+-- Hierarchy
+Frame 3 155
+  Ethernet 3 155
+    Address Resolution Protocol 2 84
+    Internet Protocol Version 4 1 71
+      User Datagram Protocol 1 71
+        Domain Name System 1 71
+== iptrace-loopback.iptrace 1
+-- IPv4
+-- IPv6
+-- TCP
+-- UDP
+-- SCTP
+-- Ethernet
+-- WLAN
+-- Bluetooth
+-- USB
+-- Hierarchy
+Frame 1 24
+  Malformed / undecoded 1 24
+== iptrace-truncated-last-record.iptrace 1
+-- IPv4
+-- IPv6
+-- TCP
+-- UDP
+-- SCTP
+-- Ethernet
+-- WLAN
+-- Bluetooth
+-- USB
+-- Hierarchy
+Frame 1 42
+  Ethernet 1 42
+    Address Resolution Protocol 1 42
+== ipv4-fragments.pcap 3
+-- IPv4
+E 10.0.0.1 0 3 139 3 139 0 0 | ip.addr == 10.0.0.1
+E 10.0.0.2 0 3 139 0 0 3 139 | ip.addr == 10.0.0.2
+C 10.0.0.1 0 10.0.0.2 0 3 139 3 139 0 0 0.000000 2.000000 1 | ip.addr == 10.0.0.1 && ip.addr == 10.0.0.2
+-- IPv6
+-- TCP
+-- UDP
+E 10.0.0.1 0 2 100 2 100 0 0 | ip.addr == 10.0.0.1 && udp.port == 0
+E 10.0.0.2 0 2 100 0 0 2 100 | ip.addr == 10.0.0.2 && udp.port == 0
+E 10.0.0.1 50000 1 39 1 39 0 0 | ip.addr == 10.0.0.1 && udp.port == 50000
+E 10.0.0.2 53 1 39 0 0 1 39 | ip.addr == 10.0.0.2 && udp.port == 53
+C 10.0.0.1 0 10.0.0.2 0 2 100 2 100 0 0 0.000000 1.000000 1 | ip.addr == 10.0.0.1 && ip.addr == 10.0.0.2 && udp.port == 0 && udp.port == 0
+C 10.0.0.1 50000 10.0.0.2 53 1 39 1 39 0 0 2.000000 0.000000 3 | ip.addr == 10.0.0.1 && ip.addr == 10.0.0.2 && udp.port == 50000 && udp.port == 53
+-- SCTP
+-- Ethernet
+-- WLAN
+-- Bluetooth
+-- USB
+-- Hierarchy
+Frame 3 139
+  Ethernet 3 139
+    Internet Protocol Version 4 3 139
+      Fragmented IP data 2 100
+      User Datagram Protocol 1 39
+        Domain Name System 1 39
+== ipv6-fragments-out-of-order.pcap 3
+-- IPv4
+-- IPv6
+E 2001:db8::1 0 3 223 3 223 0 0 | ipv6.addr == 2001:db8::1
+E 2001:db8::2 0 3 223 0 0 3 223 | ipv6.addr == 2001:db8::2
+C 2001:db8::1 0 2001:db8::2 0 3 223 3 223 0 0 0.000000 2.000000 1 | ipv6.addr == 2001:db8::1 && ipv6.addr == 2001:db8::2
+-- TCP
+-- UDP
+E 2001:db8::1 0 2 145 2 145 0 0 | ipv6.addr == 2001:db8::1 && udp.port == 0
+E 2001:db8::2 0 2 145 0 0 2 145 | ipv6.addr == 2001:db8::2 && udp.port == 0
+E 2001:db8::1 50000 1 78 1 78 0 0 | ipv6.addr == 2001:db8::1 && udp.port == 50000
+E 2001:db8::2 53 1 78 0 0 1 78 | ipv6.addr == 2001:db8::2 && udp.port == 53
+C 2001:db8::1 0 2001:db8::2 0 2 145 2 145 0 0 0.000000 1.000000 1 | ipv6.addr == 2001:db8::1 && ipv6.addr == 2001:db8::2 && udp.port == 0 && udp.port == 0
+C 2001:db8::1 50000 2001:db8::2 53 1 78 1 78 0 0 2.000000 0.000000 3 | ipv6.addr == 2001:db8::1 && ipv6.addr == 2001:db8::2 && udp.port == 50000 && udp.port == 53
+-- SCTP
+-- Ethernet
+-- WLAN
+-- Bluetooth
+-- USB
+-- Hierarchy
+Frame 3 223
+  Ethernet 3 223
+    Internet Protocol Version 6 3 223
+      Fragmented IP data 2 145
+      User Datagram Protocol 1 78
+        Domain Name System 1 78
+== ipv6-non-first-fragment.pcap 1
+-- IPv4
+-- IPv6
+E 2001:db8::1 0 1 78 1 78 0 0 | ipv6.addr == 2001:db8::1
+E 2001:db8::2 0 1 78 0 0 1 78 | ipv6.addr == 2001:db8::2
+C 2001:db8::1 0 2001:db8::2 0 1 78 1 78 0 0 0.000000 0.000000 1 | ipv6.addr == 2001:db8::1 && ipv6.addr == 2001:db8::2
+-- TCP
+-- UDP
+E 2001:db8::1 0 1 78 1 78 0 0 | ipv6.addr == 2001:db8::1 && udp.port == 0
+E 2001:db8::2 0 1 78 0 0 1 78 | ipv6.addr == 2001:db8::2 && udp.port == 0
+C 2001:db8::1 0 2001:db8::2 0 1 78 1 78 0 0 0.000000 0.000000 1 | ipv6.addr == 2001:db8::1 && ipv6.addr == 2001:db8::2 && udp.port == 0 && udp.port == 0
+-- SCTP
+-- Ethernet
+-- WLAN
+-- Bluetooth
+-- USB
+-- Hierarchy
+Frame 1 78
+  Ethernet 1 78
+    Internet Protocol Version 6 1 78
+      Fragmented IP data 1 78
+== linux-cooked-udp.pcap 1
+-- IPv4
+E 10.0.0.1 0 1 47 1 47 0 0 | ip.addr == 10.0.0.1
+E 10.0.0.2 0 1 47 0 0 1 47 | ip.addr == 10.0.0.2
+C 10.0.0.1 0 10.0.0.2 0 1 47 1 47 0 0 0.000000 0.000000 1 | ip.addr == 10.0.0.1 && ip.addr == 10.0.0.2
+-- IPv6
+-- TCP
+-- UDP
+E 10.0.0.1 1000 1 47 1 47 0 0 | ip.addr == 10.0.0.1 && udp.port == 1000
+E 10.0.0.2 2000 1 47 0 0 1 47 | ip.addr == 10.0.0.2 && udp.port == 2000
+C 10.0.0.1 1000 10.0.0.2 2000 1 47 1 47 0 0 0.000000 0.000000 1 | ip.addr == 10.0.0.1 && ip.addr == 10.0.0.2 && udp.port == 1000 && udp.port == 2000
+-- SCTP
+-- Ethernet
+-- WLAN
+-- Bluetooth
+-- USB
+-- Hierarchy
+Frame 1 47
+  Linux cooked capture 1 47
+    Internet Protocol Version 4 1 47
+      User Datagram Protocol 1 47
+== netmon-atm-media.cap 1
+-- IPv4
+-- IPv6
+-- TCP
+-- UDP
+-- SCTP
+-- Ethernet
+-- WLAN
+-- Bluetooth
+-- USB
+-- Hierarchy
+Frame 1 24
+  Malformed / undecoded 1 24
+== netmon-ethernet.cap 3
+-- IPv4
+E 10.0.0.1 0 1 71 1 71 0 0 | ip.addr == 10.0.0.1
+E 10.0.0.2 0 1 71 0 0 1 71 | ip.addr == 10.0.0.2
+C 10.0.0.1 0 10.0.0.2 0 1 71 1 71 0 0 1.250000 0.000000 2 | ip.addr == 10.0.0.1 && ip.addr == 10.0.0.2
+-- IPv6
+-- TCP
+-- UDP
+E 10.0.0.1 50000 1 71 1 71 0 0 | ip.addr == 10.0.0.1 && udp.port == 50000
+E 10.0.0.2 53 1 71 0 0 1 71 | ip.addr == 10.0.0.2 && udp.port == 53
+C 10.0.0.1 50000 10.0.0.2 53 1 71 1 71 0 0 1.250000 0.000000 2 | ip.addr == 10.0.0.1 && ip.addr == 10.0.0.2 && udp.port == 50000 && udp.port == 53
+-- SCTP
+-- Ethernet
+-- WLAN
+-- Bluetooth
+-- USB
+-- Hierarchy
+Frame 3 155
+  Ethernet 3 155
+    Address Resolution Protocol 2 84
+    Internet Protocol Version 4 1 71
+      User Datagram Protocol 1 71
+        Domain Name System 1 71
+== netmon-frame-table-order.cap 2
+-- IPv4
+E 10.0.0.1 0 1 71 1 71 0 0 | ip.addr == 10.0.0.1
+E 10.0.0.2 0 1 71 0 0 1 71 | ip.addr == 10.0.0.2
+C 10.0.0.1 0 10.0.0.2 0 1 71 1 71 0 0 3.000000 0.000000 2 | ip.addr == 10.0.0.1 && ip.addr == 10.0.0.2
+-- IPv6
+-- TCP
+-- UDP
+E 10.0.0.1 50000 1 71 1 71 0 0 | ip.addr == 10.0.0.1 && udp.port == 50000
+E 10.0.0.2 53 1 71 0 0 1 71 | ip.addr == 10.0.0.2 && udp.port == 53
+C 10.0.0.1 50000 10.0.0.2 53 1 71 1 71 0 0 3.000000 0.000000 2 | ip.addr == 10.0.0.1 && ip.addr == 10.0.0.2 && udp.port == 50000 && udp.port == 53
+-- SCTP
+-- Ethernet
+-- WLAN
+-- Bluetooth
+-- USB
+-- Hierarchy
+Frame 2 113
+  Ethernet 2 113
+    Internet Protocol Version 4 1 71
+      User Datagram Protocol 1 71
+        Domain Name System 1 71
+    Address Resolution Protocol 1 42
+== pcapng-big-endian-fcs-bits.pcapng 1
+-- IPv4
+-- IPv6
+-- TCP
+-- UDP
+-- SCTP
+-- Ethernet
+-- WLAN
+-- Bluetooth
+-- USB
+-- Hierarchy
+Frame 1 46
+  Ethernet 1 46
+    Address Resolution Protocol 1 46
+== pcapng-legacy-packet-block.pcapng 1
+-- IPv4
+-- IPv6
+-- TCP
+-- UDP
+-- SCTP
+-- Ethernet
+-- WLAN
+-- Bluetooth
+-- USB
+-- Hierarchy
+Frame 1 42
+  Ethernet 1 42
+    Address Resolution Protocol 1 42
+== pcapng-two-interfaces-tsoffset.pcapng 2
+-- IPv4
+-- IPv6
+-- TCP
+-- UDP
+-- SCTP
+-- Ethernet
+-- WLAN
+-- Bluetooth
+-- USB
+-- Hierarchy
+Frame 2 84
+  Ethernet 2 84
+    Address Resolution Protocol 2 84
+== pcapng-undefined-interface.pcapng 2
+-- IPv4
+-- IPv6
+-- TCP
+-- UDP
+-- SCTP
+-- Ethernet
+-- WLAN
+-- Bluetooth
+-- USB
+-- Hierarchy
+Frame 2 84
+  Ethernet 1 42
+    Address Resolution Protocol 1 42
+  Malformed / undecoded 1 42
+== snoop-ethernet.snoop 3
+-- IPv4
+E 10.0.0.1 0 1 71 1 71 0 0 | ip.addr == 10.0.0.1
+E 10.0.0.2 0 1 71 0 0 1 71 | ip.addr == 10.0.0.2
+C 10.0.0.1 0 10.0.0.2 0 1 71 1 71 0 0 1.250000 0.000000 2 | ip.addr == 10.0.0.1 && ip.addr == 10.0.0.2
+-- IPv6
+-- TCP
+-- UDP
+E 10.0.0.1 50000 1 71 1 71 0 0 | ip.addr == 10.0.0.1 && udp.port == 50000
+E 10.0.0.2 53 1 71 0 0 1 71 | ip.addr == 10.0.0.2 && udp.port == 53
+C 10.0.0.1 50000 10.0.0.2 53 1 71 1 71 0 0 1.250000 0.000000 2 | ip.addr == 10.0.0.1 && ip.addr == 10.0.0.2 && udp.port == 50000 && udp.port == 53
+-- SCTP
+-- Ethernet
+-- WLAN
+-- Bluetooth
+-- USB
+-- Hierarchy
+Frame 3 155
+  Ethernet 3 155
+    Address Resolution Protocol 2 84
+    Internet Protocol Version 4 1 71
+      User Datagram Protocol 1 71
+        Domain Name System 1 71
+== snoop-token-ring.snoop 1
+-- IPv4
+-- IPv6
+-- TCP
+-- UDP
+-- SCTP
+-- Ethernet
+-- WLAN
+-- Bluetooth
+-- USB
+-- Hierarchy
+Frame 1 32
+  Malformed / undecoded 1 32
+== snoop-truncated-last-record.snoop 1
+-- IPv4
+-- IPv6
+-- TCP
+-- UDP
+-- SCTP
+-- Ethernet
+-- WLAN
+-- Bluetooth
+-- USB
+-- Hierarchy
+Frame 1 42
+  Ethernet 1 42
+    Address Resolution Protocol 1 42
+== truncated-last-record.pcap 1
+-- IPv4
+-- IPv6
+-- TCP
+-- UDP
+-- SCTP
+-- Ethernet
+-- WLAN
+-- Bluetooth
+-- USB
+-- Hierarchy
+Frame 1 42
+  Ethernet 1 42
+    Address Resolution Protocol 1 42
+== tls12.pcapng 11
+-- IPv4
+E 10.0.0.1 0 11 1898 6 709 5 1189 | ip.addr == 10.0.0.1
+E 10.0.0.2 0 11 1898 5 1189 6 709 | ip.addr == 10.0.0.2
+C 10.0.0.1 0 10.0.0.2 0 11 1898 6 709 5 1189 0.000000 0.010000 1 | ip.addr == 10.0.0.1 && ip.addr == 10.0.0.2
+-- IPv6
+-- TCP
+E 10.0.0.1 50000 11 1898 6 709 5 1189 | ip.addr == 10.0.0.1 && tcp.port == 50000
+E 10.0.0.2 443 11 1898 5 1189 6 709 | ip.addr == 10.0.0.2 && tcp.port == 443
+C 10.0.0.1 50000 10.0.0.2 443 11 1898 6 709 5 1189 0.000000 0.010000 1 | ip.addr == 10.0.0.1 && ip.addr == 10.0.0.2 && tcp.port == 50000 && tcp.port == 443
+-- UDP
+-- SCTP
+-- Ethernet
+-- WLAN
+-- Bluetooth
+-- USB
+-- Hierarchy
+Frame 11 1898
+  Ethernet 11 1898
+    Internet Protocol Version 4 11 1898
+      Transmission Control Protocol 11 1898
+        Transport Layer Security 8 1736
+          Hypertext Transfer Protocol 2 257
+== tls12_raw.pcapng 11
+-- IPv4
+E 10.0.0.1 0 11 1881 6 687 5 1194 | ip.addr == 10.0.0.1
+E 10.0.0.2 0 11 1881 5 1194 6 687 | ip.addr == 10.0.0.2
+C 10.0.0.1 0 10.0.0.2 0 11 1881 6 687 5 1194 0.000000 0.010000 1 | ip.addr == 10.0.0.1 && ip.addr == 10.0.0.2
+-- IPv6
+-- TCP
+E 10.0.0.1 50000 11 1881 6 687 5 1194 | ip.addr == 10.0.0.1 && tcp.port == 50000
+E 10.0.0.2 443 11 1881 5 1194 6 687 | ip.addr == 10.0.0.2 && tcp.port == 443
+C 10.0.0.1 50000 10.0.0.2 443 11 1881 6 687 5 1194 0.000000 0.010000 1 | ip.addr == 10.0.0.1 && ip.addr == 10.0.0.2 && tcp.port == 50000 && tcp.port == 443
+-- UDP
+-- SCTP
+-- Ethernet
+-- WLAN
+-- Bluetooth
+-- USB
+-- Hierarchy
+Frame 11 1881
+  Ethernet 11 1881
+    Internet Protocol Version 4 11 1881
+      Transmission Control Protocol 11 1881
+        Transport Layer Security 8 1719
+== tls13.pcapng 18
+-- IPv4
+E 10.0.0.1 0 18 5044 9 2130 9 2914 | ip.addr == 10.0.0.1
+E 10.0.0.2 0 18 5044 9 2914 9 2130 | ip.addr == 10.0.0.2
+C 10.0.0.1 0 10.0.0.2 0 18 5044 9 2130 9 2914 0.000000 0.017000 1 | ip.addr == 10.0.0.1 && ip.addr == 10.0.0.2
+-- IPv6
+-- TCP
+E 10.0.0.1 50000 18 5044 9 2130 9 2914 | ip.addr == 10.0.0.1 && tcp.port == 50000
+E 10.0.0.2 443 18 5044 9 2914 9 2130 | ip.addr == 10.0.0.2 && tcp.port == 443
+C 10.0.0.1 50000 10.0.0.2 443 18 5044 9 2130 9 2914 0.000000 0.017000 1 | ip.addr == 10.0.0.1 && ip.addr == 10.0.0.2 && tcp.port == 50000 && tcp.port == 443
+-- UDP
+-- SCTP
+-- Ethernet
+-- WLAN
+-- Bluetooth
+-- USB
+-- Hierarchy
+Frame 18 5044
+  Ethernet 18 5044
+    Internet Protocol Version 4 18 5044
+      Transmission Control Protocol 18 5044
+        Transport Layer Security 11 3066
+          Hypertext Transfer Protocol 2 243
+== tls13_h2.pcapng 23
+-- IPv4
+E 10.0.0.1 0 23 5501 11 2320 12 3181 | ip.addr == 10.0.0.1
+E 10.0.0.2 0 23 5501 12 3181 11 2320 | ip.addr == 10.0.0.2
+C 10.0.0.1 0 10.0.0.2 0 23 5501 11 2320 12 3181 0.000000 0.022000 1 | ip.addr == 10.0.0.1 && ip.addr == 10.0.0.2
+-- IPv6
+-- TCP
+E 10.0.0.1 50000 23 5501 11 2320 12 3181 | ip.addr == 10.0.0.1 && tcp.port == 50000
+E 10.0.0.2 443 23 5501 12 3181 11 2320 | ip.addr == 10.0.0.2 && tcp.port == 443
+C 10.0.0.1 50000 10.0.0.2 443 23 5501 11 2320 12 3181 0.000000 0.022000 1 | ip.addr == 10.0.0.1 && ip.addr == 10.0.0.2 && tcp.port == 50000 && tcp.port == 443
+-- UDP
+-- SCTP
+-- Ethernet
+-- WLAN
+-- Bluetooth
+-- USB
+-- Hierarchy
+Frame 23 5501
+  Ethernet 23 5501
+    Internet Protocol Version 4 23 5501
+      Transmission Control Protocol 23 5501
+        Transport Layer Security 16 3523
+          Hypertext Transfer Protocol 2 7 658
+== tls13_raw.pcapng 18
+-- IPv4
+E 10.0.0.1 0 18 5026 9 2108 9 2918 | ip.addr == 10.0.0.1
+E 10.0.0.2 0 18 5026 9 2918 9 2108 | ip.addr == 10.0.0.2
+C 10.0.0.1 0 10.0.0.2 0 18 5026 9 2108 9 2918 0.000000 0.017000 1 | ip.addr == 10.0.0.1 && ip.addr == 10.0.0.2
+-- IPv6
+-- TCP
+E 10.0.0.1 50000 18 5026 9 2108 9 2918 | ip.addr == 10.0.0.1 && tcp.port == 50000
+E 10.0.0.2 443 18 5026 9 2918 9 2108 | ip.addr == 10.0.0.2 && tcp.port == 443
+C 10.0.0.1 50000 10.0.0.2 443 18 5026 9 2108 9 2918 0.000000 0.017000 1 | ip.addr == 10.0.0.1 && ip.addr == 10.0.0.2 && tcp.port == 50000 && tcp.port == 443
+-- UDP
+-- SCTP
+-- Ethernet
+-- WLAN
+-- Bluetooth
+-- USB
+-- Hierarchy
+Frame 18 5026
+  Ethernet 18 5026
+    Internet Protocol Version 4 18 5026
+      Transmission Control Protocol 18 5026
+        Transport Layer Security 11 3048

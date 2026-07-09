@@ -54,6 +54,7 @@ add_executable(imshark_tests
     test_settings.cpp
     test_snmp.cpp
     test_stats.cpp
+    test_stats_snapshot.cpp
     test_stream.cpp
     test_tcp.cpp
     test_tcp_reassembly.cpp
