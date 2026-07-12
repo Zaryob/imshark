@@ -149,6 +149,7 @@ void packet::PacketParser::parsePacket(packet::PacketInfo &pack, const std::vect
                 return;
             }
             haveEthernet = true;
+            if (mode != dissect::ParseMode::Replay) ctx.sessions->addEthernetAddresses(static_cast<uint32_t>(pack.number), ethHeader.src_mac, ethHeader.dest_mac);
             etherType = network::ntoh16(ethHeader.type);
             l3Offset = sizeof(network::EthernetHeader);
             const uint16_t outerType = etherType;

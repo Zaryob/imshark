@@ -8,6 +8,7 @@
 #include <unordered_set>
 #include <vector>
 
+#include <packet/ethernet_table.h>
 #include <tls/keylog.h>
 
 #include "dtls_decrypt.h"
@@ -61,6 +62,7 @@ public:
         usbOpen_.clear();
         usbDone_.clear();
         usbMemory_ = 0;
+        ethernet_.clear();
         stateLost_ = false;
         stateLostTables_.clear();
         frozen_ = false;
@@ -410,6 +412,19 @@ public:
         return true;
     }
 
+    // ---- Ethernet addresses --------------------------------------------------------------------------------------------
+    /// Load pass: packet `number` is an Ethernet frame from `source` to `destination` (6 bytes each). Returns false if the tables
+    /// are frozen or the memory budget is exhausted (then the "ethernet" table is state lost and statistics fall back to the summary).
+    bool addEthernetAddresses(uint32_t number, const uint8_t *source, const uint8_t *destination) {
+        if (frozen_) return false;
+        if (ethernet_.memory() + sizeof(packet::EthernetAddressTable::Entry) > maxMemoryPerTable_) {
+            markStateLost("ethernet");
+            return false;
+        }
+        return ethernet_.add(number, source, destination, SIZE_MAX);
+    }
+    const packet::EthernetAddressTable &ethernetAddresses() const { return ethernet_; }
+
     size_t totalMemoryUsage() const { return ftpMemory_ + tftpMemory_ + connectionMemory_ + usbMemory_ + tls_.memory() + tlsDecrypt_.memory() + dtls_.memory(); }
 
 private:
@@ -440,6 +455,8 @@ private:
     std::unordered_map<uint64_t, UsbControlRequest> usbOpen_;      // requests waiting for their completion
     std::unordered_map<uint32_t, UsbControlRequest> usbDone_;      // completing packet number -> its request
     size_t usbMemory_ = 0;
+
+    packet::EthernetAddressTable ethernet_;
 
     TlsSessionTable tls_;
     TlsDecryptTable tlsDecrypt_;

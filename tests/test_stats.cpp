@@ -6,6 +6,7 @@
 #include <set>
 
 #include <core.h>
+#include <dissect/session.h>
 #include <filter/filter.h>
 #include <stats/statistics.h>
 
@@ -392,4 +393,53 @@ TEST(Stats, EthernetTabListsMacAddressesNotIpStrings) {
     EXPECT_EQ(stats::endpoints(packets, nullptr, stats::AddressKind::Ipv4).size(), 2u);
     EXPECT_EQ(countMatches(packets, "eth.addr == \"10.0.0.1\""), 0u);
     EXPECT_EQ(countMatches(packets, "eth.src == \"66:77:88:99:aa:bb\""), 1u);
+}
+
+TEST(Stats, TheLoadPassRecordsTheMacAddressesOfEveryEthernetFrame) {
+    core::FileProcessor fp;
+    std::vector<packet::PacketInfo> packets;
+    std::string message;
+    ASSERT_TRUE(fp.processPcapFile(IMSHARK_TEST_DATA_DIR "/sample.pcap", packets, message));
+    const auto &macs = fp.sessions().ethernetAddresses();
+    size_t ethernet = 0, ip = 0;
+    for (const auto &p: packets) {
+        if (p.link_type != 1) continue;
+        ++ethernet;
+        ip += p.ip_version != 0;
+        ASSERT_NE(macs.find(static_cast<uint32_t>(p.number)), nullptr) << p.number;
+        // frames the summary still holds MACs for agree with the table
+        if (packet::isMacAddress(p.source)) EXPECT_EQ(packet::EthernetAddressTable::format(macs.find(static_cast<uint32_t>(p.number))->source), p.source);
+    }
+    EXPECT_EQ(macs.size(), ethernet);
+    ASSERT_GT(ip, 0u) << "the sample has IP frames";
+    // Replay never adds to the table: dissecting a packet again for its details leaves it as it was
+    packet::PacketInfo details;
+    ASSERT_TRUE(core::buildPacketDetails(IMSHARK_TEST_DATA_DIR "/sample.pcap", packets[0], details, &packets, &fp.captureInfo(), nullptr, &fp.sessions()));
+    EXPECT_EQ(fp.sessions().ethernetAddresses().size(), ethernet);
+}
+
+TEST(Stats, EthernetAddressTableBoundsAndOrder) {
+    const uint8_t a[6] = {1, 2, 3, 4, 5, 6}, b[6] = {0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff};
+    packet::EthernetAddressTable t;
+    EXPECT_TRUE(t.add(5, a, b, 2));
+    EXPECT_FALSE(t.add(5, a, b, 2)) << "a packet is recorded once";
+    EXPECT_FALSE(t.add(4, a, b, 2)) << "numbers increase";
+    EXPECT_TRUE(t.add(9, b, a, 2));
+    EXPECT_FALSE(t.add(10, a, b, 2)) << "beyond the cap";
+    ASSERT_NE(t.find(9), nullptr);
+    EXPECT_EQ(packet::EthernetAddressTable::format(t.find(9)->source), "aa:bb:cc:dd:ee:ff");
+    EXPECT_EQ(t.find(6), nullptr);
+    EXPECT_EQ(t.find(10), nullptr);
+    EXPECT_EQ(t.find(0), nullptr);
+
+    // a table that is full stops recording and says so; the tables are frozen after the load
+    dissect::SessionTables tables(sizeof(packet::EthernetAddressTable::Entry) * 2);
+    EXPECT_TRUE(tables.addEthernetAddresses(1, a, b));
+    EXPECT_TRUE(tables.addEthernetAddresses(2, a, b));
+    EXPECT_FALSE(tables.addEthernetAddresses(3, a, b));
+    EXPECT_TRUE(tables.isTableStateLost("ethernet"));
+    tables.clear();
+    tables.freeze();
+    EXPECT_FALSE(tables.addEthernetAddresses(1, a, b));
+    EXPECT_TRUE(tables.ethernetAddresses().empty());
 }
