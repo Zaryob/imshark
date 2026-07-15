@@ -18,6 +18,7 @@
 #include <string_view>
 #include <vector>
 
+#include <packet/ethernet_table.h>
 #include <packet/packet_info.h>
 
 namespace filter {
@@ -25,6 +26,7 @@ namespace filter {
     struct Context {
         const packet::PacketInfo *previous = nullptr; // previous captured packet (frame.time_delta)
         double captureStartEpoch = 0;                 // UTC epoch seconds of the first packet (frame.time_epoch)
+        const packet::EthernetAddressTable *ethernet = nullptr; // MACs of IP frames (eth.src/eth.dst/eth.addr); without it only non-IP frames have them
     };
 
     struct Error {

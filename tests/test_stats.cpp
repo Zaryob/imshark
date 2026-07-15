@@ -276,7 +276,8 @@ TEST(Stats, GeneralizedAddressKindsProduceExpectedFiltersAndEndpoints) {
 #include "frame_sweep.h"
 
 namespace {
-    std::vector<packet::PacketInfo> parseSequence(uint32_t linkType, const std::vector<framesweep::Bytes> &frames) {
+    std::vector<packet::PacketInfo> parseSequence(uint32_t linkType, const std::vector<framesweep::Bytes> &frames,
+                                                  packet::EthernetAddressTable *macs = nullptr) {
         packet::PacketParser parser;
         std::vector<packet::PacketInfo> out;
         int number = 1;
@@ -288,14 +289,18 @@ namespace {
             pack.frame_length = pack.captured_length = static_cast<uint32_t>(f.size());
             out.push_back(std::move(pack));
         }
+        if (macs) *macs = parser.sessions().ethernetAddresses();
         return out;
     }
 
-    size_t countMatches(const std::vector<packet::PacketInfo> &packets, const std::string &text) {
+    size_t countMatches(const std::vector<packet::PacketInfo> &packets, const std::string &text,
+                        const packet::EthernetAddressTable *macs = nullptr) {
         const auto f = filter::Filter::compile(text);
         EXPECT_TRUE(f.ok) << text;
+        filter::Context context;
+        context.ethernet = macs;
         size_t n = 0;
-        for (const auto &p: packets) n += f.ok && f.filter.matches(p);
+        for (const auto &p: packets) n += f.ok && f.filter.matches(p, context);
         return n;
     }
 
@@ -395,6 +400,37 @@ TEST(Stats, EthernetTabListsMacAddressesNotIpStrings) {
     EXPECT_EQ(countMatches(packets, "eth.src == \"66:77:88:99:aa:bb\""), 1u);
 }
 
+TEST(Stats, EthernetTabListsTheMacAddressesOfIpFramesToo) {
+    using framesweep::Bytes;
+    const auto udp = framesweep::ethernet(0x0800, framesweep::ipv4Packet(17, framesweep::udpDatagram(1000, 2000, {1, 2})));
+    const auto other = framesweep::ethernet(0x88B5, {1, 2, 3, 4});
+    packet::EthernetAddressTable macs;
+    const auto packets = parseSequence(1, {udp, other, udp}, &macs);
+    ASSERT_EQ(macs.size(), 3u);
+
+    // without the table the IP frames are not listed (the summary holds their IP addresses); with it they are
+    EXPECT_EQ(stats::endpoints(packets, nullptr, stats::AddressKind::Ethernet).size(), 2u);
+    const auto eps = stats::endpoints(packets, nullptr, stats::AddressKind::Ethernet, &macs);
+    EXPECT_EQ(addresses(eps), (std::set<std::string>{"66:77:88:99:aa:bb", "00:11:22:33:44:55"}));
+    uint64_t tx = 0, rx = 0;
+    for (const auto &e: eps) { tx += e.txPackets; rx += e.rxPackets; }
+    EXPECT_EQ(tx, 3u) << "every Ethernet frame has exactly one sender";
+    EXPECT_EQ(rx, 3u);
+    const auto convs = stats::conversations(packets, nullptr, stats::AddressKind::Ethernet, &macs);
+    ASSERT_EQ(convs.size(), 1u);
+    EXPECT_EQ(convs[0].packets, 3u);
+
+    // the apply-as-filter text selects what the row counted, once the filter sees the same table
+    for (const auto &e: eps) {
+        EXPECT_EQ(countMatches(packets, stats::endpointFilter(e, stats::AddressKind::Ethernet), &macs), e.packets) << e.address;
+        EXPECT_EQ(countMatches(packets, stats::endpointFilter(e, stats::AddressKind::Ethernet)), 1u) << "without the table only the non-IP frame holds MACs";
+    }
+    EXPECT_EQ(countMatches(packets, stats::conversationFilter(convs[0], stats::AddressKind::Ethernet), &macs), 3u);
+    EXPECT_EQ(countMatches(packets, "eth.src == \"66:77:88:99:aa:bb\"", &macs), 3u);
+    EXPECT_EQ(countMatches(packets, "eth.dst == \"66:77:88:99:aa:bb\"", &macs), 0u);
+    EXPECT_EQ(countMatches(packets, "eth.addr == \"10.0.0.1\"", &macs), 0u);
+}
+
 TEST(Stats, TheLoadPassRecordsTheMacAddressesOfEveryEthernetFrame) {
     core::FileProcessor fp;
     std::vector<packet::PacketInfo> packets;
@@ -412,6 +448,9 @@ TEST(Stats, TheLoadPassRecordsTheMacAddressesOfEveryEthernetFrame) {
     }
     EXPECT_EQ(macs.size(), ethernet);
     ASSERT_GT(ip, 0u) << "the sample has IP frames";
+    uint64_t tx = 0;
+    for (const auto &e: stats::endpoints(packets, nullptr, stats::AddressKind::Ethernet, &macs)) tx += e.txPackets;
+    EXPECT_EQ(tx, ethernet);
     // Replay never adds to the table: dissecting a packet again for its details leaves it as it was
     packet::PacketInfo details;
     ASSERT_TRUE(core::buildPacketDetails(IMSHARK_TEST_DATA_DIR "/sample.pcap", packets[0], details, &packets, &fp.captureInfo(), nullptr, &fp.sessions()));

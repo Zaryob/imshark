@@ -16,7 +16,8 @@ namespace {
 } // namespace
 
 ui::FindResult ui::findPacket(const std::vector<packet::PacketInfo> &packets, const std::vector<uint32_t> &order,
-                              double captureStartEpoch, FindMode mode, const std::string &query, int fromPosition, bool forward) {
+                              double captureStartEpoch, FindMode mode, const std::string &query, int fromPosition, bool forward,
+                              const packet::EthernetAddressTable *ethernet) {
     FindResult result;
     const int n = static_cast<int>(order.size());
     if (n == 0 || query.empty()) return result;
@@ -43,6 +44,7 @@ ui::FindResult ui::findPacket(const std::vector<packet::PacketInfo> &packets, co
         }
         filter::Context context;
         context.captureStartEpoch = captureStartEpoch;
+        context.ethernet = ethernet;
         context.previous = order[position] ? &packets[order[position] - 1] : nullptr;
         return compiled.matches(p, context);
     };

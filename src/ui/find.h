@@ -6,6 +6,7 @@
 
 #include <capture_reader.h>
 
+#include <packet/ethernet_table.h>
 #include <packet/packet_info.h>
 
 namespace ui {
@@ -25,9 +26,10 @@ namespace ui {
     /// Finds the next (or previous) row after/before `fromPosition` (-1 = start from the first/last row),
     /// wrapping around. `order` is the displayed order (indices into `packets`).
     ///  - Text:   case-insensitive substring in the source, destination, protocol or info column
-    ///  - Filter: a display filter expression
+    ///  - Filter: a display filter expression (`ethernet`, the capture's address table, lets eth.* match IP frames too)
     FindResult findPacket(const std::vector<packet::PacketInfo> &packets, const std::vector<uint32_t> &order,
-                          double captureStartEpoch, FindMode mode, const std::string &query, int fromPosition, bool forward);
+                          double captureStartEpoch, FindMode mode, const std::string &query, int fromPosition, bool forward,
+                          const packet::EthernetAddressTable *ethernet = nullptr);
 
     /// What to look for inside the frame bytes.
     struct ByteNeedle {

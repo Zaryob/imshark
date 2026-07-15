@@ -52,10 +52,10 @@ esp	boolean	IPsec Encapsulating Security Payload	1071	1071	4ea3f7e1c1528183
 esp.sequence	unsigned	ESP Sequence Number	1071	1071	7da3878961695ffd
 esp.spi	unsigned	ESP Security Parameters Index (SPI)	1071	1071	9c6d55172a3319eb
 eth	boolean	Ethernet frame	1121	1121	2529a14c40eab203
-eth.addr	string	Ethernet source or destination address (frames the summary still holds MAC addresses for: not IP packets)	79	86	2869bffdf53a502f
-eth.dst	string	Ethernet destination address (frames the summary still holds MAC addresses for: not IP packets)	38	38	00d4ee9b64de2237
+eth.addr	string	Ethernet source or destination address (every Ethernet frame when the capture's address table is available; otherwise only frames that are not IP packets)	79	86	2869bffdf53a502f
+eth.dst	string	Ethernet destination address (every Ethernet frame when the capture's address table is available; otherwise only frames that are not IP packets)	38	38	00d4ee9b64de2237
 eth.len	unsigned	IEEE 802.3 length field	253	253	5835bf4e9aeda668
-eth.src	string	Ethernet source address (frames the summary still holds MAC addresses for: not IP packets)	48	48	5928acb3b6c0a323
+eth.src	string	Ethernet source address (every Ethernet frame when the capture's address table is available; otherwise only frames that are not IP packets)	48	48	5928acb3b6c0a323
 eth.type	unsigned	EtherType	3335	3335	12018fd1087b6087
 frame.cap_len	unsigned	Number of bytes captured	12038	12038	04bde8037776fd30
 frame.comment	boolean	The capture file has a comment for this packet (pcapng)	12038	12038	80de670e0117af43

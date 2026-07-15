@@ -288,6 +288,11 @@ namespace ui {
         // Layout
         float listHeight = 300.0f;                       // height of the packet list (user-adjustable splitter)
 
+        /// The MAC addresses of every Ethernet frame (recorded while the capture was dissected): of the running capture, else of the loaded one.
+        const packet::EthernetAddressTable *ethernetAddresses() const {
+            return live.processor ? &live.processor->sessions().ethernetAddresses() : &sessions.ethernetAddresses();
+        }
+
         size_t displayedCount() const { return filter.active ? filter.visible.size() : packets.size(); }
 
         bool hasSelection() const { return selectionStart >= 0 && selectionEnd >= selectionStart; }

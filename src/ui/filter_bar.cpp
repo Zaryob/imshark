@@ -32,6 +32,7 @@ void ui::refilter(AppState &state) {
     if (f.active) {
         filter::Context context;
         context.captureStartEpoch = state.captureStartEpoch;
+        context.ethernet = state.ethernetAddresses();
         for (size_t i = 0; i < state.packets.size(); ++i) {
             context.previous = i ? &state.packets[i - 1] : nullptr;
             if (f.applied.matches(state.packets[i], context)) f.visible.push_back(static_cast<uint32_t>(i));
@@ -51,6 +52,7 @@ bool ui::extendFilter(AppState &state, size_t from, const std::vector<uint32_t> 
     if (!f.active) return false;
     filter::Context context;
     context.captureStartEpoch = state.captureStartEpoch;
+    context.ethernet = state.ethernetAddresses();
     bool changed = false;
     // earlier rows whose summary was edited in place: their result may differ now (rows >= from are evaluated below)
     for (uint32_t i: amended) {

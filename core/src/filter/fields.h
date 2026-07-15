@@ -2,6 +2,7 @@
 
 // The field table of the display filter: name -> type -> how to read the value(s) from a summary.
 
+#include <array>
 #include <network/address.h>
 #include <initializer_list>
 #include <string>
@@ -24,6 +25,18 @@ namespace filter {
     struct Values {
         Value v[2];
         int n = 0;
+        char text[2][18] = {};   // storage for values formatted on the fly (addMac); the views in `s` point here, so a Values must not be copied
+        void addMac(const std::array<uint8_t, 6> &mac) {
+            static const char digits[] = "0123456789abcdef";
+            char *out = text[n];
+            for (size_t i = 0; i < 6; ++i) {
+                out[i * 3] = digits[mac[i] >> 4];
+                out[i * 3 + 1] = digits[mac[i] & 0xF];
+                out[i * 3 + 2] = i < 5 ? ':' : '\0';
+            }
+            v[n].s = std::string_view(out, 17);
+            ++n;
+        }
         void addU(uint64_t x) { v[n].u = x; ++n; }
         void addD(double x) { v[n].d = x; ++n; }
         void addS(std::string_view x) { v[n].s = x; ++n; }

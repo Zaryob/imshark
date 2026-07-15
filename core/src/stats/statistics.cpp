@@ -31,6 +31,36 @@ namespace stats {
             return false;
         }
 
+        // The addresses (and ports) a packet contributes to the endpoints / conversations of `kind`.
+        struct Sides {
+            const std::string *source = nullptr, *destination = nullptr;
+            uint16_t sourcePort = 0, destinationPort = 0;
+            std::string sourceText, destinationText;   // storage for addresses that are not in the summary (Ethernet MACs)
+        };
+
+        bool resolve(const packet::PacketInfo &p, AddressKind kind, const packet::EthernetAddressTable *macs, Sides &out) {
+            if (kind == AddressKind::Ethernet) {
+                if (p.link_type != 1) return false;
+                // an IP dissector replaces source/destination by the IP addresses: the load pass kept the MACs of every frame aside
+                if (macs) {
+                    if (const auto *e = macs->find(static_cast<uint32_t>(p.number))) {
+                        out.sourceText = packet::EthernetAddressTable::format(e->source);
+                        out.destinationText = packet::EthernetAddressTable::format(e->destination);
+                        out.source = &out.sourceText;
+                        out.destination = &out.destinationText;
+                        return true;
+                    }
+                }
+                if (!applies(p, kind)) return false;   // no table: only frames that still hold MACs in the summary
+            } else if (!applies(p, kind)) {
+                return false;
+            }
+            out.source = &p.source;
+            out.destination = &p.destination;
+            if (hasPort(kind)) { out.sourcePort = p.src_port; out.destinationPort = p.dst_port; }
+            return true;
+        }
+
         template<typename F>
         void forEachPacket(const std::vector<packet::PacketInfo> &packets, Subset subset, F &&f) {
             if (subset) {
@@ -62,7 +92,8 @@ namespace stats {
         return "";
     }
 
-    std::vector<Endpoint> endpoints(const std::vector<packet::PacketInfo> &packets, Subset subset, AddressKind kind) {
+    std::vector<Endpoint> endpoints(const std::vector<packet::PacketInfo> &packets, Subset subset, AddressKind kind,
+                                    const packet::EthernetAddressTable *macs) {
         std::unordered_map<std::string, size_t> index;
         std::vector<Endpoint> out;
         const bool ports = hasPort(kind);
@@ -81,10 +112,11 @@ namespace stats {
         };
 
         forEachPacket(packets, subset, [&](const packet::PacketInfo &p) {
-            if (!applies(p, kind)) return;
-            Endpoint &src = touch(p.source, p.src_port);
+            Sides sides;
+            if (!resolve(p, kind, macs, sides)) return;
+            Endpoint &src = touch(*sides.source, sides.sourcePort);
             src.packets++; src.bytes += p.frame_length; src.txPackets++; src.txBytes += p.frame_length;
-            Endpoint &dst = touch(p.destination, p.dst_port); // `touch` may reallocate: take dst after src is updated
+            Endpoint &dst = touch(*sides.destination, sides.destinationPort); // `touch` may reallocate: take dst after src is updated
             dst.packets++; dst.bytes += p.frame_length; dst.rxPackets++; dst.rxBytes += p.frame_length;
         });
 
@@ -92,25 +124,27 @@ namespace stats {
         return out;
     }
 
-    std::vector<Conversation> conversations(const std::vector<packet::PacketInfo> &packets, Subset subset, AddressKind kind) {
+    std::vector<Conversation> conversations(const std::vector<packet::PacketInfo> &packets, Subset subset, AddressKind kind,
+                                            const packet::EthernetAddressTable *macs) {
         std::unordered_map<std::string, size_t> index;
         std::vector<Conversation> out;
         std::vector<double> last;
-        const bool ports = hasPort(kind);
 
         forEachPacket(packets, subset, [&](const packet::PacketInfo &p) {
-            if (!applies(p, kind)) return;
-            const uint16_t sp = ports ? p.src_port : 0, dp = ports ? p.dst_port : 0;
+            Sides sides;
+            if (!resolve(p, kind, macs, sides)) return;
+            const std::string &source = *sides.source, &destination = *sides.destination;
+            const uint16_t sp = sides.sourcePort, dp = sides.destinationPort;
             // direction independent key: the smaller endpoint first
-            const std::string a = endpointKey(p.source, sp), b = endpointKey(p.destination, dp);
+            const std::string a = endpointKey(source, sp), b = endpointKey(destination, dp);
             const std::string key = a < b ? a + "|" + b : b + "|" + a;
 
             auto it = index.find(key);
             if (it == index.end()) {
                 it = index.emplace(key, out.size()).first;
                 Conversation c;
-                c.addressA = p.source; c.portA = sp;
-                c.addressB = p.destination; c.portB = dp;
+                c.addressA = source; c.portA = sp;
+                c.addressB = destination; c.portB = dp;
                 c.start = p.time;
                 c.firstPacket = p.number;
                 out.push_back(std::move(c));
@@ -119,7 +153,7 @@ namespace stats {
             Conversation &c = out[it->second];
             c.packets++;
             c.bytes += p.frame_length;
-            if (p.source == c.addressA && sp == c.portA) { c.packetsAtoB++; c.bytesAtoB += p.frame_length; }
+            if (source == c.addressA && sp == c.portA) { c.packetsAtoB++; c.bytesAtoB += p.frame_length; }
             else { c.packetsBtoA++; c.bytesBtoA += p.frame_length; }
             c.start = std::min(c.start, p.time);
             last[it->second] = std::max(last[it->second], p.time);

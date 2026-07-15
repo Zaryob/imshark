@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 
+#include <packet/ethernet_table.h>
 #include <packet/packet_info.h>
 
 namespace stats {
@@ -50,11 +51,15 @@ namespace stats {
         int firstPacket = 0;                   // number of the first packet
     };
 
-    /// Endpoints of `kind`, sorted by bytes (descending).
-    std::vector<Endpoint> endpoints(const std::vector<packet::PacketInfo> &packets, Subset subset, AddressKind kind);
+    /// Endpoints of `kind`, sorted by bytes (descending). `macs` (the capture's Ethernet address table, optional) adds the
+    /// Ethernet frames whose summary holds IP addresses to the Ethernet kind; without it that kind lists only the frames the
+    /// summary still holds MAC addresses for (not IP packets).
+    std::vector<Endpoint> endpoints(const std::vector<packet::PacketInfo> &packets, Subset subset, AddressKind kind,
+                                    const packet::EthernetAddressTable *macs = nullptr);
 
     /// Conversations of `kind`, sorted by bytes (descending).
-    std::vector<Conversation> conversations(const std::vector<packet::PacketInfo> &packets, Subset subset, AddressKind kind);
+    std::vector<Conversation> conversations(const std::vector<packet::PacketInfo> &packets, Subset subset, AddressKind kind,
+                                            const packet::EthernetAddressTable *macs = nullptr);
 
     /// Display filter expression that selects exactly the packets of `conversation`.
     std::string conversationFilter(const Conversation &conversation, AddressKind kind);

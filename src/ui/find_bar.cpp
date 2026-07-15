@@ -98,7 +98,7 @@ bool ui::findAndSelect(AppState &state, bool forward) {
         return false; // the match is selected by pollSearch when the job finishes
     }
 
-    const FindResult r = findPacket(state.packets, state.order, state.captureStartEpoch, f.mode, f.text, from, forward);
+    const FindResult r = findPacket(state.packets, state.order, state.captureStartEpoch, f.mode, f.text, from, forward, state.ethernetAddresses());
     f.messageIsError = !r.error.empty();
     if (!r.error.empty()) {
         f.message = r.error;

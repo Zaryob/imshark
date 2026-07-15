@@ -63,10 +63,10 @@ in the [User Guide](USER_GUIDE.md#display-filters). Names are lower case.
 | `esp.sequence` | unsigned | ESP Sequence Number |
 | `esp.spi` | unsigned | ESP Security Parameters Index (SPI) |
 | `eth` | boolean | Ethernet frame |
-| `eth.addr` | string | Ethernet source or destination address (frames the summary still holds MAC addresses for: not IP packets) |
-| `eth.dst` | string | Ethernet destination address (frames the summary still holds MAC addresses for: not IP packets) |
+| `eth.addr` | string | Ethernet source or destination address (every Ethernet frame when the capture's address table is available; otherwise only frames that are not IP packets) |
+| `eth.dst` | string | Ethernet destination address (every Ethernet frame when the capture's address table is available; otherwise only frames that are not IP packets) |
 | `eth.len` | unsigned | IEEE 802.3 length field |
-| `eth.src` | string | Ethernet source address (frames the summary still holds MAC addresses for: not IP packets) |
+| `eth.src` | string | Ethernet source address (every Ethernet frame when the capture's address table is available; otherwise only frames that are not IP packets) |
 | `eth.type` | unsigned | EtherType |
 | `frame.cap_len` | unsigned | Number of bytes captured |
 | `frame.comment` | boolean | The capture file has a comment for this packet (pcapng) |

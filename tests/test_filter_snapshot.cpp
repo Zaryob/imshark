@@ -3,6 +3,8 @@
 // deterministic set of synthetic packets that exercises the gates of the extractors). The snapshot was recorded from the
 // table as it was BEFORE the fields moved next to their protocols; it must keep passing unchanged. A deliberate change
 // of a field is recorded with IMSHARK_UPDATE_SNAPSHOT=1 (and shows up in review as a diff of the snapshot file).
+// Deliberate change (B8): the descriptions of eth.src/eth.dst/eth.addr now say that they cover every Ethernet frame when the
+// capture's address table is in the Context. Their values on these packets (no table here) and every digest are unchanged.
 #include <gtest/gtest.h>
 
 #include <algorithm>

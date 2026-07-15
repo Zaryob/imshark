@@ -165,7 +165,7 @@ namespace {
                 if (!ImGui::BeginTabItem(stats::kindName(kKinds[k]), nullptr, s.selectTab == static_cast<int>(k) ? ImGuiTabItemFlags_SetSelected : 0)) continue;
                 s.tab = static_cast<int>(k);
                 if (!s.conversationsValid[k]) {
-                    s.conversations[k] = stats::conversations(state.packets, subset(state), kKinds[k]);
+                    s.conversations[k] = stats::conversations(state.packets, subset(state), kKinds[k], state.ethernetAddresses());
                     s.conversationsValid[k] = true;
                 }
                 const bool ports = (kKinds[k] == AddressKind::Tcp || kKinds[k] == AddressKind::Udp || kKinds[k] == AddressKind::Sctp);
@@ -260,7 +260,7 @@ namespace {
             for (size_t k = 0; k < stats::kAddressKindCount; ++k) {
                 if (!ImGui::BeginTabItem(stats::kindName(kKinds[k]), nullptr, s.selectTab == static_cast<int>(k) ? ImGuiTabItemFlags_SetSelected : 0)) continue;
                 if (!s.endpointsValid[k]) {
-                    s.endpoints[k] = stats::endpoints(state.packets, subset(state), kKinds[k]);
+                    s.endpoints[k] = stats::endpoints(state.packets, subset(state), kKinds[k], state.ethernetAddresses());
                     s.endpointsValid[k] = true;
                 }
                 const bool ports = stats::hasPort(kKinds[k]);
