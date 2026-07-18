@@ -18,7 +18,8 @@ namespace {
         AddressKind::Ethernet,
         AddressKind::Wlan,
         AddressKind::Bluetooth,
-        AddressKind::Usb
+        AddressKind::Usb,
+        AddressKind::UsbEndpoint
     };
 
     std::string fmtTime(double seconds) {
@@ -31,10 +32,6 @@ namespace {
         char buf[16];
         std::snprintf(buf, sizeof(buf), "%.1f%%", whole ? 100.0 * static_cast<double>(part) / static_cast<double>(whole) : 0.0);
         return buf;
-    }
-
-    std::string addressWithPort(const std::string &address, uint16_t port, bool ports) {
-        return ports ? (address.find(':') != std::string::npos ? "[" + address + "]:" : address + ":") + std::to_string(port) : address;
     }
 
     void refreshIfDirty(ui::AppState &state) {
@@ -168,7 +165,6 @@ namespace {
                     s.conversations[k] = stats::conversations(state.packets, subset(state), kKinds[k], state.ethernetAddresses());
                     s.conversationsValid[k] = true;
                 }
-                const bool ports = (kKinds[k] == AddressKind::Tcp || kKinds[k] == AddressKind::Udp || kKinds[k] == AddressKind::Sctp);
                 auto &rows = s.conversations[k];
                 if (ImGui::BeginTable("conv", 10, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_Resizable |
                                                      ImGuiTableFlags_Sortable | ImGuiTableFlags_ScrollY)) {
@@ -209,7 +205,7 @@ namespace {
                             ImGui::TableNextRow();
                             ImGui::TableSetColumnIndex(0);
                             ImGui::PushID(i);
-                            if (ImGui::Selectable(addressWithPort(c.addressA, c.portA, ports).c_str(), false,
+                            if (ImGui::Selectable(stats::addressLabel(c.addressA, c.portA, kKinds[k]).c_str(), false,
                                                   ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowDoubleClick)) {
                                 if (ImGui::IsMouseDoubleClicked(0)) ui::applyFilter(state, stats::conversationFilter(c, kKinds[k]));
                             }
@@ -220,7 +216,7 @@ namespace {
                             }
                             ImGui::PopID();
                             ImGui::TableSetColumnIndex(1);
-                            ImGui::TextUnformatted(addressWithPort(c.addressB, c.portB, ports).c_str());
+                            ImGui::TextUnformatted(stats::addressLabel(c.addressB, c.portB, kKinds[k]).c_str());
                             ImGui::TableSetColumnIndex(2);
                             ImGui::Text("%llu", static_cast<unsigned long long>(c.packets));
                             ImGui::TableSetColumnIndex(3);
@@ -263,7 +259,6 @@ namespace {
                     s.endpoints[k] = stats::endpoints(state.packets, subset(state), kKinds[k], state.ethernetAddresses());
                     s.endpointsValid[k] = true;
                 }
-                const bool ports = stats::hasPort(kKinds[k]);
                 auto &rows = s.endpoints[k];
                 if (ImGui::BeginTable("ep", 7, ImGuiTableFlags_RowBg | ImGuiTableFlags_Borders | ImGuiTableFlags_Resizable |
                                                   ImGuiTableFlags_Sortable | ImGuiTableFlags_ScrollY)) {
@@ -298,7 +293,7 @@ namespace {
                             ImGui::TableNextRow();
                             ImGui::TableSetColumnIndex(0);
                             ImGui::PushID(i);
-                            if (ImGui::Selectable(addressWithPort(e.address, e.port, ports).c_str(), false,
+                            if (ImGui::Selectable(stats::addressLabel(e.address, e.port, kKinds[k]).c_str(), false,
                                                   ImGuiSelectableFlags_SpanAllColumns | ImGuiSelectableFlags_AllowDoubleClick)) {
                                 if (ImGui::IsMouseDoubleClicked(0)) ui::applyFilter(state, stats::endpointFilter(e, kKinds[k]));
                             }

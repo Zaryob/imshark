@@ -122,6 +122,10 @@ void dissectUsbDescriptors(Context &ctx, const uint8_t *descData, size_t descLen
     }
 }
 
+// The endpoint address of the transfer (bit 7 = IN) goes into app_flags with bit 8 set, so that "no endpoint" (packets without a
+// readable header) differs from endpoint 0x00: the statistics and the usb.endpoint filter field read it.
+constexpr uint16_t kUsbEndpointKnown = 0x100;
+
 const char *usbDirection(uint8_t endpoint) { return (endpoint & 0x80) ? "IN" : "OUT"; }
 
 std::string usbAddress(unsigned bus, unsigned device) { return std::to_string(bus) + "." + std::to_string(device); }
@@ -185,6 +189,7 @@ void dissectUsbmon(Context &ctx, const char *data, size_t length, size_t headerL
 
     ctx.pack.protocol = "USB";
     ctx.pack.app_type = transferType;
+    ctx.pack.app_flags = static_cast<uint16_t>(kUsbEndpointKnown | endpoint);
 
     const bool request = eventType == 'S';
     const std::string direction = usbDirection(endpoint);
@@ -284,6 +289,7 @@ void dissectUsbPcapPacket(Context &ctx, const char *data, size_t length) {
 
     ctx.pack.protocol = "USB";
     ctx.pack.app_type = transferType;
+    ctx.pack.app_flags = static_cast<uint16_t>(kUsbEndpointKnown | endpoint);
 
     const bool completion = (info & 0x01) != 0;
     const std::string direction = usbDirection(endpoint);

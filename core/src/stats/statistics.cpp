@@ -24,6 +24,9 @@ namespace stats {
                                                     p.protocol == "HCI" || p.protocol == "BT Mon" ||
                                                     p.protocol == "L2CAP" || p.protocol == "ATT") &&
                                                     (!p.source.empty() || !p.destination.empty());
+                case AddressKind::UsbEndpoint:
+                    return (p.app_flags & 0x100) && (p.link_type == 189 || p.link_type == 220 || p.link_type == 249 || p.protocol == "USB") &&
+                           (!p.source.empty() || !p.destination.empty());
                 case AddressKind::Usb: return (p.link_type == 189 || p.link_type == 220 || p.link_type == 249 ||
                                               p.protocol == "USB") &&
                                               (!p.source.empty() || !p.destination.empty());
@@ -57,7 +60,13 @@ namespace stats {
             }
             out.source = &p.source;
             out.destination = &p.destination;
-            if (hasPort(kind)) { out.sourcePort = p.src_port; out.destinationPort = p.dst_port; }
+            if (kind == AddressKind::UsbEndpoint) {   // the host has no endpoint: the device side carries the endpoint address
+                const uint16_t endpoint = p.app_flags & 0xFF;
+                out.sourcePort = p.source == "host" ? 0 : endpoint;
+                out.destinationPort = p.destination == "host" ? 0 : endpoint;
+            } else if (hasPort(kind)) {
+                out.sourcePort = p.src_port; out.destinationPort = p.dst_port;
+            }
             return true;
         }
 
@@ -74,7 +83,16 @@ namespace stats {
     } // namespace
 
     bool hasPort(AddressKind kind) {
-        return kind == AddressKind::Tcp || kind == AddressKind::Udp || kind == AddressKind::Sctp;
+        return kind == AddressKind::Tcp || kind == AddressKind::Udp || kind == AddressKind::Sctp || kind == AddressKind::UsbEndpoint;
+    }
+
+    std::string addressLabel(const std::string &address, uint16_t port, AddressKind kind) {
+        if (kind == AddressKind::UsbEndpoint) {
+            if (address == "host") return address;
+            return address + "." + std::to_string(port & 0x0F) + ((port & 0x80) ? " IN" : " OUT");
+        }
+        if (!hasPort(kind)) return address;
+        return (address.find(':') != std::string::npos ? "[" + address + "]:" : address + ":") + std::to_string(port);
     }
 
     const char *kindName(AddressKind kind) {
@@ -88,6 +106,7 @@ namespace stats {
             case AddressKind::Wlan: return "WLAN";
             case AddressKind::Bluetooth: return "Bluetooth";
             case AddressKind::Usb: return "USB";
+            case AddressKind::UsbEndpoint: return "USB Endpoint";
         }
         return "";
     }
@@ -183,7 +202,8 @@ namespace stats {
                     return "wlan.sa == \"" + address + "\" || wlan.da == \"" + address + "\"";
                 case AddressKind::Bluetooth: // ACL connection handles are "0x...."; host, controller and hciN are plain addresses
                     return std::string(address.rfind("0x", 0) == 0 ? "bt.handle == \"" : "bt.addr == \"") + address + "\"";
-                case AddressKind::Usb: // the host takes part in every transfer
+                case AddressKind::Usb:
+                case AddressKind::UsbEndpoint: // the host takes part in every transfer
                     return address == "host" ? std::string("usb") : "usb.device == \"" + address + "\"";
             }
             return "ip.addr == " + address;
@@ -196,7 +216,9 @@ namespace stats {
                    "(wlan.sa == \"" + c.addressB + "\" && wlan.da == \"" + c.addressA + "\")";
         }
         std::string f = addrTest(c.addressA, kind) + " && " + addrTest(c.addressB, kind);
-        if (kind == AddressKind::Tcp) {
+        if (kind == AddressKind::UsbEndpoint) {   // one device endpoint (the other end is the host)
+            f += " && usb.endpoint == " + std::to_string(c.addressA == "host" ? c.portB : c.portA);
+        } else if (kind == AddressKind::Tcp) {
             f += " && tcp.port == " + std::to_string(c.portA) + " && tcp.port == " + std::to_string(c.portB);
         } else if (kind == AddressKind::Udp) {
             f += " && udp.port == " + std::to_string(c.portA) + " && udp.port == " + std::to_string(c.portB);
@@ -208,7 +230,8 @@ namespace stats {
 
     std::string endpointFilter(const Endpoint &e, AddressKind kind) {
         std::string f = addrTest(e.address, kind);
-        if (kind == AddressKind::Tcp) f += " && tcp.port == " + std::to_string(e.port);
+        if (kind == AddressKind::UsbEndpoint) { if (e.address != "host") f += " && usb.endpoint == " + std::to_string(e.port); }
+        else if (kind == AddressKind::Tcp) f += " && tcp.port == " + std::to_string(e.port);
         else if (kind == AddressKind::Udp) f += " && udp.port == " + std::to_string(e.port);
         else if (kind == AddressKind::Sctp) f += " && sctp.port == " + std::to_string(e.port);
         return f;

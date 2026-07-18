@@ -5,6 +5,7 @@
 // of a field is recorded with IMSHARK_UPDATE_SNAPSHOT=1 (and shows up in review as a diff of the snapshot file).
 // Deliberate change (B8): the descriptions of eth.src/eth.dst/eth.addr now say that they cover every Ethernet frame when the
 // capture's address table is in the Context. Their values on these packets (no table here) and every digest are unchanged.
+// Added (B8): usb.endpoint (the endpoint address of a USB transfer); no other line changed.
 #include <gtest/gtest.h>
 
 #include <algorithm>

@@ -22,12 +22,17 @@ namespace stats {
         Wlan,       // IEEE 802.11 MAC addresses (ROADMAP B8)
         Bluetooth,  // Bluetooth endpoints / Connection handles (ROADMAP B8)
         Usb,        // USB device / bus endpoints (ROADMAP B8)
+        UsbEndpoint, // USB device + endpoint address: bus.device.endpoint with the direction of the endpoint (ROADMAP B8)
     };
 
-    constexpr size_t kAddressKindCount = 9;
+    constexpr size_t kAddressKindCount = 10;
 
     const char *kindName(AddressKind kind);
     bool hasPort(AddressKind kind);
+
+    /// How an address (and port) of `kind` is shown: "address:port" for TCP/UDP/SCTP, "bus.device.N IN" for a USB endpoint
+    /// (N and the direction from the endpoint address kept in `port`), the plain address otherwise.
+    std::string addressLabel(const std::string &address, uint16_t port, AddressKind kind);
 
     using Subset = const std::vector<uint32_t> *;
 

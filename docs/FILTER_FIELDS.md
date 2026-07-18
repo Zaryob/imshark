@@ -363,6 +363,7 @@ in the [User Guide](USER_GUIDE.md#display-filters). Names are lower case.
 | `udplite` | boolean | Lightweight User Datagram Protocol |
 | `usb` | boolean | USB packet |
 | `usb.device` | string | USB device address (bus.device) |
+| `usb.endpoint` | unsigned | USB endpoint address of the transfer (bit 7 set = IN, e.g. 0x81 is endpoint 1 IN) |
 | `vlan` | boolean | 802.1Q VLAN tagged |
 | `vlan.id` | unsigned | VLAN ID (outermost two tags) |
 | `wlan` | boolean | IEEE 802.11 wireless frame |
@@ -380,4 +381,4 @@ in the [User Guide](USER_GUIDE.md#display-filters). Names are lower case.
 | `wlan.ssid` | string | 802.11 SSID |
 | `wlan.ta` | string | 802.11 Transmitter MAC address |
 
-370 fields.
+371 fields.

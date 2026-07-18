@@ -328,3 +328,16 @@ TEST(Usb, SweepWithAnEarlierRequestStillStaysInside) {
 TEST(Usb, RealCapturesWhenAvailable) {
     framesweep::checkCorpus({"USB"});
 }
+
+TEST(Usb, TheEndpointAddressIsKeptInTheSummary) {
+    // app_flags: bit 8 = "has an endpoint", low byte = the address as it is on the wire (bit 7 = IN)
+    EXPECT_EQ(parseAll(189, {usbmon(1, 'S', 3, 0x81, 3, 1, {}, {})}).front().app_flags, 0x181);
+    EXPECT_EQ(parseAll(189, {usbmon(2, 'C', 3, 0x02, 3, 1, {}, {})}).front().app_flags, 0x102);
+    EXPECT_EQ(parseAll(189, {usbmon(3, 'S', 2, 0x00, 3, 1, kGetDeviceDescriptor, {})}).front().app_flags, 0x100) << "endpoint 0 is an endpoint";
+    EXPECT_EQ(parseAll(249, {usbPcap(4, 0, 1, 4, 0x81, 3, {})}).front().app_flags, 0x181);
+    EXPECT_EQ(parseAll(249, {usbPcap(5, 1, 1, 4, 0x02, 3, {})}).front().app_flags, 0x102);
+    // a header that is cut short has no endpoint
+    const Bytes cut(10, 0);
+    EXPECT_EQ(parseAll(189, {cut}).front().app_flags, 0);
+    EXPECT_EQ(parseAll(249, {Bytes(5, 0)}).front().app_flags, 0);
+}

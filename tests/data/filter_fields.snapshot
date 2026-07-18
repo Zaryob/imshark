@@ -352,6 +352,7 @@ udp.srcport	unsigned	UDP source port	501	501	5af68320d7c9a3f0
 udplite	boolean	Lightweight User Datagram Protocol	1028	1028	fee1d347be5866c3
 usb	boolean	USB packet	3350	3350	a73bfdb9ef74cf43
 usb.device	string	USB device address (bus.device)	3274	5653	bbdab12370fab8a3
+usb.endpoint	unsigned	USB endpoint address of the transfer (bit 7 set = IN, e.g. 0x81 is endpoint 1 IN)	479	479	ee10d99cce2d86fe
 vlan	boolean	802.1Q VLAN tagged	5626	5626	ffe1ce54ca9f5843
 vlan.id	unsigned	VLAN ID (outermost two tags)	5626	6450	d3dde21e03ca2be2
 wlan	boolean	IEEE 802.11 wireless frame	11574	11574	b49f2fc67eca8b43

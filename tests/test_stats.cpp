@@ -379,6 +379,60 @@ TEST(Stats, UsbEndpointsOfParsedPackets) {
     EXPECT_EQ(countMatches(ip, "usb.device == \"host\""), 0u);
 }
 
+TEST(Stats, UsbEndpointKindSplitsTheDevicesByEndpointAndDirection) {
+    using framesweep::Bytes;
+    auto urb = [](char event, uint8_t xfer, uint8_t endpoint, uint8_t device) {
+        Bytes b = {1, 0, 0, 0, 0, 0, 0, 0, static_cast<uint8_t>(event), xfer, endpoint, device, 1, 0, '-', '<'};
+        b.resize(48, 0);
+        return b;
+    };
+    // device 1.3: bulk OUT endpoint 2 (request + completion), bulk IN endpoint 1 (request + completion x2); device 1.4: IN endpoint 1
+    const auto packets = parseSequence(189, {urb('S', 3, 0x02, 3), urb('C', 3, 0x02, 3), urb('S', 3, 0x81, 3), urb('C', 3, 0x81, 3),
+                                             urb('C', 3, 0x81, 3), urb('S', 3, 0x81, 4)});
+
+    // the device-level kind is what it was
+    EXPECT_EQ(addresses(stats::endpoints(packets, nullptr, stats::AddressKind::Usb)), (std::set<std::string>{"host", "1.3", "1.4"}));
+    EXPECT_EQ(stats::endpoints(packets, nullptr, stats::AddressKind::Usb).size(), 3u);
+
+    const auto eps = stats::endpoints(packets, nullptr, stats::AddressKind::UsbEndpoint);
+    std::map<std::string, uint64_t> byLabel;
+    for (const auto &e: eps) byLabel[stats::addressLabel(e.address, e.port, stats::AddressKind::UsbEndpoint)] = e.packets;
+    EXPECT_EQ(byLabel, (std::map<std::string, uint64_t>{{"host", 6}, {"1.3.2 OUT", 2}, {"1.3.1 IN", 3}, {"1.4.1 IN", 1}}));
+    for (const auto &e: eps) {
+        const auto text = stats::endpointFilter(e, stats::AddressKind::UsbEndpoint);
+        if (e.address == "host") {
+            EXPECT_EQ(text, "usb");
+        } else {
+            EXPECT_EQ(text, "usb.device == \"" + e.address + "\" && usb.endpoint == " + std::to_string(e.port));
+        }
+        EXPECT_EQ(countMatches(packets, text), e.packets) << text;
+    }
+    const auto convs = stats::conversations(packets, nullptr, stats::AddressKind::UsbEndpoint);
+    ASSERT_EQ(convs.size(), 3u) << "one per device endpoint";
+    uint64_t total = 0;
+    for (const auto &c: convs) {
+        const auto text = stats::conversationFilter(c, stats::AddressKind::UsbEndpoint);
+        EXPECT_NE(text.find("usb.endpoint == "), std::string::npos) << text;
+        EXPECT_EQ(countMatches(packets, text), c.packets) << text;
+        EXPECT_EQ(c.packets, c.packetsAtoB + c.packetsBtoA);
+        total += c.packets;
+    }
+    EXPECT_EQ(total, packets.size());
+
+    // the field itself: the wire value, hexadecimal in a filter; nothing but USB packets has one
+    EXPECT_EQ(countMatches(packets, "usb.endpoint == 0x81"), 4u);
+    EXPECT_EQ(countMatches(packets, "usb.endpoint == 2"), 2u);
+    EXPECT_EQ(countMatches(packets, "usb.endpoint >= 0x80"), 4u);
+    const auto ip = parseSequence(1, {framesweep::ethernet(0x0800, framesweep::ipv4Packet(17, framesweep::udpDatagram(1, 2, {1})))});
+    EXPECT_EQ(countMatches(ip, "usb.endpoint"), 0u);
+    EXPECT_TRUE(stats::endpoints(ip, nullptr, stats::AddressKind::UsbEndpoint).empty());
+    // a hand-filled summary without an endpoint is not listed by the endpoint kind (the device kind still lists it)
+    packet::PacketInfo plain;
+    plain.number = 1; plain.frame_length = 10; plain.link_type = 189; plain.protocol = "USB"; plain.source = "1.2"; plain.destination = "host";
+    EXPECT_TRUE(stats::endpoints({plain}, nullptr, stats::AddressKind::UsbEndpoint).empty());
+    EXPECT_FALSE(stats::endpoints({plain}, nullptr, stats::AddressKind::Usb).empty());
+}
+
 TEST(Stats, EthernetTabListsMacAddressesNotIpStrings) {
     using framesweep::Bytes;
     const auto ipFrame = framesweep::ethernet(0x0800, framesweep::ipv4Packet(17, framesweep::udpDatagram(1000, 2000, {1, 2})));
