@@ -159,8 +159,8 @@ TEST_F(UiSmoke, SortingOrdersPacketsStably) {
     ASSERT_EQ(order.size(), state.packets.size());
     for (size_t i = 1; i < order.size(); ++i) {
         const auto &a = state.packets[order[i - 1]], &b = state.packets[order[i]];
-        ASSERT_LE(a.length, b.length);
-        if (a.length == b.length) ASSERT_LT(order[i - 1], order[i]) << "ties keep capture order";
+        ASSERT_LE(a.frame_length, b.frame_length);
+        if (a.frame_length == b.frame_length) ASSERT_LT(order[i - 1], order[i]) << "ties keep capture order";
     }
     ui::sortPacketOrder(order, state.packets, ui::SortColumn::Protocol, false);
     EXPECT_EQ(state.packets[order.front()].protocol, "UDP");   // largest protocol name first
@@ -313,7 +313,7 @@ TEST_F(UiSmoke, FilterAndSortingCombine) {
     ui::sortOrder(state.order, state.packets, ui::SortColumn::Length, false);
     ASSERT_EQ(state.order.size(), 7u);
     for (size_t i = 1; i < state.order.size(); ++i) {
-        EXPECT_GE(state.packets[state.order[i - 1]].length, state.packets[state.order[i]].length);
+        EXPECT_GE(state.packets[state.order[i - 1]].frame_length, state.packets[state.order[i]].frame_length);
     }
 }
 

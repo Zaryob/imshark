@@ -76,7 +76,7 @@ void ui::sortOrder(std::vector<uint32_t> &order, const std::vector<packet::Packe
             case SortColumn::Source: c = compare(a.source, b.source); break;
             case SortColumn::Destination: c = compare(a.destination, b.destination); break;
             case SortColumn::Protocol: c = compare(a.protocol, b.protocol); break;
-            case SortColumn::Length: c = compare(a.length, b.length); break;
+            case SortColumn::Length: c = compare(a.frame_length, b.frame_length); break;
             case SortColumn::Info: c = compare(a.info, b.info); break;
         }
         return ascending ? c < 0 : c > 0;
@@ -162,7 +162,7 @@ void ui::drawPacketList(AppState &state, float height) {
                 ImGui::TableSetColumnIndex(4);
                 ImGui::TextUnformatted(packet.protocol.c_str());
                 ImGui::TableSetColumnIndex(5);
-                ImGui::Text("%u", packet.length);
+                ImGui::Text("%u", packet.frame_length);
                 ImGui::TableSetColumnIndex(6);
                 ImGui::TextUnformatted(packet.info.c_str());
                 if (rule) ImGui::PopStyleColor();
