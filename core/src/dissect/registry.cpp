@@ -30,6 +30,7 @@ const dissect::Registry &dissect::Registry::builtin() {
         r.registerUdpPort(5353, dissectMdns);
         r.registerUdpPort(67, dissectDhcp);
         r.registerUdpPort(68, dissectDhcp);
+        r.registerUdpPort(123, dissectNtp);
         r.registerUdpPort(161, dissectSnmp);
         r.registerUdpPort(162, dissectSnmp);
         return r;
