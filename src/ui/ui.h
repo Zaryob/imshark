@@ -48,6 +48,13 @@ namespace ui {
     // stats_windows.cpp
     void drawStatsWindows(AppState &state);
 
+    // export_dialog.cpp
+    /// Packet indices an export of `range` covers: capture order for all/displayed/selected packets.
+    std::vector<uint32_t> exportIndices(const AppState &state, ExportState::Range range);
+    /// Starts exporting in the background. Returns false if there is nothing to export.
+    bool startExport(AppState &state, ExportState::Range range, exporter::Format format, const std::string &path);
+    void drawExportDialog(AppState &state);
+
     // follow_window.cpp
     /// Starts following the TCP/UDP conversation that packet `packetIndex` belongs to. Returns false if the
     /// packet is not TCP/UDP. The result appears in the Follow Stream window when the background job ends.

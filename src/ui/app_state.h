@@ -6,6 +6,7 @@
 
 #include <filter/filter.h>
 #include <packet/packet_info.h>
+#include <export/export.h>
 #include <stats/statistics.h>
 
 #include "color_rules.h"
@@ -17,6 +18,7 @@ namespace ui {
     struct LoadJob;    // background load in progress (loader.cpp)
     struct SearchJob;  // background byte search in progress (find_bar.cpp)
     struct FollowJob;  // background stream reassembly in progress (follow_window.cpp)
+    struct ExportJob;  // background export in progress (export_dialog.cpp)
 
     /// The display filter bar: what is typed, what is applied, and which packets pass.
     struct FilterState {
@@ -76,6 +78,18 @@ namespace ui {
         bool linesDirty = true;
     };
 
+    /// The Export Packets dialog.
+    struct ExportState {
+        enum Range { All = 0, Displayed = 1, Selected = 2 };
+        bool openPopup = false;            // request to open the options popup
+        int range = Displayed;
+        int format = 0;                    // index into the list of exporter::Format (see export_dialog.cpp)
+        std::shared_ptr<ExportJob> job;    // non-null while an export runs
+        std::string resultMessage;         // shown in a popup after the export finished
+        bool resultIsError = false;
+        bool showResult = false;
+    };
+
     /// Everything the UI needs to remember between frames.
     struct AppState {
         std::vector<packet::PacketInfo> packets;
@@ -113,6 +127,7 @@ namespace ui {
         FindState find;
         StatsState stats;
         FollowState follow;
+        ExportState exportDialog;
         double captureStartEpoch = 0;       // UTC epoch seconds of the first packet
         bool orderDirty = true;             // `order` must be rebuilt (new capture or new filter)
         std::vector<uint32_t> order;        // displayed order: indices into `packets` (rebuilt by the list)
