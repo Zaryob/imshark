@@ -143,7 +143,7 @@ Only the gzip wrapper is not read by a `CaptureFileReader` of its own (the appli
 | **RTP / RTCP** | RTP v2 fixed header (PT, Seq, Timestamp, SSRC), RTCP common header + SSRC | N/A (UDP, Decode As only) | none yet (see KNOWN_ISSUES) |
 | **Modbus/TCP** | MBAP header (Transaction ID, Unit ID), function and exception codes | Yes (TCP) | none yet (see KNOWN_ISSUES) |
 | **DNP3** | Link 0x0564 start, length, control, source/destination, first application function code; link header and data block CRC-16 verified | Yes (TCP) / UDP | `dnp3`, `dnp3.checksum.status`, `dnp3.header.checksum.status`, `dnp3.data.checksum.status` |
-| **USB** | Linux & USBPcap URB/IRP: request vs completion, IN/OUT, transfer types, setup packet, descriptors (GET_DESCRIPTOR completions) | N/A (USB) | `usb`, `usb.device` |
+| **USB** | Linux & USBPcap URB/IRP: request vs completion, IN/OUT, transfer types, setup packet, descriptors (GET_DESCRIPTOR completions) | N/A (USB) | `usb`, `usb.device`, `usb.endpoint` |
 | **Bluetooth** | HCI H4 and Linux Monitor, L2CAP header, ATT opcode/MTU/handle; host / controller / ACL handle addresses | N/A (BT) | `bt.handle`, `bt.addr` |
 
 ---
