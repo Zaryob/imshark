@@ -69,3 +69,14 @@ TEST(FollowView, TextForTheClipboardAndEmptyStreams) {
     EXPECT_TRUE(ui::buildFollowLines(stream::Stream(), ui::FollowDirection::Both, ui::FollowView::Ascii).empty());
     EXPECT_EQ(ui::followText({}), "");
 }
+
+TEST(FollowView, RawBytesOfTheChosenDirection) {
+    const auto s = make();
+    EXPECT_EQ(ui::followRawBytes(s, ui::FollowDirection::AtoB), std::string("GET / HTTP/1.1\r\nHost: x\r\n\r\ntail"));
+    EXPECT_EQ(ui::followRawBytes(s, ui::FollowDirection::BtoA), "HTTP/1.1 200 OK\nline2");
+    EXPECT_EQ(ui::followRawBytes(s, ui::FollowDirection::Both), "GET / HTTP/1.1\r\nHost: x\r\n\r\nHTTP/1.1 200 OK\nline2tail");
+    stream::Stream binary;
+    binary.chunks = {{stream::Direction::AtoB, std::string("\0\xff\x01", 3), 0, 1}};
+    EXPECT_EQ(ui::followRawBytes(binary, ui::FollowDirection::Both).size(), 3u) << "binary data is kept exactly";
+    EXPECT_EQ(ui::followRawBytes(stream::Stream(), ui::FollowDirection::Both), "");
+}

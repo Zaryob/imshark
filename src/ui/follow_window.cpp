@@ -3,7 +3,13 @@
 #include <atomic>
 #include <thread>
 
+#include <fstream>
+
 #include <imgui.h>
+
+#include <ImGuiFileDialog.h>
+
+#include <core.h>
 
 #include <stream/follow.h>
 
@@ -129,11 +135,30 @@ void ui::drawFollowWindow(AppState &state) {
     ImGui::SameLine();
     if (ImGui::Button("Copy")) ImGui::SetClipboardText(followText(f.lines).c_str());
     ImGui::SameLine();
+    if (ImGui::Button("Save As...")) {
+        IGFD::FileDialogConfig config;
+        config.path = ".";
+        config.fileName = "stream.bin";
+        config.flags = ImGuiFileDialogFlags_ConfirmOverwrite | ImGuiFileDialogFlags_Modal;
+        ImGuiFileDialog::Instance()->OpenDialog("SaveStreamDlg", "Save the stream data", ".*", config);
+    }
+    ImGui::SameLine();
     if (ImGui::Button("Filter Out This Stream")) {
         // show only this conversation in the packet list
         stats::Conversation c;
         c.addressA = s.addressA; c.portA = s.portA; c.addressB = s.addressB; c.portB = s.portB;
         applyFilter(state, stats::conversationFilter(c, s.tcp ? stats::AddressKind::Tcp : stats::AddressKind::Udp));
+    }
+
+    if (ImGuiFileDialog::Instance()->Display("SaveStreamDlg")) {
+        if (ImGuiFileDialog::Instance()->IsOk()) {
+            // the shown direction is what gets saved, as raw bytes
+            std::ofstream file(core::pathFromUtf8(ImGuiFileDialog::Instance()->GetFilePathName()), std::ios::binary | std::ios::trunc);
+            const std::string bytes = followRawBytes(s, f.direction);
+            file.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+            f.error = file ? "" : "Could not write the file";
+        }
+        ImGuiFileDialog::Instance()->Close();
     }
 
     if (f.linesDirty) {
