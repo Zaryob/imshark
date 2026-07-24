@@ -1,6 +1,7 @@
 #pragma once
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <span>
 #include <string>
@@ -35,6 +36,14 @@ struct UsbControlRequest {
     bool isGetDescriptor() const { return bRequest == 6 && (bmRequestType & 0xE0) == 0x80; }
 };
 
+/// One Bluetooth ACL connection as the HCI events announced it: the controller's connection handle belongs to a BD_ADDR from the
+/// packet that completed the connection until the packet that ended it (a handle is reused after a disconnect).
+struct BluetoothLink {
+    std::array<uint8_t, 6> address{};   // as on the wire (least significant byte first)
+    uint32_t from = 0;                  // number of the connection complete event
+    uint32_t to = UINT32_MAX;           // number of the disconnection complete event (exclusive); UINT32_MAX = still open
+};
+
 class SessionTables {
 public:
     static constexpr size_t kDefaultMaxMemoryPerTable = 64 * 1024 * 1024; // 64 MB per table upper bound
@@ -62,6 +71,8 @@ public:
         usbOpen_.clear();
         usbDone_.clear();
         usbMemory_ = 0;
+        btLinks_.clear();
+        btMemory_ = 0;
         ethernet_.clear();
         stateLost_ = false;
         stateLostTables_.clear();
@@ -412,6 +423,48 @@ public:
         return true;
     }
 
+    // ---- Bluetooth connections ---------------------------------------------------------------------------------------
+    /// Key of a connection: the controller (Linux monitor adapter id, 0xFFFF for H4 captures) and the 12 bit handle.
+    static uint32_t bluetoothLinkKey(uint16_t adapter, uint16_t handle) { return (static_cast<uint32_t>(adapter) << 16) | (handle & 0x0FFF); }
+
+    /// Load pass: packet `number` completed a connection (Connection Complete / LE Connection Complete). An open connection
+    /// on the same handle (its disconnection was not captured) ends here. Returns false if frozen or out of budget
+    /// (then the "bluetooth" table is state lost and later ACL packets of that handle keep their handle as address).
+    bool openBluetoothLink(uint32_t key, const uint8_t *address, uint32_t number) {
+        if (frozen_) return false;
+        const size_t entrySize = sizeof(BluetoothLink) + 32;
+        if (btMemory_ + entrySize > maxMemoryPerTable_) {
+            markStateLost("bluetooth");
+            return false;
+        }
+        auto &links = btLinks_[key];
+        if (!links.empty() && links.back().to == UINT32_MAX) links.back().to = number;
+        BluetoothLink link;
+        std::copy(address, address + 6, link.address.begin());
+        link.from = number;
+        links.push_back(link);
+        btMemory_ += entrySize;
+        return true;
+    }
+    /// Load pass: packet `number` is a Disconnection Complete for this handle.
+    bool closeBluetoothLink(uint32_t key, uint32_t number) {
+        if (frozen_) return false;
+        const auto it = btLinks_.find(key);
+        if (it == btLinks_.end() || it->second.empty() || it->second.back().to != UINT32_MAX) return false;
+        it->second.back().to = number;
+        return true;
+    }
+    /// The BD_ADDR (wire order) of the connection `key` at packet `number`, or nullptr when no connection event was seen for
+    /// it. Both the load pass and Replay read it the same way, so a summary and its details agree.
+    const std::array<uint8_t, 6> *bluetoothAddressOf(uint32_t key, uint32_t number) const {
+        const auto it = btLinks_.find(key);
+        if (it == btLinks_.end()) return nullptr;
+        for (auto l = it->second.rbegin(); l != it->second.rend(); ++l) {
+            if (l->from < number && number < l->to) return &l->address;
+        }
+        return nullptr;
+    }
+
     // ---- Ethernet addresses --------------------------------------------------------------------------------------------
     /// Load pass: packet `number` is an Ethernet frame from `source` to `destination` (6 bytes each). Returns false if the tables
     /// are frozen or the memory budget is exhausted (then the "ethernet" table is state lost and statistics fall back to the summary).
@@ -425,7 +478,7 @@ public:
     }
     const packet::EthernetAddressTable &ethernetAddresses() const { return ethernet_; }
 
-    size_t totalMemoryUsage() const { return ftpMemory_ + tftpMemory_ + connectionMemory_ + usbMemory_ + tls_.memory() + tlsDecrypt_.memory() + dtls_.memory(); }
+    size_t totalMemoryUsage() const { return ftpMemory_ + tftpMemory_ + connectionMemory_ + usbMemory_ + btMemory_ + tls_.memory() + tlsDecrypt_.memory() + dtls_.memory(); }
 
 private:
     static std::string directionKey(const std::string &srcIp, uint16_t srcPort, const std::string &dstIp, uint16_t dstPort) {
@@ -455,6 +508,9 @@ private:
     std::unordered_map<uint64_t, UsbControlRequest> usbOpen_;      // requests waiting for their completion
     std::unordered_map<uint32_t, UsbControlRequest> usbDone_;      // completing packet number -> its request
     size_t usbMemory_ = 0;
+
+    std::unordered_map<uint32_t, std::vector<BluetoothLink>> btLinks_;   // by bluetoothLinkKey
+    size_t btMemory_ = 0;
 
     packet::EthernetAddressTable ethernet_;
 

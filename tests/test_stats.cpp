@@ -347,6 +347,36 @@ TEST(Stats, BluetoothEndpointsOfParsedPackets) {
                            "bt.handle == \"0x0040\" || bt.addr == \"10.0.0.1\" || bt.handle"), 0u);
 }
 
+TEST(Stats, BluetoothEndpointsUseTheBdAddrOfAConnectionEvent) {
+    using framesweep::Bytes;
+    // HCI Connection Complete (adapter 0, handle 0x0040, BD_ADDR 00:1a:7d:da:71:13 little endian on the wire), then ACL TX/RX on the
+    // handle, then an ACL packet of a handle no event named
+    const Bytes conn = {0, 0, 0, 3, 0x03, 0x0b, 0x00, 0x40, 0x00, 0x13, 0x71, 0xDA, 0x7D, 0x1A, 0x00, 0x01, 0x00};
+    const Bytes acl = {0x40, 0x00, 0x07, 0x00, 0x03, 0x00, 0x04, 0x00, 0x02, 0x00, 0x02};
+    auto mon = [&](uint8_t opcode, uint8_t handle) { Bytes b = {0, 0, 0, opcode}; b.insert(b.end(), acl.begin(), acl.end()); b[4] = handle; return b; };
+    const auto packets = parseSequence(254, {conn, mon(4, 0x40), mon(5, 0x40), mon(5, 0x41)});
+
+    const auto eps = stats::endpoints(packets, nullptr, stats::AddressKind::Bluetooth);
+    EXPECT_EQ(addresses(eps), (std::set<std::string>{"host", "hci0", "00:1a:7d:da:71:13", "0x0041"}));
+    for (const auto &e: eps) {
+        const auto text = stats::endpointFilter(e, stats::AddressKind::Bluetooth);
+        if (e.address == "00:1a:7d:da:71:13") {
+            EXPECT_EQ(text, "bt.bd_addr == \"00:1a:7d:da:71:13\"");
+            EXPECT_EQ(countMatches(packets, text), 2u);
+            EXPECT_EQ(countMatches(packets, "bt.handle == \"0x0040\""), 2u) << "the handle filter still finds the same packets";
+            EXPECT_EQ(e.txPackets + e.rxPackets, 2u);
+        } else if (e.address == "0x0041") {
+            EXPECT_EQ(text, "bt.handle == \"0x0041\"");
+            EXPECT_EQ(countMatches(packets, text), 1u);
+        }
+    }
+    const auto convs = stats::conversations(packets, nullptr, stats::AddressKind::Bluetooth);
+    for (const auto &c: convs) EXPECT_EQ(countMatches(packets, stats::conversationFilter(c, stats::AddressKind::Bluetooth)), c.packets);
+    // only Bluetooth packets have the field, and an IP packet whose address looks like one never matches
+    EXPECT_EQ(countMatches(parseSequence(1, {framesweep::ethernet(0x0800, framesweep::ipv4Packet(17, framesweep::udpDatagram(1, 2, {1})))}),
+                           "bt.bd_addr || bt.bd_addr == \"66:77:88:99:aa:bb\" || bt.handle"), 0u);
+}
+
 TEST(Stats, UsbEndpointsOfParsedPackets) {
     using framesweep::Bytes;
     auto urb = [](char event, uint8_t xfer, uint8_t endpoint, uint8_t device) {

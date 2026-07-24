@@ -9,8 +9,9 @@ bgp.as	unsigned	BGP Autonomous System number	154	154	9171519d063baebe
 bgp.nlri	string	BGP Network Layer Reachability Information prefix	129	129	d8b540bd649bea0d
 bgp.notification.code	unsigned	BGP notification error code	7	7	5b9957f277035ce1
 bgp.type	unsigned	BGP message type (1 = OPEN, 2 = UPDATE, 3 = NOTIFICATION, 4 = KEEPALIVE, 5 = ROUTE-REFRESH)	154	154	0e159d92b104565a
-bt.addr	string	Bluetooth source or destination: host, controller (hciN), or a connection handle	2700	5026	f7b38c6312c6d702
-bt.handle	string	Bluetooth ACL connection handle (0x0040 form)	391	407	2925d4d68c9b2720
+bt.addr	string	Bluetooth source or destination: host, controller (hciN), a BD_ADDR, or a connection handle	2700	5026	f7b38c6312c6d702
+bt.bd_addr	string	Bluetooth BD_ADDR of the remote device of an ACL link (aa:bb:cc:dd:ee:ff; only when an HCI connection event in the capture named the handle)	756	822	b9b0afa347902aa3
+bt.handle	string	Bluetooth ACL connection handle (0x0040 form)	761	761	52fe014158261e7d
 dcerpc	boolean	DCE/RPC	150	150	a424813429b2c343
 dcerpc.cn_call_id	unsigned	DCE/RPC call id	150	150	fa194ff33b5ff673
 dcerpc.if_uuid	string	DCE/RPC interface UUID of the first presentation context of a Bind / Alter_context	118	118	ea17ea265568a815

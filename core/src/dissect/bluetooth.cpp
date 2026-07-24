@@ -91,6 +91,53 @@ const char *monitorOpcodeName(uint16_t op) {
 
 uint16_t le16(const uint8_t *p) { return static_cast<uint16_t>(p[0] | (p[1] << 8)); }
 
+// BD_ADDR as shown everywhere (most significant byte first); on the wire it is little endian.
+std::string bdAddrString(const uint8_t *wire) {
+    static const char digits[] = "0123456789abcdef";
+    std::string out(17, ':');
+    for (size_t i = 0; i < 6; ++i) {
+        const uint8_t b = wire[5 - i];
+        out[i * 3] = digits[b >> 4];
+        out[i * 3 + 1] = digits[b & 0xF];
+    }
+    return out;
+}
+
+constexpr uint16_t kNoAdapter = 0xFFFF;   // H4 captures have a single, unnamed controller
+
+// Connection events carry the BD_ADDR of the remote device (Core spec Vol 4 Part E 7.7): Connection Complete (0x03: status,
+// handle, BD_ADDR), Disconnection Complete (0x05: status, handle, reason), LE Meta (0x3E) LE Connection Complete (0x01),
+// Enhanced (0x0A) and Enhanced v2 (0x29): subevent, status, handle, role, peer address type, peer address. A successful one
+// maps the handle to the address from this packet on (load pass), a successful disconnection ends the mapping.
+// `p` are the event parameters that are present; `at` is their absolute offset.
+void noteConnectionEvent(Context &ctx, uint16_t adapter, uint8_t eventCode, const uint8_t *p, size_t len, size_t at) {
+    uint16_t handle = 0;
+    const uint8_t *address = nullptr;
+    size_t addressAt = 0;
+    bool disconnect = false;
+    if (eventCode == 0x03 && len >= 9 && p[0] == 0) {
+        handle = le16(p + 1) & 0x0FFF;
+        address = p + 3;
+        addressAt = at + 3;
+    } else if (eventCode == 0x05 && len >= 4 && p[0] == 0) {
+        handle = le16(p + 1) & 0x0FFF;
+        disconnect = true;
+    } else if (eventCode == 0x3e && len >= 13 && (p[0] == 0x01 || p[0] == 0x0a || p[0] == 0x29) && p[1] == 0) {
+        handle = le16(p + 2) & 0x0FFF;
+        address = p + 6;
+        addressAt = at + 6;
+    } else {
+        return;
+    }
+    const uint32_t number = static_cast<uint32_t>(ctx.pack.number);
+    const uint32_t key = SessionTables::bluetoothLinkKey(adapter, handle);
+    if (ctx.sessions) {
+        if (disconnect) ctx.sessions->closeBluetoothLink(key, number);
+        else ctx.sessions->openBluetoothLink(key, address, number);
+    }
+    if (ctx.wantFields() && address) ctx.addLayer("Bluetooth Connection: handle " + hexString(handle, 4) + ", BD_ADDR " + bdAddrString(address), addressAt, 6);
+}
+
 // Where an HCI packet travels. H4 captures carry no direction: commands always go to the controller and events always
 // come from it, only ACL/SCO/ISO data is ambiguous (shown as sent by the host).
 enum class Flow { Unknown, ToController, FromController };
@@ -172,7 +219,7 @@ bool dissectL2cap(Context &ctx, const uint8_t *data, size_t len, size_t off) {
 // frame; `typeByte` says whether the indicator itself is part of the frame (H4: yes, Linux monitor: no, the opcode of
 // its header tells the type). `controller` names the Bluetooth controller (monitor: "hciN", H4: "controller").
 void dissectHci(Context &ctx, uint8_t pktType, const uint8_t *body, size_t n, size_t off, bool typeByte,
-                const std::string &controller, Flow flow) {
+                const std::string &controller, uint16_t adapter, Flow flow) {
     const char *typeName = hciH4PacketTypeName(pktType);
     const size_t start = typeByte ? off - 1 : off;
     const size_t extra = typeByte ? 1 : 0;
@@ -224,6 +271,7 @@ void dissectHci(Context &ctx, uint8_t pktType, const uint8_t *body, size_t n, si
             root.add("Event Code: " + evStr + " (" + hexString(eventCode, 2) + ")", off, 1);
             root.add("Parameter Length: " + std::to_string(paramLen), off + 1, 1);
         }
+        noteConnectionEvent(ctx, adapter, eventCode, body + 2, bad ? n - 2 : paramLen, off + 2);
         if (bad) ctx.markMalformed("HCI event parameter length exceeds the packet");
     } else if (pktType == 2) { // ACL data: handle and flags (2), data length (2)
         if (n < 4) return truncated("Truncated HCI ACL header");
@@ -236,9 +284,14 @@ void dissectHci(Context &ctx, uint8_t pktType, const uint8_t *body, size_t n, si
         const bool bad = dataLen > have;
         const size_t dataPresent = bad ? have : dataLen;
 
-        // The remote device of an ACL link is named by its connection handle
-        const std::string handleStr = hexString(handle, 4);
-        setEndpoints(ctx, "host", handleStr, flow != Flow::FromController);
+        // The remote device of an ACL link is its BD_ADDR when a connection event named the handle, else the handle itself
+        std::string remote = hexString(handle, 4);
+        if (ctx.sessions) {
+            if (const auto *wire = ctx.sessions->bluetoothAddressOf(SessionTables::bluetoothLinkKey(adapter, handle), static_cast<uint32_t>(ctx.pack.number)))
+                remote = bdAddrString(wire->data());
+        }
+        setEndpoints(ctx, "host", remote, flow != Flow::FromController);
+        ctx.pack.app_code = static_cast<uint16_t>(0x8000 | handle);   // bt.handle
 
         ctx.pack.info = "HCI ACL Data (Handle " + hexString(handle, 3) + ", Len " + std::to_string(dataLen) + ")";
         if (ctx.wantFields()) {
@@ -284,7 +337,7 @@ void dissectBluetoothHciH4(Context &ctx, const char *data, size_t length) {
         return;
     }
     const auto *bytes = reinterpret_cast<const uint8_t *>(data);
-    dissectHci(ctx, bytes[0], bytes + 1, length - 1, ctx.offsetOf(data) + 1, true, "controller", Flow::Unknown);
+    dissectHci(ctx, bytes[0], bytes + 1, length - 1, ctx.offsetOf(data) + 1, true, "controller", kNoAdapter, Flow::Unknown);
 }
 
 void dissectBluetoothLinuxMonitor(Context &ctx, const char *data, size_t length) {
@@ -328,7 +381,7 @@ void dissectBluetoothLinuxMonitor(Context &ctx, const char *data, size_t length)
         case 19: type = 5; flow = Flow::FromController; break;// ISO RX
         default: return;
     }
-    dissectHci(ctx, type, payload, pLen, o + 4, false, controller, flow);
+    dissectHci(ctx, type, payload, pLen, o + 4, false, controller, adapter, flow);
 }
 
 namespace {

@@ -20,7 +20,8 @@ in the [User Guide](USER_GUIDE.md#display-filters). Names are lower case.
 | `bgp.nlri` | string | BGP Network Layer Reachability Information prefix |
 | `bgp.notification.code` | unsigned | BGP notification error code |
 | `bgp.type` | unsigned | BGP message type (1 = OPEN, 2 = UPDATE, 3 = NOTIFICATION, 4 = KEEPALIVE, 5 = ROUTE-REFRESH) |
-| `bt.addr` | string | Bluetooth source or destination: host, controller (hciN), or a connection handle |
+| `bt.addr` | string | Bluetooth source or destination: host, controller (hciN), a BD_ADDR, or a connection handle |
+| `bt.bd_addr` | string | Bluetooth BD_ADDR of the remote device of an ACL link (aa:bb:cc:dd:ee:ff; only when an HCI connection event in the capture named the handle) |
 | `bt.handle` | string | Bluetooth ACL connection handle (0x0040 form) |
 | `dcerpc` | boolean | DCE/RPC |
 | `dcerpc.cn_call_id` | unsigned | DCE/RPC call id |
@@ -381,4 +382,4 @@ in the [User Guide](USER_GUIDE.md#display-filters). Names are lower case.
 | `wlan.ssid` | string | 802.11 SSID |
 | `wlan.ta` | string | 802.11 Transmitter MAC address |
 
-371 fields.
+372 fields.

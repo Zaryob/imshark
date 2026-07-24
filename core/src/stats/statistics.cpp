@@ -200,8 +200,8 @@ namespace stats {
                     return "eth.addr == \"" + address + "\"";
                 case AddressKind::Wlan:
                     return "wlan.sa == \"" + address + "\" || wlan.da == \"" + address + "\"";
-                case AddressKind::Bluetooth: // ACL connection handles are "0x...."; host, controller and hciN are plain addresses
-                    return std::string(address.rfind("0x", 0) == 0 ? "bt.handle == \"" : "bt.addr == \"") + address + "\"";
+                case AddressKind::Bluetooth: // ACL connection handles are "0x....", BD_ADDRs aa:bb:..; host, controller and hciN are plain addresses
+                    return std::string(address.rfind("0x", 0) == 0 ? "bt.handle == \"" : packet::isMacAddress(address) ? "bt.bd_addr == \"" : "bt.addr == \"") + address + "\"";
                 case AddressKind::Usb:
                 case AddressKind::UsbEndpoint: // the host takes part in every transfer
                     return address == "host" ? std::string("usb") : "usb.device == \"" + address + "\"";

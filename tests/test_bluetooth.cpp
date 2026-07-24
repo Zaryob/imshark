@@ -170,7 +170,166 @@ TEST(Bluetooth, TheInfoColumnDoesNotDependOnTheFieldTree) {
               "ATT Exchange MTU Response (MTU: 23)");
 }
 
+// ---- BD_ADDR of ACL connections (B8): HCI connection events name the handle, later ACL packets show the address
+
+namespace {
+// Core spec Vol 4 Part E 7.7: the BD_ADDR is little endian on the wire; it is shown most significant byte first.
+const Bytes kAddrA = {0x13, 0x71, 0xDA, 0x7D, 0x1A, 0x00};   // 00:1a:7d:da:71:13
+const Bytes kAddrB = {0x66, 0x55, 0x44, 0x33, 0x22, 0x11};   // 11:22:33:44:55:66
+
+Bytes aclFor(uint16_t handle) {
+    Bytes b = kAclAtt;
+    b[0] = static_cast<uint8_t>(handle & 0xff);
+    b[1] = static_cast<uint8_t>(handle >> 8);
+    return b;
+}
+
+// Connection Complete (0x03): status, handle (2), BD_ADDR (6), link type, encryption enabled
+Bytes classicConnection(uint8_t status, uint16_t handle, const Bytes &addr) {
+    Bytes b = {0x03, 0x0b, status, static_cast<uint8_t>(handle & 0xff), static_cast<uint8_t>(handle >> 8)};
+    b.insert(b.end(), addr.begin(), addr.end());
+    b.push_back(0x01);
+    b.push_back(0x00);
+    return b;
+}
+
+// LE Meta (0x3E), LE Connection Complete (0x01): subevent, status, handle (2), role, peer address type, peer address (6),
+// interval (2), latency (2), supervision timeout (2), master clock accuracy
+Bytes leConnection(uint16_t handle, const Bytes &addr) {
+    Bytes b = {0x3e, 0x13, 0x01, 0x00, static_cast<uint8_t>(handle & 0xff), static_cast<uint8_t>(handle >> 8), 0x00, 0x00};
+    b.insert(b.end(), addr.begin(), addr.end());
+    for (int i = 0; i < 7; ++i) b.push_back(0);
+    return b;
+}
+
+// LE Enhanced Connection Complete (0x0A): the same start, then local and peer resolvable private addresses, then the timing
+Bytes leEnhancedConnection(uint16_t handle, const Bytes &addr) {
+    Bytes b = {0x3e, 0x1f, 0x0a, 0x00, static_cast<uint8_t>(handle & 0xff), static_cast<uint8_t>(handle >> 8), 0x00, 0x00};
+    b.insert(b.end(), addr.begin(), addr.end());
+    for (int i = 0; i < 19; ++i) b.push_back(0);
+    return b;
+}
+
+// Disconnection Complete (0x05): status, handle (2), reason
+Bytes disconnection(uint16_t handle) {
+    return {0x05, 0x04, 0x00, static_cast<uint8_t>(handle & 0xff), static_cast<uint8_t>(handle >> 8), 0x13};
+}
+
+Bytes h4(uint8_t indicator, const Bytes &rest) { return cat({indicator}, rest); }
+
+struct Capture {
+    packet::PacketParser parser;
+    std::vector<packet::PacketInfo> packets;
+    std::vector<Bytes> frames;
+    uint32_t linkType;
+    explicit Capture(uint32_t link, const std::vector<Bytes> &f) : frames(f), linkType(link) {
+        int number = 1;
+        for (const auto &fr: frames) {
+            packet::PacketInfo pack(number++);
+            pack.link_type = linkType;
+            std::vector<char> raw(fr.begin(), fr.end());
+            parser.parsePacket(pack, raw, dissect::ParseMode::Summary);
+            packets.push_back(std::move(pack));
+        }
+    }
+};
+} // namespace
+
+TEST(Bluetooth, ConnectionEventsNameTheAddressOfLaterAclPackets) {
+    Capture c(187, {h4(2, aclFor(0x40)),                                  // 1 before any connection event: the handle
+                    h4(4, classicConnection(0x00, 0x40, kAddrA)),         // 2
+                    h4(2, aclFor(0x40)),                                  // 3 -> BD_ADDR A
+                    h4(4, leConnection(0x41, kAddrB)),                    // 4
+                    h4(2, aclFor(0x41)),                                  // 5 -> BD_ADDR B
+                    h4(4, disconnection(0x40)),                           // 6
+                    h4(2, aclFor(0x40)),                                  // 7 the handle is free again
+                    h4(4, classicConnection(0x00, 0x40, kAddrB)),         // 8 reused for another device
+                    h4(2, aclFor(0x40)),                                  // 9 -> BD_ADDR B
+                    h4(4, classicConnection(0x0c, 0x42, kAddrA)),         // 10 failed connection: no mapping
+                    h4(2, aclFor(0x42)),                                  // 11
+                    h4(4, leEnhancedConnection(0x43, kAddrA)),            // 12
+                    h4(2, aclFor(0x43))});                                // 13 -> BD_ADDR A
+    const auto &p = c.packets;
+    EXPECT_EQ(p[0].destination, "0x0040");
+    EXPECT_EQ(p[2].destination, "00:1a:7d:da:71:13");
+    EXPECT_EQ(p[2].source, "host");
+    EXPECT_EQ(p[2].app_code, 0x8040) << "the handle stays available to bt.handle";
+    EXPECT_EQ(p[4].destination, "11:22:33:44:55:66");
+    EXPECT_EQ(p[6].destination, "0x0040");
+    EXPECT_EQ(p[8].destination, "11:22:33:44:55:66");
+    EXPECT_EQ(p[10].destination, "0x0042");
+    EXPECT_EQ(p[12].destination, "00:1a:7d:da:71:13");
+    for (const auto &pk: p) EXPECT_FALSE(pk.protocol.empty());
+
+    // the address shown in the field tree of the event lies on the wire bytes
+    packet::PacketInfo details(2);
+    details.link_type = 187;
+    std::vector<char> raw(c.frames[1].begin(), c.frames[1].end());
+    c.parser.sessions().freeze();
+    c.parser.parsePacket(details, raw, dissect::ParseMode::Full);
+    const auto *conn = find(details.fields, "Bluetooth Connection: handle 0x0040, BD_ADDR 00:1a:7d:da:71:13");
+    ASSERT_NE(conn, nullptr);
+    EXPECT_EQ(std::vector<uint8_t>(c.frames[1].begin() + conn->offset, c.frames[1].begin() + conn->offset + conn->length), kAddrA);
+}
+
+TEST(Bluetooth, ReplayReadsTheConnectionMappingTheLoadPassWrote) {
+    Capture c(187, {h4(4, classicConnection(0x00, 0x40, kAddrA)), h4(2, aclFor(0x40)), h4(4, disconnection(0x40)),
+                    h4(4, classicConnection(0x00, 0x40, kAddrB)), h4(2, aclFor(0x40)), h4(2, aclFor(0x44))});
+    c.parser.sessions().freeze();
+    for (size_t i = 0; i < c.frames.size(); ++i) {
+        packet::PacketInfo replay(static_cast<int>(i) + 1);
+        replay.link_type = 187;
+        std::vector<char> raw(c.frames[i].begin(), c.frames[i].end());
+        c.parser.parsePacket(replay, raw, dissect::ParseMode::Replay);
+        EXPECT_EQ(replay.source, c.packets[i].source) << i;
+        EXPECT_EQ(replay.destination, c.packets[i].destination) << i;
+        EXPECT_EQ(replay.app_code, c.packets[i].app_code) << i;
+        EXPECT_EQ(replay.info, c.packets[i].info) << i;
+    }
+    EXPECT_EQ(c.packets[1].destination, "00:1a:7d:da:71:13") << "an earlier connection of a reused handle keeps its address";
+    EXPECT_EQ(c.packets[4].destination, "11:22:33:44:55:66");
+    EXPECT_EQ(c.packets[5].destination, "0x0044");
+    // frozen tables take no new connections: replaying an event does not change what the tables say
+    EXPECT_EQ(*c.parser.sessions().bluetoothAddressOf(dissect::SessionTables::bluetoothLinkKey(0xFFFF, 0x40), 2), (std::array<uint8_t, 6>{0x13, 0x71, 0xDA, 0x7D, 0x1A, 0x00}));
+    EXPECT_EQ(c.parser.sessions().bluetoothAddressOf(dissect::SessionTables::bluetoothLinkKey(0xFFFF, 0x40), 3), nullptr);
+}
+
+TEST(Bluetooth, ConnectionsAreKeptPerAdapter) {
+    // Linux monitor: adapter 0 and adapter 1 both use handle 0x0040 for different devices
+    Capture c(254, {monitor(0, 3, cat({0x03, 0x0b, 0x00, 0x40, 0x00}, cat(kAddrA, {0x01, 0x00}))),
+                    monitor(1, 3, cat({0x03, 0x0b, 0x00, 0x40, 0x00}, cat(kAddrB, {0x01, 0x00}))),
+                    monitor(0, 5, kAclAtt), monitor(1, 5, kAclAtt), monitor(2, 5, kAclAtt)});
+    EXPECT_EQ(c.packets[2].source, "00:1a:7d:da:71:13");
+    EXPECT_EQ(c.packets[3].source, "11:22:33:44:55:66");
+    EXPECT_EQ(c.packets[4].source, "0x0040");
+}
+
+TEST(Bluetooth, ConnectionEventsThatAreCutShortOrMalformedMapNothing) {
+    Bytes shortClassic = classicConnection(0x00, 0x40, kAddrA);
+    shortClassic.resize(shortClassic.size() - 4);   // BD_ADDR cut: the event parameter length still says 11
+    Bytes shortLe = leConnection(0x41, kAddrB);
+    shortLe.resize(10);
+    Capture c(187, {h4(4, shortClassic), h4(4, shortLe), h4(2, aclFor(0x40)), h4(2, aclFor(0x41))});
+    EXPECT_EQ(c.packets[2].destination, "0x0040");
+    EXPECT_EQ(c.packets[3].destination, "0x0041");
+}
+
+TEST(Bluetooth, TableOverflowKeepsHandlesInsteadOfAddresses) {
+    dissect::SessionTables tables(sizeof(dissect::BluetoothLink) + 32);   // room for exactly one connection
+    EXPECT_TRUE(tables.openBluetoothLink(dissect::SessionTables::bluetoothLinkKey(0, 1), kAddrA.data(), 1));
+    EXPECT_FALSE(tables.openBluetoothLink(dissect::SessionTables::bluetoothLinkKey(0, 2), kAddrB.data(), 2));
+    EXPECT_TRUE(tables.isTableStateLost("bluetooth"));
+    EXPECT_EQ(tables.bluetoothAddressOf(dissect::SessionTables::bluetoothLinkKey(0, 2), 3), nullptr);
+    tables.freeze();
+    EXPECT_FALSE(tables.closeBluetoothLink(dissect::SessionTables::bluetoothLinkKey(0, 1), 4));
+}
+
 TEST(Bluetooth, TruncationAndMutationStayInsideTheFrame) {
+    framesweep::sweep(h4(4, classicConnection(0x00, 0x40, kAddrA)), 21, 400, 187);
+    framesweep::sweep(h4(4, leConnection(0x41, kAddrB)), 22, 400, 187);
+    framesweep::sweep(h4(4, leEnhancedConnection(0x43, kAddrA)), 23, 400, 187);
+    framesweep::sweep(h4(4, disconnection(0x40)), 24, 400, 187);
+    framesweep::sweep(monitor(0, 3, classicConnection(0x00, 0x40, kAddrA)), 25, 400, 254);
     framesweep::sweep(cat({0x01}, kCommand), 11, 400, 187);
     framesweep::sweep({0x04, 0x0e, 0x04, 0x01, 0x03, 0x0c, 0x00}, 12, 400, 187);
     framesweep::sweep(cat({0x02}, kAclAtt), 13, 400, 187);

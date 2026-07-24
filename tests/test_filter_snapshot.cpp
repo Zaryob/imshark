@@ -6,6 +6,8 @@
 // Deliberate change (B8): the descriptions of eth.src/eth.dst/eth.addr now say that they cover every Ethernet frame when the
 // capture's address table is in the Context. Their values on these packets (no table here) and every digest are unchanged.
 // Added (B8): usb.endpoint (the endpoint address of a USB transfer); no other line changed.
+// Changed (B8, Bluetooth BD_ADDR): bt.bd_addr is new; bt.addr's description names BD_ADDRs; bt.handle now reads the handle the HCI
+// dissector keeps in app_code (a BD_ADDR replaces the handle in source/destination), so its counts on the synthetic packets differ.
 #include <gtest/gtest.h>
 
 #include <algorithm>
