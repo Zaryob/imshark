@@ -24,6 +24,7 @@ namespace ui {
         std::string message;
         bool ok = false;
         double startEpoch = 0;
+        core::CaptureInfo info;
 
         std::atomic<bool> finished{false};
         std::thread thread;
@@ -51,6 +52,7 @@ namespace {
                                         : processor.processPcapFile(job.path, job.packets, job.message, &job.control);
         }
         job.startEpoch = processor.captureStartEpoch();
+        job.info = processor.captureInfo();
         job.finished = true;
     }
 } // namespace
@@ -93,6 +95,7 @@ void ui::pollLoad(AppState &state) {
         cancelBackgroundJobs(state); // the search thread reads state.packets
         state.packets = std::move(job->packets);
         state.captureStartEpoch = job->startEpoch;
+        state.captureInfo = std::move(job->info);
         state.clearSelection();
         refilter(state); // an active display filter stays active on the new capture
         state.currentFile = job->path;

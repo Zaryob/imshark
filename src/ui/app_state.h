@@ -6,6 +6,7 @@
 
 #include <filter/filter.h>
 #include <packet/packet_info.h>
+#include <capture_info.h>
 #include <export/export.h>
 #include <stats/statistics.h>
 
@@ -129,6 +130,8 @@ namespace ui {
         FollowState follow;
         ExportState exportDialog;
         double captureStartEpoch = 0;       // UTC epoch seconds of the first packet
+        core::CaptureInfo captureInfo;      // file level metadata of the open capture
+        bool showCaptureInfo = false;       // the Capture File Properties window
         bool orderDirty = true;             // `order` must be rebuilt (new capture or new filter)
         std::vector<uint32_t> order;        // displayed order: indices into `packets` (rebuilt by the list)
         bool scrollToSelection = false;      // bring the selected row into view (keyboard navigation)

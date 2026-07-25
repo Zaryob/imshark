@@ -40,4 +40,5 @@ void ui::drawMainWindow(AppState &state) {
     drawStatsWindows(state);
     drawFollowWindow(state);
     drawExportDialog(state);
+    drawCaptureInfoWindow(state);
 }

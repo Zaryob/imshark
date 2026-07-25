@@ -621,3 +621,20 @@ TEST_F(UiSmoke, ExportFailureIsReportedAndLoadingCancelsARunningExport) {
     state.exportDialog.openPopup = true;                 // the options popup
     frames(state);
 }
+
+TEST_F(UiSmoke, CaptureFilePropertiesWindow) {
+    ui::AppState state;
+    state.showCaptureInfo = true;
+    frames(state);                                       // nothing open
+    load(state);
+    EXPECT_EQ(state.captureInfo.interfaces.size(), 1u);
+    EXPECT_EQ(state.captureInfo.interfaces[0].packets, 16u);
+    EXPECT_NE(state.captureInfo.format.find("pcap"), std::string::npos);
+    frames(state);                                       // general section, interface table
+    state.captureInfo.packetComments[3] = "look here";   // comments and names are listed too
+    state.captureInfo.names.push_back({"10.0.0.1", "gw.local"});
+    state.captureInfo.comment = "a note";
+    frames(state);
+    state.showCaptureInfo = false;
+    frames(state);
+}

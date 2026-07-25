@@ -26,6 +26,7 @@ endif()
 
 # The UI (everything except window/GL setup) is a library so it can be smoke-tested without a window.
 add_library(imshark_ui STATIC
+    src/ui/capture_info_window.cpp
     src/ui/chrome.cpp
     src/ui/color_editor.cpp
     src/ui/color_rules.cpp

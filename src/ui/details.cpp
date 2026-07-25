@@ -176,7 +176,7 @@ bool ui::ensureDetail(AppState &state) {
 
     state.detailIndex = state.selectedPacket;
     state.selectedField = nullptr; // pointed into the previous detail
-    state.detailOk = core::buildPacketDetails(state.currentFile, *summary, state.detail, &state.packets);
+    state.detailOk = core::buildPacketDetails(state.currentFile, *summary, state.detail, &state.packets, &state.captureInfo);
     if (!state.detailOk) state.detail = *summary; // keep the summary columns, no bytes/fields
     return state.detailOk;
 }

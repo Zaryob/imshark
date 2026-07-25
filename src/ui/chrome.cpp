@@ -55,6 +55,7 @@ void ui::drawMenuAndDialogs(AppState &state) {
                 if (!chosen.empty()) startLoad(state, chosen);
             }
             ImGui::Separator();
+            if (ImGui::MenuItem("Capture File Properties...", nullptr, false, !state.currentFile.empty())) state.showCaptureInfo = true;
             if (ImGui::MenuItem("Export Packets...", nullptr, false, !state.packets.empty())) state.exportDialog.openPopup = true;
             if (ImGui::MenuItem("Close File", "Ctrl+W", false, !state.currentFile.empty())) {
                 state.loadJob.reset();

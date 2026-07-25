@@ -6,6 +6,7 @@
 #include <vector>
 
 #include <packet/packet_info.h>
+#include <capture_info.h>
 #include <load_control.h>
 #include <packet/packet_parser.h>
 
@@ -35,7 +36,7 @@ namespace core {
     /// `allPackets` (the whole loaded capture) is only needed for the last fragment of a reassembled IPv4
     /// datagram: the other fragments are found in it and read from the file.
     bool buildPacketDetails(const std::string &filepath, const packet::PacketInfo &summary, packet::PacketInfo &details,
-                            const std::vector<packet::PacketInfo> *allPackets = nullptr);
+                            const std::vector<packet::PacketInfo> *allPackets = nullptr, const CaptureInfo *info = nullptr);
 
     class FileProcessor {
         packet::PacketParser parser;
@@ -49,7 +50,11 @@ namespace core {
         /// UTC epoch seconds of the first packet of the last processed file (0 if there was none).
         double captureStartEpoch() const { return captureStart_; }
 
+        /// Metadata of the last processed file: format, interfaces, statistics, name records, packet comments.
+        const CaptureInfo &captureInfo() const { return info_; }
+
     private:
         double captureStart_ = 0;
+        CaptureInfo info_;
     };
 } // namespace core
