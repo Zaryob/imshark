@@ -9,6 +9,8 @@ namespace ui {
     /// Starts loading a pcap/pcapng file on a background thread. The currently shown capture stays
     /// visible until the new one is complete. A load that is already running is cancelled first.
     void startLoad(AppState &state, const std::string &path);
+    /// Closes the open capture: stops background work, drops the packets and removes temporary files.
+    void closeCapture(AppState &state);
     /// Call once per frame: publishes a finished load (packets, status, error popup request).
     void pollLoad(AppState &state);
     /// Asks the running load to stop; it is reported as "Cancelled" by the next pollLoad.

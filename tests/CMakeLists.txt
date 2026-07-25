@@ -16,6 +16,7 @@ add_executable(imshark_tests
     test_filter.cpp
     test_find.cpp
     test_fragments.cpp
+    test_gzip.cpp
     test_http_tls.cpp
     test_ip_reassembly.cpp
     test_follow_view.cpp

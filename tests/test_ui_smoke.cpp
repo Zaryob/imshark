@@ -12,6 +12,8 @@
 #include <core.h>
 #include <ui/ui.h>
 
+#include "support.h"
+
 namespace {
     class UiSmoke : public ::testing::Test {
     protected:
@@ -637,4 +639,84 @@ TEST_F(UiSmoke, CaptureFilePropertiesWindow) {
     frames(state);
     state.showCaptureInfo = false;
     frames(state);
+}
+
+// ---- compressed captures ----------------------------------------------------------------------------------
+
+TEST_F(UiSmoke, GzippedCaptureIsOpenedThroughATemporaryCopy) {
+    const std::string gz = IMSHARK_TEST_DATA_DIR "/sample.pcap.gz";
+    std::string tempCopy;
+    {
+        ui::AppState state;
+        ui::loadCapture(state, gz);
+        ASSERT_FALSE(state.loadFailed) << state.loadMessage;
+        EXPECT_EQ(state.packets.size(), 16u);
+        EXPECT_EQ(state.displayName, gz) << "the user sees the file they opened";
+        EXPECT_NE(state.currentFile, gz);
+        EXPECT_EQ(state.tempFile, state.currentFile);
+        EXPECT_TRUE(std::filesystem::exists(state.tempFile));
+        EXPECT_EQ(state.captureInfo.container, "gzip");
+        EXPECT_GT(state.captureInfo.compressedSize, 0u);
+        EXPECT_EQ(state.settings.recentFiles.front(), gz) << "recent files remember the original, not the temp copy";
+
+        // everything that reads frames works on the temporary copy
+        state.selectedPacket = 9;
+        frames(state);
+        ASSERT_TRUE(state.detailOk);
+        EXPECT_EQ(state.detail.protocol, "HTTP");
+        ASSERT_TRUE(ui::startFollow(state, 9));
+        for (int i = 0; i < 3000 && state.follow.job; ++i) { frame(state); std::this_thread::sleep_for(std::chrono::milliseconds(1)); }
+        EXPECT_TRUE(state.follow.valid);
+        state.showCaptureInfo = true;
+        frames(state);
+        tempCopy = state.tempFile;
+
+        // opening another capture removes the previous temporary copy
+        ui::loadCapture(state, IMSHARK_TEST_DATA_DIR "/sample.pcap");
+        EXPECT_TRUE(state.tempFile.empty());
+        EXPECT_FALSE(std::filesystem::exists(tempCopy));
+        EXPECT_EQ(state.displayName, IMSHARK_TEST_DATA_DIR "/sample.pcap");
+    }
+}
+
+TEST_F(UiSmoke, ClosingOrDestroyingTheStateRemovesTheTemporaryCopy) {
+    const std::string gz = IMSHARK_TEST_DATA_DIR "/sample.pcap.gz";
+    std::string temp;
+    {
+        ui::AppState state;
+        ui::loadCapture(state, gz);
+        temp = state.tempFile;
+        ASSERT_FALSE(temp.empty());
+        ui::closeCapture(state);
+        EXPECT_FALSE(std::filesystem::exists(temp));
+        EXPECT_TRUE(state.currentFile.empty());
+        EXPECT_TRUE(state.displayName.empty());
+        EXPECT_TRUE(state.packets.empty());
+        frames(state);
+
+        ui::loadCapture(state, gz);
+        temp = state.tempFile;
+        ASSERT_TRUE(std::filesystem::exists(temp));
+    }   // the state goes out of scope
+    EXPECT_FALSE(std::filesystem::exists(temp));
+}
+
+TEST_F(UiSmoke, ADamagedGzipFileFailsCleanlyAndKeepsTheOpenCapture) {
+    ui::AppState state;
+    load(state);
+    ASSERT_EQ(state.packets.size(), 16u);
+
+    std::ifstream in(std::string(IMSHARK_TEST_DATA_DIR) + "/gzip/dynamic.gz", std::ios::binary);
+    std::vector<char> bytes((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    bytes.resize(bytes.size() / 2);                       // truncated
+    const std::string broken = support::writeTemp("broken.pcap.gz", bytes);
+
+    ui::loadCapture(state, broken);
+    EXPECT_TRUE(state.loadFailed);
+    EXPECT_NE(state.loadMessage.find("end of the compressed data"), std::string::npos) << state.loadMessage;
+    EXPECT_EQ(state.packets.size(), 16u) << "the open capture is not destroyed";
+    EXPECT_TRUE(state.tempFile.empty()) << "no stray temporary file";
+    EXPECT_EQ(state.displayName, IMSHARK_TEST_DATA_DIR "/sample.pcap");
+    frames(state);
+    std::remove(broken.c_str());
 }

@@ -95,8 +95,15 @@ namespace ui {
     struct AppState {
         std::vector<packet::PacketInfo> packets;
 
+        AppState() = default;
+        AppState(const AppState &) = delete;
+        AppState &operator=(const AppState &) = delete;
+        ~AppState();               // removes the temporary decompressed copy, if any
+
         // Load status
-        std::string currentFile;   // path of the capture that is shown (empty if none)
+        std::string currentFile;   // the file the packets are read from (a temporary copy for .gz); empty = nothing open
+        std::string displayName;   // the file the user opened (what is shown and remembered)
+        std::string tempFile;      // non-empty: `currentFile` is a temporary decompressed copy that must be deleted
         std::string loadMessage;   // problem reported by the last load (empty when clean)
         bool loadFailed = false;   // the last load produced no usable capture
         bool openLoadError = false; // show the error popup on the next frame

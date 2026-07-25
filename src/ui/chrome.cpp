@@ -37,7 +37,7 @@ void ui::drawMenuAndDialogs(AppState &state) {
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("File")) {
             if (ImGui::MenuItem("Open...", "Ctrl+O")) {
-                ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", "Choose File", ".pcapng,.pcap,");
+                ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", "Choose File", ".pcapng,.pcap,.cap,.gz,.*");
             }
             if (ImGui::BeginMenu("Open Recent", !state.settings.recentFiles.empty())) {
                 std::string chosen;
@@ -57,16 +57,7 @@ void ui::drawMenuAndDialogs(AppState &state) {
             ImGui::Separator();
             if (ImGui::MenuItem("Capture File Properties...", nullptr, false, !state.currentFile.empty())) state.showCaptureInfo = true;
             if (ImGui::MenuItem("Export Packets...", nullptr, false, !state.packets.empty())) state.exportDialog.openPopup = true;
-            if (ImGui::MenuItem("Close File", "Ctrl+W", false, !state.currentFile.empty())) {
-                state.loadJob.reset();
-                cancelBackgroundJobs(state);
-                state.packets.clear();
-                refilter(state);
-                state.clearSelection();
-                state.currentFile.clear();
-                state.loadMessage.clear();
-                state.loadFailed = false;
-            }
+            if (ImGui::MenuItem("Close File", "Ctrl+W", false, !state.currentFile.empty())) closeCapture(state);
             if (ImGui::MenuItem("Exit")) std::exit(0);
             ImGui::EndMenu();
         }
@@ -117,19 +108,10 @@ void ui::drawMenuAndDialogs(AppState &state) {
         ImGui::EndMainMenuBar();
     }
 
-    if (ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_W, false) && !state.currentFile.empty()) {
-        state.loadJob.reset();
-        cancelBackgroundJobs(state);
-        state.packets.clear();
-        refilter(state);
-        state.clearSelection();
-        state.currentFile.clear();
-        state.loadMessage.clear();
-        state.loadFailed = false;
-    }
+    if (ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_W, false) && !state.currentFile.empty()) closeCapture(state);
 
     if (ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_O, false)) {
-        ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", "Choose File", ".pcapng,.pcap,");
+        ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", "Choose File", ".pcapng,.pcap,.cap,.gz,.*");
     }
 
     if (ImGuiFileDialog::Instance()->Display("ChooseFileDlgKey")) {
@@ -153,9 +135,9 @@ void ui::drawStatusBar(const AppState &state) {
             ImGui::TextUnformatted("No file loaded. Use File > Open.");
         } else {
             if (state.filter.active) {
-                ImGui::Text("%s  |  Displayed: %zu / %zu packets", state.currentFile.c_str(), state.displayedCount(), state.packets.size());
+                ImGui::Text("%s  |  Displayed: %zu / %zu packets", state.displayName.c_str(), state.displayedCount(), state.packets.size());
             } else {
-                ImGui::Text("%s  |  %zu packets", state.currentFile.c_str(), state.packets.size());
+                ImGui::Text("%s  |  %zu packets", state.displayName.c_str(), state.packets.size());
             }
         }
         if (!state.loadMessage.empty()) {

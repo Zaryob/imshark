@@ -3,6 +3,7 @@
 add_library(imshark_core STATIC
     src/capture_reader.cpp
     src/core.cpp
+    src/gzip.cpp
     src/packet_parser.cpp
     src/tcp_connection.cpp
     src/network/ip_reassembly.cpp

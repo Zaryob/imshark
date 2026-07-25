@@ -193,7 +193,7 @@ void ui::drawPacketDetails(AppState &state) {
     ImGui::Separator();
     if (!ok) {
         ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "Could not read this packet from %s (moved or modified?)",
-                           state.currentFile.c_str());
+                           state.displayName.c_str());
     }
     for (const auto &layer: packet.fields) drawField(state, layer, true);
     ImGui::EndChild();
