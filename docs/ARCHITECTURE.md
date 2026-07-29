@@ -70,9 +70,11 @@ registry.registerUdpPort(53, dissectDns);              // application layer
 |---|---|
 | `ip.cpp` | IPv4, IPv6 (+ uzantı başlıkları) |
 | `arp.cpp` | ARP, RARP |
-| `icmp.cpp` | ICMP, ICMPv6 |
+| `icmp.cpp` | ICMP/ICMPv6: tür/kod adları, echo kimliği, hata mesajlarındaki alıntılanan paket, komşu keşfi |
 | `tcp.cpp`, `udp.cpp` | TCP (bayraklar, seçenekler, bağıl seq/ack), UDP |
-| `dns.cpp`, `dhcp.cpp` | DNS (sıkıştırma dahil), DHCP |
+| `dns.cpp` | DNS: başlık/bayraklar, tüm bölümler, A/AAAA/NS/CNAME/PTR/MX/TXT/SOA/SRV/OPT; UDP, TCP (uzunluk öneki), mDNS |
+| `dhcp.cpp`, `ntp.cpp` | DHCP (seçenekler), NTP (zaman damgaları) |
+| `http.cpp`, `tls.cpp` | HTTP/1.x ve TLS: **heuristic** — port eşleşmeyen TCP yükleri içeriğine bakılarak tanınır |
 | `simple.cpp` | SNMP, Telnet, SMTP, BGP (yalnızca özet) |
 
 ### Görüntüleme filtresi (`core/src/filter/`)
@@ -86,6 +88,14 @@ registry.registerUdpPort(53, dissectDns);              // application layer
 - `capture_reader` — dosyayı açık tutan `CaptureReader` ve bir paket listesini sırayla okuyan `scanPackets` (ilerleme + iptal). Bayt/hex arama ve Follow Stream bunun üzerine kuruludur ve arka plan iş parçacıklarında çalışır; yakalama değişmeden önce `cancelBackgroundJobs` ile durdurulur.
 - `stream/follow` — bir TCP/UDP konuşmasının paketlerini bulur ve yükü yeniden birleştirir: TCP segmentleri sıraya dizilir, sıra dışı veri boşluk dolana kadar tutulur, yeniden iletimler yalnızca yeni baytlarıyla katkı yapar, hiç yakalanmayan boşluklar "eksik bayt" olarak raporlanır. Özet, yükün çerçeve içindeki yerini (`payload_offset/length`) tutar.
 - `network/ip_reassembly` + `dissect/ip.cpp` — yükleme sırasında IPv4 parçaları toplanır; datagramı tamamlayan paket birleşmiş yükü çözer, önceki parçalara okuyucu "[Reassembled in #N]" yazar. Ayrıntıda son parçanın ağacı, diğer parçalar dosyadan okunarak yeniden kurulur ve "[Reassembled IPv4 payload …]" katmanı olarak eklenir.
+
+### Dışa aktarma, gzip ve yakalama bilgisi
+
+- `export/` — `exportPackets` seçilen paketleri `CaptureReader` ile okuyup pcap (tek link type) veya pcapng (link type başına bir arayüz) olarak yazar; CSV/JSON yazıcıları paket listesinin sütunlarını (RFC 4180 / JSON kaçışlarıyla) üretir. Zaman damgaları mikro-saniye çözünürlüğündedir.
+- `gzip.cpp` — bağımlılıksız, akış tabanlı gzip/deflate çözücü (stored/fixed/dynamic bloklar, 32 KiB pencere, çok üyeli dosyalar, CRC-32 ve boyut denetimi, iptal). Paketler dosya ofseti tuttuğu için `.gz` yakalama önce geçici bir dosyaya açılır; kullanıcı orijinal adı görür, geçici dosya kapanışta silinir.
+- `capture_info.h` — okuyucuların topladığı dosya düzeyi bilgi: biçim, bölüm üstbilgisi (yorum/donanım/OS/uygulama), arayüzler (ad, link type, snaplen, çözünürlük, paket sayısı, ISB'den alınan/düşen), ad çözümleme kayıtları ve paket yorumları.
+- Registry **heuristic TCP dissector**'ları destekler: port tabanlı dissector yoksa sırayla denenir (HTTP, TLS); biri yükü tanırsa true döner.
+- Özet alanları: protokole özgü gerçekler `app_type/app_flags/app_code/app_text/app_text2` alanlarında tutulur (DNS sorgu adı/türü/rcode, HTTP host/URI/yöntem/durum, TLS SNI/el sıkışma türü, DHCP mesaj türü, NTP kipi…) ve görüntüleme filtresinin `dns.*`, `http.*`, `tls.*`, `dhcp.*`, `ntp.*`, `icmp.*` alanlarını besler.
 
 ## 5. Arayüz (`src/ui/`)
 

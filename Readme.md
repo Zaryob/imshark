@@ -6,9 +6,9 @@ ImShark, [Dear ImGui](https://github.com/ocornut/imgui) ile yazılmış, Wiresha
 
 ## Özellikler (bugün)
 
-- `.pcap` (little/big-endian, mikro/nano-saniye) ve `.pcapng` (SHB/IDB/EPB/SPB, `if_tsresol`) desteği; dosya türü magic number ile otomatik algılanır
+- `.pcap` (little/big-endian, mikro/nano-saniye) ve `.pcapng` (SHB/IDB/EPB/SPB/ISB/NRB, `if_tsresol`, paket yorumları) desteği, **gzip sıkıştırılmış** (`.gz`) dosyalar dahil; dosya türü magic number ile otomatik algılanır
 - Ethernet II üzerinde: ARP/RARP, IPv4, IPv6, ICMP/ICMPv6, TCP, UDP
-- Uygulama katmanı özetleri: DNS (A/AAAA/SOA), DHCP, SNMP (yalnızca uzunluk), Telnet, SMTP, BGP (mesaj türü) — port numarasına göre tahmin edilir
+- Protokoller: Ethernet/VLAN, ARP, IPv4 (parçalanma birleştirme)/IPv6, ICMP/ICMPv6, TCP (analiz), UDP, **DNS** (tüm bölümler ve kayıt türleri, TCP üzerinden, mDNS), **DHCP** (seçenekler), **NTP**, **HTTP/1.x**, **TLS** (Client/Server Hello, SNI), SNMP/Telnet/SMTP/BGP (özet). HTTP ve TLS portdan bağımsız, içerikten tanınır
 - TCP için bağıl (relative) seq/ack numaraları
 - Paket listesi (No, Time, Source, Destination, Protocol, Length, Info), çoklu seçim
 - Genişletilebilir protokol ağacı (Frame, Ethernet/VLAN, IP, ARP, ICMP, TCP/UDP, DNS, DHCP…); bir alan seçilince hex/ASCII panelinde ilgili baytlar vurgulanır, hex'te bir bayta tıklayınca o bayta ait en özel alan ağaçta açılır
@@ -19,6 +19,7 @@ ImShark, [Dear ImGui](https://github.com/ocornut/imgui) ile yazılmış, Wiresha
 - **Akış analizi:** Statistics menüsünde Protocol Hierarchy, Conversations (IPv4/IPv6/TCP/UDP), Endpoints, Expert Information; satıra çift tıklayınca filtre uygulanır. TCP analizi (yeniden iletim, dup-ACK, sıra dışı, kayıp segment, sıfır pencere…) Info sütununda ve `tcp.analysis.*` filtre alanlarında. **Follow TCP/UDP Stream** (Analyze menüsü) yeniden birleştirilmiş veriyi iki yönü renkli gösterir. IPv4 parçalanmış datagramlar birleştirilir.
 - Paket bulma (Ctrl+F, F3; özet metni, filtre, **hex bayt** ve **baytlarda metin** aramaları), renklendirme kuralları (düzenlenebilir), zaman görünümü (başlangıca göre / önceki paketten / UTC / epoch)
 - Sütuna göre sıralama, klavyeyle gezinme (↑ ↓ PgUp PgDn Home End), kopyalama menüleri (alan, bayt hex/ASCII, hex dump, satır)
+- **Dışa aktarma:** File > Export Packets (tümü / görüntülenen / seçili → pcapng, pcap, CSV, JSON), Follow Stream'de ham bayt olarak kaydetme; File > Capture File Properties (arayüzler, istatistikler, yorumlar, ad çözümleme)
 - Son açılan dosyalar, sürükle-bırak ile açma, koyu/açık tema; ayarlar kullanıcı yapılandırma klasöründe saklanır
 - Dosya açma penceresi (ImGuiFileDialog), Ctrl+O / Ctrl+W
 
@@ -85,7 +86,9 @@ imshark/
 ├── core/src/               # `imshark_core` (UI bağımsız statik kütüphane)
 │   ├── core.{h,cpp}        #   FileProcessor: pcap / pcapng okuyucular
 │   ├── packet_parser.cpp   #   link katmanı, dissector'lara devretme
-│   ├── dissect/            #   dissector'lar (ip, arp, icmp, tcp, udp, dns, dhcp…) ve Registry
+│   ├── dissect/            #   dissector'lar (ip, arp, icmp, tcp, udp, dns, dhcp, ntp, http, tls…) ve Registry
+│   ├── filter/ stats/ stream/ export/   # görüntüleme filtresi, istatistikler, Follow Stream, dışa aktarım
+│   ├── gzip.cpp, capture_reader.cpp     # gzip çözücü, çerçeve okuma/tarama
 │   ├── tcp_connection.cpp  #   TCP bağıl seq/ack takibi
 │   ├── packet/             #   PacketInfo, Field, PacketParser
 │   └── network/            #   başlık yapıları, byteorder.h (taşınabilir ntoh/inet_ntop), yardımcılar
