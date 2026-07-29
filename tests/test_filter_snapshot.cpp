@@ -8,6 +8,8 @@
 // Added (B8): usb.endpoint (the endpoint address of a USB transfer); no other line changed.
 // Changed (B8, Bluetooth BD_ADDR): bt.bd_addr is new; bt.addr's description names BD_ADDRs; bt.handle now reads the handle the HCI
 // dissector keeps in app_code (a BD_ADDR replaces the handle in source/destination), so its counts on the synthetic packets differ.
+// Added (v1.1, IGMPv3): igmp.version, igmp.num_records, igmp.num_sources; no other line changed (igmp.group is now empty for a
+// v3 report, whose bytes 4..7 are not a group address; no sample packet is one).
 #include <gtest/gtest.h>
 
 #include <algorithm>

@@ -111,10 +111,135 @@ TEST(Igmp, ChecksumsMatchAnIndependentComputation) {
     EXPECT_NE(v3.info.find("1 group record"), std::string::npos) << v3.info;
 }
 
+namespace {
+    const packet::Field *findNode(const std::vector<packet::Field> &nodes, const std::string &prefix) {
+        for (const auto &n: nodes) {
+            if (n.text.rfind(prefix, 0) == 0) return &n;
+            if (auto *c = findNode(n.children, prefix)) return c;
+        }
+        return nullptr;
+    }
+    size_t countNodes(const std::vector<packet::Field> &nodes, const std::string &prefix) {
+        size_t n = 0;
+        for (const auto &f: nodes) n += (f.text.rfind(prefix, 0) == 0 ? 1 : 0) + countNodes(f.children, prefix);
+        return n;
+    }
+    // counts inside the IGMP layer only (the IPv4 header has its own "Source Address")
+    size_t countIgmpNodes(const packet::PacketInfo &p, const std::string &prefix) {
+        const auto *layer = findNode(p.fields, "Internet Group Management Protocol");
+        return layer ? countNodes(layer->children, prefix) : 0;
+    }
+    bool matches(const std::string &expr, const packet::PacketInfo &p) {
+        auto f = filter::Filter::compile(expr);
+        EXPECT_TRUE(f.ok) << expr;
+        return f.ok && f.filter.matches(p);
+    }
+
+    // RFC 3376 4.1: general query (QRV 2, QQIC 125), checksums from stdlib Python (one's complement sum of the 16-bit words
+    // with the checksum zero, folded and inverted): 0xec1e
+    const Bytes queryV3General = {0x11, 0x64, 0xec, 0x1e, 0, 0, 0, 0, 0x02, 125, 0, 0};
+    // group-and-source-specific query: group 232.1.1.1, S=1 QRV=2, Max Resp Code 0x91 (17 << 4 = 272 tenths), QQIC 0x8f (31 << 3 = 248 s),
+    // sources 10.0.0.5 and 10.0.0.6: 0xe6cf
+    const Bytes queryV3Sources = {0x11, 0x91, 0xe6, 0xcf, 232, 1, 1, 1, 0x0a, 0x8f, 0, 2, 10, 0, 0, 5, 10, 0, 0, 6};
+    // report with three records (RFC 3376 4.2): MODE_IS_INCLUDE 232.1.1.1 with two sources, CHANGE_TO_EXCLUDE 224.1.1.1 with
+    // four bytes of auxiliary data, MODE_IS_EXCLUDE 224.9.9.9 without sources: 0x7238
+    const Bytes reportV3 = {0x22, 0, 0x72, 0x38, 0, 0, 0, 3,
+                            1, 0, 0, 2, 232, 1, 1, 1, 10, 0, 0, 5, 10, 0, 0, 6,
+                            4, 1, 0, 0, 224, 1, 1, 1, 0xde, 0xad, 0xbe, 0xef,
+                            2, 0, 0, 0, 224, 9, 9, 9};
+} // namespace
+
+TEST(Igmp, V3QueryDecodesFlagsQqicAndSourceList) {
+    const auto g = igmpFrame(queryV3General, {224, 0, 0, 1});
+    EXPECT_EQ(state(g), dissect::kChecksumGood);
+    EXPECT_EQ(g.info, "General Membership Query");
+    EXPECT_TRUE(matches("igmp.version == 3 && igmp.num_sources == 0", g));
+    EXPECT_NE(findNode(g.fields, "Flags: 0x02 (S=0, QRV=2)"), nullptr);
+    EXPECT_NE(findNode(g.fields, "QQIC: 125 sec (125)"), nullptr);
+
+    const auto s = igmpFrame(queryV3Sources, {232, 1, 1, 1});
+    EXPECT_EQ(state(s), dissect::kChecksumGood);
+    EXPECT_EQ(s.info, "Group-Specific Query, group 232.1.1.1, 2 source(s)");
+    EXPECT_TRUE(matches("igmp.version == 3 && igmp.num_sources == 2 && igmp.group == \"232.1.1.1\"", s));
+    EXPECT_NE(findNode(s.fields, "Flags: 0x0a (S=1, QRV=2)"), nullptr);
+    EXPECT_NE(findNode(s.fields, "QQIC: 248 sec (143)"), nullptr);          // 0x8f: (15 | 0x10) << 3
+    EXPECT_NE(findNode(s.fields, "Max Response Time: 27.200000 sec (145)"), nullptr);   // 0x91: (1 | 0x10) << 4 = 272 tenths
+    EXPECT_NE(findNode(s.fields, "Source Address: 10.0.0.6"), nullptr);
+    EXPECT_EQ(countIgmpNodes(s, "Source Address"), 2u);
+    EXPECT_EQ(s.info.find("Malformed"), std::string::npos);
+
+    // v2 (8 bytes) keeps its meaning; Max Resp Code 0 is v1
+    EXPECT_TRUE(matches("igmp.version == 2", igmpFrame({0x11, 0x64, 0xee, 0x9b, 0, 0, 0, 0}, {224, 0, 0, 1})));
+    EXPECT_TRUE(matches("igmp.version == 1", igmpFrame({0x11, 0x00, 0xee, 0xff, 0, 0, 0, 0}, {224, 0, 0, 1})));
+    EXPECT_TRUE(matches("igmp.version == 1", igmpFrame({0x12, 0, 0, 0, 224, 1, 2, 3})));
+    EXPECT_TRUE(matches("igmp.version == 2", igmpFrame({0x16, 0, 0x07, 0xfb, 224, 1, 2, 3})));
+}
+
+TEST(Igmp, V3QuerySourceCountBeyondTheMessageIsFlagged) {
+    Bytes b = queryV3Sources;
+    b[11] = 3;   // three sources announced, two present
+    auto p = igmpFrame(b, {232, 1, 1, 1});
+    EXPECT_NE(p.info.find("[Malformed Packet"), std::string::npos) << p.info;
+    EXPECT_EQ(countIgmpNodes(p, "Source Address"), 2u);
+    framesweep::expectInside(p, 14 + 20 + b.size(), "query sources");
+    b[10] = 0xff;   // 65 000+ sources
+    p = igmpFrame(b, {232, 1, 1, 1});
+    EXPECT_NE(p.info.find("[Malformed Packet"), std::string::npos) << p.info;
+    // 9..11 bytes are no valid query length
+    p = igmpFrame(Bytes(queryV3General.begin(), queryV3General.begin() + 10), {224, 0, 0, 1});
+    EXPECT_NE(p.info.find("[Malformed Packet"), std::string::npos) << p.info;
+}
+
+TEST(Igmp, V3ReportDecodesGroupRecordsAndSources) {
+    const auto p = igmpFrame(reportV3, {224, 0, 0, 22});
+    EXPECT_EQ(state(p), dissect::kChecksumGood);
+    EXPECT_EQ(p.info, "IGMPv3 Membership Report, 3 group record(s)");
+    EXPECT_TRUE(matches("igmp.version == 3 && igmp.num_records == 3", p));
+    EXPECT_NE(findNode(p.fields, "Group Record: MODE_IS_INCLUDE 232.1.1.1"), nullptr);
+    EXPECT_NE(findNode(p.fields, "Group Record: CHANGE_TO_EXCLUDE_MODE 224.1.1.1"), nullptr);
+    EXPECT_NE(findNode(p.fields, "Group Record: MODE_IS_EXCLUDE 224.9.9.9"), nullptr);
+    EXPECT_NE(findNode(p.fields, "Auxiliary Data (4 bytes)"), nullptr);
+    EXPECT_EQ(countIgmpNodes(p, "Source Address"), 2u);
+    EXPECT_EQ(p.info.find("Malformed"), std::string::npos);
+    // the reserved/count bytes of the header are not a group address any more
+    EXPECT_FALSE(matches("igmp.group == \"0.0.0.3\"", p));
+    // the record starts at the right place: the aux data is the 4 bytes at message offset 32
+    const auto *aux = findNode(p.fields, "Auxiliary Data");
+    ASSERT_NE(aux, nullptr);
+    EXPECT_EQ(aux->offset, 14u + 20u + 32u);
+    EXPECT_EQ(aux->length, 4u);
+}
+
+TEST(Igmp, V3ReportCountsBeyondTheMessageAreFlagged) {
+    // more records announced than present
+    Bytes few = reportV3;
+    few[7] = 4;
+    auto p = igmpFrame(few, {224, 0, 0, 22});
+    EXPECT_NE(p.info.find("[Malformed Packet"), std::string::npos) << p.info;
+    framesweep::expectInside(p, 14 + 20 + few.size(), "record count");
+    // a source count that runs past the end: the record is cut at the message end
+    Bytes src = reportV3;
+    src[10] = 0x10;
+    p = igmpFrame(src, {224, 0, 0, 22});
+    EXPECT_NE(p.info.find("[Malformed Packet"), std::string::npos) << p.info;
+    framesweep::expectInside(p, 14 + 20 + src.size(), "source count");
+    // an aux data length (255 words) that runs past the end
+    Bytes aux = reportV3;
+    aux[8 + 1] = 0xff;
+    p = igmpFrame(aux, {224, 0, 0, 22});
+    EXPECT_NE(p.info.find("[Malformed Packet"), std::string::npos) << p.info;
+    framesweep::expectInside(p, 14 + 20 + aux.size(), "aux length");
+    // 65535 records in a header-only report
+    p = igmpFrame({0x22, 0, 0, 0, 0, 0, 0xff, 0xff}, {224, 0, 0, 22});
+    EXPECT_NE(p.info.find("[Malformed Packet"), std::string::npos) << p.info;
+}
+
 TEST(Igmp, TruncationAndMutationStayInsideTheFrame) {
     const Bytes v3 = {0x22, 0, 0xe9, 0xf5, 0, 0, 0, 1, 1, 0, 0, 1, 232, 1, 1, 1, 10, 0, 0, 5};
     framesweep::sweep(framesweep::ethernet(0x0800, framesweep::ipv4Packet(2, v3, {10, 0, 0, 1}, {224, 0, 0, 22})), 0x16f00001u);
     framesweep::sweep(framesweep::ethernet(0x0800, framesweep::ipv4Packet(2, {0x16, 0, 0x09, 0x04, 224, 0, 0, 251})), 0x16f00002u);
+    framesweep::sweep(framesweep::ethernet(0x0800, framesweep::ipv4Packet(2, reportV3, {10, 0, 0, 1}, {224, 0, 0, 22})), 0x16f00003u);
+    framesweep::sweep(framesweep::ethernet(0x0800, framesweep::ipv4Packet(2, queryV3Sources, {10, 0, 0, 1}, {232, 1, 1, 1})), 0x16f00004u);
 }
 
 TEST(Igmp, RealCapturesWhenAvailable) {

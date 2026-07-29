@@ -117,7 +117,10 @@ in the [User Guide](USER_GUIDE.md#display-filters). Names are lower case.
 | `icmpv6.type` | unsigned | ICMPv6 message type |
 | `igmp` | boolean | Internet Group Management Protocol |
 | `igmp.group` | string | IGMP Multicast Group Address |
+| `igmp.num_records` | unsigned | Number of group records announced by an IGMPv3 Membership Report |
+| `igmp.num_sources` | unsigned | Number of sources announced by an IGMPv3 Membership Query |
 | `igmp.type` | unsigned | IGMP Message Type (0x11 Query, 0x12 v1 Report, 0x16 v2 Report, 0x17 Leave, 0x22 v3 Report) |
+| `igmp.version` | unsigned | IGMP version implied by the message (1, 2 or 3; a query is v3 when it has at least 12 bytes, v1 when its Max Resp Code is 0) |
 | `ike` | boolean | Internet Key Exchange / ISAKMP |
 | `ike.exchange_type` | unsigned | IKE Exchange Type |
 | `ike.version` | unsigned | IKE Version (1 or 2) |
@@ -382,4 +385,4 @@ in the [User Guide](USER_GUIDE.md#display-filters). Names are lower case.
 | `wlan.ssid` | string | 802.11 SSID |
 | `wlan.ta` | string | 802.11 Transmitter MAC address |
 
-372 fields.
+375 fields.

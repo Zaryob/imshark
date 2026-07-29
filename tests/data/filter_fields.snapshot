@@ -106,7 +106,10 @@ icmpv6.code	unsigned	ICMPv6 message code	48	48	91fb4cf5cb6f2b66
 icmpv6.type	unsigned	ICMPv6 message type	48	48	934f31fcebdd77f4
 igmp	boolean	Internet Group Management Protocol	1036	1036	e55b6c8268726cc3
 igmp.group	string	IGMP Multicast Group Address	115	115	a4e8486dd24b93a1
+igmp.num_records	unsigned	Number of group records announced by an IGMPv3 Membership Report	0	0	236e177ee4bbadc3
+igmp.num_sources	unsigned	Number of sources announced by an IGMPv3 Membership Query	0	0	236e177ee4bbadc3
 igmp.type	unsigned	IGMP Message Type (0x11 Query, 0x12 v1 Report, 0x16 v2 Report, 0x17 Leave, 0x22 v3 Report)	124	124	6736d2f629a6bc81
+igmp.version	unsigned	IGMP version implied by the message (1, 2 or 3; a query is v3 when it has at least 12 bytes, v1 when its Max Resp Code is 0)	130	130	408b634a9df89226
 ike	boolean	Internet Key Exchange / ISAKMP	300	300	69361d1261f278c3
 ike.exchange_type	unsigned	IKE Exchange Type	300	300	c1036d318ac85109
 ike.version	unsigned	IKE Version (1 or 2)	300	300	91f1d88e6b0576ce
