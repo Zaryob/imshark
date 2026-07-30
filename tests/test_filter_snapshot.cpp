@@ -10,6 +10,8 @@
 // dissector keeps in app_code (a BD_ADDR replaces the handle in source/destination), so its counts on the synthetic packets differ.
 // Added (v1.1, IGMPv3): igmp.version, igmp.num_records, igmp.num_sources; no other line changed (igmp.group is now empty for a
 // v3 report, whose bytes 4..7 are not a group address; no sample packet is one).
+// Added (v1.1, OSPF bodies): ospf.auth.type, ospf.instance_id, ospf.lsa.count; the description of ospf.lsa.checksum.status now covers
+// OSPFv3 LSAs too (its values on these packets are unchanged).
 #include <gtest/gtest.h>
 
 #include <algorithm>

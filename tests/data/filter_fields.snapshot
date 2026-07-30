@@ -199,7 +199,10 @@ ntp.stratum	unsigned	NTP stratum	33	33	4ebb52d5e8b29443
 ntp.version	unsigned	NTP version	172	172	c4f4b38baa748029
 ospf	boolean	Open Shortest Path First	992	992	b165c1a8671cb9c3
 ospf.area_id	string	OSPF Area ID	111	111	29a1307e24389ed0
-ospf.lsa.checksum.status	unsigned	OSPFv2 LSA Fletcher checksum (RFC 2328 12.1.7) of the LSAs in a DD, LSU or LSAck: 0 = bad (any), 1 = good, 2 = unverified (headers only, or cut off); absent without LSAs	89	89	cd7af2e55417db43
+ospf.auth.type	unsigned	OSPFv2 authentication type (0 none, 1 simple password, 2 cryptographic)	3	3	8d2b35f85913921e
+ospf.instance_id	unsigned	OSPFv3 Instance ID (RFC 5340 A.3.1)	2	2	34ef7cc456d5c56b
+ospf.lsa.checksum.status	unsigned	OSPF LSA Fletcher checksum (RFC 2328 12.1.7, RFC 5340 A.4.2) of the LSAs in a DD, LSU or LSAck: 0 = bad (any), 1 = good, 2 = unverified (headers only, or cut off); absent without LSAs	89	89	cd7af2e55417db43
+ospf.lsa.count	unsigned	Number of LSAs found in an OSPF Database Description or Link State Acknowledgment (headers) or Link State Update	10	10	e94ce85c99d1f023
 ospf.router_id	string	OSPF Router ID	116	116	0a2160bc399487f5
 ospf.type	unsigned	OSPF Packet Type (1=Hello, 2=DD, 3=LSR, 4=LSU, 5=LSAck)	139	139	28084ffb2a8a7af5
 ospf.version	unsigned	OSPF Version (2 or 3)	139	139	185b9fe2334c11f3

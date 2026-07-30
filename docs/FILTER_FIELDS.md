@@ -210,7 +210,10 @@ in the [User Guide](USER_GUIDE.md#display-filters). Names are lower case.
 | `ntp.version` | unsigned | NTP version |
 | `ospf` | boolean | Open Shortest Path First |
 | `ospf.area_id` | string | OSPF Area ID |
-| `ospf.lsa.checksum.status` | unsigned | OSPFv2 LSA Fletcher checksum (RFC 2328 12.1.7) of the LSAs in a DD, LSU or LSAck: 0 = bad (any), 1 = good, 2 = unverified (headers only, or cut off); absent without LSAs |
+| `ospf.auth.type` | unsigned | OSPFv2 authentication type (0 none, 1 simple password, 2 cryptographic) |
+| `ospf.instance_id` | unsigned | OSPFv3 Instance ID (RFC 5340 A.3.1) |
+| `ospf.lsa.checksum.status` | unsigned | OSPF LSA Fletcher checksum (RFC 2328 12.1.7, RFC 5340 A.4.2) of the LSAs in a DD, LSU or LSAck: 0 = bad (any), 1 = good, 2 = unverified (headers only, or cut off); absent without LSAs |
+| `ospf.lsa.count` | unsigned | Number of LSAs found in an OSPF Database Description or Link State Acknowledgment (headers) or Link State Update |
 | `ospf.router_id` | string | OSPF Router ID |
 | `ospf.type` | unsigned | OSPF Packet Type (1=Hello, 2=DD, 3=LSR, 4=LSU, 5=LSAck) |
 | `ospf.version` | unsigned | OSPF Version (2 or 3) |
@@ -385,4 +388,4 @@ in the [User Guide](USER_GUIDE.md#display-filters). Names are lower case.
 | `wlan.ssid` | string | 802.11 SSID |
 | `wlan.ta` | string | 802.11 Transmitter MAC address |
 
-375 fields.
+378 fields.

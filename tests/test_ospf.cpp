@@ -253,6 +253,7 @@ namespace {
 
     // LSA checksums come from stdlib Python (RFC 2328 12.1.7, RFC 905 Annex B; the script is in checksum tests):
     //   header-only Router LSA  00 01 02 01 01010101 01010101 80000001 .... 0014 -> 0x2b34
+    //   header-only Opaque area-local LSA (type 10, a header is a complete LSA; a Router LSA needs a body) -> 0xaca9
     //   Router LSA with one link (length 36, body 00000001 02020202 0a000001 0300000a) -> 0xf33a
     //   header 0e10 02 05 c0a80000 01010101 80000007 .... 0014 -> 0x638c
     Bytes lsaHeader(uint16_t age, uint8_t type, uint16_t csum, uint16_t len, uint32_t seq = 0x80000001u) {
@@ -289,7 +290,7 @@ namespace {
 } // namespace
 
 TEST(Ospf, LsUpdateVerifiesTheLsaFletcherChecksums) {
-    const Bytes good = lsUpdate(lsaHeader(0, 1, 0x2b34, 20), routerLsa(0xf33a));
+    const Bytes good = lsUpdate(lsaHeader(0, 10, 0xaca9, 20), routerLsa(0xf33a));
     const auto p = parseOspf(good);
     EXPECT_EQ(csumState(p), dissect::kChecksumGood);   // the packet checksum is right too
     EXPECT_TRUE(lsaMatches("ospf.type == 4 && ospf.lsa.checksum.status == 1", p));
@@ -313,15 +314,15 @@ TEST(Ospf, LsUpdateVerifiesTheLsaFletcherChecksums) {
     EXPECT_NE(bb.info.find("[Bad LSA checksum]"), std::string::npos);
 
     // a wrong stored checksum on the first LSA
-    const auto wrong = parseOspf(lsUpdate(lsaHeader(0, 1, 0x2b35, 20), routerLsa(0xf33a)));
+    const auto wrong = parseOspf(lsUpdate(lsaHeader(0, 10, 0xacaa, 20), routerLsa(0xf33a)));
     EXPECT_TRUE(lsaMatches("ospf.lsa.checksum.status == 0", wrong));
-    EXPECT_NE(findField(wrong.fields, "[Expected Checksum: 0x2b34]"), nullptr);
+    EXPECT_NE(findField(wrong.fields, "[Expected Checksum: 0xaca9]"), nullptr);
 
     // cut inside the second LSA: the first is still checked, the whole stays Unverified
     Bytes cut = good;
     cut.resize(cut.size() - 6);
     EXPECT_TRUE(lsaMatches("ospf.lsa.checksum.status == 2", parseOspf(cut)));
-    Bytes cutBad = lsUpdate(lsaHeader(0, 1, 0x2b35, 20), routerLsa(0xf33a));
+    Bytes cutBad = lsUpdate(lsaHeader(0, 10, 0xacaa, 20), routerLsa(0xf33a));
     cutBad.resize(cutBad.size() - 6);
     EXPECT_TRUE(lsaMatches("ospf.lsa.checksum.status == 0", parseOspf(cutBad)));
 }
@@ -352,6 +353,170 @@ TEST(Ospf, LsAckAndDatabaseDescriptionCarryHeadersOnly) {
     EXPECT_FALSE(lsaMatches("ospf.lsa.checksum.status == 1 || ospf.lsa.checksum.status == 0 || ospf.lsa.checksum.status == 2", ospfV2(helloV2(0x794b))));
 }
 
+namespace {
+    Bytes fromHex(const std::string &text) {
+        Bytes out;
+        for (size_t i = 0; i + 1 < text.size(); i += 2) out.push_back(static_cast<uint8_t>(std::stoi(text.substr(i, 2), nullptr, 16)));
+        return out;
+    }
+    size_t countNodes(const std::vector<packet::Field> &nodes, const std::string &prefix) {
+        size_t n = 0;
+        for (const auto &f: nodes) n += (f.text.rfind(prefix, 0) == 0 ? 1 : 0) + countNodes(f.children, prefix);
+        return n;
+    }
+    bool hasNode(const packet::PacketInfo &p, const std::string &prefix) { return findField(p.fields, prefix) != nullptr; }
+    bool malformedInfo(const packet::PacketInfo &p) { return p.info.find("[Malformed Packet") != std::string::npos; }
+
+    // The vectors below were built by an independent Python (stdlib) script from RFC 2328 A.3/A.4 (v2) and RFC 5340 A.3/A.4 (v3)
+    // layouts: each LSA is assembled from its fields, its Fletcher checksum (RFC 905 Annex B, the formula of RFC 2328 12.1.7,
+    // checked by the script as "both sums over the LSA minus age are zero"; the same script reproduces the earlier 0x2b34 /
+    // 0x638c / 0xf33a vectors) is inserted, then the packet checksum: RFC 2328 D.4 (authentication field excluded) for v2,
+    // the IPv6 pseudo header sum of RFC 5340 A.3.1 (fe80::1 -> ff02::5, next header 89) for v3.
+    //   LSU 1 (v2): Router (E, link 2.2.2.2 transit with one TOS entry, stub 10.0.0.0/24) a053, Network 5de1, Summary 5036, ASBR-Summary e547
+    const char *kV2Lsu1 = "020400a80a00000100000001a399000000000000000000000000000400010201010101010101010180000001a053003402000002020202020a0000010201000a050000140a000000ffffff0003000001000102020a00000101010101800000015de10020ffffff00010101010202020200010203c0a8050001010101800000015036001cffffff000000006400010204090909090101010180000001e547001c0000000000000007";
+    //   LSU 2 (v2): AS-External (type 2 metric 20, forwarding 10.0.0.9, tag 200, one extra TOS 8 entry) 60fa, NSSA-External 3b3b
+    const char *kV2Lsu2 = "020400700a00000100000001c3b5000000000000000000000000000200010205cb007100010101018000000160fa0030ffffff00800000140a000009000000c808000032000000000000000000010807ac10000001010101800000013b3b0024ffff0000000001000a00000900000000";
+    //   LSR (v2) with two requests
+    const char *kV2Lsr = "020300300a00000100000001b1bd0000000000000000000000000001010101010101010100000005cb00710001010101";
+    //   Hello with AuType 1 password "secret", and AuType 2 (key 1, digest length 16, sequence 0x12345678) with a 16 byte digest after the packet
+    const char *kV2Simple = "0201002c0a00000100000001e89a00017365637265740000ffffff00000a0201000000280a00000100000000";
+    const char *kV2Md5 = "0201002c0a00000100000001e89900020000011012345678ffffff00000a0201000000280a00000100000000a0a1a2a3a4a5a6a7a8a9aaabacadaeaf";
+
+    // Every byte of the packet set to a few boundary values: no read outside the frame (ASan), every node inside.
+    void everyByteVariation(const Bytes &ospf, bool v3) {
+        for (size_t i = 0; i < ospf.size(); ++i) {
+            for (uint8_t v: {0x00, 0x01, 0x14, 0x7f, 0x80, 0xff}) {
+                Bytes m = ospf;
+                m[i] = v;
+                const auto p = v3 ? ospfV3(m) : ospfV2(m);
+                framesweep::expectInside(p, p.raw_data.empty() ? (v3 ? 14 + 40 : 14 + 20) + m.size() : p.raw_data.size(), "byte " + std::to_string(i) + "=" + std::to_string(v));
+            }
+        }
+    }
+} // namespace
+
+TEST(Ospf, V2LsUpdateDecodesRouterNetworkAndSummaryLsas) {
+    const auto p = ospfV2(fromHex(kV2Lsu1));
+    EXPECT_EQ(csumState(p), dissect::kChecksumGood);
+    EXPECT_FALSE(malformedInfo(p)) << p.info;
+    EXPECT_TRUE(lsaMatches("ospf.lsa.checksum.status == 1 && ospf.lsa.count == 4 && ospf.auth.type == 0", p));
+    EXPECT_NE(findField(p.fields, "LSA: Router LSA, ID: 1.1.1.1"), nullptr);
+    EXPECT_NE(findField(p.fields, "Flags: 0x02 E"), nullptr);
+    EXPECT_NE(findField(p.fields, "Number of Links: 2"), nullptr);
+    EXPECT_NE(findField(p.fields, "Link: 2.2.2.2 (Transit)"), nullptr);
+    EXPECT_NE(findField(p.fields, "Link Data: 10.0.0.1"), nullptr);
+    EXPECT_NE(findField(p.fields, "Metric: 10"), nullptr);
+    EXPECT_NE(findField(p.fields, "TOS: 5, Metric: 20"), nullptr);
+    EXPECT_NE(findField(p.fields, "Link: 10.0.0.0 (Stub)"), nullptr);
+    EXPECT_NE(findField(p.fields, "LSA: Network LSA, ID: 10.0.0.1"), nullptr);
+    EXPECT_NE(findField(p.fields, "Network Mask: 255.255.255.0"), nullptr);
+    EXPECT_EQ(countNodes(p.fields, "Attached Router: "), 2u);
+    EXPECT_NE(findField(p.fields, "LSA: Summary LSA (IP Network), ID: 192.168.5.0"), nullptr);
+    EXPECT_NE(findField(p.fields, "Metric: 100"), nullptr);
+    EXPECT_NE(findField(p.fields, "LSA: Summary LSA (ASBR), ID: 9.9.9.9"), nullptr);
+    EXPECT_NE(findField(p.fields, "Metric: 7"), nullptr);
+}
+
+TEST(Ospf, V2LsUpdateDecodesExternalAndNssaLsas) {
+    const auto p = ospfV2(fromHex(kV2Lsu2));
+    EXPECT_EQ(csumState(p), dissect::kChecksumGood);
+    EXPECT_FALSE(malformedInfo(p)) << p.info;
+    EXPECT_TRUE(lsaMatches("ospf.lsa.checksum.status == 1 && ospf.lsa.count == 2", p));
+    EXPECT_NE(findField(p.fields, "LSA: AS-External LSA, ID: 203.0.113.0"), nullptr);
+    EXPECT_NE(findField(p.fields, "External Type: 2 (E bit set)"), nullptr);
+    EXPECT_NE(findField(p.fields, "Forwarding Address: 10.0.0.9"), nullptr);
+    EXPECT_NE(findField(p.fields, "External Route Tag: 0x000000c8"), nullptr);
+    EXPECT_NE(findField(p.fields, "Additional TOS: 8"), nullptr);
+    EXPECT_NE(findField(p.fields, "TOS 8 Metric: 50"), nullptr);
+    EXPECT_NE(findField(p.fields, "LSA: NSSA-External LSA, ID: 172.16.0.0"), nullptr);
+    EXPECT_NE(findField(p.fields, "Network Mask: 255.255.0.0"), nullptr);
+    EXPECT_NE(findField(p.fields, "Metric: 256"), nullptr);
+}
+
+TEST(Ospf, V2LinkStateRequestListsTheRequestedLsas) {
+    const auto p = ospfV2(fromHex(kV2Lsr));
+    EXPECT_EQ(csumState(p), dissect::kChecksumGood);
+    EXPECT_FALSE(malformedInfo(p)) << p.info;
+    EXPECT_NE(findField(p.fields, "OSPF Link State Request"), nullptr);
+    EXPECT_EQ(countNodes(p.fields, "Request: "), 2u);
+    EXPECT_NE(findField(p.fields, "Request: Router LSA, ID: 1.1.1.1"), nullptr);
+    EXPECT_NE(findField(p.fields, "Request: AS-External LSA, ID: 203.0.113.0"), nullptr);
+    EXPECT_NE(findField(p.fields, "Advertising Router: 1.1.1.1"), nullptr);
+    // a request cut in half is a malformed packet (not a capture cut: the Length says the packet is complete)
+    Bytes cut = fromHex(kV2Lsr);
+    cut.resize(cut.size() - 4);
+    cut[3] = static_cast<uint8_t>(cut.size());
+    EXPECT_TRUE(malformedInfo(ospfV2(cut)));
+}
+
+TEST(Ospf, V2AuthenticationFieldsAreDecoded) {
+    const auto simple = ospfV2(fromHex(kV2Simple));
+    EXPECT_EQ(csumState(simple), dissect::kChecksumGood);   // the authentication field is not covered
+    EXPECT_TRUE(lsaMatches("ospf.auth.type == 1", simple));
+    EXPECT_NE(findField(simple.fields, "Auth Data (simple password): secret"), nullptr);
+
+    const auto md5 = ospfV2(fromHex(kV2Md5));
+    EXPECT_TRUE(lsaMatches("ospf.auth.type == 2", md5));
+    EXPECT_EQ(csumState(md5), dissect::kChecksumNone);   // not computed for cryptographic authentication
+    EXPECT_NE(findField(md5.fields, "Key ID: 1"), nullptr);
+    EXPECT_NE(findField(md5.fields, "Auth Data Length: 16"), nullptr);
+    EXPECT_NE(findField(md5.fields, "Cryptographic Sequence Number: 305419896"), nullptr);
+    const auto *digest = findField(md5.fields, "Authentication Data (16 bytes");
+    ASSERT_NE(digest, nullptr);
+    EXPECT_EQ(digest->offset, 14u + 20u + 44u);
+    EXPECT_EQ(digest->length, 16u);
+    EXPECT_EQ(countNodes(md5.fields, "Active Neighbor"), 0u);   // the digest is not a neighbor
+    EXPECT_FALSE(malformedInfo(md5)) << md5.info;
+    // a digest cut by the capture is shortened to what is there
+    Bytes cut = fromHex(kV2Md5);
+    cut.resize(cut.size() - 6);
+    const auto c = ospfV2(cut);
+    const auto *cd = findField(c.fields, "Authentication Data (16 bytes");
+    ASSERT_NE(cd, nullptr);
+    EXPECT_EQ(cd->length, 10u);
+    framesweep::expectInside(c, 14 + 20 + cut.size(), "cut digest");
+}
+
+TEST(Ospf, V2BodiesThatContradictTheirLengthAreFlaggedAndBounded) {
+    const Bytes good = fromHex(kV2Lsu1);
+    auto mutate = [&](size_t at, std::initializer_list<uint8_t> values) {
+        Bytes m = good;
+        size_t i = at;
+        for (uint8_t v: values) m[i++] = v;
+        return ospfV2(m);
+    };
+    // the first LSA starts at 28, its body at 48: flags 48, links count 50..51, first link at 52
+    EXPECT_TRUE(malformedInfo(mutate(50, {0xff, 0xff})));          // 65535 links in a 52 byte LSA
+    EXPECT_TRUE(malformedInfo(mutate(61, {0xff})));                // the first link announces 255 TOS entries
+    EXPECT_TRUE(malformedInfo(mutate(46, {0x0f, 0xff})));          // LSA length beyond the packet
+    EXPECT_TRUE(malformedInfo(mutate(46, {0x00, 0x0a})));          // LSA length below its header
+    EXPECT_TRUE(malformedInfo(mutate(24, {0xff, 0xff, 0xff, 0xff})));   // 4 billion LSAs announced
+    EXPECT_TRUE(malformedInfo(mutate(24, {0, 0, 0, 5})));          // five announced, four present
+    EXPECT_FALSE(malformedInfo(ospfV2(good)));
+    // a Router LSA that is just its header has no flags/links word
+    Bytes bare = withPacketChecksum(cat(cat(ospfCommon(4, 24 + 4 + 20), Bytes{0, 0, 0, 1}), lsaHeader(0, 1, 0x2b34, 20)));
+    EXPECT_TRUE(malformedInfo(ospfV2(bare)));
+    // a Network LSA whose length is not a whole number of routers
+    Bytes odd = withPacketChecksum(cat(cat(ospfCommon(4, 24 + 4 + 31), Bytes{0, 0, 0, 1}), lsaHeader(0, 2, 0, 31)));
+    odd.insert(odd.end(), {255, 255, 255, 0, 1, 1, 1, 1, 2, 2, 2});
+    odd[3] = static_cast<uint8_t>(odd.size());
+    EXPECT_TRUE(malformedInfo(ospfV2(odd)));
+    everyByteVariation(good, false);
+    everyByteVariation(fromHex(kV2Lsu2), false);
+    everyByteVariation(fromHex(kV2Lsr), false);
+    everyByteVariation(fromHex(kV2Md5), false);
+}
+
+TEST(Ospf, V2BodiesCutByTheCaptureAreNotMalformed) {
+    const Bytes good = fromHex(kV2Lsu1);
+    for (size_t n = 30; n < good.size(); n += 7) {
+        Bytes cut(good.begin(), good.begin() + n);
+        const auto p = ospfV2(cut);
+        EXPECT_FALSE(malformedInfo(p)) << n << ": " << p.info;
+        framesweep::expectInside(p, 14 + 20 + n, "cut " + std::to_string(n));
+    }
+}
+
 TEST(Ospf, TruncationAndMutationStayInsideTheFrame) {
     Bytes dd = {0x02, 0x02, 0x00, 0x34, 10, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x05, 0xdc, 0x02, 0x07, 0x00, 0x00, 0x12, 0x34,
                 0x00, 0x01, 0x02, 0x01, 1, 1, 1, 1, 1, 1, 1, 1, 0x80, 0, 0, 1, 0x12, 0x34, 0x00, 0x14};
@@ -360,12 +525,15 @@ TEST(Ospf, TruncationAndMutationStayInsideTheFrame) {
     framesweep::sweep(framesweep::ethernet(0x0800, framesweep::ipv4Packet(89, helloV2(0x794b), {10, 0, 0, 1}, {224, 0, 0, 5})), 0x05bf0001u);
     framesweep::sweep(framesweep::ethernet(0x0800, framesweep::ipv4Packet(89, withNeighbors, {10, 0, 0, 1}, {224, 0, 0, 5})), 0x05bf0002u);
     framesweep::sweep(framesweep::ethernet(0x0800, framesweep::ipv4Packet(89, dd, {10, 0, 0, 1}, {224, 0, 0, 5})), 0x05bf0003u);
-    framesweep::sweep(framesweep::ethernet(0x0800, framesweep::ipv4Packet(89, lsUpdate(lsaHeader(0, 1, 0x2b34, 20), routerLsa(0xf33a)), {10, 0, 0, 1}, {224, 0, 0, 5})), 0x05bf0005u);
+    framesweep::sweep(framesweep::ethernet(0x0800, framesweep::ipv4Packet(89, lsUpdate(lsaHeader(0, 10, 0xaca9, 20), routerLsa(0xf33a)), {10, 0, 0, 1}, {224, 0, 0, 5})), 0x05bf0005u);
     Bytes ackSweep = withPacketChecksum(cat(cat(ospfCommon(5, 24 + 40), lsaHeader(0x0e10, 5, 0x638c, 36)), lsaHeader(0, 1, 0x2b34, 20)));
     framesweep::sweep(framesweep::ethernet(0x0800, framesweep::ipv4Packet(89, ackSweep, {10, 0, 0, 1}, {224, 0, 0, 5})), 0x05bf0006u);
     const Bytes src = {0xfe, 0x80, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1};
     const Bytes dst = {0xff, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 5};
     framesweep::sweep(framesweep::ethernet(0x86dd, framesweep::ipv6Packet(89, helloV3(0xf989), src, dst)), 0x05bf0004u);
+    uint32_t seed = 0x05bf0010u;
+    for (const char *v: {kV2Lsu1, kV2Lsu2, kV2Lsr, kV2Md5})
+        framesweep::sweep(framesweep::ethernet(0x0800, framesweep::ipv4Packet(89, fromHex(v), {10, 0, 0, 1}, {224, 0, 0, 5})), seed++);
 }
 
 TEST(Ospf, RealCapturesWhenAvailable) {
