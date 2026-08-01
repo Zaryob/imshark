@@ -4,6 +4,8 @@
 
 Boyut tahminleri: **S** ≈ 1–2 gün, **M** ≈ 3–7 gün, **L** ≈ 1–3 hafta.
 
+Protokol kapsamının referansı: [Wireshark SampleCaptures](https://wiki.wireshark.org/samplecaptures). Koleksiyon pcap/pcapng yanında başka dosya formatları, farklı link type'lar, eski protokol sürümleri ve kasıtlı bozuk paketler içerir; tek bir standart uygunluk testi değildir. **Dosyanın açılması, protokolün tanınması ve alanlarının çözülmesi ayrı başarı ölçütleridir.** Aşağıdaki yeni maddeler planlanmıştır; uygulanıp doğrulanana kadar işaretlenmez.
+
 ## v0.2 — Sağlamlaştırma (stabil temel) ✅ tamamlandı
 
 Hedef: hiçbir girdi dosyası uygulamayı çökertmesin, gösterilen veri doğru olsun.
@@ -65,10 +67,24 @@ Hedef: paketlerden konuşmalara ve oturumlara çıkmak.
 
 ## v0.7 — Protokoller ve dışa aktarım ✅ tamamlandı
 
-- [x] Yeni dissector'lar: HTTP/1.x, TLS (handshake/SNI), DNS tam (tüm bölümler, kayıt türleri, TCP üzerinden, mDNS), DHCP seçenekleri, NTP, ICMP/ICMPv6 tam (#15). *(HTTP/TLS mesajları TCP segmentleri arasında birleştirilmez; Follow Stream bunu yapar)* — **L**
+- [x] Yeni dissector'lar: HTTP/1.x başlıkları, TLS record/ClientHello/ServerHello/SNI, DNS (tüm bölümler; A/AAAA/NS/CNAME/PTR/MX/TXT/SOA/SRV; TCP üzerinden ve mDNS), yaygın DHCP seçenekleri, NTP temel başlığı, ICMP/ICMPv6 temel mesajları (#15). *(DNS/TCP, HTTP ve TLS mesajları TCP segmentleri arasında birleştirilmez; diğer DNS kayıtlarının RDATA'sı, DHCP overload ve ICMPv6 seçenekleri kısmi; kalan işler aşağıda)* — **L**
 - [x] File > Export Packets: tüm / görüntülenen / seçili paketleri pcap, pcapng, CSV, JSON olarak kaydet; Follow Stream "Save As" — **M**
 - [x] pcapng yorumları, arayüz/istatistik/ad çözümleme bilgileri: File > Capture File Properties — **S**
 - [x] Sıkıştırılmış girdiler (`.pcap.gz`, `.pcapng.gz`): harici kütüphanesiz akış tabanlı gzip çözücü — **S**
+
+## v0.7.1 — Dosya ve parça doğruluğu
+
+Hedef: geçerli paketleri sessizce atlamamak veya yanlış protokol başlığı gibi yorumlamamak. Yeni protokol eklemeden önce bu aşama tamamlanır.
+
+- [ ] pcap `LinkType` alanını alt 16 bitten oku; FCS varlık/uzunluk bilgisini ayrı tut ve çerçeve sonundaki FCS'yi protokol yükünden ayır. *(Sentetik Ethernet/FCS örneği şu anda `Unknown` oluyor; `0x0fffffff` maskesi FCS bayrağını link type'a katıyor)* — **S**
+- [ ] pcapng eski Packet Block (`0x00000002`) desteği; SHB/IDB/EPB/SPB ile birlikte paket sayısı ve bayt ofsetlerini doğrula. *(Sentetik tek paketli dosya şu anda başarılı açılıp 0 paket gösteriyor)* — **S**
+- [ ] pcapng `if_tsoffset`, arayüz/FCS seçenekleri ve EPB arayüz kimliği doğrulaması; tanımsız arayüzü Ethernet varsayma — **M**
+- [ ] IPv6 Fragment Header: offset/M/identification alanlarını çöz; ilk olmayan parçayı L4 başlığı gibi yorumlama; henüz birleştirilemeyen parçayı açıkça işaretle. *(Sentetik sonraki parça şu anda UDP gibi çözülebiliyor)* — **S**
+- [ ] IPv6 parçalanma birleştirme: eksik, yinelenen, sıra dışı ve çakışan parçalar; sınırlı bellek/zaman aşımı; alan ağacında kaynak paketler — **M**
+- [ ] IPv4/IPv6 birleştirilmiş datagram yükünü Follow Stream'e aktar; ham çerçeve ofseti ile birleştirilmiş veri ofsetini ayır — **M**
+- [ ] Küçük regresyon corpus'u ve manifesti: kaynak URL, dosya SHA-256, format/link type, beklenen paket sayısı, protokol ve temel alanlar. Sentetik sınır durumlarını ve seçilmiş gerçek yakalamaları ASan/UBSan altında çalıştır; indirilebilir büyük koleksiyonu CI'ın her çalışmasında çekme — **M**
+
+Kabul ölçütü: FCS'li Ethernet ve eski Packet Block paketleri kaybolmaz; IPv6 parçaları tamamlanmadan sahte TCP/UDP alanları üretmez; mevcut pcap/pcapng endian, zaman çözünürlüğü ve gzip desteği korunur. Referanslar: [pcap dosya yapısı](https://www.ietf.org/ietf-ftp/internet-drafts/draft-ietf-opsawg-pcap-09.html), [pcapng blokları](https://datatracker.ietf.org/doc/html/draft-ietf-opsawg-pcapng-06), [IPv6 / RFC 8200](https://www.rfc-editor.org/rfc/rfc8200.html).
 
 ## v0.8 — Canlı yakalama
 
