@@ -381,6 +381,15 @@ namespace {
     //   Hello with AuType 1 password "secret", and AuType 2 (key 1, digest length 16, sequence 0x12345678) with a 16 byte digest after the packet
     const char *kV2Simple = "0201002c0a00000100000001e89a00017365637265740000ffffff00000a0201000000280a00000100000000";
     const char *kV2Md5 = "0201002c0a00000100000001e89900020000011012345678ffffff00000a0201000000280a00000100000000a0a1a2a3a4a5a6a7a8a9aaabacadaeaf";
+    //   LSU A (v3): Link-LSA 9264 (two prefixes), Router-LSA dddf (two links), Network-LSA 66ad, Inter-Area-Prefix-LSA e614
+    const char *kV3LsuA = "030400dc0101010100000000480a000000000004000100080000000501010101800000019264004c01000013fe800000000000000000000000000001000000024000000020010db8000100008002000020010db800010000000000000000000100012001000000000101010180000001dddf0038010000130100000a000000050000000702020202020000140000000600000008030303030001200200000005010101018000000166ad002000000013010101010202020200012003000000010101010180000001e61400240000001e3000000020010db800020000";
+    //   LSU B (v3): Inter-Area-Router fff3, AS-External (E F T, ref type 0x2001) e7da, NSSA 53d6, Intra-Area-Prefix 64e0
+    const char *kV3LsuB = "030400cc0101010100000000fd7400000000000400012004000000020101010180000001fff3002000000013000000090909090900014005000000030101010180000001e7da003c070000194000200120010db80009000020010db8000000000000000000000099deadbeef000000060001200700000004010101018000000153d6001c04000005000000000001200900000007010101018000000164e000400002200100000000010101014000000a20010db8000100008002000020010db8000100000000000000000001";
+    const char *kV3Hello = "030100280101010100000000f57900000000000501000013000a0028010101010000000002020202";
+    const char *kV3Dd = "0302003001010101000000009cd500000000001305dc00070000123400012001000000000101010180000001a597001c";
+    const char *kV3Lsr = "030300280101010100000000d6b30000000020010000000001010101000000080000000502020202";
+    const char *kV3Ack = "03050038010101010000000067c6000000012001000000000101010180000001dddf0038000100080000000501010101800000019264004c";
+    const char *kV3Instance7 = "030100240101010100000000f28507000000000501000013000a00280101010100000000";
 
     // Every byte of the packet set to a few boundary values: no read outside the frame (ASan), every node inside.
     void everyByteVariation(const Bytes &ospf, bool v3) {
@@ -517,6 +526,120 @@ TEST(Ospf, V2BodiesCutByTheCaptureAreNotMalformed) {
     }
 }
 
+TEST(Ospf, V3HelloDatabaseDescriptionAndRequestBodies) {
+    const auto h = ospfV3(fromHex(kV3Hello));
+    EXPECT_EQ(csumState(h), dissect::kChecksumGood);
+    EXPECT_FALSE(malformedInfo(h)) << h.info;
+    EXPECT_NE(findField(h.fields, "Interface ID: 5"), nullptr);
+    EXPECT_NE(findField(h.fields, "Router Priority: 1"), nullptr);
+    EXPECT_NE(findField(h.fields, "Options: 0x000013"), nullptr);
+    EXPECT_NE(findField(h.fields, "Hello Interval: 10 seconds"), nullptr);
+    EXPECT_NE(findField(h.fields, "Router Dead Interval: 40 seconds"), nullptr);
+    EXPECT_NE(findField(h.fields, "Designated Router: 1.1.1.1"), nullptr);
+    EXPECT_NE(findField(h.fields, "Active Neighbor: 2.2.2.2"), nullptr);
+    EXPECT_TRUE(lsaMatches("ospf.instance_id == 0 && ospf.version == 3", h));
+    EXPECT_TRUE(lsaMatches("ospf.instance_id == 7", ospfV3(fromHex(kV3Instance7))));
+    EXPECT_FALSE(lsaMatches("ospf.auth.type == 0", h));   // v2 only
+
+    const auto d = ospfV3(fromHex(kV3Dd));
+    EXPECT_EQ(csumState(d), dissect::kChecksumGood);
+    EXPECT_FALSE(malformedInfo(d)) << d.info;
+    EXPECT_NE(findField(d.fields, "Interface MTU: 1500"), nullptr);
+    EXPECT_NE(findField(d.fields, "DD Flags: 0x07 [I (Init) M (More) MS (Master/Slave) ]"), nullptr);
+    EXPECT_NE(findField(d.fields, "DD Sequence Number: 4660"), nullptr);
+    EXPECT_NE(findField(d.fields, "LSA Header: Router-LSA, ID: 0.0.0.0"), nullptr);
+    EXPECT_TRUE(lsaMatches("ospf.lsa.count == 1 && ospf.lsa.checksum.status == 2", d));   // a header of a longer LSA: unverified
+
+    const auto r = ospfV3(fromHex(kV3Lsr));
+    EXPECT_FALSE(malformedInfo(r)) << r.info;
+    EXPECT_EQ(countNodes(r.fields, "Request: "), 2u);
+    EXPECT_NE(findField(r.fields, "Request: Router-LSA, ID: 0.0.0.0"), nullptr);
+    EXPECT_NE(findField(r.fields, "Request: Link-LSA, ID: 0.0.0.5"), nullptr);
+    EXPECT_NE(findField(r.fields, "LS Type: 0x2001 (Router-LSA)"), nullptr);
+
+    const auto a = ospfV3(fromHex(kV3Ack));
+    EXPECT_FALSE(malformedInfo(a)) << a.info;
+    EXPECT_TRUE(lsaMatches("ospf.lsa.count == 2", a));
+    EXPECT_NE(findField(a.fields, "LSA Header: Link-LSA, ID: 0.0.0.5"), nullptr);
+    EXPECT_NE(findField(a.fields, "Type: 0x0008 (Link-LSA, link-local scope)"), nullptr);
+}
+
+TEST(Ospf, V3LsUpdateDecodesLinkRouterNetworkAndPrefixLsas) {
+    const auto p = ospfV3(fromHex(kV3LsuA));
+    EXPECT_EQ(csumState(p), dissect::kChecksumGood);
+    EXPECT_FALSE(malformedInfo(p)) << p.info;
+    EXPECT_TRUE(lsaMatches("ospf.lsa.checksum.status == 1 && ospf.lsa.count == 4", p));
+    EXPECT_NE(findField(p.fields, "LSA: Link-LSA, ID: 0.0.0.5"), nullptr);
+    EXPECT_NE(findField(p.fields, "Link-local Interface Address: fe80::1"), nullptr);
+    EXPECT_NE(findField(p.fields, "Number of Prefixes: 2"), nullptr);
+    EXPECT_NE(findField(p.fields, "Prefix: 2001:db8:1::/64"), nullptr);
+    EXPECT_NE(findField(p.fields, "Prefix: 2001:db8:1::1/128"), nullptr);
+    EXPECT_NE(findField(p.fields, "LSA: Router-LSA, ID: 0.0.0.0"), nullptr);
+    EXPECT_NE(findField(p.fields, "Link: Point-to-point, neighbor 2.2.2.2"), nullptr);
+    EXPECT_NE(findField(p.fields, "Link: Transit, neighbor 3.3.3.3"), nullptr);
+    EXPECT_NE(findField(p.fields, "Neighbor Interface ID: 7"), nullptr);
+    EXPECT_NE(findField(p.fields, "LSA: Network-LSA, ID: 0.0.0.5"), nullptr);
+    EXPECT_EQ(countNodes(p.fields, "Attached Router: "), 2u);
+    EXPECT_NE(findField(p.fields, "LSA: Inter-Area-Prefix-LSA, ID: 0.0.0.1"), nullptr);
+    EXPECT_NE(findField(p.fields, "Prefix: 2001:db8:2::/48"), nullptr);
+    EXPECT_NE(findField(p.fields, "Metric: 30"), nullptr);
+}
+
+TEST(Ospf, V3LsUpdateDecodesRouterExternalNssaAndIntraAreaPrefixLsas) {
+    const auto p = ospfV3(fromHex(kV3LsuB));
+    EXPECT_EQ(csumState(p), dissect::kChecksumGood);
+    EXPECT_FALSE(malformedInfo(p)) << p.info;
+    EXPECT_TRUE(lsaMatches("ospf.lsa.checksum.status == 1 && ospf.lsa.count == 4", p));
+    EXPECT_NE(findField(p.fields, "LSA: Inter-Area-Router-LSA, ID: 0.0.0.2"), nullptr);
+    EXPECT_NE(findField(p.fields, "Destination Router ID: 9.9.9.9"), nullptr);
+    EXPECT_NE(findField(p.fields, "LSA: AS-External-LSA, ID: 0.0.0.3"), nullptr);
+    EXPECT_NE(findField(p.fields, "Flags: 0x07 E F T"), nullptr);
+    EXPECT_NE(findField(p.fields, "Metric: 25"), nullptr);
+    EXPECT_NE(findField(p.fields, "Prefix: 2001:db8:9::/64"), nullptr);
+    EXPECT_NE(findField(p.fields, "Forwarding Address: 2001:db8::99"), nullptr);
+    EXPECT_NE(findField(p.fields, "External Route Tag: 0xdeadbeef"), nullptr);
+    EXPECT_NE(findField(p.fields, "Referenced Link State ID: 0.0.0.6"), nullptr);
+    EXPECT_NE(findField(p.fields, "LSA: NSSA-LSA, ID: 0.0.0.4"), nullptr);
+    EXPECT_NE(findField(p.fields, "Prefix: ::/0"), nullptr);
+    EXPECT_NE(findField(p.fields, "LSA: Intra-Area-Prefix-LSA, ID: 0.0.0.7"), nullptr);
+    EXPECT_NE(findField(p.fields, "Referenced LS Type: 0x2001"), nullptr);
+    EXPECT_NE(findField(p.fields, "Referenced Advertising Router: 1.1.1.1"), nullptr);
+    EXPECT_NE(findField(p.fields, "Prefix: 2001:db8:1::/64"), nullptr);
+    EXPECT_NE(findField(p.fields, "Metric: 10"), nullptr);
+}
+
+TEST(Ospf, V3LsaLengthsAndCountsAreBounded) {
+    const Bytes a = fromHex(kV3LsuA);
+    // LSU A: header 16, count at 16, first LSA (Link-LSA) at 20, its body at 40: priority 40, options 41..43, address 44..59,
+    // number of prefixes 60..63, first prefix at 64 (length byte 64)
+    auto mutate = [&](size_t at, std::initializer_list<uint8_t> values, const Bytes &base) {
+        Bytes m = base;
+        size_t i = at;
+        for (uint8_t v: values) m[i++] = v;
+        return ospfV3(m);
+    };
+    EXPECT_FALSE(malformedInfo(ospfV3(a)));
+    EXPECT_TRUE(malformedInfo(mutate(60, {0xff, 0xff, 0xff, 0xff}, a)));   // 4 billion prefixes
+    EXPECT_TRUE(malformedInfo(mutate(64, {129}, a)));                      // prefix length above 128
+    EXPECT_TRUE(malformedInfo(mutate(38, {0x0f, 0xff}, a)));               // LSA length beyond the packet
+    EXPECT_TRUE(malformedInfo(mutate(38, {0x00, 0x08}, a)));               // LSA length below its header
+    EXPECT_TRUE(malformedInfo(mutate(16, {0xff, 0xff, 0xff, 0xff}, a)));   // 4 billion LSAs
+    const Bytes b = fromHex(kV3LsuB);
+    EXPECT_FALSE(malformedInfo(ospfV3(b)));
+    // the Intra-Area-Prefix-LSA is the last one; its prefix count sits 20 bytes into the LSA
+    const size_t iapStart = b.size() - 64;
+    EXPECT_TRUE(malformedInfo(mutate(iapStart + 20, {0xff, 0xff}, b)));
+    // AS-External: the T and F flags with the LSA cut right after the prefix
+    const size_t extStart = 16 + 4 + 32;
+    EXPECT_TRUE(malformedInfo(mutate(extStart + 18, {0x00, 0x30}, b)));    // length 48 < the forwarding address + tag + reference
+    everyByteVariation(a, true);
+    everyByteVariation(b, true);
+    everyByteVariation(fromHex(kV3Hello), true);
+    everyByteVariation(fromHex(kV3Dd), true);
+    everyByteVariation(fromHex(kV3Lsr), true);
+    everyByteVariation(fromHex(kV3Ack), true);
+}
+
 TEST(Ospf, TruncationAndMutationStayInsideTheFrame) {
     Bytes dd = {0x02, 0x02, 0x00, 0x34, 10, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x05, 0xdc, 0x02, 0x07, 0x00, 0x00, 0x12, 0x34,
                 0x00, 0x01, 0x02, 0x01, 1, 1, 1, 1, 1, 1, 1, 1, 0x80, 0, 0, 1, 0x12, 0x34, 0x00, 0x14};
@@ -534,6 +657,8 @@ TEST(Ospf, TruncationAndMutationStayInsideTheFrame) {
     uint32_t seed = 0x05bf0010u;
     for (const char *v: {kV2Lsu1, kV2Lsu2, kV2Lsr, kV2Md5})
         framesweep::sweep(framesweep::ethernet(0x0800, framesweep::ipv4Packet(89, fromHex(v), {10, 0, 0, 1}, {224, 0, 0, 5})), seed++);
+    for (const char *v: {kV3LsuA, kV3LsuB, kV3Hello, kV3Dd, kV3Lsr, kV3Ack})
+        framesweep::sweep(framesweep::ethernet(0x86dd, framesweep::ipv6Packet(89, fromHex(v), src, dst)), seed++);
 }
 
 TEST(Ospf, RealCapturesWhenAvailable) {
