@@ -86,7 +86,39 @@ Hedef: geçerli paketleri sessizce atlamamak veya yanlış protokol başlığı 
 
 Kabul ölçütü: FCS'li Ethernet ve eski Packet Block paketleri kaybolmaz; IPv6 parçaları tamamlanmadan sahte TCP/UDP alanları üretmez; mevcut pcap/pcapng endian, zaman çözünürlüğü ve gzip desteği korunur. Referanslar: [pcap dosya yapısı](https://www.ietf.org/ietf-ftp/internet-drafts/draft-ietf-opsawg-pcap-09.html), [pcapng blokları](https://datatracker.ietf.org/doc/html/draft-ietf-opsawg-pcapng-06), [IPv6 / RFC 8200](https://www.rfc-editor.org/rfc/rfc8200.html).
 
+## v0.7.2 — Mesaj birleştirme ve mevcut protokollerin eksikleri
+
+Hedef: bir protokolün adını göstermekten mesajı ve alanlarını doğru çözmeye geçmek.
+
+- [ ] TCP mesaj birleştirmeyi dissector'lara aç: iki yönlü akış, sıra dışı/yeniden iletilmiş segmentler, eksik bayt aralıkları, bağlantı kapanışı ve bellek sınırları; paket detayını yeniden kurarken aynı sonuç — **L**
+- [ ] DNS/TCP uzunluk öneki ve mesaj gövdesi segmentlere bölündüğünde birleştir; aynı TCP yükündeki birden fazla DNS mesajını ayrı çöz — **M**
+- [ ] HTTP/1.x mesaj sınırları: bölünmüş başlık/gövde, Content-Length, chunked aktarım ve aynı akıştaki ardışık mesajlar; gzip gövdeyi çöz, çözülmüş boyutu sınırla — **L**
+- [ ] TLS record ve handshake mesajlarını TCP segmentleri ve record'lar arasında birleştir; Client/ServerHello, extension ve açık Certificate alanlarını genişlet. *(Şifre çözme ayrı aşama)* — **L**
+- [ ] Protokol seçimini port + içerik + oturum durumu ile yap; kullanıcıya TCP/UDP için Decode As eşlemesi sun. Standart dışı portta DNS tanıma ve SMTP STARTTLS sonrası TLS'ye geçiş; yanlış pozitiflere karşı mesaj yapısını doğrula — **M**
+- [ ] DNS RDATA kapsamı: SOA'nın kalan zaman alanları, EDNS seçenekleri/extended RCODE, DS/DNSKEY/RRSIG/NSEC ve SVCB/HTTPS; desteklenmeyen kayıtları ham veri olarak açıkça göster — **M**
+- [ ] DHCP option overload (52): `sname`/`file` alanlarını tara; pad/end bulunmayan ve kırpık seçenekleri işle. Uzun seçenek birleştirme, relay alt seçenekleri ve authentication seçeneğini çöz — **M**
+- [ ] ICMP/ICMPv6 mesaj gövdeleri: MTU/pointer, alıntılanan IPv6 paketleri, router/neighbor discovery bayrakları ve seçenekleri, multicast listener mesajları; IPv6 uzantı başlıklarının TLV alanları — **M**
+- [ ] NTP control/private mesajlarını temel 48 baytlık zaman paketinden ayır; extension/authentication alanlarını çöz — **M**
+- [ ] IPv4/TCP/UDP/ICMP checksum doğrulaması; doğrulanmış hata ile kesilmiş paket veya checksum offload nedeniyle doğrulanamayan durumu Expert Information'da ayır — **M**
+
+Kabul ölçütü: `dns_port.pcap` DNS olarak çözülür; `PRIV_bootp-both_overload*.pcap` içindeki overload seçenekleri görünür; bölünmüş ve birleştirilmiş DNS/HTTP/TLS girdileri aynı mesaj/alanları üretir. Eksik yakalama mesajı tamamlanmış sayılmaz; mevcut özetten filtreleme performansı korunur.
+
+## v0.7.3 — Temel kapsüllemeler ve Ethernet kontrol protokolleri
+
+Hedef: desteklenen IP/TCP/UDP dissector'larına farklı kapsüllemeler üzerinden ulaşmak. İç içe ayrıştırmada derinlik ve uzunluk sınırları ortak uygulanır.
+
+- [ ] IEEE 802.3 uzunluk alanını Ethernet II EtherType'tan ayır; LLC/SNAP ve STP/RSTP/MSTP BPDU alanları — **M**
+- [ ] PPP ve PPPoE: discovery/session, LCP/IPCP/IPv6CP, IPv4/IPv6 yüküne yönlendirme — **M**
+- [ ] MPLS label stack: label/TC/S/TTL, çoklu etiket ve IPv4/IPv6 iç yükü — **M**
+- [ ] IP-in-IP (IPv4/IPv6) ve GRE: optional checksum/key/sequence, iç protokole yönlendirme; ERSPAN başlıkları — **M**
+- [ ] LLDP TLV'leri, LACP ve Ethernet pause/control çerçeveleri — **M**
+- [ ] Her kapsülleme için özet, alan ağacı, bayt aralıkları, görüntüleme filtresi ve protokol hiyerarşisini birlikte güncelle — **M**
+
+Kabul ölçütü: `stp.pcap`, `telecomitalia-pppoe.pcap`, `mpls-basic.cap` ve tünel örneklerinde dış/iç katmanlar ve iç IP adresleri görünür. Kırpık veya aşırı iç içe başlıklarda sınır ihlali olmaz. Bu dosyalar ilk incelemede çalıştırılmadı; beklenen alanlar corpus'a eklenirken doğrulanır.
+
 ## v0.8 — Canlı yakalama
+
+Ön koşul: v0.7.1–v0.7.3. Canlı gelen paketler de aynı okuyucu/dissector doğruluk ve kaynak sınırlarından yararlanır.
 
 - [ ] Canlı yakalama (libpcap/Npcap): arayüz seçimi, BPF yakalama filtresi, başlat/durdur — **L**
 
