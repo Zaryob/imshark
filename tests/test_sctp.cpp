@@ -80,7 +80,7 @@ TEST(Sctp, ShutdownCompletePacket) {
 
 TEST(Sctp, DataChunkBreakdown) {
     // DATA chunk: type=0, flags=0x03 (U + B + E), length=16 + 5 = 21 (padded to 24)
-    // TSN=100, StreamID=1, SSN=0, PPID=3 (WebRTC DCEP)
+    // TSN=100, StreamID=1, SSN=0, PPID=3 (M3UA)
     std::vector<uint8_t> chunks = {
         0, 0x07, 0, 21,
         0, 0, 0, 100, // TSN

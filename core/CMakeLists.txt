@@ -28,6 +28,7 @@ add_library(imshark_core STATIC
     src/dissect/x509.cpp
     src/dissect/udp.cpp
     src/dissect/sctp.cpp
+    src/dissect/sctp_chunks.cpp
     src/dissect/dns.cpp
     src/dissect/http.cpp
     src/dissect/ntp.cpp

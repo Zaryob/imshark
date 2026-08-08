@@ -1,11 +1,12 @@
-// SCTP (Stream Control Transmission Protocol, RFC 4960) dissector:
-// Common header + CRC-32C verification + Chunk breakdown (DATA, INIT, INIT_ACK, SACK, HEARTBEAT, ABORT, SHUTDOWN...)
+// SCTP (Stream Control Transmission Protocol, RFC 9260 / 4960) dissector:
+// Common header + CRC-32C verification + the chunks with their bodies and parameters (sctp_chunks.cpp).
 #include "sctp.h"
 
 #include <string>
 #include <vector>
 
 #include "checksum.h"
+#include "sctp_chunks.h"
 #include "util.h"
 #include <network/byteorder.h>
 
@@ -14,26 +15,7 @@ using packet::Field;
 namespace {
     using namespace dissect;
 
-    std::string sctpChunkTypeName(uint8_t type) {
-        switch (type) {
-            case 0: return "DATA";
-            case 1: return "INIT";
-            case 2: return "INIT_ACK";
-            case 3: return "SACK";
-            case 4: return "HEARTBEAT";
-            case 5: return "HEARTBEAT_ACK";
-            case 6: return "ABORT";
-            case 7: return "SHUTDOWN";
-            case 8: return "SHUTDOWN_ACK";
-            case 9: return "ERROR";
-            case 10: return "COOKIE_ECHO";
-            case 11: return "COOKIE_ACK";
-            case 12: return "ECNE";
-            case 13: return "CWR";
-            case 14: return "SHUTDOWN_COMPLETE";
-            default: return "Chunk " + std::to_string(type);
-        }
-    }
+    std::string sctpChunkTypeName(uint8_t type) { return sctp::chunkTypeName(type); }
 } // namespace
 
 void dissect::dissectSctp(Context &ctx, const char *data, size_t length) {
@@ -105,11 +87,20 @@ void dissect::dissectSctp(Context &ctx, const char *data, size_t length) {
             malformed = "Invalid SCTP chunk length (< 4)";
             break;
         }
+        // the body of the chunk (what lies inside the packet); a problem with it is reported after the framing ones
+        const char *bodyProblem = nullptr;
+        if (ctype == sctp::kData || ctype == sctp::kIData) {
+            sctp::DataHeader dh;
+            sctp::readDataHeader(bytes + offset, chunks.back().shown, clen, dh, &bodyProblem);
+        } else {
+            bodyProblem = sctp::decodeBody(nullptr, ctype, cflags, bytes + offset, chunks.back().shown, clen, 0);
+        }
         if (clen > room) {
             chunkBeyondPacket = true;
             malformed = "SCTP chunk length extends beyond the packet";
             break;
         }
+        if (bodyProblem && !malformed) malformed = bodyProblem;
 
         // Advance with 4-byte padding per RFC 4960 section 3.2
         offset += (static_cast<size_t>(clen) + 3) & ~static_cast<size_t>(3);
@@ -146,26 +137,20 @@ void dissect::dissectSctp(Context &ctx, const char *data, size_t length) {
             Field &cf = l.add("Chunk: " + cname + " (Type: " + std::to_string(chunk.type) +
                               ", Length: " + std::to_string(chunk.length) + ")", co, chunk.shown);
             cf.add("Type: " + std::to_string(chunk.type) + " (" + cname + ")", co, 1);
-            cf.add("Flags: " + hexString(chunk.flags, 2), co + 1, 1);
-            cf.add("Length: " + std::to_string(chunk.length), co + 2, 2);   // shown >= 4: the loop needs 4 bytes
-
-            // DATA chunk detail
-            if (chunk.type == 0 && chunk.length >= 16 && chunk.shown >= 16) {
-                const auto *cp = bytes + chunk.off;
-                uint32_t tsn = readU32(cp + 4);
-                uint16_t sid = readU16(cp + 8);
-                uint16_t ssn = readU16(cp + 10);
-                uint32_t ppid = readU32(cp + 12);
-
-                cf.add("TSN: " + std::to_string(tsn), co + 4, 4);
-                cf.add("Stream ID: " + std::to_string(sid), co + 8, 2);
-                cf.add("Stream Sequence Number: " + std::to_string(ssn), co + 10, 2);
-                cf.add("Payload Protocol Identifier: " + std::to_string(ppid), co + 12, 4);
-
-                size_t userLen = chunk.shown - 16;
+            const auto *cp = bytes + chunk.off;
+            const bool isData = chunk.type == sctp::kData || chunk.type == sctp::kIData;
+            sctp::DataHeader dh;
+            const bool haveData = isData && sctp::readDataHeader(cp, chunk.shown, chunk.length, dh, nullptr);
+            if (haveData) {
+                sctp::addDataHeaderFields(cf, dh, co, chunk.length);
+                const size_t userLen = chunk.shown - dh.headerLength;
                 if (userLen > 0) {
-                    cf.add("User Data (" + std::to_string(userLen) + " bytes)" + (chunk.shown < chunk.length ? " [cut]" : ""), co + 16, userLen);
+                    cf.add("User Data (" + std::to_string(userLen) + " bytes)" + (chunk.shown < chunk.length ? " [cut]" : ""), co + dh.headerLength, userLen);
                 }
+            } else {
+                cf.add("Flags: " + hexString(chunk.flags, 2), co + 1, 1);
+                cf.add("Length: " + std::to_string(chunk.length), co + 2, 2);   // shown >= 4: the loop needs 4 bytes
+                if (!isData) sctp::decodeBody(&cf, chunk.type, chunk.flags, cp, chunk.shown, chunk.length, co);
             }
         }
     }
