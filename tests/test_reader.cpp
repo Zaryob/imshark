@@ -410,3 +410,43 @@ TEST(PcapReader, FcsStrippedFromDissection) {
     EXPECT_TRUE(foundFcs) << "FCS should appear in the field tree";
     std::remove(path.c_str());
 }
+
+TEST(PcapngReader, LegacyPacketBlockIsLoaded) {
+    // Build a pcapng file with a single obsolete Packet Block (type 0x00000002).
+    // Layout: 2-byte interface ID, 2-byte drops count, 8-byte timestamp, 4-byte captured len,
+    //         4-byte original len, packet data (padded to 4 bytes).
+    const bool be = false;
+    std::vector<char> shb;
+    put<uint32_t>(shb, 0x1A2B3C4D, be);
+    put<uint16_t>(shb, 1, be);
+    put<uint16_t>(shb, 0, be);
+    put<int64_t>(shb, -1, be);
+
+    std::vector<char> idb;
+    put<uint16_t>(idb, 1, be);   // link type = Ethernet
+    put<uint16_t>(idb, 0, be);
+    put<uint32_t>(idb, 0, be);   // snap len
+
+    std::vector<char> pb;
+    put<uint16_t>(pb, 0, be);    // interface ID
+    put<uint16_t>(pb, 0, be);    // drops count
+    put<uint32_t>(pb, 0, be);    // timestamp high
+    put<uint32_t>(pb, 5000000, be); // timestamp low (5 seconds in microseconds)
+    put<uint32_t>(pb, static_cast<uint32_t>(kFrame.size()), be); // captured length
+    put<uint32_t>(pb, static_cast<uint32_t>(kFrame.size()), be); // original length
+    pb.insert(pb.end(), kFrame.begin(), kFrame.end());
+    pb.insert(pb.end(), 2, 0);   // padding to 4 bytes
+
+    std::vector<char> f = block(be, 0x0A0D0D0A, shb);
+    auto b2 = block(be, 1, idb);
+    f.insert(f.end(), b2.begin(), b2.end());
+    auto b3 = block(be, 2, pb);  // block type 2 = obsolete Packet Block
+    f.insert(f.end(), b3.begin(), b3.end());
+
+    auto r = load("pb.pcapng", f, true);
+    ASSERT_TRUE(r.ok) << r.message;
+    ASSERT_EQ(r.packets.size(), 1u) << "the obsolete Packet Block must not be silently skipped";
+    EXPECT_EQ(r.packets[0].protocol, "ARP");
+    EXPECT_EQ(r.packets[0].link_type, 1u);
+    EXPECT_EQ(r.packets[0].captured_length, kFrame.size());
+}

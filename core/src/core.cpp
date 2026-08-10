@@ -18,6 +18,7 @@ namespace {
 
     constexpr uint32_t kBlockSHB = 0x0A0D0D0A; // Section Header Block
     constexpr uint32_t kBlockIDB = 0x00000001; // Interface Description Block
+    constexpr uint32_t kBlockPB  = 0x00000002; // (obsolete) Packet Block
     constexpr uint32_t kBlockSPB = 0x00000003; // Simple Packet Block
     constexpr uint32_t kBlockNRB = 0x00000004; // Name Resolution Block
     constexpr uint32_t kBlockISB = 0x00000005; // Interface Statistics Block
@@ -417,6 +418,35 @@ bool core::FileProcessor::processPcapngFile(const std::string &filepath, std::ve
                 if (sectionBase + interfaceId < info_.interfaces.size()) info_.interfaces[sectionBase + interfaceId].packets++;
                 addPacket(parser, packets, lastTime, linkType, blockStart + 8 + 20, e.u32(body + 16),
                           std::vector<char>(data, data + capturedLength), hasComment, epbFcs);
+            } break;
+            case kBlockPB: { // obsolete Packet Block: 2-byte iface id, 2-byte drops, 8-byte ts, captured, original, data
+                if (bodySize < 20) return fail("Packet Block too short");
+                const uint32_t interfaceId = e.u16(body);
+                const uint64_t ticks = (static_cast<uint64_t>(e.u32(body + 4)) << 32) | e.u32(body + 8);
+                const uint32_t capturedLength = e.u32(body + 12);
+                if (capturedLength > bodySize - 20) return fail("Packet Block has invalid captured length");
+
+                const uint64_t tps = interfaceId < interfaces.size()
+                                         ? interfaces[interfaceId].ticksPerSecond
+                                         : kDefaultTicksPerSecond;
+                lastTime = timeBase.relative(ticks / tps, ticks % tps, tps);
+                const uint32_t linkType = interfaceId < interfaces.size() ? interfaces[interfaceId].linkType : 1;
+                const uint8_t pbFcs = interfaceId < interfaces.size() ? interfaces[interfaceId].fcsLength : 0;
+                const char *data = reinterpret_cast<const char *>(body + 20);
+
+                bool hasComment = false;
+                const size_t optionsAt = 20 + ((static_cast<size_t>(capturedLength) + 3) & ~static_cast<size_t>(3));
+                if (optionsAt < bodySize) {
+                    forEachOption(e, body + optionsAt, bodySize - optionsAt, [&](uint16_t code, const uint8_t *v, size_t len) {
+                        if (code == 1 && len > 0) {
+                            info_.packetComments[static_cast<uint32_t>(packets.size()) + 1] = optionText(v, len);
+                            hasComment = true;
+                        }
+                    });
+                }
+                if (sectionBase + interfaceId < info_.interfaces.size()) info_.interfaces[sectionBase + interfaceId].packets++;
+                addPacket(parser, packets, lastTime, linkType, blockStart + 8 + 20, e.u32(body + 16),
+                          std::vector<char>(data, data + capturedLength), hasComment, pbFcs);
             } break;
             case kBlockSPB: {
                 if (bodySize < 4) return fail("Simple Packet Block too short");
