@@ -29,7 +29,7 @@ then Decode As rules, which replace the port registration. TLS found inside STAR
 MySQL) is dissected as TLS from the upgrade on. **Decode As** offers these protocol names (a name is offered for the
 transports it supports):
 `BGP`, `DCERPC`, `DHCP`, `DNP3`, `DNS`, `DTLS`, `FTP`, `FTP-DATA`, `HTTP`, `HTTP2`, `Kerberos`, `LDAP`, `MDNS`, `Modbus`,
-`MySQL`, `NFS`, `NTP`, `PGSQL`, `Portmap`, `RTCP`, `RTP`, `RTSP`, `SIP`, `SMB2`, `SMTP`, `SNMP`, `SSH`, `TDS`, `Telnet`,
+`MySQL`, `NFS`, `NTP`, `PGSQL`, `Portmap`, `RTCP`, `RTP`, `RTSP`, `SCTP`, `SIP`, `SMB2`, `SMTP`, `SNMP`, `SSH`, `TDS`, `Telnet`,
 `TFTP`, `TLS`.
 
 Every display-filter field of every row is listed with its type and description in the generated
@@ -112,7 +112,7 @@ Only the gzip wrapper is not read by a `CaptureFileReader` of its own (the appli
 | **TCP** | Options (MSS, WS, SACK, TS), Relative Seq/Ack, Flags, Analysis | TCP stream reassembly | `tcp.*`, `tcp.port`, `tcp.flags.*`, `tcp.analysis.*` |
 | **UDP** | Ports, Length, UDP checksum verification | N/A | `udp.*`, `udp.port`, `udp.checksum.status` |
 | **UDP-Lite** | RFC 3828 checksum coverage and validation (IPv4, IPv6) | N/A | `udplite` |
-| **SCTP** | Verification Tag, Castagnoli CRC-32C, generic chunk list and DATA fields (no INIT/SACK/HEARTBEAT bodies, no reassembly) | N/A | `sctp`, `sctp.srcport`, `sctp.dstport`, `sctp.port`, `sctp.vtag`, `sctp.chunk_type` |
+| **SCTP** | IP protocol 132 and UDP 9899; Verification Tag, Castagnoli CRC-32C, chunk bodies (DATA, I-DATA, INIT, INIT ACK, SACK, HEARTBEAT, ABORT, ERROR, SHUTDOWN*, COOKIE*, ECNE, CWR, FORWARD-TSN) and parameters | N/A | `sctp`, `sctp.srcport`, `sctp.dstport`, `sctp.port`, `sctp.vtag`, `sctp.chunk_type` |
 
 ### Application Layer
 | Protocol | Features | Stream / Message Framing | Filter Fields |

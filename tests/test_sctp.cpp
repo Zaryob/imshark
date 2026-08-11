@@ -5,6 +5,7 @@
 #include <filter/filter.h>
 
 #include "frame_sweep.h"
+#include "sctp_support.h"
 #include "support.h"
 
 using support::parse;
@@ -109,6 +110,7 @@ namespace {
         return framesweep::parseEthernet(framesweep::ethernet(0x0800, framesweep::ipv4Packet(132, sctp)));
     }
     uint8_t sctpState(const packet::PacketInfo &p) { return dissect::transportChecksumState(p); }
+    std::string treeText(const std::vector<packet::Field> &fs) { std::string out; for (const auto &f: fs) out += f.text + "\n" + treeText(f.children); return out; }
     const packet::Field *firstNamed(const std::vector<packet::Field> &fs, const std::string &prefix) {
         for (const auto &f: fs) {
             if (f.text.rfind(prefix, 0) == 0) return &f;
@@ -167,4 +169,34 @@ TEST(Sctp, TruncationAndMutationStayInsideTheFrame) {
 
 TEST(Sctp, RealCapturesWhenAvailable) {
     framesweep::checkCorpus({"SCTP"});
+}
+
+// RFC 6951: SCTP packets travel as UDP payload (port 9899 by default). The ports of the packet are the SCTP ones; the
+// SCTP CRC-32C is checked, the SCTP filter fields and the SCTP conversations apply. The packet comes from the builders of
+// sctp_support.h (independent bitwise CRC-32C, see test_sctp_chunks.cpp).
+TEST(Sctp, UdpEncapsulationOnPort9899) {
+    using framesweep::Bytes;
+    const Bytes hb = sctptest::sctpPacket(5000, 38156, 0x12345678, sctptest::chunk(4, 0, sctptest::tlv(1, {0xde, 0xad, 0xbe, 0xef})));
+    const auto frame = [&](const Bytes &sctp, uint16_t sport, uint16_t dport) {
+        return framesweep::ethernet(0x0800, framesweep::ipv4Packet(17, framesweep::udpDatagram(sport, dport, sctp)));
+    };
+    const auto p = framesweep::parseEthernet(frame(hb, 9899, 9899));
+    EXPECT_EQ(p.protocol, "SCTP");
+    EXPECT_EQ(p.src_port, 5000);
+    EXPECT_EQ(p.dst_port, 38156);
+    EXPECT_EQ(p.info, "5000 -> 38156 [HEARTBEAT]");
+    EXPECT_EQ(sctpState(p), dissect::kChecksumGood);
+    EXPECT_NE(framesweep::parseEthernet(frame(hb, 40000, 9899)).protocol, "UDP");
+    EXPECT_NE(treeText(p.fields).find("User Datagram Protocol"), std::string::npos);
+    EXPECT_NE(treeText(p.fields).find("(UDP encapsulation)"), std::string::npos);
+    Bytes bad = hb;
+    bad[hb.size() - 1] ^= 1;
+    EXPECT_EQ(sctpState(framesweep::parseEthernet(frame(bad, 9899, 9899))), dissect::kChecksumBad);
+    auto f = filter::Filter::compile("sctp && sctp.vtag == 0x12345678 && sctp.chunk_type == 4");
+    ASSERT_TRUE(f.ok);
+    EXPECT_TRUE(f.filter.matches(p));
+    // fewer than 12 bytes: truncated, but inside the datagram
+    const auto cut = framesweep::parseEthernet(frame(Bytes{1, 2, 3}, 9899, 9899));
+    EXPECT_NE(cut.info.find("Truncated"), std::string::npos) << cut.info;
+    framesweep::sweep(frame(hb, 9899, 9899), 0x5c7a9899u);
 }

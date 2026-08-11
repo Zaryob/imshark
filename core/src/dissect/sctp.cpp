@@ -115,8 +115,10 @@ void dissect::dissectSctp(Context &ctx, const char *data, size_t length) {
 
     if (ctx.wantFields()) {
         const size_t o = ctx.offsetOf(data);
+        // RFC 6951: the SCTP packet is the payload of a UDP datagram; the ports and the CRC-32C are the SCTP ones
+        const bool overUdp = pack.ip_protocol == 17;
         Field &l = ctx.addLayer("Stream Control Transmission Protocol, Src Port: " + std::to_string(srcPort) +
-                                ", Dst Port: " + std::to_string(dstPort), o, length);
+                                ", Dst Port: " + std::to_string(dstPort) + (overUdp ? " (UDP encapsulation)" : ""), o, length);
 
         l.add("Source Port: " + std::to_string(srcPort), o, 2);
         l.add("Destination Port: " + std::to_string(dstPort), o + 2, 2);

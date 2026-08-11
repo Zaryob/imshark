@@ -134,6 +134,7 @@ const dissect::Registry &dissect::Registry::builtin() {
         r.registerUdpPort(4500, dissectIke);
         r.registerUdpPort(4433, dissectDtlsPort);
         r.registerUdpPort(5684, dissectDtlsPort);   // CoAPs
+        r.registerUdpPort(9899, dissectSctp);       // SCTP over UDP (RFC 6951)
         // names for Decode As
         auto both = [&](const char *name, Dissector udp, Dissector tcp, std::shared_ptr<StreamProtocol> stream = nullptr) { r.registerProtocolName(name, {std::move(udp), std::move(tcp), std::move(stream)}); };
         both("DNS", dissectDns, dissectDnsTcp, std::make_shared<StreamProtocol>(StreamProtocol{"DNS", frameDnsTcp, dissectDnsTcp}));
@@ -157,6 +158,7 @@ const dissect::Registry &dissect::Registry::builtin() {
         both("Modbus", nullptr, dissectModbus, std::make_shared<StreamProtocol>(StreamProtocol{"Modbus", frameModbus, dissectModbus}));
         both("DNP3", dissectDnp3, dissectDnp3, std::make_shared<StreamProtocol>(StreamProtocol{"DNP3", frameDnp3, dissectDnp3}));
         both("DTLS", dissectDtlsPort, nullptr);
+        both("SCTP", dissectSctp, nullptr);   // SCTP over UDP (RFC 6951) on another port
         both("HTTP", nullptr, nullptr, std::make_shared<StreamProtocol>(StreamProtocol{"HTTP", frameHttp, [](Context &c, const char *d, size_t n) { dissectHttp(c, d, n); }}));
         both("HTTP2", nullptr, dissectHttp2, std::make_shared<StreamProtocol>(StreamProtocol{"HTTP2", frameHttp2, dissectHttp2}));
         both("TLS", nullptr, nullptr, std::make_shared<StreamProtocol>(StreamProtocol{"TLS", frameTls, [](Context &c, const char *d, size_t n) { dissectTls(c, d, n); }}));

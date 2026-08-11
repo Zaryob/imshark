@@ -156,7 +156,7 @@ same key log.
 **Add rule**, pick TCP or UDP, the port and the protocol, then **Apply** (the capture is loaded again; **Revert** discards
 edits). Protocols offered (a name appears for the transports it supports):
 `BGP`, `DCERPC`, `DHCP`, `DNP3`, `DNS`, `DTLS`, `FTP`, `FTP-DATA`, `HTTP`, `HTTP2`, `Kerberos`, `LDAP`, `MDNS`, `Modbus`,
-`MySQL`, `NFS`, `NTP`, `PGSQL`, `Portmap`, `RTCP`, `RTP`, `RTSP`, `SIP`, `SMB2`, `SMTP`, `SNMP`, `SSH`, `TDS`, `Telnet`,
+`MySQL`, `NFS`, `NTP`, `PGSQL`, `Portmap`, `RTCP`, `RTP`, `RTSP`, `SCTP`, `SIP`, `SMB2`, `SMTP`, `SNMP`, `SSH`, `TDS`, `Telnet`,
 `TFTP`, `TLS`. RTP and RTCP are reachable only this way. A test checks that this list equals the registry's.
 
 ## Settings
