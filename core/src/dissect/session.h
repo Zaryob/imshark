@@ -13,6 +13,7 @@
 #include <tls/keylog.h>
 
 #include "dtls_decrypt.h"
+#include "sctp_session.h"
 #include "tls_decrypt.h"
 #include "tls_session.h"
 
@@ -64,6 +65,7 @@ public:
         tls_.clear();
         tlsDecrypt_.clear();
         dtls_.clear();
+        sctp_.clear();
         tlsCaptureKeys_.clear();   // the keys the user supplied (tlsExternalKeys) outlive a new capture
         tlsUpgrades_.clear();
         serverEndpoints_.clear();
@@ -402,6 +404,30 @@ public:
     }
     const DtlsTable &dtlsTable() const { return dtls_; }
 
+    // ---- SCTP associations (see sctp_session.h) -------------------------------------------------
+    /// Load pass: takes one DATA / I-DATA fragment for reassembly. Returns false if frozen or out of budget; the "sctp" table is
+    /// marked state lost when it ran out of room or had to drop an incomplete message.
+    bool addSctpFragment(const std::string &srcIp, uint16_t srcPort, const std::string &dstIp, uint16_t dstPort, const SctpFragment &fragment,
+                         std::vector<uint32_t> &earlierPackets) {
+        if (frozen_) return false;
+        const auto result = sctp_.addFragment(srcIp, srcPort, dstIp, dstPort, fragment, maxMemoryPerTable_, earlierPackets);
+        if (!result.kept || result.evicted) markStateLost("sctp");
+        return result.kept;
+    }
+    /// Load pass: counts a DATA / I-DATA chunk in its stream's totals.
+    bool noteSctpData(const std::string &srcIp, uint16_t srcPort, const std::string &dstIp, uint16_t dstPort, uint16_t stream, size_t bytes, bool endsMessage,
+                      uint32_t packet, uint16_t position) {
+        if (frozen_) return false;
+        if (!sctp_.noteData(srcIp, srcPort, dstIp, dstPort, stream, bytes, endsMessage, packet, position, maxMemoryPerTable_)) {
+            markStateLost("sctp");
+            return false;
+        }
+        return true;
+    }
+    const SctpFragmentRef *sctpFragment(uint32_t packet, uint16_t position) const { return sctp_.fragment(packet, position); }
+    const SctpMessage *sctpMessage(uint32_t index) const { return sctp_.message(index); }
+    const SctpTable &sctpTable() const { return sctp_; }
+
     // ---- TLS key material (see tls/keylog.h) ----------------------------------------------------
     /// Secrets the user supplied (key log file / text). They stay when clear() starts a new capture.
     tls::KeyStore &tlsExternalKeys() { return tlsExternalKeys_; }
@@ -517,6 +543,7 @@ private:
     TlsSessionTable tls_;
     TlsDecryptTable tlsDecrypt_;
     DtlsTable dtls_;
+    SctpTable sctp_;
     tls::KeyStore tlsExternalKeys_;
     tls::KeyStore tlsCaptureKeys_;
 };

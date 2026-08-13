@@ -96,6 +96,8 @@ add_executable(imshark_tests
     test_udplite.cpp
     test_sctp.cpp
     test_sctp_chunks.cpp
+    test_sctp_session.cpp
+    test_sctp_reassembly.cpp
     test_ospf.cpp
     test_ipsec.cpp
     test_ldap.cpp
