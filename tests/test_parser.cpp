@@ -369,3 +369,50 @@ TEST(SummaryFacts, PayloadPositionInsideTheFrame) {
     auto ethPadded = parse(hex("001122334455 aabbccddeeff 0800 4500002c00000000 4006 0000 0a000001 0a000002 1f90 01bb 00000001 00000000 5018 2000 0000 0000 61626364 00000000"));
     EXPECT_EQ(ethPadded.payload_length, 4u) << "frame padding is not payload";
 }
+
+// ---- tcp.len -----------------------------------------------------------------------------------------------
+
+namespace {
+    uint64_t tcpLenOf(const packet::PacketInfo &p) {
+        auto f = filter::Filter::compile("tcp.len");
+        EXPECT_TRUE(f.ok);
+        // tcp.len == N is the way to read the value through the public filter interface
+        for (uint64_t n = 0; n < 5000; ++n) {
+            auto eq = filter::Filter::compile("tcp.len == " + std::to_string(n));
+            if (eq.filter.matches(p)) return n;
+        }
+        return UINT64_MAX;
+    }
+}
+
+TEST(TcpLen, IsThePayloadLengthOnTheWire) {
+    EXPECT_EQ(tcpLenOf(parse(support::tcpPacket("0a000001", "0a000002", "1f90", "01bb", "00000001", "00000001", "18", "hello world"))), 11u);
+    EXPECT_EQ(tcpLenOf(parse(support::tcpPacket("0a000001", "0a000002", "1f90", "01bb", "00000001", "00000001", "10"))), 0u) << "a pure ACK";
+
+    // TCP options do not count as payload
+    auto withOptions = parse(hex("001122334455 aabbccddeeff 0800 4500003c123440004006 0000 0a000001 0a000002 1f90 01bb 00000064 00000000 a002 7210 0000 0000 020405b4 01 030307 0402 080a 00000001 00000000"));
+    EXPECT_EQ(tcpLenOf(withOptions), 0u);
+
+    // Ethernet padding after the IP datagram is not payload
+    auto padded = hex("001122334455 aabbccddeeff 0800 4500002b00000000 4006 0000 0a000001 0a000002 1f90 01bb 00000001 00000000 5018 2000 0000 0000 616263 00000000000000");
+    EXPECT_EQ(tcpLenOf(parse(padded)), 3u);
+
+    // VLAN tag in front
+    auto vlan = hex("001122334455 aabbccddeeff 8100 0064 0800 4500002b00000000 4006 0000 0a000001 0a000002 1f90 01bb 00000001 00000000 5018 2000 0000 0000 616263");
+    EXPECT_EQ(tcpLenOf(parse(vlan)), 3u);
+}
+
+TEST(TcpLen, TruncatedCapturesKeepTheWireLength) {
+    // the IP header claims 100 payload bytes but only 4 were captured (snaplen)
+    auto cut = hex("001122334455 aabbccddeeff 0800 4500008c00000000 4006 0000 0a000001 0a000002 1f90 01bb 00000001 00000000 5018 2000 0000 0000 61626364");
+    const auto p = parse(cut);
+    EXPECT_EQ(tcpLenOf(p), 100u) << "like Wireshark: the length on the wire, not the bytes in the file";
+    EXPECT_EQ(p.payload_length, 4u) << "while the captured payload is what is really there";
+}
+
+TEST(TcpLen, NonTcpPacketsHaveNone) {
+    auto f = filter::Filter::compile("tcp.len >= 0");
+    ASSERT_TRUE(f.ok);
+    EXPECT_FALSE(f.filter.matches(parse(hex(std::string(support::kEthIpUdp)))));
+    EXPECT_FALSE(f.filter.matches(parse(hex(support::kArpRequest))));
+}

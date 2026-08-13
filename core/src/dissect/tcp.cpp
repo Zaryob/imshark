@@ -69,6 +69,7 @@ void dissect::dissectTcp(Context &ctx, const char *data, size_t length) {
     const size_t o = ctx.offsetOf(data);
     pack.length = pack.length >= headerLen ? pack.length - headerLen : 0;
     const char *payload = data + headerLen;
+    pack.tcp_len = pack.length;
     const size_t payloadLen = std::min<size_t>(pack.length, length - headerLen);
     if (payloadLen > 0) {
         pack.payload_offset = static_cast<uint32_t>(ctx.offsetOf(payload));
