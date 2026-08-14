@@ -9,12 +9,13 @@
 #include "text_input.h"
 
 namespace ui {
-    /// One background search over the frame bytes. The thread reads `state.packets` (see cancelSearch).
+    /// One background search over the frame bytes. The thread works on a snapshot of the packet list.
     struct SearchJob {
         std::thread thread;
         core::ScanControl control;
         std::atomic<bool> finished{false};
         std::vector<uint32_t> order;       // snapshot of the displayed order the search ran on
+        std::shared_ptr<const std::vector<packet::PacketInfo>> packets;   // snapshot of the capture
         FindResult result;
         bool cancelled = false;
 
@@ -86,9 +87,9 @@ bool ui::findAndSelect(AppState &state, bool forward) {
         job->order = state.order;
         job->control.total = job->order.size();
         const std::string path = state.currentFile;
-        const auto *packets = &state.packets;
-        job->thread = std::thread([raw = job.get(), path, packets, needle, from, forward] {
-            raw->result = findBytes(path, *packets, raw->order, needle, from, forward, &raw->control, &raw->cancelled);
+        job->packets = state.packets.share();
+        job->thread = std::thread([raw = job.get(), path, needle, from, forward] {
+            raw->result = findBytes(path, *raw->packets, raw->order, needle, from, forward, &raw->control, &raw->cancelled);
             raw->finished = true;
         });
         f.job = std::move(job);

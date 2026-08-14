@@ -14,13 +14,14 @@
 #include <stream/follow.h>
 
 namespace ui {
-    /// One background reassembly. The thread reads `state.packets` (see cancelBackgroundJobs).
+    /// One background reassembly. The thread works on a snapshot of the packet list.
     struct FollowJob {
         std::thread thread;
         core::ScanControl control;
         std::atomic<bool> finished{false};
         bool ok = false;
         stream::Stream stream;
+        std::shared_ptr<const std::vector<packet::PacketInfo>> packets;   // snapshot of the capture
 
         ~FollowJob() {
             control.cancelRequested = true;
@@ -54,9 +55,9 @@ bool ui::startFollow(AppState &state, int packetIndex) {
     auto job = std::make_shared<FollowJob>();
     job->control.total = indices.size();
     const std::string path = state.currentFile;
-    const auto *packets = &state.packets;
-    job->thread = std::thread([raw = job.get(), path, packets, indices = std::move(indices)] {
-        raw->ok = stream::reassemble(path, *packets, indices, raw->stream, &raw->control);
+    job->packets = state.packets.share();
+    job->thread = std::thread([raw = job.get(), path, indices = std::move(indices)] {
+        raw->ok = stream::reassemble(path, *raw->packets, indices, raw->stream, &raw->control);
         raw->finished = true;
     });
     f.job = std::move(job);

@@ -134,7 +134,7 @@ void ui::pollLoad(AppState &state) {
     state.loadMessage = job->message;
     if (job->ok) {
         cancelBackgroundJobs(state); // background threads read state.packets
-        state.packets = std::move(job->packets);
+        state.packets.assign(std::move(job->packets));
         if (!state.tempFile.empty()) { // the previous capture's decompressed copy is not needed any more
             std::error_code ec;
             std::filesystem::remove(core::pathFromUtf8(state.tempFile), ec);
