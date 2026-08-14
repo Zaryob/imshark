@@ -4,6 +4,7 @@
 #include <network/byteorder.h>
 
 #include <algorithm>
+#include <exception>
 #include <bit>
 #include <cstring>
 #include <fstream>
@@ -83,6 +84,19 @@ namespace {
 
     // true if the multi-byte integers of the file are big endian (Endian::swap says "differs from this machine")
     bool fileBigEndian(const Endian &e) { return (std::endian::native == std::endian::little) == e.swap; }
+
+    /// Reserves room for the packets a file of `fileSize` bytes can hold at most (`minRecordBytes` is the smallest
+    /// record: header plus a minimal frame). Growing a vector by doubling copies it again and again and peaks at
+    /// about twice its final size; reserving costs only address space, because pages that are never written do not
+    /// count as used memory. Failing to reserve is harmless: the vector then simply grows as usual.
+    void reservePackets(std::vector<packet::PacketInfo> &packets, uint64_t fileSize, uint64_t minRecordBytes) {
+        constexpr uint64_t kMaxReserved = 32ull << 20; // elements: bounds the address space for huge files
+        const uint64_t estimate = std::min<uint64_t>(fileSize / minRecordBytes + 16, kMaxReserved);
+        try {
+            if (estimate > packets.capacity()) packets.reserve(packets.size() + static_cast<size_t>(estimate));
+        } catch (const std::exception &) {
+        }
+    }
 
     uint64_t remainingBytes(std::ifstream &file, uint64_t fileSize) {
         const auto pos = file.tellg();
@@ -226,6 +240,7 @@ bool core::FileProcessor::processPcapFile(const std::string &filepath, std::vect
 
     TimeBase timeBase;
     const size_t firstPacket = packets.size();
+    reservePackets(packets, fileSize, 16 + 28);
 
     uint8_t ph[16];
     uint64_t consumed = sizeof(gh);
@@ -293,6 +308,7 @@ bool core::FileProcessor::processPcapngFile(const std::string &filepath, std::ve
     TimeBase timeBase;
     double lastTime = 0;
     const size_t firstPacket = packets.size();
+    reservePackets(packets, fileSize, 32 + 28);
 
     // Stops the read loop. Packets that were read before the problem are kept.
     auto fail = [&](const std::string &what) {
