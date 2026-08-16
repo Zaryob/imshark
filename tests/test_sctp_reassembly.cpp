@@ -8,6 +8,7 @@
 #include <gtest/gtest.h>
 
 #include <cstdio>
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -261,4 +262,55 @@ TEST(SctpReassembly, SeededDamageToTheWholeCaptureNeverBreaksReplayEquality) {
         SCOPED_TRACE("round " + std::to_string(round));
         expectReplayEqualsLoad(cap);
     }
+}
+
+namespace {
+    size_t count(const std::vector<packet::PacketInfo> &packets, const std::string &expression) {
+        auto f = filter::Filter::compile(expression);
+        EXPECT_TRUE(f.ok) << expression << " did not compile";
+        size_t n = 0;
+        if (f.ok) for (const auto &p: packets) n += f.filter.matches(p);
+        return n;
+    }
+}
+
+// Expected counts follow from the capture comment above scrambled(): the first data chunk of each packet decides.
+TEST(SctpReassembly, FilterFieldsDescribeTheDataChunksAndTheReassembly) {
+    Cap c;
+    c.frames = scrambled();
+    Loaded &cap = c.load("fields");
+    const auto &p = cap.packets;
+    EXPECT_EQ(count(p, "sctp"), 11u);
+    EXPECT_EQ(count(p, "sctp.data"), 10u);                                    // all but the SACK
+    EXPECT_EQ(count(p, "sctp.checksum.status == 1"), 11u);
+    EXPECT_EQ(count(p, "sctp.reassembled"), 4u);                              // packets 5, 6, 9, 10
+    EXPECT_EQ(count(p, "sctp.reassembled && sctp.data.sid == 1"), 1u);
+    EXPECT_EQ(count(p, "sctp.data.fragment"), 10u);
+    EXPECT_EQ(count(p, "sctp.data.idata"), 3u);
+    EXPECT_EQ(count(p, "sctp.data.unordered"), 2u);
+    EXPECT_EQ(count(p, "sctp.data.retransmission"), 1u);
+    EXPECT_EQ(count(p, "sctp.data.ppid == 46"), 1u);                          // the message's PPID, on the completing packet
+    EXPECT_EQ(count(p, "sctp.data.ppid == 51"), 7u);
+    EXPECT_EQ(count(p, "sctp.data.sid == 4"), 3u);
+    EXPECT_EQ(count(p, "sctp.data.ssn == 5"), 3u);                            // the MID of the I-DATA message
+    EXPECT_EQ(count(p, "sctp.data.tsn == 10"), 2u);                           // the fragment and its retransmission
+    EXPECT_EQ(count(p, "sctp.chunk_type == 3"), 1u);
+    EXPECT_EQ(count(p, "!sctp.data"), 1u);
+}
+
+TEST(SctpReassembly, TheHierarchyNamesSctpUnderIpAndUnderUdp) {
+    Cap c;
+    c.frames = {fromA(data(0x03, 1, 0, 0, 0, "x")), udpFromA(data(0x03, 2, 0, 0, 0, "y"))};
+    Loaded &cap = c.load("hierarchy");
+    const auto root = stats::protocolHierarchy(cap.packets, nullptr);
+    std::string flat;
+    std::function<void(const stats::HierarchyNode &, int)> dump = [&](const stats::HierarchyNode &n, int depth) {
+        flat += std::string(depth, ' ') + n.name + " " + std::to_string(n.packets) + "\n";
+        for (const auto &ch: n.children) dump(ch, depth + 1);
+    };
+    dump(root, 0);
+    EXPECT_NE(flat.find("  Internet Protocol Version 4 2\n"), std::string::npos) << flat;
+    EXPECT_NE(flat.find("   Stream Control Transmission Protocol 1\n"), std::string::npos) << flat;             // directly under IP
+    EXPECT_NE(flat.find("   User Datagram Protocol 1\n    Stream Control Transmission Protocol 1\n"), std::string::npos) << flat;   // under UDP
+    EXPECT_EQ(flat.find("Other IP protocol"), std::string::npos) << flat;
 }

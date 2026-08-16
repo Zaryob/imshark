@@ -333,6 +333,7 @@ namespace stats {
             if (protocol == "HTTP2") return "Hypertext Transfer Protocol 2";
             if (protocol == "TLS") return "Transport Layer Security";
             if (protocol == "DTLS") return "Datagram Transport Layer Security";
+            if (protocol == "SCTP") return "Stream Control Transmission Protocol";   // SCTP over UDP (RFC 6951); SCTP on IP is named by its IP protocol
             if (protocol == "NTP") return "Network Time Protocol";
             if (protocol == "MDNS") return "Multicast Domain Name System";
             if (protocol == "FTP") return "File Transfer Protocol";
@@ -398,10 +399,11 @@ namespace stats {
             else if (p.ip_protocol == 17) c.push_back("User Datagram Protocol");
             else if (p.ip_protocol == 1) c.push_back("Internet Control Message Protocol");
             else if (p.ip_protocol == 58) c.push_back("Internet Control Message Protocol v6");
+            else if (p.ip_protocol == 132) c.push_back("Stream Control Transmission Protocol");
             else if (p.ip_version != 0 && p.ip_protocol != 4 && p.ip_protocol != 41 && p.ip_protocol != 47 && !p.has_gre && !p.has_ipip) c.push_back("Other IP protocol");
             // HTTP that was decrypted from TLS sits below the TLS layer
             if (p.ip_protocol == 6 && p.protocol != "TLS" && dissect::tlsSummaryState(p) == dissect::TlsRecordState::Decrypted) c.push_back(applicationName("TLS"));
-            if (auto a = applicationName(p.protocol); !a.empty()) c.push_back(a);
+            if (auto a = applicationName(p.protocol); !a.empty() && !(p.protocol == "SCTP" && p.ip_protocol == 132)) c.push_back(a);
             return c;
         }
 

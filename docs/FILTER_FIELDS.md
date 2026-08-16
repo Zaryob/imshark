@@ -253,9 +253,20 @@ in the [User Guide](USER_GUIDE.md#display-filters). Names are lower case.
 | `rpc.state_accept` | unsigned | ONC RPC accept status of an accepted reply (0 SUCCESS, 1 PROG_UNAVAIL, 2 PROG_MISMATCH, 3 PROC_UNAVAIL ...) |
 | `rpc.xid` | unsigned | ONC RPC transaction id |
 | `sctp` | boolean | Stream Control Transmission Protocol |
+| `sctp.checksum.status` | unsigned | SCTP CRC-32C: 0 = bad, 1 = good, 2 = unverified, 3 = not present |
 | `sctp.chunk_type` | unsigned | SCTP Chunk Type (of the first chunk) |
+| `sctp.data` | boolean | SCTP packet with a DATA or I-DATA chunk |
+| `sctp.data.fragment` | boolean | The first data chunk carries only part of a user message |
+| `sctp.data.idata` | boolean | The first data chunk is an I-DATA chunk |
+| `sctp.data.ppid` | unsigned | Payload protocol identifier of the first DATA / I-DATA chunk (of the whole message when it was reassembled) |
+| `sctp.data.retransmission` | boolean | The first data chunk is a fragment seen before |
+| `sctp.data.sid` | unsigned | Stream identifier of the first DATA / I-DATA chunk |
+| `sctp.data.ssn` | unsigned | Stream sequence number (DATA) or message identifier (I-DATA) of the first DATA / I-DATA chunk |
+| `sctp.data.tsn` | unsigned | TSN of the first DATA / I-DATA chunk |
+| `sctp.data.unordered` | boolean | The first data chunk has the U (unordered) flag |
 | `sctp.dstport` | unsigned | SCTP destination port |
 | `sctp.port` | unsigned | SCTP source or destination port |
+| `sctp.reassembled` | boolean | This packet's first data chunk completed a user message (reassembled SCTP message) |
 | `sctp.srcport` | unsigned | SCTP source port |
 | `sctp.vtag` | unsigned | SCTP Verification Tag |
 | `smb2` | boolean | SMB2 / SMB3 |
@@ -388,4 +399,4 @@ in the [User Guide](USER_GUIDE.md#display-filters). Names are lower case.
 | `wlan.ssid` | string | 802.11 SSID |
 | `wlan.ta` | string | 802.11 Transmitter MAC address |
 
-378 fields.
+389 fields.
