@@ -112,7 +112,7 @@ Only the gzip wrapper is not read by a `CaptureFileReader` of its own (the appli
 | **TCP** | Options (MSS, WS, SACK, TS), Relative Seq/Ack, Flags, Analysis | TCP stream reassembly | `tcp.*`, `tcp.port`, `tcp.flags.*`, `tcp.analysis.*` |
 | **UDP** | Ports, Length, UDP checksum verification | N/A | `udp.*`, `udp.port`, `udp.checksum.status` |
 | **UDP-Lite** | RFC 3828 checksum coverage and validation (IPv4, IPv6) | N/A | `udplite` |
-| **SCTP** | IP protocol 132 and UDP 9899; Verification Tag, Castagnoli CRC-32C, chunk bodies (DATA, I-DATA, INIT, INIT ACK, SACK, HEARTBEAT, ABORT, ERROR, SHUTDOWN*, COOKIE*, ECNE, CWR, FORWARD-TSN) and parameters | N/A | `sctp`, `sctp.srcport`, `sctp.dstport`, `sctp.port`, `sctp.vtag`, `sctp.chunk_type` |
+| **SCTP** | IP protocol 132 and UDP 9899; Verification Tag, Castagnoli CRC-32C, chunk bodies (DATA, I-DATA, INIT, INIT ACK, SACK, HEARTBEAT, ABORT, ERROR, SHUTDOWN*, COOKIE*, ECNE, CWR, FORWARD-TSN, I-FORWARD-TSN) and parameters, DATA / I-DATA fragment reassembly per association, stream and SSN / MID, per-stream totals, payload protocol names | Datagram reassembler (fragments of one user message) | `sctp`, `sctp.srcport`, `sctp.dstport`, `sctp.port`, `sctp.vtag`, `sctp.chunk_type`, `sctp.checksum.status`, `sctp.data`, `sctp.data.tsn`, `sctp.data.sid`, `sctp.data.ssn`, `sctp.data.ppid`, `sctp.data.idata`, `sctp.data.fragment`, `sctp.data.unordered`, `sctp.data.retransmission`, `sctp.reassembled` |
 
 ### Application Layer
 | Protocol | Features | Stream / Message Framing | Filter Fields |
