@@ -314,3 +314,25 @@ TEST(SctpReassembly, TheHierarchyNamesSctpUnderIpAndUnderUdp) {
     EXPECT_NE(flat.find("   User Datagram Protocol 1\n    Stream Control Transmission Protocol 1\n"), std::string::npos) << flat;   // under UDP
     EXPECT_EQ(flat.find("Other IP protocol"), std::string::npos) << flat;
 }
+
+TEST(SctpReassembly, RetransmittedUnorderedAndIDataMessagesAreNotReassembledTwice) {
+    // unordered DATA M1 (TSN 1-2), M2 (TSN 3-4), then M1 again; unordered I-DATA MID 7 (FSN 0-1) and MID 8, then MID 7 again
+    Cap c;
+    c.frames = {
+        fromA(data(0x06, 1, 3, 0, 51, "one-")), fromA(data(0x05, 2, 3, 0, 51, "first")),
+        fromA(data(0x06, 3, 3, 0, 51, "two-")), fromA(data(0x05, 4, 3, 0, 51, "second")),
+        fromA(data(0x06, 1, 3, 0, 51, "one-")), fromA(data(0x05, 2, 3, 0, 51, "first")),
+        fromA(idata(0x06, 11, 4, 7, 46, "aa")), fromA(idata(0x05, 12, 4, 7, 1, "bb")),
+        fromA(idata(0x06, 13, 4, 8, 46, "cc")), fromA(idata(0x05, 14, 4, 8, 1, "dd")),
+        fromA(idata(0x06, 11, 4, 7, 46, "aa")), fromA(idata(0x05, 12, 4, 7, 1, "bb")),
+    };
+    Loaded &cap = c.load("retransmit");
+    EXPECT_EQ(cap.fp.sessions().sctpTable().messageCount(), 4u);
+    for (size_t i : {4u, 5u, 10u, 11u}) {
+        EXPECT_NE(cap.packets[i].info.find("[Retransmission]"), std::string::npos) << i << ": " << cap.packets[i].info;
+        EXPECT_EQ(cap.packets[i].info.find("Reassembled"), std::string::npos) << i;
+    }
+    EXPECT_EQ(count(cap.packets, "sctp.reassembled"), 4u);
+    EXPECT_TRUE(has(treeText(cap.details(4).fields), "[Retransmission of a fragment seen in #"));
+    expectReplayEqualsLoad(cap);
+}

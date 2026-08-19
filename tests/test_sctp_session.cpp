@@ -327,3 +327,92 @@ TEST(SctpTable, SeededFuzzRebuildsEveryMessageFromShuffledFragmentsWithRepeats) 
         EXPECT_EQ(t.pendingMessages(), 0u) << "round " << round;
     }
 }
+
+// Review finding: unordered DATA shares one key per stream, so after M1 (TSN 1-2) and M2 (3-4) a retransmission of M1 was not
+// recognised (only the last completed range was remembered) and completed a second time.
+TEST(SctpTable, ARetransmissionOfAnEarlierUnorderedMessageIsNotAnotherMessage) {
+    SctpTable t;
+    std::vector<uint32_t> earlier;
+    add(t, dataFragment(1, 12, 3, 0, 1, true, false, "m1a", true), earlier);
+    add(t, dataFragment(2, 12, 3, 0, 2, false, true, "m1b", true), earlier);
+    add(t, dataFragment(3, 12, 3, 0, 3, true, false, "m2a", true), earlier);
+    add(t, dataFragment(4, 12, 3, 0, 4, false, true, "m2b", true), earlier);
+    ASSERT_EQ(t.messageCount(), 2u);
+    add(t, dataFragment(5, 12, 3, 0, 1, true, false, "m1a", true), earlier);
+    EXPECT_EQ(t.fragment(5, 12)->flags, SctpFragmentRef::kRetransmission);
+    add(t, dataFragment(6, 12, 3, 0, 2, false, true, "m1b", true), earlier);
+    EXPECT_EQ(t.fragment(6, 12)->flags, SctpFragmentRef::kRetransmission);
+    EXPECT_EQ(t.messageCount(), 2u);
+    EXPECT_EQ(t.pendingMessages(), 0u);
+    EXPECT_TRUE(earlier.empty());
+}
+
+TEST(SctpTable, ARetransmissionOfAnEarlierIDataMessageAndOfOldOrderedOnesIsRecognisedToo) {
+    SctpTable t;
+    std::vector<uint32_t> earlier;
+    auto idata = [&](uint32_t packet, uint32_t mid, uint32_t fsn, bool b, bool e, bool unordered) {
+        SctpFragment f = dataFragment(packet, 12, 4, 0, 1000 + packet, b, e, "xy", unordered);
+        f.idata = true;
+        f.ssn = mid;
+        f.sequence = fsn;
+        return f;
+    };
+    add(t, idata(1, 1, 0, true, false, true), earlier);
+    add(t, idata(2, 1, 1, false, true, true), earlier);
+    add(t, idata(3, 2, 0, true, false, true), earlier);
+    add(t, idata(4, 2, 1, false, true, true), earlier);
+    ASSERT_EQ(t.messageCount(), 2u);
+    add(t, idata(5, 1, 0, true, false, true), earlier);
+    add(t, idata(6, 1, 1, false, true, true), earlier);
+    EXPECT_EQ(t.fragment(5, 12)->flags, SctpFragmentRef::kRetransmission);
+    EXPECT_EQ(t.fragment(6, 12)->flags, SctpFragmentRef::kRetransmission);
+    EXPECT_EQ(t.messageCount(), 2u);
+    // ordered DATA, many messages later (each its own key), and an unordered stream far later: still recognised
+    for (uint16_t ssn = 0; ssn < 50; ++ssn) {
+        add(t, dataFragment(10 + 2 * ssn, 12, 1, ssn, 100 + 2 * ssn, true, false, "a"), earlier);
+        add(t, dataFragment(11 + 2 * ssn, 12, 1, ssn, 101 + 2 * ssn, false, true, "b"), earlier);
+    }
+    add(t, dataFragment(500, 12, 1, 0, 100, true, false, "a"), earlier);
+    EXPECT_EQ(t.fragment(500, 12)->flags, SctpFragmentRef::kRetransmission);
+    EXPECT_EQ(t.messageCount(), 52u);
+}
+
+TEST(SctpTable, CompletedRangesMergeAndAreBounded) {
+    SctpTable t;
+    std::vector<uint32_t> earlier;
+    // 600 unordered messages of two fragments each, completed with gaps of one TSN between them: nothing merges, only the last 256
+    // ranges are remembered and the table says it forgot
+    bool forgot = false;
+    for (uint32_t m = 0; m < 600; ++m) {
+        add(t, dataFragment(1 + 2 * m, 12, 3, 0, 10 * m, true, false, "a", true), earlier);
+        forgot = forgot || add(t, dataFragment(2 + 2 * m, 12, 3, 0, 10 * m + 1, false, true, "b", true), earlier).evicted;
+    }
+    EXPECT_TRUE(forgot);
+    add(t, dataFragment(5000, 12, 3, 0, 10 * 599, true, false, "a", true), earlier);
+    EXPECT_EQ(t.fragment(5000, 12)->flags, SctpFragmentRef::kRetransmission);        // recent: remembered
+    // adjacent messages (TSN 10000.. in a row) merge into one range, so a long in-order stream is never forgotten
+    SctpTable u;
+    bool forgotInOrder = false;
+    for (uint32_t m = 0; m < 2000; ++m) {
+        add(u, dataFragment(1 + 2 * m, 12, 3, 0, 2 * m, true, false, "a", true), earlier);
+        forgotInOrder = forgotInOrder || add(u, dataFragment(2 + 2 * m, 12, 3, 0, 2 * m + 1, false, true, "b", true), earlier).evicted;
+    }
+    EXPECT_FALSE(forgotInOrder);
+    add(u, dataFragment(9000, 12, 3, 0, 0, true, false, "a", true), earlier);
+    EXPECT_EQ(u.fragment(9000, 12)->flags, SctpFragmentRef::kRetransmission);
+}
+
+// Review minor: the walk back to the B fragment made in-order arrival quadratic (40k one byte fragments took 1.6 s).
+TEST(SctpTable, ManyTinyFragmentsInEitherOrderAreLinear) {
+    for (bool reverse: {false, true}) {
+        SctpTable t;
+        std::vector<uint32_t> earlier;
+        const uint32_t n = 60000;
+        for (uint32_t k = 0; k < n; ++k) {
+            const uint32_t i = reverse ? n - 1 - k : k;
+            add(t, dataFragment(1 + k, 12, 1, 0, i, i == 0, i == n - 1, "x"), earlier);
+        }
+        ASSERT_EQ(t.messageCount(), 1u) << reverse;
+        EXPECT_EQ(t.message(0)->data.size(), n);
+    }
+}

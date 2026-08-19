@@ -29,6 +29,7 @@ namespace dissect::sctp {
         bool hasPpid = false;        // DATA always, I-DATA only in the first fragment (B bit)
         uint32_t ppid = 0;
         uint32_t fsn = 0;            // I-DATA: Fragment Sequence Number (0 in the first fragment, which carries the PPID instead)
+        uint16_t reserved = 0;       // I-DATA: the reserved field
         size_t headerLength = 0;     // 16 (DATA) or 20 (I-DATA)
         /// The number by which the fragments of one message follow each other: the TSN (DATA) or the FSN (I-DATA).
         uint32_t sequence() const { return idata ? fsn : tsn; }

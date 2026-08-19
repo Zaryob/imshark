@@ -20,7 +20,8 @@
 //
 // Limits: incomplete messages stay until the budget evicts them (no timeout); the verification tag is not part of the key, so
 // two associations between the same address/port pairs share their state (a port reuse after an ABORT may mix fragments); a
-// fragment of an already completed message is a retransmission only while it is the latest message of its key.
+// fragment of an already completed message is a retransmission while its range is among the last 256 completed ranges of its
+// key (adjacent ranges merge, so in-order traffic stays one range); older ones are forgotten (state lost).
 
 #include <cstdint>
 #include <map>
@@ -110,6 +111,7 @@ namespace dissect {
             uint16_t position = 0;
             bool begin = false, end = false;
             uint32_t ppid = 0;
+            uint32_t lo = 0, hi = 0;          // while this fragment ends a run of neighbours: the other end of the run
             std::string bytes;
         };
         struct Pending {
@@ -120,7 +122,8 @@ namespace dissect {
             uint32_t ssn = 0;
             bool idata = false, unordered = false;
         };
-        struct Done { uint32_t first = 0, last = 0, packet = 0; };
+        struct Done { uint32_t first = 0, last = 0, packet = 0; };   // a TSN / FSN range of completed messages (adjacent ones merged)
+        static constexpr size_t kMaxDonePerKey = 256;
         struct Direction { size_t streams = 0; uint64_t lastNoted = 0; bool any = false; };
 
         static uint64_t refKey(uint32_t packet, uint16_t position) { return (static_cast<uint64_t>(packet) << 16) | position; }
@@ -133,7 +136,7 @@ namespace dissect {
         std::unordered_map<uint64_t, SctpFragmentRef> refs_;
         std::unordered_map<std::string, Pending> pending_;
         std::map<uint64_t, std::string> byAge_;               // Pending::age -> key
-        std::unordered_map<std::string, Done> done_;
+        std::unordered_map<std::string, std::vector<Done>> done_;   // per key: recent completed ranges, so a retransmission is recognised
         std::vector<SctpMessage> messages_;
         std::unordered_map<std::string, SctpStreamStats> streams_;     // direction key + stream
         std::unordered_map<std::string, Direction> directions_;

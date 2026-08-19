@@ -195,8 +195,8 @@ TEST(Sctp, UdpEncapsulationOnPort9899) {
     auto f = filter::Filter::compile("sctp && sctp.vtag == 0x12345678 && sctp.chunk_type == 4");
     ASSERT_TRUE(f.ok);
     EXPECT_TRUE(f.filter.matches(p));
-    // fewer than 12 bytes: truncated, but inside the datagram
+    // fewer than 12 bytes cannot be an SCTP packet: plain UDP
     const auto cut = framesweep::parseEthernet(frame(Bytes{1, 2, 3}, 9899, 9899));
-    EXPECT_NE(cut.info.find("Truncated"), std::string::npos) << cut.info;
+    EXPECT_EQ(cut.protocol, "UDP") << cut.info;
     framesweep::sweep(frame(hb, 9899, 9899), 0x5c7a9899u);
 }

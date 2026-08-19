@@ -88,10 +88,13 @@ namespace dissect {
             return finish(ref);
         }
         // a fragment of the message completed last under this key: a retransmission
-        if (const auto d = done_.find(key); d != done_.end() && inRange(f.sequence, d->second.first, d->second.last)) {
-            ref.flags = SctpFragmentRef::kRetransmission;
-            ref.original = d->second.packet;
-            return finish(ref);
+        if (const auto d = done_.find(key); d != done_.end()) {
+            for (const Done &r: d->second) {
+                if (!inRange(f.sequence, r.first, r.last)) continue;
+                ref.flags = SctpFragmentRef::kRetransmission;
+                ref.original = r.packet;
+                return finish(ref);
+            }
         }
 
         auto it = pending_.find(key);
@@ -133,24 +136,27 @@ namespace dissect {
         h.begin = f.begin;
         h.end = f.end;
         h.ppid = f.ppid;
+        h.lo = h.hi = f.sequence;
         if (f.size) h.bytes.assign(f.data, f.size);
         p.fragments.emplace(f.sequence, std::move(h));
         p.bytes += f.size;
         memory_ += f.size + kFragmentOverhead;
 
-        // the fragments from the one with the B bit to the one with the E bit, around this one
+        // the run of neighbours around this fragment, joined in O(1) through the end points of the runs: complete when the run
+        // starts with the B bit and ends with the E bit
+        Held &self = p.fragments.at(f.sequence);
         uint32_t first = f.sequence, last = f.sequence;
-        bool complete = true;
-        for (size_t steps = 0; !p.fragments.at(first).begin; ++steps) {
-            const auto prev = p.fragments.find(first - 1);
-            if (prev == p.fragments.end() || prev->second.end || steps > p.fragments.size()) { complete = false; break; }
-            --first;
+        if (!self.begin) {
+            const auto prev = p.fragments.find(f.sequence - 1);
+            if (prev != p.fragments.end() && !prev->second.end) first = prev->second.lo;
         }
-        for (size_t steps = 0; complete && !p.fragments.at(last).end; ++steps) {
-            const auto next = p.fragments.find(last + 1);
-            if (next == p.fragments.end() || next->second.begin || steps > p.fragments.size()) { complete = false; break; }
-            ++last;
+        if (!self.end) {
+            const auto next = p.fragments.find(f.sequence + 1);
+            if (next != p.fragments.end() && !next->second.begin) last = next->second.hi;
         }
+        p.fragments.at(first).hi = last;
+        p.fragments.at(last).lo = first;
+        const bool complete = p.fragments.at(first).begin && p.fragments.at(last).end;
         if (!complete) return finish(ref);
 
         // complete: put the message together (B2 does it with the offsets the chain now gives)
@@ -217,9 +223,30 @@ namespace dissect {
         ref.flags = SctpFragmentRef::kCompletesHere;
         ref.completedIn = f.packet;
         ref.message = static_cast<uint32_t>(messages_.size() - 1);
-        const auto prevDone = done_.find(key);
-        if (prevDone == done_.end()) memory_ += key.size() + kKeyOverhead;
-        done_[key] = Done{first, last, f.packet};
+        // remember the range; ranges that touch merge, so a stream in order stays one range
+        const bool newKey = done_.find(key) == done_.end();
+        if (newKey) memory_ += key.size() + kKeyOverhead;
+        auto &ranges = done_[key];
+        Done nd{first, last, f.packet};
+        for (bool merged = true; merged;) {
+            merged = false;
+            for (auto r = ranges.begin(); r != ranges.end(); ++r) {
+                if (static_cast<uint32_t>(r->last + 1) == nd.first) nd.first = r->first;
+                else if (static_cast<uint32_t>(nd.last + 1) == r->first) nd.last = r->last;
+                else continue;
+                ranges.erase(r);
+                memory_ -= std::min(memory_, sizeof(Done));
+                merged = true;
+                break;
+            }
+        }
+        ranges.push_back(nd);
+        memory_ += sizeof(Done);
+        if (ranges.size() > kMaxDonePerKey) {      // forgotten ranges: their retransmissions would look new
+            ranges.erase(ranges.begin());
+            memory_ -= std::min(memory_, sizeof(Done));
+            result.evicted = true;
+        }
         return finish(ref);
     }
 

@@ -134,7 +134,7 @@ const dissect::Registry &dissect::Registry::builtin() {
         r.registerUdpPort(4500, dissectIke);
         r.registerUdpPort(4433, dissectDtlsPort);
         r.registerUdpPort(5684, dissectDtlsPort);   // CoAPs
-        r.registerUdpPort(9899, dissectSctp);       // SCTP over UDP (RFC 6951)
+        r.registerUdpPort(9899, [](Context &c, const char *d, size_t n) { if (n >= 12) dissectSctp(c, d, n); });   // SCTP over UDP (RFC 6951); a shorter payload cannot hold a common header: raw UDP
         // names for Decode As
         auto both = [&](const char *name, Dissector udp, Dissector tcp, std::shared_ptr<StreamProtocol> stream = nullptr) { r.registerProtocolName(name, {std::move(udp), std::move(tcp), std::move(stream)}); };
         both("DNS", dissectDns, dissectDnsTcp, std::make_shared<StreamProtocol>(StreamProtocol{"DNS", frameDnsTcp, dissectDnsTcp}));

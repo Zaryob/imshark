@@ -337,6 +337,7 @@ namespace dissect::sctp {
         out.stream = rd16(chunk + 8);
         out.headerLength = header;
         if (idata) {
+            out.reserved = rd16(chunk + 10);
             out.ssn = rd32(chunk + 12);
             if (out.begin) { out.hasPpid = true; out.ppid = rd32(chunk + 16); }
             else out.fsn = rd32(chunk + 16);
@@ -359,7 +360,7 @@ namespace dissect::sctp {
         cf.add("TSN: " + std::to_string(h.tsn), o + 4, 4);
         cf.add("Stream Identifier: " + std::to_string(h.stream), o + 8, 2);
         if (h.idata) {
-            cf.add("Reserved: 0x" + std::string("0000"), o + 10, 2);
+            cf.add("Reserved: " + hexString(h.reserved, 4), o + 10, 2);
             cf.add("Message Identifier: " + std::to_string(h.ssn), o + 12, 4);
             if (h.hasPpid) {
                 const std::string name = ppidName(h.ppid);
