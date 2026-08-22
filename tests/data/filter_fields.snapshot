@@ -1,8 +1,8 @@
 _ws.col.info	string	Info column	12038	12038	dbbfabc4873b3ac1
 _ws.col.protocol	string	Protocol column	12038	12038	abac8fb7eed7b901
-ah	boolean	IPsec Authentication Header	1043	1043	c9e1d0d630cf7e83
-ah.sequence	unsigned	AH Sequence Number	1043	1043	e1d1bb53a44480a9
-ah.spi	unsigned	AH Security Parameters Index (SPI)	1043	1043	bfa336e75d6be5eb
+ah	boolean	IPsec Authentication Header (IPv4 or IPv6)	133	133	2d245c34ef41d703
+ah.sequence	unsigned	AH Sequence Number	0	0	236e177ee4bbadc3
+ah.spi	unsigned	AH Security Parameters Index (SPI)	0	0	236e177ee4bbadc3
 arp	boolean	ARP / RARP	316	316	53429b559af9c0c3
 bgp	boolean	BGP	154	154	e266f6bee5070443
 bgp.as	unsigned	BGP Autonomous System number	154	154	9171519d063baebe

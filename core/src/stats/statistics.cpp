@@ -394,6 +394,7 @@ namespace stats {
             }
             if (p.has_ipip) c.push_back("IP-in-IP");
             if (p.has_gre) c.push_back(p.protocol.rfind("ERSPAN", 0) == 0 ? "ERSPAN" : "GRE");
+            if (p.has_ah) c.push_back("IPsec Authentication Header");
 
             if (p.ip_protocol == 6) c.push_back("Transmission Control Protocol");
             else if (p.ip_protocol == 17) c.push_back("User Datagram Protocol");

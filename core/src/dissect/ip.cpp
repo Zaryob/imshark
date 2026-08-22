@@ -3,6 +3,7 @@
 #include "registry.h"
 #include "util.h"
 #include "checksum.h"
+#include "ipsec.h"
 
 #include <network/l3_network/ip6_header.h>
 #include <network/l3_network/ip_header.h>
@@ -131,6 +132,8 @@ namespace {
         pack.app_text = nested.app_text;
         pack.app_text2 = nested.app_text2;
         pack.app_stream = nested.app_stream;
+        pack.has_ah = pack.has_ah | nested.has_ah;
+        pack.has_esp = pack.has_esp | nested.has_esp;
         pack.reassembled_in = nested.reassembled_in;   // unused by a last fragment: carries the DTLS decryption summary
         pack.payload_offset = nested.payload_offset; // relative to the reassembled data, not to this frame (ip_frag == 2)
         pack.payload_length = nested.payload_length;
@@ -150,7 +153,7 @@ namespace {
         using namespace dissect;
         const char *name = type == 0 ? "Hop-by-Hop Options" : type == 43 ? "Routing Header" : type == 51 ? "Authentication Header" : "Destination Options";
         Field &f = layer.add(std::string(name) + " (" + std::to_string(extLen) + " bytes)", o, extLen);
-        f.add("Next Header: " + ipProtocolName(following) + " (" + std::to_string(following) + ")", o, 1);
+        f.add("Next Header: " + (type == 51 ? dissect::ipsecProtocolName(following) : ipProtocolName(following) + " (" + std::to_string(following) + ")"), o, 1);
         if (type == 51) {
             f.add("Length: " + std::to_string(static_cast<unsigned>(static_cast<uint8_t>(h[1]))) + " (" + std::to_string(extLen) + " bytes)", o + 1, 1);
             if (extLen >= 12) f.add("SPI: " + hexString(be32(h + 4), 8), o + 4, 4);
@@ -206,6 +209,8 @@ namespace {
         using namespace dissect;
         auto &pack = ctx.pack;
         size_t pos = 0;
+        bool sawAh = false;
+        uint32_t ahSpi = 0, ahSequence = 0;
         while (nextHeader == 0 || nextHeader == 43 || nextHeader == 44 || nextHeader == 51 || nextHeader == 60) {
             if (avail - pos < 8) { ctx.markMalformed("IPv6 extension header truncated"); return; }
             const uint8_t following = static_cast<uint8_t>(data[pos]);
@@ -213,6 +218,15 @@ namespace {
                                   : nextHeader == 51 ? (static_cast<size_t>(static_cast<uint8_t>(data[pos + 1])) + 2) * 4
                                   : (static_cast<size_t>(static_cast<uint8_t>(data[pos + 1])) + 1) * 8;
             if (extLen > avail - pos) { ctx.markMalformed("IPv6 extension header truncated"); return; }
+            if (nextHeader == 51) {   // RFC 4302 3.1: SPI + sequence number are the 12 bytes the Payload Len of 0 would not cover
+                if (extLen < 12) { ctx.markMalformed("IPv6 Authentication Header shorter than its fixed part"); return; }
+                if (!sawAh) {
+                    sawAh = true;
+                    ahSpi = be32(data + pos + 4);
+                    ahSequence = be32(data + pos + 8);
+                    dissect::noteAhHeader(ctx, ahSpi, ahSequence);
+                }
+            }
             const size_t o = ctx.offsetOf(data + pos);
 
             if (nextHeader == 44) { // Fragment Header (RFC 8200 4.5)
@@ -245,6 +259,9 @@ namespace {
         pack.ip_protocol = nextHeader;
         if (const Dissector *d = ctx.registry.findIpProtocol(nextHeader)) {
             (*d)(ctx, data + pos, avail - pos);
+        } else if (sawAh) {
+            pack.protocol = "AH";
+            pack.info = "SPI: " + hexString(ahSpi, 8) + ", Seq: " + std::to_string(ahSequence);
         } else {
             pack.protocol = "Other";
         }

@@ -12,6 +12,9 @@
 // v3 report, whose bytes 4..7 are not a group address; no sample packet is one).
 // Added (v1.1, OSPF bodies): ospf.auth.type, ospf.instance_id, ospf.lsa.count; the description of ospf.lsa.checksum.status now covers
 // OSPFv3 LSAs too (its values on these packets are unchanged).
+// Changed (v1.2, AH): `ah` is now has_ah (an AH in front of TCP/UDP/... no longer is the packet's protocol, and ip_protocol is the
+// protected one), so its count on the synthetic packets differs; ah.spi/ah.sequence read the capture's IPsec table (like eth.src),
+// which this test does not supply, so they have no value here; their lines changed accordingly. The description of `ah` changed.
 #include <gtest/gtest.h>
 
 #include <algorithm>

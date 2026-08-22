@@ -2,6 +2,8 @@
 
 #include <functional>
 
+#include <stats/statistics.h>
+
 #include <core.h>
 #include <dissect/checksum.h>
 #include <filter/filter.h>
@@ -53,34 +55,6 @@ namespace {
         return makeIpv4Packet(17, udp);
     }
 } // namespace
-
-TEST(Ipsec, AuthenticationHeader) {
-    // AH: NextHeader=6 (TCP), PayloadLen=4 (6 * 4 = 24 bytes), Reserved=0, SPI=0x12345678, Seq=100
-    // ICV = 12 bytes of authentication data
-    std::vector<uint8_t> ah = {
-        6, 4, 0, 0,
-        0x12, 0x34, 0x56, 0x78, // SPI
-        0, 0, 0, 100,           // Seq
-        // 12 bytes ICV:
-        0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66,
-        // TCP minimal header (20 bytes): port 80 -> port 12345, seq=1, ack=0, SYN
-        0x00, 0x50, 0x30, 0x39,
-        0x00, 0x00, 0x00, 0x01,
-        0x00, 0x00, 0x00, 0x00,
-        0x50, 0x02, 0x20, 0x00,
-        0x00, 0x00, 0x00, 0x00
-    };
-
-    auto pkt = parse(makeIpv4Packet(51, ah));
-    EXPECT_EQ(pkt.protocol, "AH");
-    EXPECT_EQ(pkt.tcp_pdu_start, 0x12345678U);
-    EXPECT_EQ(pkt.app_code, 100U);
-    EXPECT_NE(pkt.info.find("SPI: 0x12345678"), std::string::npos);
-
-    auto f = filter::Filter::compile("ah && ah.spi == 0x12345678 && ah.sequence == 100");
-    ASSERT_TRUE(f.ok);
-    EXPECT_TRUE(f.filter.matches(pkt));
-}
 
 TEST(Ipsec, EncapsulatingSecurityPayload) {
     // ESP: SPI=0x87654321, Seq=42, followed by encrypted payload
@@ -222,17 +196,198 @@ TEST(IkeClaim, PayloadLengthBeyondThePacketIsClampedAndFlagged) {
     EXPECT_NE(udpFrame(500, 500, tiny).info.find("Malformed"), std::string::npos);
 }
 
+namespace {
+    // A frame decoded the way a capture is loaded: the table of AH/ESP headers is what the load pass recorded, and the filters need it.
+    struct Decoded {
+        packet::PacketInfo p;
+        packet::IpsecTable table;
+        bool matches(const std::string &expression) const {
+            auto f = filter::Filter::compile(expression);
+            EXPECT_TRUE(f.ok) << expression;
+            filter::Context context;
+            context.ipsec = &table;
+            return f.ok && f.filter.matches(p, context);
+        }
+    };
+
+    Decoded decode(const Bytes &frame, dissect::ParseMode mode = dissect::ParseMode::Full) {
+        packet::PacketParser parser;
+        Decoded d;
+        d.p.number = 1;
+        d.p.link_type = 1;
+        std::vector<char> raw(frame.begin(), frame.end());
+        parser.parsePacket(d.p, raw, mode);
+        d.table = parser.sessions().ipsecHeaders();
+        return d;
+    }
+
+    Bytes concat(std::initializer_list<Bytes> parts) {
+        Bytes out;
+        for (const auto &x: parts) out.insert(out.end(), x.begin(), x.end());
+        return out;
+    }
+
+    // RFC 4302 figure 1: Next Header, Payload Len (= 32-bit words - 2), Reserved, SPI, Sequence Number, ICV. 12 byte ICV (HMAC-SHA1-96).
+    Bytes ahHeader(uint8_t next, uint32_t spi, uint32_t seq, size_t icv = 12) {
+        const size_t total = 12 + icv;
+        Bytes h = {next, static_cast<uint8_t>(total / 4 - 2), 0, 0};
+        const Bytes s = be32(spi), q = be32(seq);
+        h.insert(h.end(), s.begin(), s.end());
+        h.insert(h.end(), q.begin(), q.end());
+        for (size_t i = 0; i < icv; ++i) h.push_back(static_cast<uint8_t>(0xa0 + i));
+        return h;
+    }
+
+    const Bytes kTcpSyn = {0x00, 0x50, 0x30, 0x39, 0, 0, 0, 1, 0, 0, 0, 0, 0x50, 0x02, 0x20, 0x00, 0, 0, 0, 0};   // 80 -> 12345, SYN
+    const Bytes kSrc6 = {0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}, kDst6 = {0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2};
+
+    bool treeHas(const packet::PacketInfo &p, const std::string &text) {
+        bool found = false;
+        std::function<void(const packet::Field &)> walk = [&](const packet::Field &x) { found = found || x.text.find(text) != std::string::npos; for (const auto &c: x.children) walk(c); };
+        for (const auto &x: p.fields) walk(x);
+        return found;
+    }
+
+    const stats::HierarchyNode *hierarchyNode(const stats::HierarchyNode &n, const std::string &name) {
+        if (n.name == name) return &n;
+        for (const auto &c: n.children) if (const auto *f = hierarchyNode(c, name)) return f;
+        return nullptr;
+    }
+} // namespace
+
+// RFC 4302 transport mode: the AH sits between the IPv4 header and the protected TCP segment; the protocol of the packet is the
+// protected one, the AH is a layer of it
+TEST(Ipsec, AhIpv4TransportModeDecodesTheProtectedProtocol) {
+    const Bytes frame = framesweep::ethernet(0x0800, framesweep::ipv4Packet(51, concat({ahHeader(6, 0x12345678, 100), kTcpSyn})));
+    const auto d = decode(frame);
+    EXPECT_EQ(d.p.protocol, "TCP");
+    EXPECT_EQ(d.p.src_port, 80);
+    EXPECT_EQ(d.p.dst_port, 12345);
+    EXPECT_NE(d.p.info.find("[SYN]"), std::string::npos) << d.p.info;
+    EXPECT_TRUE(d.p.has_ah);
+    EXPECT_TRUE(treeHas(d.p, "IPsec Authentication Header (SPI: 0x12345678)"));
+    EXPECT_TRUE(treeHas(d.p, "Next Header: TCP (6)"));
+    EXPECT_TRUE(treeHas(d.p, "Integrity Check Value (ICV)"));
+    EXPECT_TRUE(treeHas(d.p, "Transmission Control Protocol"));
+    EXPECT_TRUE(d.matches("ah && ah.spi == 0x12345678 && ah.sequence == 100 && tcp.dstport == 12345 && tcp.flags.syn"));
+    EXPECT_FALSE(d.matches("ah.spi == 0x12345679"));
+    EXPECT_FALSE(d.matches("esp"));
+    // without the table of the load pass the AH is still there, its numbers are not
+    filter::Context none;
+    auto f = filter::Filter::compile("ah && ah.spi == 0x12345678");
+    ASSERT_TRUE(f.ok);
+    EXPECT_FALSE(f.filter.matches(d.p, none));
+    auto presence = filter::Filter::compile("ah");
+    ASSERT_TRUE(presence.ok);
+    EXPECT_TRUE(presence.filter.matches(d.p, none));
+    // the summary pass decides the same (the list row and the detail view agree)
+    const auto summary = decode(frame, dissect::ParseMode::Summary);
+    EXPECT_EQ(summary.p.protocol, d.p.protocol);
+    EXPECT_EQ(summary.p.info, d.p.info);
+    EXPECT_EQ(summary.table.find(1)->ahSpi, 0x12345678u);
+    // a Replay does not record again
+    EXPECT_TRUE(decode(frame, dissect::ParseMode::Replay).table.empty());
+}
+
+// RFC 4302 tunnel mode: Next Header 4, an IPv4 packet inside (ICV of 16 bytes: HMAC-SHA-256-128)
+TEST(Ipsec, AhIpv4TunnelModeDecodesTheInnerPacket) {
+    const Bytes inner = framesweep::ipv4Packet(17, framesweep::udpDatagram(5000, 53, {1, 2, 3, 4}), {192, 168, 1, 1}, {192, 168, 1, 2});
+    const Bytes frame = framesweep::ethernet(0x0800, framesweep::ipv4Packet(51, concat({ahHeader(4, 7, 8, 16), inner})));
+    const auto d = decode(frame);
+    EXPECT_EQ(d.p.protocol, "DNS") << d.p.info;
+    EXPECT_TRUE(d.p.has_ah);
+    EXPECT_TRUE(d.matches("ah.spi == 7 && ah.sequence == 8"));
+    EXPECT_TRUE(treeHas(d.p, "Next Header: IPv4 (4)"));
+    EXPECT_TRUE(treeHas(d.p, "Src: 192.168.1.1"));
+}
+
+TEST(Ipsec, AhIpv6IsAnExtensionHeaderWithItsOwnFields) {
+    // IPv6 | Hop-by-Hop (8 bytes, PadN) | AH(UDP) | UDP: the AH after another extension header (RFC 8200 4.1 order is not enforced)
+    const Bytes hopByHop = {51, 0, 1, 4, 0, 0, 0, 0};
+    const Bytes udp = framesweep::udpDatagram(4000, 5000, {9, 9, 9, 9});
+    const Bytes frame = framesweep::ethernet(0x86DD, framesweep::ipv6Packet(0, concat({hopByHop, ahHeader(17, 0xcafe0001, 5), udp}), kSrc6, kDst6));
+    const auto d = decode(frame);
+    EXPECT_EQ(d.p.protocol, "UDP");
+    EXPECT_EQ(d.p.src_port, 4000);
+    EXPECT_TRUE(d.p.has_ah);
+    EXPECT_TRUE(d.matches("ah && ah.spi == 0xcafe0001 && ah.sequence == 5 && udp.dstport == 5000"));
+    EXPECT_TRUE(treeHas(d.p, "Authentication Header"));
+    EXPECT_TRUE(treeHas(d.p, "SPI: 0xcafe0001"));
+    EXPECT_TRUE(treeHas(d.p, "Next Header: UDP (17)"));
+    // an AH followed by nothing we decode (No Next Header) is the last protocol
+    const Bytes bare = framesweep::ethernet(0x86DD, framesweep::ipv6Packet(51, ahHeader(59, 0x77, 1), kSrc6, kDst6));
+    const auto b = decode(bare);
+    EXPECT_EQ(b.p.protocol, "AH");
+    EXPECT_NE(b.p.info.find("SPI: 0x00000077, Seq: 1"), std::string::npos) << b.p.info;
+    EXPECT_TRUE(b.matches("ah.spi == 0x77"));
+}
+
+TEST(Ipsec, AhWithoutPayloadAndInvalidLengths) {
+    const Bytes bare = framesweep::ethernet(0x0800, framesweep::ipv4Packet(51, ahHeader(59, 0x77, 1)));
+    EXPECT_EQ(decode(bare).p.protocol, "AH");
+    // Payload Len 0 means 8 bytes: shorter than the fixed part (RFC 4302 2.2), IPv4 and IPv6
+    Bytes tooShort = ahHeader(6, 1, 1);
+    tooShort[1] = 0;
+    const auto v4 = decode(framesweep::ethernet(0x0800, framesweep::ipv4Packet(51, tooShort)));
+    EXPECT_NE(v4.p.info.find("Malformed"), std::string::npos) << v4.p.info;
+    const auto v6 = decode(framesweep::ethernet(0x86DD, framesweep::ipv6Packet(51, tooShort, kSrc6, kDst6)));
+    EXPECT_NE(v6.p.info.find("Malformed"), std::string::npos) << v6.p.info;
+    // an AH longer than the packet
+    Bytes tooLong = ahHeader(6, 1, 1);
+    tooLong[1] = 200;
+    EXPECT_NE(decode(framesweep::ethernet(0x0800, framesweep::ipv4Packet(51, tooLong))).p.info.find("Malformed"), std::string::npos);
+}
+
+TEST(Ipsec, AhTunnelsAreCountedInTheProtocolHierarchy) {
+    std::vector<packet::PacketInfo> packets;
+    packets.push_back(decode(framesweep::ethernet(0x0800, framesweep::ipv4Packet(51, concat({ahHeader(6, 1, 1), kTcpSyn})))).p);
+    packets.push_back(decode(framesweep::ethernet(0x86DD, framesweep::ipv6Packet(51, concat({ahHeader(17, 2, 1), framesweep::udpDatagram(1, 2, {1})}), kSrc6, kDst6))).p);
+    for (auto &p: packets) p.frame_length = 100;
+    const auto root = stats::protocolHierarchy(packets, nullptr);
+    // the AH is a layer below each IP version, the protected protocol below it
+    const auto *v4 = hierarchyNode(root, "Internet Protocol Version 4"), *v6 = hierarchyNode(root, "Internet Protocol Version 6");
+    ASSERT_TRUE(v4 && v6);
+    const auto *ah4 = hierarchyNode(*v4, "IPsec Authentication Header"), *ah6 = hierarchyNode(*v6, "IPsec Authentication Header");
+    ASSERT_TRUE(ah4 && ah6);
+    EXPECT_EQ(ah4->packets, 1u);
+    EXPECT_EQ(ah6->packets, 1u);
+    EXPECT_NE(hierarchyNode(*ah4, "Transmission Control Protocol"), nullptr);
+    EXPECT_NE(hierarchyNode(*ah6, "User Datagram Protocol"), nullptr);
+}
+
+TEST(Ipsec, AhHeaderTableKeepsOrderAndBounds) {
+    packet::IpsecTable t;
+    EXPECT_TRUE(t.add(5, packet::IpsecTable::kAh, 1, 2, 10));
+    EXPECT_TRUE(t.add(5, packet::IpsecTable::kEsp, 3, 4, 10));   // the second header of the same packet
+    EXPECT_TRUE(t.add(5, packet::IpsecTable::kAh, 9, 9, 10));    // a second AH of the packet keeps the outer one
+    EXPECT_FALSE(t.add(4, packet::IpsecTable::kAh, 1, 1, 10));   // older packet
+    EXPECT_TRUE(t.add(7, packet::IpsecTable::kAh, 5, 6, 2));
+    EXPECT_FALSE(t.add(8, packet::IpsecTable::kAh, 1, 1, 2));    // beyond the bound
+    ASSERT_NE(t.find(5), nullptr);
+    EXPECT_EQ(t.find(5)->ahSpi, 1u);
+    EXPECT_EQ(t.find(5)->espSpi, 3u);
+    EXPECT_EQ(t.find(5)->flags, packet::IpsecTable::kAh | packet::IpsecTable::kEsp);
+    EXPECT_EQ(t.find(6), nullptr);
+    EXPECT_EQ(t.find(7)->ahSequence, 6u);
+    dissect::SessionTables tables(sizeof(packet::IpsecTable::Entry));   // room for one entry
+    EXPECT_TRUE(tables.addIpsecHeader(1, packet::IpsecTable::kAh, 1, 1));
+    EXPECT_FALSE(tables.addIpsecHeader(2, packet::IpsecTable::kAh, 1, 1));
+    EXPECT_TRUE(tables.isTableStateLost("ipsec"));
+    tables.freeze();
+    EXPECT_FALSE(tables.addIpsecHeader(3, packet::IpsecTable::kAh, 1, 1));
+}
+
 TEST(Ipsec, AhAndEspSweepsAndFilters) {
     Bytes ah = {6, 4, 0, 0, 0, 0, 0x12, 0x34, 0, 0, 0, 9, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12,   // Next Header 6, 24 bytes
                 0x00, 0x14, 0x00, 0x50};                                                    // start of the protected TCP header
-    const auto p = framesweep::parseEthernet(framesweep::ethernet(0x0800, framesweep::ipv4Packet(51, ah)));
-    EXPECT_EQ(p.protocol, "AH");
-    auto f = filter::Filter::compile("ah.spi == 0x1234 && ah.sequence == 9");
-    ASSERT_TRUE(f.ok);
-    EXPECT_TRUE(f.filter.matches(p));
+    EXPECT_TRUE(framesweep::parseEthernet(framesweep::ethernet(0x0800, framesweep::ipv4Packet(51, ah))).has_ah);
+    EXPECT_TRUE(decode(framesweep::ethernet(0x0800, framesweep::ipv4Packet(51, ah))).matches("ah.spi == 0x1234 && ah.sequence == 9"));
 
     const Bytes esp = {0, 0, 0x12, 0x34, 0, 0, 0, 3, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 1, 2};
     framesweep::sweep(framesweep::ethernet(0x0800, framesweep::ipv4Packet(51, ah)), 0x1b5ec001u);
+    framesweep::sweep(framesweep::ethernet(0x0800, framesweep::ipv4Packet(51, concat({ahHeader(6, 0x12345678, 100), kTcpSyn}))), 0x1b5ec006u);
+    framesweep::sweep(framesweep::ethernet(0x86DD, framesweep::ipv6Packet(0, concat({Bytes{51, 0, 1, 4, 0, 0, 0, 0}, ahHeader(17, 1, 2), framesweep::udpDatagram(4000, 5000, {9, 9})}), kSrc6, kDst6)), 0x1b5ec007u);
+    framesweep::sweep(framesweep::ethernet(0x0800, framesweep::ipv4Packet(51, concat({ahHeader(4, 7, 8, 16), framesweep::ipv4Packet(17, framesweep::udpDatagram(5000, 53, {1, 2, 3, 4}))}))), 0x1b5ec008u);
     framesweep::sweep(framesweep::ethernet(0x0800, framesweep::ipv4Packet(50, esp)), 0x1b5ec002u);
     framesweep::sweep(framesweep::ethernet(0x0800, framesweep::ipv4Packet(17, framesweep::udpDatagram(500, 500, ikeInit()))), 0x1b5ec003u);
     Bytes marked = {0, 0, 0, 0};

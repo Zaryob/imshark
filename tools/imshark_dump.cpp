@@ -120,6 +120,7 @@ int main(int argc, char **argv) {
 
     filter::Context context;
     context.captureStartEpoch = fp.captureStartEpoch();
+    context.ipsec = &fp.sessions().ipsecHeaders();
     std::string out = "{\"packets\": [";
     for (size_t i = 0; i < packets.size(); ++i) {
         context.previous = i ? &packets[i - 1] : nullptr;

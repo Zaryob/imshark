@@ -7,6 +7,7 @@
 #include <capture_reader.h>
 
 #include <packet/ethernet_table.h>
+#include <packet/ipsec_table.h>
 #include <packet/packet_info.h>
 
 namespace ui {
@@ -29,7 +30,8 @@ namespace ui {
     ///  - Filter: a display filter expression (`ethernet`, the capture's address table, lets eth.* match IP frames too)
     FindResult findPacket(const std::vector<packet::PacketInfo> &packets, const std::vector<uint32_t> &order,
                           double captureStartEpoch, FindMode mode, const std::string &query, int fromPosition, bool forward,
-                          const packet::EthernetAddressTable *ethernet = nullptr);
+                          const packet::EthernetAddressTable *ethernet = nullptr,
+                          const packet::IpsecTable *ipsec = nullptr);
 
     /// What to look for inside the frame bytes.
     struct ByteNeedle {

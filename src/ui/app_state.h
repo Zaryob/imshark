@@ -293,6 +293,11 @@ namespace ui {
             return live.processor ? &live.processor->sessions().ethernetAddresses() : &sessions.ethernetAddresses();
         }
 
+        /// The AH/ESP headers of every IPsec packet (recorded while the capture was dissected), same source as the addresses above.
+        const packet::IpsecTable *ipsecHeaders() const {
+            return live.processor ? &live.processor->sessions().ipsecHeaders() : &sessions.ipsecHeaders();
+        }
+
         size_t displayedCount() const { return filter.active ? filter.visible.size() : packets.size(); }
 
         bool hasSelection() const { return selectionStart >= 0 && selectionEnd >= selectionStart; }

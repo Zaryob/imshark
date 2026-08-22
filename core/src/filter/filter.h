@@ -19,6 +19,7 @@
 #include <vector>
 
 #include <packet/ethernet_table.h>
+#include <packet/ipsec_table.h>
 #include <packet/packet_info.h>
 
 namespace filter {
@@ -27,6 +28,7 @@ namespace filter {
         const packet::PacketInfo *previous = nullptr; // previous captured packet (frame.time_delta)
         double captureStartEpoch = 0;                 // UTC epoch seconds of the first packet (frame.time_epoch)
         const packet::EthernetAddressTable *ethernet = nullptr; // MACs of IP frames (eth.src/eth.dst/eth.addr); without it only non-IP frames have them
+        const packet::IpsecTable *ipsec = nullptr;              // SPI and sequence number of AH/ESP headers (ah.spi, ah.sequence, esp.spi, esp.sequence); without it those fields have no value
     };
 
     struct Error {

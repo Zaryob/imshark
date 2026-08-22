@@ -11,7 +11,7 @@ in the [User Guide](USER_GUIDE.md#display-filters). Names are lower case.
 |---|---|---|
 | `_ws.col.info` | string | Info column |
 | `_ws.col.protocol` | string | Protocol column |
-| `ah` | boolean | IPsec Authentication Header |
+| `ah` | boolean | IPsec Authentication Header (IPv4 or IPv6) |
 | `ah.sequence` | unsigned | AH Sequence Number |
 | `ah.spi` | unsigned | AH Security Parameters Index (SPI) |
 | `arp` | boolean | ARP / RARP |

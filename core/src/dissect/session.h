@@ -10,6 +10,7 @@
 #include <vector>
 
 #include <packet/ethernet_table.h>
+#include <packet/ipsec_table.h>
 #include <tls/keylog.h>
 
 #include "dtls_decrypt.h"
@@ -76,6 +77,7 @@ public:
         btLinks_.clear();
         btMemory_ = 0;
         ethernet_.clear();
+        ipsec_.clear();
         stateLost_ = false;
         stateLostTables_.clear();
         frozen_ = false;
@@ -504,6 +506,20 @@ public:
     }
     const packet::EthernetAddressTable &ethernetAddresses() const { return ethernet_; }
 
+    // ---- IPsec headers ------------------------------------------------------------------------------------------------
+    /// Load pass: packet `number` has an AH (`kind` packet::IpsecTable::kAh) or ESP (kEsp) header with this SPI and sequence number.
+    /// Returns false if the tables are frozen or the memory budget is exhausted (then the "ipsec" table is state lost and the
+    /// ah.* / esp.* values are missing for the later packets).
+    bool addIpsecHeader(uint32_t number, uint8_t kind, uint32_t spi, uint32_t sequence) {
+        if (frozen_) return false;
+        if (ipsec_.memory() + sizeof(packet::IpsecTable::Entry) > maxMemoryPerTable_) {
+            markStateLost("ipsec");
+            return false;
+        }
+        return ipsec_.add(number, kind, spi, sequence, SIZE_MAX);
+    }
+    const packet::IpsecTable &ipsecHeaders() const { return ipsec_; }
+
     size_t totalMemoryUsage() const { return ftpMemory_ + tftpMemory_ + connectionMemory_ + usbMemory_ + btMemory_ + tls_.memory() + tlsDecrypt_.memory() + dtls_.memory(); }
 
 private:
@@ -539,6 +555,7 @@ private:
     size_t btMemory_ = 0;
 
     packet::EthernetAddressTable ethernet_;
+    packet::IpsecTable ipsec_;
 
     TlsSessionTable tls_;
     TlsDecryptTable tlsDecrypt_;

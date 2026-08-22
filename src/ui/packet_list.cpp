@@ -148,6 +148,7 @@ void ui::drawPacketList(AppState &state, float height) {
                     context.previous = i ? &state.packets[i - 1] : nullptr;
                     context.captureStartEpoch = state.captureStartEpoch;
                     context.ethernet = state.ethernetAddresses();
+                    context.ipsec = state.ipsecHeaders();
                     rule = state.colors.match(packet, context);
                 }
                 if (rule) {

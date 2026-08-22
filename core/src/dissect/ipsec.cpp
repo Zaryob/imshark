@@ -93,9 +93,34 @@ namespace {
     }
 } // namespace
 
+void dissect::noteAhHeader(Context &ctx, uint32_t spi, uint32_t sequence) {
+    ctx.pack.has_ah = 1;
+    if (ctx.mode != ParseMode::Replay && ctx.sessions) {
+        ctx.sessions->addIpsecHeader(static_cast<uint32_t>(ctx.pack.number), packet::IpsecTable::kAh, spi, sequence);
+    }
+}
+
+std::string dissect::ipsecProtocolName(uint8_t protocol) {
+    switch (protocol) {
+        case 1: return "ICMP (1)";
+        case 4: return "IPv4 (4)";
+        case 6: return "TCP (6)";
+        case 17: return "UDP (17)";
+        case 41: return "IPv6 (41)";
+        case 47: return "GRE (47)";
+        case 50: return "ESP (50)";
+        case 51: return "AH (51)";
+        case 58: return "ICMPv6 (58)";
+        case 59: return "No Next Header (59)";
+        case 132: return "SCTP (132)";
+        default: return "protocol " + std::to_string(protocol);
+    }
+}
+
 void dissect::dissectAh(Context &ctx, const char *data, size_t length) {
     auto &pack = ctx.pack;
     pack.protocol = "AH";
+    pack.has_ah = 1;
 
     if (length < 12) {
         ctx.markMalformed("AH header truncated");
@@ -117,15 +142,14 @@ void dissect::dissectAh(Context &ctx, const char *data, size_t length) {
     const uint32_t spi = readU32(bytes + 4);
     const uint32_t seq = readU32(bytes + 8);
 
-    pack.tcp_pdu_start = spi;
-    pack.app_code = seq;
+    noteAhHeader(ctx, spi, seq);
     pack.info = "SPI: " + hexString(spi, 8) + ", Seq: " + std::to_string(seq);
 
     if (ctx.wantFields()) {
         const size_t o = ctx.offsetOf(data);
         Field &l = ctx.addLayer("IPsec Authentication Header (SPI: " + hexString(spi, 8) + ")", o, ahLength);
 
-        l.add("Next Header: " + std::to_string(nextHeader), o, 1);
+        l.add("Next Header: " + ipsecProtocolName(nextHeader), o, 1);
         l.add("Payload Length: " + std::to_string(payloadLen) + " (" + std::to_string(ahLength) + " bytes)", o + 1, 1);
         l.add("Reserved", o + 2, 2);
         l.add("Security Parameters Index: " + hexString(spi, 8), o + 4, 4);
@@ -134,6 +158,18 @@ void dissect::dissectAh(Context &ctx, const char *data, size_t length) {
             l.add("Integrity Check Value (ICV)", o + 12, ahLength - 12);
         }
     }
+
+    // The protected payload is what the Next Header field names (RFC 4302 3.1.1): the AH is a layer, as the IPv6 extension headers
+    // are. The payload length of the IP header drops the AH like it drops an extension header.
+    pack.ip_protocol = nextHeader;
+    pack.length = pack.length >= ahLength ? pack.length - static_cast<uint32_t>(ahLength) : 0;
+    if (length > ahLength) {
+        if (const Dissector *inner = ctx.registry.findIpProtocol(nextHeader)) {
+            (*inner)(ctx, data + ahLength, length - ahLength);
+            return;
+        }
+    }
+    pack.protocol = "AH";   // nothing follows (or nothing we decode)
 }
 
 void dissect::dissectEsp(Context &ctx, const char *data, size_t length) {

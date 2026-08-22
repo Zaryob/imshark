@@ -86,7 +86,9 @@ namespace packet {
         uint32_t payload_length = 0;
         uint32_t ip_id = 0;          // IPv4 identification (16 bit) / IPv6 Fragment Header identification (32 bit)
         // Number of link-layer bytes in front of the network header (0 for raw IP).
-        uint16_t l2_size : 12 = 0;
+        uint16_t l2_size : 10 = 0;   // at most 1023 (the parser clamps)
+        uint16_t has_ah : 1 = 0;     // an IPsec Authentication Header was dissected somewhere in the packet (IPv4 or IPv6)
+        uint16_t has_esp : 1 = 0;    // an ESP header was dissected (SPI/sequence number: see packet::IpsecTable)
         uint16_t has_llc : 1 = 0;    // IEEE 802.2 Logical-Link Control header present
         uint16_t has_snap : 1 = 0;   // Subnetwork Access Protocol (SNAP) header present
         uint16_t has_gre : 1 = 0;    // a GRE header was dissected somewhere in the encapsulation chain

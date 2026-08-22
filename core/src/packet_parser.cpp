@@ -66,6 +66,7 @@ namespace {
     }
 
 
+    constexpr size_t kMaxL2Size = 1023;   // PacketInfo::l2_size has 10 bits
     constexpr uint32_t kLinkNull = 0, kLinkEthernet = 1, kLinkRawBsd = 12, kLinkRawOpenBsd = 14,
             kLinkRaw = 101, kLinkLoop = 108, kLinkLinuxSll = 113, kLinkLinuxSll2 = 276;
 } // namespace
@@ -83,6 +84,8 @@ void packet::PacketParser::parsePacket(packet::PacketInfo &pack, const std::vect
     pack.tcp_flags = 0;
     pack.has_llc = 0;
     pack.has_snap = 0;
+    pack.has_ah = 0;
+    pack.has_esp = 0;
     if (mode != dissect::ParseMode::Replay) {
         pack.tcp_analysis = 0; // in Replay mode these come from the summary
         pack.tcp_dup_ack = 0;
@@ -158,7 +161,7 @@ void packet::PacketParser::parsePacket(packet::PacketInfo &pack, const std::vect
                 if (len < l3Offset || len - l3Offset < 4) {
                     ctx.markMalformed("VLAN tag truncated");
                     pack.protocol = "VLAN";
-                    pack.l2_size = static_cast<uint16_t>(std::min<size_t>(l3Offset, UINT16_MAX));
+                    pack.l2_size = static_cast<uint16_t>(std::min<size_t>(l3Offset, kMaxL2Size));
                     return;
                 }
                 pack.vlan_ids.push_back(be16(base + l3Offset) & 0x0FFF);
@@ -180,7 +183,7 @@ void packet::PacketParser::parsePacket(packet::PacketInfo &pack, const std::vect
                         eth.add("802.1Q Virtual LAN, ID: " + std::to_string(pack.vlan_ids[i]), 14 + 4 * i, 4);
                     }
                 }
-                pack.l2_size = static_cast<uint16_t>(l3Offset);
+                pack.l2_size = static_cast<uint16_t>(std::min<size_t>(l3Offset, kMaxL2Size));
                 if (ctx.wantFields() && fcsBytes > 0) {
                     ctx.addLayer("Frame Check Sequence: " + std::to_string(fcsBytes) + " bytes", effectiveLen, fcsBytes);
                 }
@@ -242,7 +245,7 @@ void packet::PacketParser::parsePacket(packet::PacketInfo &pack, const std::vect
                                                                       : "Unsupported link type " + std::to_string(pack.link_type);
             return;
     }
-    pack.l2_size = static_cast<uint16_t>(l3Offset);
+    pack.l2_size = static_cast<uint16_t>(std::min<size_t>(l3Offset, kMaxL2Size));
     if (ctx.wantFields() && !haveEthernet && l3Offset > 0) ctx.addLayer(linkTypeName(pack.link_type) + " link header", 0, l3Offset);
 
     // Show the trailing FCS in the field tree if present (it is excluded from dissection).

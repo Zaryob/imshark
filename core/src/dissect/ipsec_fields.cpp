@@ -4,12 +4,22 @@
 #include <filter/field_modules.h>
 
 namespace filter {
+    namespace {
+        // AH is a layer in front of the protocol it protects, so the SPI and sequence number come from the table the load pass filled
+        // (packet::IpsecTable); a filter run without it (Context::ipsec) has no value for them
+        const packet::IpsecTable::Entry *ahEntry(const packet::PacketInfo &p, const Context &c) {
+            if (!p.has_ah || !c.ipsec) return nullptr;
+            const auto *e = c.ipsec->find(static_cast<uint32_t>(p.number));
+            return e && (e->flags & packet::IpsecTable::kAh) ? e : nullptr;
+        }
+    } // namespace
+
     void registerIpsecFields(FieldRegistry &registry) {
         using namespace fh;
         registry.addAll({
-            {"ah", FieldType::Boolean, proto<[](const PacketInfo &p) { return p.protocol == "AH" || p.ip_protocol == 51; }>, "IPsec Authentication Header"},
-            {"ah.spi", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.protocol == "AH" || p.ip_protocol == 51) o.addU(p.tcp_pdu_start); }, "AH Security Parameters Index (SPI)"},
-            {"ah.sequence", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.protocol == "AH" || p.ip_protocol == 51) o.addU(p.app_code); }, "AH Sequence Number"},
+            {"ah", FieldType::Boolean, proto<[](const PacketInfo &p) { return p.has_ah || p.protocol == "AH"; }>, "IPsec Authentication Header (IPv4 or IPv6)"},
+            {"ah.spi", FieldType::Unsigned, [](const PacketInfo &p, const Context &c, Values &o) { if (const auto *e = ahEntry(p, c)) o.addU(e->ahSpi); }, "AH Security Parameters Index (SPI)"},
+            {"ah.sequence", FieldType::Unsigned, [](const PacketInfo &p, const Context &c, Values &o) { if (const auto *e = ahEntry(p, c)) o.addU(e->ahSequence); }, "AH Sequence Number"},
             {"esp", FieldType::Boolean, proto<[](const PacketInfo &p) { return p.protocol == "ESP" || p.ip_protocol == 50; }>, "IPsec Encapsulating Security Payload"},
             {"esp.spi", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.protocol == "ESP" || p.ip_protocol == 50) o.addU(p.tcp_pdu_start); }, "ESP Security Parameters Index (SPI)"},
             {"esp.sequence", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.protocol == "ESP" || p.ip_protocol == 50) o.addU(p.app_code); }, "ESP Sequence Number"},
