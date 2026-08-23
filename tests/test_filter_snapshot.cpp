@@ -15,6 +15,7 @@
 // Changed (v1.2, AH): `ah` is now has_ah (an AH in front of TCP/UDP/... no longer is the packet's protocol, and ip_protocol is the
 // protected one), so its count on the synthetic packets differs; ah.spi/ah.sequence read the capture's IPsec table (like eth.src),
 // which this test does not supply, so they have no value here; their lines changed accordingly. The description of `ah` changed.
+// Changed (v1.2, ESP-NULL): `esp` is now has_esp, esp.spi/esp.sequence read the IPsec table too (no value here); esp.null is new.
 #include <gtest/gtest.h>
 
 #include <algorithm>

@@ -9,9 +9,11 @@
 #include <filter/filter.h>
 
 #include "frame_sweep.h"
+#include "ipsec_support.h"
 #include "support.h"
 
 using support::parse;
+using namespace ipsectest;
 
 namespace {
     // Helper to wrap L4 in IPv4 + Ethernet
@@ -57,22 +59,20 @@ namespace {
 } // namespace
 
 TEST(Ipsec, EncapsulatingSecurityPayload) {
-    // ESP: SPI=0x87654321, Seq=42, followed by encrypted payload
+    // ESP: SPI=0x87654321, Seq=42, followed by encrypted payload (the numbers are in the table of the load pass, not in the summary)
     std::vector<uint8_t> esp = {
         0x87, 0x65, 0x43, 0x21, // SPI
         0, 0, 0, 42,           // Seq
         0xde, 0xad, 0xbe, 0xef, 0xca, 0xfe, 0xba, 0xbe // Encrypted payload
     };
 
-    auto pkt = parse(makeIpv4Packet(50, esp));
-    EXPECT_EQ(pkt.protocol, "ESP");
-    EXPECT_EQ(pkt.tcp_pdu_start, 0x87654321U);
-    EXPECT_EQ(pkt.app_code, 42U);
-    EXPECT_NE(pkt.info.find("SPI: 0x87654321"), std::string::npos);
-
-    auto f = filter::Filter::compile("esp && esp.spi == 0x87654321 && esp.sequence == 42");
-    ASSERT_TRUE(f.ok);
-    EXPECT_TRUE(f.filter.matches(pkt));
+    const auto d = decode(framesweep::ethernet(0x0800, framesweep::ipv4Packet(50, esp)));
+    EXPECT_EQ(d.p.protocol, "ESP");
+    EXPECT_TRUE(d.p.has_esp);
+    EXPECT_NE(d.p.info.find("SPI: 0x87654321"), std::string::npos);
+    EXPECT_NE(d.p.info.find("Seq: 42"), std::string::npos);
+    EXPECT_TRUE(d.matches("esp && esp.spi == 0x87654321 && esp.sequence == 42 && !esp.null"));
+    EXPECT_FALSE(d.matches("ah"));
 }
 
 TEST(Ipsec, Ikev2InitMessage) {
@@ -155,13 +155,9 @@ TEST(IkeClaim, EspInUdpOnPort4500IsEsp) {
     Bytes esp = be32(0x11223344);
     const Bytes rest = {0, 0, 0, 7, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12};
     esp.insert(esp.end(), rest.begin(), rest.end());
-    const auto p = udpFrame(4500, 4500, esp);
-    EXPECT_EQ(p.protocol, "ESP");
-    EXPECT_EQ(p.tcp_pdu_start, 0x11223344u);
-    EXPECT_EQ(p.app_code, 7u);
-    auto f = filter::Filter::compile("esp.spi == 0x11223344 && !ike");
-    ASSERT_TRUE(f.ok);
-    EXPECT_TRUE(f.filter.matches(p));
+    const auto d = decode(framesweep::ethernet(0x0800, framesweep::ipv4Packet(17, framesweep::udpDatagram(4500, 4500, esp))));
+    EXPECT_EQ(d.p.protocol, "ESP");
+    EXPECT_TRUE(d.matches("esp.spi == 0x11223344 && esp.sequence == 7 && !ike"));
 }
 
 TEST(IkeClaim, KeepaliveAndNonIkeDatagramsFallThrough) {
@@ -197,30 +193,6 @@ TEST(IkeClaim, PayloadLengthBeyondThePacketIsClampedAndFlagged) {
 }
 
 namespace {
-    // A frame decoded the way a capture is loaded: the table of AH/ESP headers is what the load pass recorded, and the filters need it.
-    struct Decoded {
-        packet::PacketInfo p;
-        packet::IpsecTable table;
-        bool matches(const std::string &expression) const {
-            auto f = filter::Filter::compile(expression);
-            EXPECT_TRUE(f.ok) << expression;
-            filter::Context context;
-            context.ipsec = &table;
-            return f.ok && f.filter.matches(p, context);
-        }
-    };
-
-    Decoded decode(const Bytes &frame, dissect::ParseMode mode = dissect::ParseMode::Full) {
-        packet::PacketParser parser;
-        Decoded d;
-        d.p.number = 1;
-        d.p.link_type = 1;
-        std::vector<char> raw(frame.begin(), frame.end());
-        parser.parsePacket(d.p, raw, mode);
-        d.table = parser.sessions().ipsecHeaders();
-        return d;
-    }
-
     Bytes concat(std::initializer_list<Bytes> parts) {
         Bytes out;
         for (const auto &x: parts) out.insert(out.end(), x.begin(), x.end());
@@ -241,18 +213,6 @@ namespace {
     const Bytes kTcpSyn = {0x00, 0x50, 0x30, 0x39, 0, 0, 0, 1, 0, 0, 0, 0, 0x50, 0x02, 0x20, 0x00, 0, 0, 0, 0};   // 80 -> 12345, SYN
     const Bytes kSrc6 = {0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1}, kDst6 = {0x20, 0x01, 0x0d, 0xb8, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2};
 
-    bool treeHas(const packet::PacketInfo &p, const std::string &text) {
-        bool found = false;
-        std::function<void(const packet::Field &)> walk = [&](const packet::Field &x) { found = found || x.text.find(text) != std::string::npos; for (const auto &c: x.children) walk(c); };
-        for (const auto &x: p.fields) walk(x);
-        return found;
-    }
-
-    const stats::HierarchyNode *hierarchyNode(const stats::HierarchyNode &n, const std::string &name) {
-        if (n.name == name) return &n;
-        for (const auto &c: n.children) if (const auto *f = hierarchyNode(c, name)) return f;
-        return nullptr;
-    }
 } // namespace
 
 // RFC 4302 transport mode: the AH sits between the IPv4 header and the protected TCP segment; the protocol of the packet is the
@@ -281,12 +241,12 @@ TEST(Ipsec, AhIpv4TransportModeDecodesTheProtectedProtocol) {
     ASSERT_TRUE(presence.ok);
     EXPECT_TRUE(presence.filter.matches(d.p, none));
     // the summary pass decides the same (the list row and the detail view agree)
-    const auto summary = decode(frame, dissect::ParseMode::Summary);
+    const auto summary = decode(frame, false, dissect::ParseMode::Summary);
     EXPECT_EQ(summary.p.protocol, d.p.protocol);
     EXPECT_EQ(summary.p.info, d.p.info);
     EXPECT_EQ(summary.table.find(1)->ahSpi, 0x12345678u);
     // a Replay does not record again
-    EXPECT_TRUE(decode(frame, dissect::ParseMode::Replay).table.empty());
+    EXPECT_TRUE(decode(frame, false, dissect::ParseMode::Replay).table.empty());
 }
 
 // RFC 4302 tunnel mode: Next Header 4, an IPv4 packet inside (ICV of 16 bytes: HMAC-SHA-256-128)

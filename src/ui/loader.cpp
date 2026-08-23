@@ -28,6 +28,7 @@ namespace ui {
         double startEpoch = 0;
         core::CaptureInfo info;
         core::SessionTables sessions;
+        bool espNull = false;               // the ESP-NULL heuristic setting as it was when the load started
         tls::KeyStore tlsKeys;              // the user's TLS keys as they were when the load started (a copy: see AppState::tlsKeys)
 
         // .gz input: decompressed to a temporary file first
@@ -61,6 +62,7 @@ namespace {
     void runJob(ui::LoadJob &job) {
         core::FileProcessor processor(job.registry ? *job.registry : dissect::Registry::builtin());
         processor.sessions().tlsExternalKeys() = job.tlsKeys;
+        processor.sessions().setEspNullHeuristic(job.espNull);
         if (!std::filesystem::is_regular_file(core::pathFromUtf8(job.path))) {
             job.message = "Not a regular file: " + job.path;
             job.finished = true;
@@ -114,6 +116,7 @@ void ui::startLoad(AppState &state, const std::string &path) {
     job->path = absoluteUtf8(path);
     job->registry = state.registry;
     job->tlsKeys = state.tlsKeys;
+    job->espNull = state.settings.espNullHeuristic;
     job->thread = std::thread([raw = job.get()] { runJob(*raw); });
     state.loadJob = std::move(job);
 }

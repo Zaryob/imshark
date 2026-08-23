@@ -1,6 +1,7 @@
 // IPsec protocol dissectors:
 // AH (RFC 4302), ESP (RFC 4303), and IKEv1/IKEv2 (RFC 2408 / RFC 7296)
 #include "ipsec.h"
+#include "esp_null.h"
 
 #include <string>
 #include <vector>
@@ -175,6 +176,7 @@ void dissect::dissectAh(Context &ctx, const char *data, size_t length) {
 void dissect::dissectEsp(Context &ctx, const char *data, size_t length) {
     auto &pack = ctx.pack;
     pack.protocol = "ESP";
+    pack.has_esp = 1;
 
     if (length < 8) {
         ctx.markMalformed("ESP header truncated");
@@ -186,19 +188,59 @@ void dissect::dissectEsp(Context &ctx, const char *data, size_t length) {
     const uint32_t spi = readU32(bytes);
     const uint32_t seq = readU32(bytes + 4);
 
-    pack.tcp_pdu_start = spi;
-    pack.app_code = seq;
+    // ESP-NULL (esp_null.h): off unless the user asked for it. The load pass decides and records it in the table; the detail view
+    // follows that record, so list and details agree whatever the setting is by then.
+    EspNullResult nul;
+    bool heuristicRan = false;
+    if (length > 8) {
+        if (ctx.mode == ParseMode::Replay) {
+            const auto *entry = ctx.sessions ? ctx.sessions->ipsecHeaders().find(static_cast<uint32_t>(pack.number)) : nullptr;
+            if (entry && (entry->flags & packet::IpsecTable::kEspPlaintext)) nul = inspectEspNull(bytes + 8, length - 8);
+        } else if (ctx.sessions && ctx.sessions->espNullHeuristic()) {
+            heuristicRan = true;
+            nul = inspectEspNull(bytes + 8, length - 8);
+        }
+    }
+    // an inner protocol we cannot decode stays "encrypted-looking" for the list, but the verdict is still recorded
+    const Dissector *inner = nul.plaintext ? ctx.registry.findIpProtocol(nul.nextHeader) : nullptr;
+    if (ctx.mode != ParseMode::Replay && ctx.sessions) {
+        ctx.sessions->addIpsecHeader(static_cast<uint32_t>(pack.number),
+                                     static_cast<uint8_t>(packet::IpsecTable::kEsp | (nul.plaintext && inner ? packet::IpsecTable::kEspPlaintext : 0)),
+                                     spi, seq);
+    }
+    if (!inner) nul.plaintext = false;
+
     pack.info = "SPI: " + hexString(spi, 8) + ", Seq: " + std::to_string(seq) + " (Encrypted payload)";
 
     if (ctx.wantFields()) {
         const size_t o = ctx.offsetOf(data);
-        Field &l = ctx.addLayer("Encapsulating Security Payload (SPI: " + hexString(spi, 8) + ")", o, length);
+        Field &l = ctx.addLayer("Encapsulating Security Payload (SPI: " + hexString(spi, 8) + ")", o, nul.plaintext ? 8 : length);
 
         l.add("Security Parameters Index: " + hexString(spi, 8), o, 4);
         l.add("Sequence Number: " + std::to_string(seq), o + 4, 4);
-        if (length > 8) {
+        if (nul.plaintext) {
+            l.add("[ESP-NULL heuristic: the payload looks unencrypted (Next Header " + ipsecProtocolName(nul.nextHeader) + ", " +
+                  std::to_string(nul.icvLength) + " byte ICV); this is a guess, not a negotiated fact]");
+        } else if (length > 8) {
             l.add("Encrypted Data and Authentication (" + std::to_string(length - 8) + " bytes)", o + 8, length - 8);
+            if (heuristicRan) l.add("[ESP-NULL heuristic: the payload does not look like an unencrypted ESP-NULL packet]");
         }
+    }
+    if (!nul.plaintext) return;
+
+    // The protected payload is a layer of its own; the trailer follows it. The IP payload length counts the payload only.
+    pack.info = "SPI: " + hexString(spi, 8) + ", Seq: " + std::to_string(seq) + " (ESP-NULL, payload not encrypted)";
+    pack.ip_protocol = nul.nextHeader;
+    pack.length = static_cast<uint32_t>(nul.payloadLength);
+    (*inner)(ctx, data + 8, nul.payloadLength);
+    if (ctx.wantFields()) {
+        const size_t trailer = ctx.offsetOf(data) + 8 + nul.payloadLength;
+        Field &t = ctx.addLayer("ESP Trailer and ICV (ESP-NULL heuristic)", trailer, nul.padLength + 2 + nul.icvLength);
+        size_t at = trailer;
+        if (nul.padLength) { t.add("Padding: " + std::to_string(nul.padLength) + " byte(s)", at, nul.padLength); at += nul.padLength; }
+        t.add("Pad Length: " + std::to_string(nul.padLength), at, 1);
+        t.add("Next Header: " + ipsecProtocolName(nul.nextHeader), at + 1, 1);
+        t.add("Integrity Check Value (ICV): " + std::to_string(nul.icvLength) + " bytes", at + 2, nul.icvLength);
     }
 }
 

@@ -62,12 +62,25 @@ bool ui::setTlsKeyLogFile(AppState &state, const std::string &path) {
     return ok;
 }
 
+void ui::setEspNullHeuristic(AppState &state, bool on) {
+    if (state.settings.espNullHeuristic == on) return;
+    state.settings.espNullHeuristic = on;
+    state.settingsDirty = true;
+    if (state.live.processor) {
+        state.live.processor->sessions().setEspNullHeuristic(on);   // counts from the next packet on
+    } else if (state.loading()) {
+        startLoad(state, loadingPath(state));
+    } else if (!state.displayName.empty() && !state.currentFile.empty()) {
+        startLoad(state, state.displayName);
+    }
+}
+
 void ui::drawPreferencesWindow(AppState &state) {
     auto &p = state.preferences;
     if (!p.open) { p.wasOpen = false; return; }
     if (!p.wasOpen) { p.tlsKeyLogEdit = state.settings.tlsKeyLogFile; p.wasOpen = true; }
 
-    ImGui::SetNextWindowSize(ImVec2(560, 220), ImGuiCond_FirstUseEver);
+    ImGui::SetNextWindowSize(ImVec2(560, 320), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("Preferences", &p.open)) {
         ImGui::SeparatorText("Protocols > TLS");
         ImGui::TextWrapped("(Pre)-Master-Secret log file (the file SSLKEYLOGFILE points to). Captures are decrypted with it while "
@@ -92,6 +105,12 @@ void ui::drawPreferencesWindow(AppState &state) {
         if (!tls::crypto::available()) {
             ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.3f, 1.0f), "TLS decryption is not available in this build (no OpenSSL).");
         }
+
+        ImGui::SeparatorText("Protocols > IPsec");
+        bool espNull = state.settings.espNullHeuristic;
+        if (ImGui::Checkbox("Treat ESP payloads that look unencrypted as ESP-NULL", &espNull)) setEspNullHeuristic(state, espNull);
+        ImGui::TextWrapped("A guess from the packet bytes (trailer, next header and a valid inner header), off by default because a wrong "
+                           "guess would show protocol content that is not there. Changing it loads the open capture again.");
     }
     ImGui::End();
 

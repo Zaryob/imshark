@@ -58,6 +58,8 @@ ui::Settings ui::loadSettings(const std::string &path) {
             } catch (...) { /* damaged value: keep the default */ }
         } else if (key == "tls_keylog") {
             settings.tlsKeyLogFile = value;
+        } else if (key == "esp_null") {
+            settings.espNullHeuristic = value == "1";
         } else if (key == "capture_interface") {
             settings.captureInterface = value;
         } else if (key == "capture_filter") {
@@ -95,6 +97,7 @@ bool ui::saveSettings(const Settings &settings, const std::string &path) {
         return text;
     };
     if (!settings.tlsKeyLogFile.empty()) out << "tls_keylog=" << oneLine(settings.tlsKeyLogFile) << "\n";
+    if (settings.espNullHeuristic) out << "esp_null=1\n";
     if (!settings.captureInterface.empty()) out << "capture_interface=" << oneLine(settings.captureInterface) << "\n";
     if (!settings.captureFilter.empty()) out << "capture_filter=" << oneLine(settings.captureFilter) << "\n";
     out << "capture_snaplen=" << settings.captureSnaplen << "\n";

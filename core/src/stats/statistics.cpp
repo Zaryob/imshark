@@ -395,13 +395,16 @@ namespace stats {
             if (p.has_ipip) c.push_back("IP-in-IP");
             if (p.has_gre) c.push_back(p.protocol.rfind("ERSPAN", 0) == 0 ? "ERSPAN" : "GRE");
             if (p.has_ah) c.push_back("IPsec Authentication Header");
+            const bool espInUdp = p.has_esp && p.ip_protocol == 17 && p.protocol == "ESP";   // RFC 3948: the UDP row comes first
+            if (p.has_esp && !espInUdp) c.push_back("Encapsulating Security Payload");
 
             if (p.ip_protocol == 6) c.push_back("Transmission Control Protocol");
             else if (p.ip_protocol == 17) c.push_back("User Datagram Protocol");
             else if (p.ip_protocol == 1) c.push_back("Internet Control Message Protocol");
             else if (p.ip_protocol == 58) c.push_back("Internet Control Message Protocol v6");
             else if (p.ip_protocol == 132) c.push_back("Stream Control Transmission Protocol");
-            else if (p.ip_version != 0 && p.ip_protocol != 4 && p.ip_protocol != 41 && p.ip_protocol != 47 && !p.has_gre && !p.has_ipip) c.push_back("Other IP protocol");
+            else if (p.ip_version != 0 && p.ip_protocol != 4 && p.ip_protocol != 41 && p.ip_protocol != 47 && !p.has_gre && !p.has_ipip && !p.has_esp) c.push_back("Other IP protocol");
+            if (espInUdp) c.push_back("Encapsulating Security Payload");
             // HTTP that was decrypted from TLS sits below the TLS layer
             if (p.ip_protocol == 6 && p.protocol != "TLS" && dissect::tlsSummaryState(p) == dissect::TlsRecordState::Decrypted) c.push_back(applicationName("TLS"));
             if (auto a = applicationName(p.protocol); !a.empty() && !(p.protocol == "SCTP" && p.ip_protocol == 132)) c.push_back(a);

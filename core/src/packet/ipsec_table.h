@@ -19,11 +19,14 @@ namespace packet {
             uint8_t flags = 0;       // kAh / kEsp: which of the two headers were seen (the outermost of each kind is recorded)
         };
         static constexpr uint8_t kAh = 1, kEsp = 2;
+        /// With kEsp: the load pass judged the ESP payload to be unencrypted (the ESP-NULL heuristic, esp_null.h) and dissected it. The
+        /// detail view reads this instead of deciding again, so it shows what the list showed even if the setting changed since.
+        static constexpr uint8_t kEspPlaintext = 4;
 
-        /// Records an AH (or ESP) header of packet `number`. Numbers never decrease: the same packet may add its second header
+        /// Records an AH (or ESP; `kinds` is kAh, or kEsp optionally with kEspPlaintext) header of packet `number`. Numbers never decrease: the same packet may add its second header
         /// (AH + ESP), an older number is refused, and so is a new entry beyond `maxEntries`. A second header of the same
         /// kind in the packet (a tunnel inside a tunnel) keeps the first one.
-        bool add(uint32_t number, uint8_t kind, uint32_t spi, uint32_t sequence, size_t maxEntries) {
+        bool add(uint32_t number, uint8_t kinds, uint32_t spi, uint32_t sequence, size_t maxEntries) {
             if (!entries_.empty() && number < entries_.back().number) return false;
             if (entries_.empty() || entries_.back().number != number) {
                 if (entries_.size() >= maxEntries) return false;
@@ -32,8 +35,9 @@ namespace packet {
                 entries_.push_back(e);
             }
             Entry &e = entries_.back();
+            const uint8_t kind = static_cast<uint8_t>(kinds & (kAh | kEsp));
             if (e.flags & kind) return true;
-            e.flags = static_cast<uint8_t>(e.flags | kind);
+            e.flags = static_cast<uint8_t>(e.flags | kinds);
             if (kind == kAh) { e.ahSpi = spi; e.ahSequence = sequence; }
             else { e.espSpi = spi; e.espSequence = sequence; }
             return true;

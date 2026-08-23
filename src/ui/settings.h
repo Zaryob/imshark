@@ -22,6 +22,7 @@ namespace ui {
         std::vector<ColorRule> colorRules;     // user's rules; empty = use the built-in defaults
         float listHeight = 300.0f;             // height of the packet list (splitter position)
         std::string tlsKeyLogFile;             // TLS (Pre)-Master-Secret log file (SSLKEYLOGFILE format); empty = none
+        bool espNullHeuristic = false;         // dissect ESP payloads that look unencrypted (ESP-NULL, a guess); off by default
 
         // Live capture (Capture > Interfaces): what the last capture used
         static constexpr uint32_t kMinSnaplen = 64, kMaxSnaplen = 262144;

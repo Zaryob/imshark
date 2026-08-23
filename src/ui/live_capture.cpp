@@ -121,6 +121,7 @@ namespace {
         ui::clearCapture(state);                 // now the old capture goes
         l.processor = std::make_unique<core::FileProcessor>(state.registry ? *state.registry : dissect::Registry::builtin());
         l.processor->sessions().tlsExternalKeys() = state.tlsKeys;   // the keys known when the capture starts
+        l.processor->sessions().setEspNullHeuristic(state.settings.espNullHeuristic);
         l.session = true;
         l.unsaved = true;
         l.injected = injected;

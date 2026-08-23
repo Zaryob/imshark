@@ -38,6 +38,9 @@ namespace ui {
     /// apply to the packets that arrive after the change. Returns false if the file could not be read (the keys are then empty
     /// and state.tlsKeyStatus says why).
     bool setTlsKeyLogFile(AppState &state, const std::string &path);
+
+    /// Preferences > Protocols > IPsec: the ESP-NULL heuristic. Like the key log it is decided while loading, so the open capture is loaded again.
+    void setEspNullHeuristic(AppState &state, bool on);
     void drawPreferencesWindow(AppState &state);
 
     // chrome.cpp: menu bar, file dialog, status bar and the load error popup

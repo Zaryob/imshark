@@ -61,6 +61,7 @@ in the [User Guide](USER_GUIDE.md#display-filters). Names are lower case.
 | `eapol.keydes.type` | unsigned | EAPOL-Key descriptor type (1 = RC4, 2 = RSN, 254 = WPA) |
 | `eapol.type` | unsigned | 802.1X packet type (0 = EAP, 1 = Start, 2 = Logoff, 3 = Key) |
 | `esp` | boolean | IPsec Encapsulating Security Payload |
+| `esp.null` | boolean | ESP payload judged unencrypted by the ESP-NULL heuristic (a setting, off by default) |
 | `esp.sequence` | unsigned | ESP Sequence Number |
 | `esp.spi` | unsigned | ESP Security Parameters Index (SPI) |
 | `eth` | boolean | Ethernet frame |
@@ -399,4 +400,4 @@ in the [User Guide](USER_GUIDE.md#display-filters). Names are lower case.
 | `wlan.ssid` | string | 802.11 SSID |
 | `wlan.ta` | string | 802.11 Transmitter MAC address |
 
-389 fields.
+390 fields.

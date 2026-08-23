@@ -100,6 +100,7 @@ add_executable(imshark_tests
     test_sctp_reassembly.cpp
     test_ospf.cpp
     test_ipsec.cpp
+    test_esp_null.cpp
     test_ldap.cpp
     test_kerberos.cpp
     test_smb2.cpp
