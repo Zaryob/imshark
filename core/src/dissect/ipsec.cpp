@@ -2,6 +2,7 @@
 // AH (RFC 4302), ESP (RFC 4303), and IKEv1/IKEv2 (RFC 2408 / RFC 7296)
 #include "ipsec.h"
 #include "esp_null.h"
+#include "ike_payloads.h"
 
 #include <string>
 #include <vector>
@@ -15,15 +16,19 @@ using packet::Field;
 namespace {
     using namespace dissect;
 
-    uint16_t readU16(const uint8_t *p) {
-        return static_cast<uint16_t>((p[0] << 8) | p[1]);
-    }
-
     uint32_t readU32(const uint8_t *p) {
         return (static_cast<uint32_t>(p[0]) << 24) |
                (static_cast<uint32_t>(p[1]) << 16) |
                (static_cast<uint32_t>(p[2]) << 8)  |
                 static_cast<uint32_t>(p[3]);
+    }
+
+    // "0x" + 16 hex digits (util.h hexString takes 32 bits)
+    std::string hex64(uint64_t v) {
+        static const char digits[] = "0123456789abcdef";
+        std::string out = "0x";
+        for (int shift = 60; shift >= 0; shift -= 4) out += digits[(v >> shift) & 15];
+        return out;
     }
 
     uint64_t readU64(const uint8_t *p) {
@@ -48,48 +53,6 @@ namespace {
                 case 37: return "INFORMATIONAL";
                 default: return "Exchange " + std::to_string(exchange);
             }
-        }
-    }
-
-    std::string ikePayloadTypeName(uint8_t version, uint8_t nextPayload) {
-        if (nextPayload == 0) return "NONE";
-        if (version == 2) {   // RFC 7296 section 3.2 (SKF: RFC 7383)
-            switch (nextPayload) {
-                case 33: return "Security Association (SA)";
-                case 34: return "Key Exchange (KE)";
-                case 35: return "Identification - Initiator (IDi)";
-                case 36: return "Identification - Responder (IDr)";
-                case 37: return "Certificate (CERT)";
-                case 38: return "Certificate Request (CERTREQ)";
-                case 39: return "Authentication (AUTH)";
-                case 40: return "Nonce (Ni, Nr)";
-                case 41: return "Notify (N)";
-                case 42: return "Delete (D)";
-                case 43: return "Vendor ID (V)";
-                case 44: return "Traffic Selector - Initiator (TSi)";
-                case 45: return "Traffic Selector - Responder (TSr)";
-                case 46: return "Encrypted and Authenticated (SK)";
-                case 47: return "Configuration (CP)";
-                case 48: return "Extensible Authentication (EAP)";
-                case 53: return "Encrypted Fragment (SKF)";
-                default: return "Payload " + std::to_string(nextPayload);
-            }
-        }
-        switch (nextPayload) {   // RFC 2408 section 3.1
-            case 1: return "Security Association (SA)";
-            case 2: return "Proposal (P)";
-            case 3: return "Transform (T)";
-            case 4: return "Key Exchange (KE)";
-            case 5: return "Identification (ID)";
-            case 6: return "Certificate (CERT)";
-            case 7: return "Certificate Request (CR)";
-            case 8: return "Hash (HASH)";
-            case 9: return "Signature (SIG)";
-            case 10: return "Nonce (NONCE)";
-            case 11: return "Notification (N)";
-            case 12: return "Delete (D)";
-            case 13: return "Vendor ID (VID)";
-            default: return "Payload " + std::to_string(nextPayload);
         }
     }
 } // namespace
@@ -308,29 +271,25 @@ void dissect::dissectIke(Context &ctx, const char *data, size_t length) {
     ctx.pack.app_type = exchangeType;
 
     std::string exchName = ikeExchangeTypeName(ver, exchangeType);
-    ctx.pack.info = (ver == 2 ? "IKEv2 " : "ISAKMP ") + exchName +
-                    ", MsgID: " + std::to_string(msgId);
-
-    // Walk the top-level payload chain (in both passes: the verdict is part of the summary). A payload longer than
-    // what is left is cut to it and flagged.
-    struct Payload { uint8_t type, next; uint16_t length; size_t off, shown; bool tooLong; };
-    std::vector<Payload> payloads;
+    // Walk the payload chain (in both passes: the verdict and the facts are part of the summary). The walk never reads past the
+    // message: a payload longer than what is left is cut to it and flagged.
     const size_t avail = length - skip;
-    {
-        size_t poff = 28;
-        uint8_t currentPayload = nextPayload;
-        while (currentPayload != 0 && poff + 4 <= avail) {
-            const auto *pb = bytes + poff;
-            const uint16_t plen = readU16(pb + 2);
-            const size_t room = avail - poff;
-            const bool tooLong = plen > room;
-            payloads.push_back({currentPayload, pb[0], plen, poff, tooLong ? room : plen, tooLong});
-            if (plen < 4) { ctx.markMalformed("IKE payload length below the payload header"); break; }
-            if (tooLong) { ctx.markMalformed("IKE payload extends beyond the packet"); break; }
-            poff += plen;
-            currentPayload = pb[0];
-        }
-    }
+    const IkePayloadReport report = dissectIkePayloads(bytes + 28, avail - 28, ctx.offsetOf(data + skip) + 28, ver, nextPayload, flags, nullptr);
+    if (!report.malformed.empty()) ctx.markMalformed(report.malformed);
+
+    ctx.pack.info = (ver == 2 ? "IKEv2 " : "ISAKMP ") + exchName + ", MsgID: " + std::to_string(msgId);
+    if (ver == 2) ctx.pack.info += (flags & 0x08) ? ", Initiator" : (flags & 0x20) ? ", Response" : "";
+    if (ver == 1 && (flags & 0x01)) ctx.pack.info += ", Encrypted";
+    if (report.fragment) ctx.pack.info += ", Fragment " + std::to_string(report.fragmentNumber) + "/" + std::to_string(report.fragmentTotal) + " (encrypted)";
+    else if (ver == 2 && report.encrypted) ctx.pack.info += " (encrypted)";
+    if (report.notify) ctx.pack.info += " [" + (ver == 2 ? ikeV2NotifyName(report.notifyType) : std::string("Notify ") + std::to_string(report.notifyType)) + "]";
+    if (!report.malformed.empty()) ctx.pack.info = "[Malformed Packet: " + report.malformed + "]";
+
+    // facts for the filter fields (IKE is the last protocol of the packet, so these fields are free)
+    ctx.pack.app_stream = msgId;
+    ctx.pack.app_flags = report.notify ? report.notifyType : 0;
+    ctx.pack.app_text = hex64(initSpi) + ":" + hex64(respSpi);
+    if (report.fragment) ctx.pack.app_text2 = std::to_string(report.fragmentNumber) + "/" + std::to_string(report.fragmentTotal);
 
     if (ctx.wantFields()) {
         const size_t o = ctx.offsetOf(data + skip);
@@ -338,20 +297,24 @@ void dissect::dissectIke(Context &ctx, const char *data, size_t length) {
         Field &l = ctx.addLayer((ver == 2 ? "Internet Key Exchange (IKEv2)" : "Internet Security Association and Key Management Protocol (ISAKMP)"),
                                 o, avail);
 
-        l.add("Initiator SPI: 0x" + hexString(initSpi, 16), o, 8);
-        l.add("Responder SPI: 0x" + hexString(respSpi, 16), o + 8, 8);
+        l.add("Initiator SPI: " + hex64(initSpi), o, 8);
+        l.add("Responder SPI: " + hex64(respSpi), o + 8, 8);
         l.add("Next Payload: " + std::to_string(nextPayload) + " (" + ikePayloadTypeName(ver, nextPayload) + ")", o + 16, 1);
         l.add("Version: " + std::to_string(mjVer) + "." + std::to_string(mnVer), o + 17, 1);
         l.add("Exchange Type: " + std::to_string(exchangeType) + " (" + exchName + ")", o + 18, 1);
-        l.add("Flags: " + hexString(flags, 2), o + 19, 1);
+        Field &fl = l.add("Flags: " + hexString(flags, 2), o + 19, 1);
+        if (ver == 2) {
+            fl.add(std::string("Initiator: ") + ((flags & 0x08) ? "Yes" : "No"), o + 19, 1);
+            fl.add(std::string("Version: ") + ((flags & 0x10) ? "Higher version supported" : "No higher version"), o + 19, 1);
+            fl.add(std::string("Response: ") + ((flags & 0x20) ? "Yes" : "No"), o + 19, 1);
+        } else {
+            fl.add(std::string("Encryption: ") + ((flags & 0x01) ? "Yes (the payloads are not interpreted)" : "No"), o + 19, 1);
+            fl.add(std::string("Commit: ") + ((flags & 0x02) ? "Yes" : "No"), o + 19, 1);
+            fl.add(std::string("Authentication Only: ") + ((flags & 0x04) ? "Yes" : "No"), o + 19, 1);
+        }
         l.add("Message ID: " + std::to_string(msgId), o + 20, 4);
         l.add("Length: " + std::to_string(totalLen), o + 24, 4);
 
-        for (const auto &pl: payloads) {
-            Field &pf = l.add("Payload: " + ikePayloadTypeName(ver, pl.type) + " (" + std::to_string(pl.length) + " bytes" +
-                              (pl.tooLong ? ", beyond the packet" : "") + ")", o + pl.off, pl.shown);
-            pf.add("Next Payload: " + std::to_string(pl.next) + " (" + ikePayloadTypeName(ver, pl.next) + ")", o + pl.off, 1);
-            pf.add("Payload Length: " + std::to_string(pl.length), o + pl.off + 2, 2);
-        }
+        dissectIkePayloads(bytes + 28, avail - 28, o + 28, ver, nextPayload, flags, &l);
     }
 }

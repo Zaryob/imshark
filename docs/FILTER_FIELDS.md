@@ -124,6 +124,13 @@ in the [User Guide](USER_GUIDE.md#display-filters). Names are lower case.
 | `igmp.version` | unsigned | IGMP version implied by the message (1, 2 or 3; a query is v3 when it has at least 12 bytes, v1 when its Max Resp Code is 0) |
 | `ike` | boolean | Internet Key Exchange / ISAKMP |
 | `ike.exchange_type` | unsigned | IKE Exchange Type |
+| `ike.fragment` | boolean | IKEv2 encrypted fragment (SKF, RFC 7383) |
+| `ike.fragment.number` | unsigned | IKEv2 fragment number (SKF) |
+| `ike.fragment.total` | unsigned | IKEv2 total number of fragments (SKF) |
+| `ike.initiator_spi` | string | IKE Initiator SPI (0x, 16 hex digits) |
+| `ike.message_id` | unsigned | IKE Message ID |
+| `ike.notify.type` | unsigned | Message Type of the first unencrypted Notify payload (IKEv2 and IKEv1 registries differ) |
+| `ike.responder_spi` | string | IKE Responder SPI (0x, 16 hex digits) |
 | `ike.version` | unsigned | IKE Version (1 or 2) |
 | `info` | string | Info column (alias of _ws.col.info) |
 | `ip` | boolean | IPv4 |
@@ -400,4 +407,4 @@ in the [User Guide](USER_GUIDE.md#display-filters). Names are lower case.
 | `wlan.ssid` | string | 802.11 SSID |
 | `wlan.ta` | string | 802.11 Transmitter MAC address |
 
-390 fields.
+397 fields.

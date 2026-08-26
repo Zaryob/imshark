@@ -1,5 +1,8 @@
 // Filter fields of IPsec AH/ESP and IKE (B4): declared here, next to the dissector, and registered once at startup from the
 // list in filter/field_modules.cpp. The extractors read the summary facts the dissector stores in PacketInfo.
+#include <cstdlib>
+#include <string_view>
+
 #include <filter/field_helpers.h>
 #include <filter/field_modules.h>
 
@@ -12,6 +15,8 @@ namespace filter {
             const auto *e = c.ipsec->find(static_cast<uint32_t>(p.number));
             return e && (e->flags & packet::IpsecTable::kAh) ? e : nullptr;
         }
+        bool isIke(const packet::PacketInfo &p) { return p.protocol == "ISAKMP" || p.protocol == "IKEv2"; }
+
         const packet::IpsecTable::Entry *espEntry(const packet::PacketInfo &p, const Context &c) {
             if (!p.has_esp || !c.ipsec) return nullptr;
             const auto *e = c.ipsec->find(static_cast<uint32_t>(p.number));
@@ -32,6 +37,13 @@ namespace filter {
             {"ike", FieldType::Boolean, proto<[](const PacketInfo &p) { return p.protocol == "ISAKMP" || p.protocol == "IKEv2"; }>, "Internet Key Exchange / ISAKMP"},
             {"ike.version", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.protocol == "ISAKMP" || p.protocol == "IKEv2") o.addU(p.app_code); }, "IKE Version (1 or 2)"},
             {"ike.exchange_type", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.protocol == "ISAKMP" || p.protocol == "IKEv2") o.addU(p.app_type); }, "IKE Exchange Type"},
+            {"ike.message_id", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.protocol == "ISAKMP" || p.protocol == "IKEv2") o.addU(p.app_stream); }, "IKE Message ID"},
+            {"ike.initiator_spi", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (isIke(p) && p.app_text.size() == 37) o.addS(std::string_view(p.app_text).substr(0, 18)); }, "IKE Initiator SPI (0x, 16 hex digits)"},
+            {"ike.responder_spi", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (isIke(p) && p.app_text.size() == 37) o.addS(std::string_view(p.app_text).substr(19, 18)); }, "IKE Responder SPI (0x, 16 hex digits)"},
+            {"ike.notify.type", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isIke(p) && p.app_flags != 0) o.addU(p.app_flags); }, "Message Type of the first unencrypted Notify payload (IKEv2 and IKEv1 registries differ)"},
+            {"ike.fragment", FieldType::Boolean, proto<[](const PacketInfo &p) { return isIke(p) && !p.app_text2.empty(); }>, "IKEv2 encrypted fragment (SKF, RFC 7383)"},
+            {"ike.fragment.number", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isIke(p) && !p.app_text2.empty()) o.addU(std::strtoul(p.app_text2.c_str(), nullptr, 10)); }, "IKEv2 fragment number (SKF)"},
+            {"ike.fragment.total", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isIke(p)) if (const auto slash = p.app_text2.find('/'); slash != std::string::npos) o.addU(std::strtoul(p.app_text2.c_str() + slash + 1, nullptr, 10)); }, "IKEv2 total number of fragments (SKF)"},
         });
     }
 } // namespace filter

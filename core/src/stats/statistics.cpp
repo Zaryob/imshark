@@ -340,6 +340,7 @@ namespace stats {
             if (protocol == "FTP-DATA") return "File Transfer Protocol (data)";
             if (protocol == "TFTP") return "Trivial File Transfer Protocol";
             if (protocol == "SSH") return "Secure Shell";
+            if (protocol == "IKEv2" || protocol == "ISAKMP") return "Internet Key Exchange";
             if (protocol == "LDAP") return "Lightweight Directory Access Protocol";
             if (protocol == "Kerberos") return "Kerberos";
             if (protocol == "SMB2") return "Server Message Block 2/3";

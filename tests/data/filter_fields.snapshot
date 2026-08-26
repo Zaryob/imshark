@@ -113,6 +113,13 @@ igmp.type	unsigned	IGMP Message Type (0x11 Query, 0x12 v1 Report, 0x16 v2 Report
 igmp.version	unsigned	IGMP version implied by the message (1, 2 or 3; a query is v3 when it has at least 12 bytes, v1 when its Max Resp Code is 0)	130	130	408b634a9df89226
 ike	boolean	Internet Key Exchange / ISAKMP	300	300	69361d1261f278c3
 ike.exchange_type	unsigned	IKE Exchange Type	300	300	c1036d318ac85109
+ike.fragment	boolean	IKEv2 encrypted fragment (SKF, RFC 7383)	225	225	924fe7d4df225203
+ike.fragment.number	unsigned	IKEv2 fragment number (SKF)	225	225	1e809d0aa11e69a9
+ike.fragment.total	unsigned	IKEv2 total number of fragments (SKF)	0	0	236e177ee4bbadc3
+ike.initiator_spi	string	IKE Initiator SPI (0x, 16 hex digits)	0	0	236e177ee4bbadc3
+ike.message_id	unsigned	IKE Message ID	300	300	3d9bedf71bf9e24a
+ike.notify.type	unsigned	Message Type of the first unencrypted Notify payload (IKEv2 and IKEv1 registries differ)	287	287	52cc28935351796f
+ike.responder_spi	string	IKE Responder SPI (0x, 16 hex digits)	0	0	236e177ee4bbadc3
 ike.version	unsigned	IKE Version (1 or 2)	300	300	91f1d88e6b0576ce
 info	string	Info column (alias of _ws.col.info)	12038	12038	dbbfabc4873b3ac1
 ip	boolean	IPv4	4763	4763	d06f23c951fe5c83
