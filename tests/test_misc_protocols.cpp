@@ -207,3 +207,122 @@ TEST(MiscProtocols, SurviveRandomCorruption) {
         expectRangesInside(info, frame.size());
     }
 }
+
+// ---- the summary-only protocols and the name tables ----------------------------------------------------------
+
+namespace {
+    packet::PacketInfo tcpTo(const char *dport, const std::string &payload) {
+        return support::parse(support::tcpPacket("0a000001", "0a000002", "c350", dport, "00000001", "00000001", "18", payload));
+    }
+    packet::PacketInfo udpTo(const char *dport, const std::string &payload) {
+        return support::parse(support::udpPacket("0a000001", "0a000002", "c350", dport, payload));
+    }
+}
+
+TEST(SummaryProtocols, TelnetSmtpSnmpAndTheirDataLayers) {
+    const auto telnet = tcpTo("0017", "login: root\r\n");
+    EXPECT_EQ(telnet.protocol, "Telnet");
+    EXPECT_NE(telnet.info.find("[ Telnet data: login: root"), std::string::npos) << telnet.info;
+    EXPECT_NE(find(telnet.fields, "Data (13 bytes): login: root.."), nullptr);
+    EXPECT_TRUE(matches("telnet", telnet));
+
+    const std::string longText(80, 'a');
+    const auto longTelnet = tcpTo("0017", longText);
+    EXPECT_NE(longTelnet.info.find(std::string(50, 'a') + "... ]"), std::string::npos) << "only a snippet goes into the Info column";
+
+    const auto smtp = tcpTo("0019", "EHLO imshark\r\n");
+    EXPECT_EQ(smtp.protocol, "SMTP");
+    EXPECT_EQ(smtp.info, "SMTP data: EHLO imshark\r\n");
+    EXPECT_TRUE(matches("smtp", smtp));
+    EXPECT_EQ(tcpTo("0019", longText).info, "SMTP data: " + std::string(50, 'a') + "...");
+
+    const auto snmp = udpTo("00a1", std::string(30, 'x'));
+    EXPECT_EQ(snmp.protocol, "SNMP");
+    EXPECT_EQ(snmp.info, "SNMP message (length: 30)");
+    EXPECT_EQ(udpTo("00a2", "x").protocol, "SNMP") << "trap port 162";
+    EXPECT_TRUE(matches("snmp", snmp));
+}
+
+TEST(SummaryProtocols, BgpMessageTypes) {
+    auto bgp = [](unsigned type, size_t length = 19) {
+        std::string msg(16, '\xff');       // marker
+        msg += std::string("\x00\x13", 2); // length 19
+        msg += static_cast<char>(type);
+        msg.resize(length, '\0');
+        return tcpTo("00b3", msg);
+    };
+    EXPECT_NE(bgp(1).info.find("[ BGP: OPEN ]"), std::string::npos);
+    EXPECT_NE(bgp(2).info.find("[ BGP: UPDATE ]"), std::string::npos);
+    EXPECT_NE(bgp(3).info.find("[ BGP: NOTIFICATION ]"), std::string::npos);
+    EXPECT_NE(bgp(4).info.find("[ BGP: KEEPALIVE ]"), std::string::npos);
+    EXPECT_NE(bgp(9).info.find("[ BGP: Unknown ]"), std::string::npos);
+    const auto cut = tcpTo("00b3", std::string(10, '\xff'));
+    EXPECT_NE(cut.info.find("[ BGP: truncated ]"), std::string::npos);
+    EXPECT_EQ(bgp(1).protocol, "BGP");
+    EXPECT_TRUE(matches("bgp", bgp(4)));
+    EXPECT_NE(find(bgp(4).fields, "Border Gateway Protocol"), nullptr);
+}
+
+TEST(IcmpNames, EveryKnownTypeAndCodeHasAName) {
+    auto info4 = [](unsigned type, unsigned code) {
+        char hexType[48];
+        std::snprintf(hexType, sizeof hexType, "%02x %02x 0000 00000000", type, code);
+        return support::parse(ipv4Packet(1, "0a000001", "0a000002", hexType)).info;
+    };
+    for (unsigned t: {0u, 3u, 4u, 5u, 8u, 9u, 10u, 11u, 12u, 13u, 14u, 17u, 18u}) {
+        EXPECT_NE(info4(t, 0).rfind("Type ", 0), 0u) << "ICMP type " << t << ": " << info4(t, 0);
+    }
+    EXPECT_EQ(info4(200, 0), "Type 200");
+    const char *unreachable[] = {"Network unreachable", "Host unreachable", "Protocol unreachable", "Port unreachable",
+                                 "Fragmentation needed and DF set", "Source route failed"};
+    for (unsigned c = 0; c < 6; ++c) EXPECT_NE(info4(3, c).find(unreachable[c]), std::string::npos) << c;
+    EXPECT_NE(info4(3, 13).find("administratively filtered"), std::string::npos);
+    EXPECT_EQ(info4(3, 99), "Destination unreachable") << "unknown codes add nothing";
+    EXPECT_NE(info4(5, 0).find("Redirect for network"), std::string::npos);
+    EXPECT_NE(info4(5, 1).find("Redirect for host"), std::string::npos);
+    EXPECT_NE(info4(11, 1).find("Fragment reassembly time exceeded"), std::string::npos);
+
+    auto info6 = [](unsigned type, unsigned code) {
+        char hexType[48];
+        std::snprintf(hexType, sizeof hexType, "%02x %02x 0000 00000000", type, code);
+        return support::parse(ipv6Packet(58, hexType)).info;
+    };
+    for (unsigned t: {1u, 2u, 3u, 4u, 128u, 129u, 130u, 131u, 132u, 133u, 134u, 135u, 136u, 137u, 143u}) {
+        EXPECT_NE(info6(t, 0).rfind("Type ", 0), 0u) << "ICMPv6 type " << t;
+    }
+    EXPECT_EQ(info6(250, 0), "Type 250");
+    const char *unreachable6[] = {"No route to destination", "Administratively prohibited", "", "Address unreachable", "Port unreachable"};
+    for (unsigned c: {0u, 1u, 3u, 4u}) EXPECT_NE(info6(1, c).find(unreachable6[c]), std::string::npos) << c;
+    EXPECT_NE(info6(3, 0).find("Hop limit exceeded"), std::string::npos);
+    EXPECT_NE(info6(3, 1).find("Fragment reassembly"), std::string::npos);
+}
+
+TEST(IcmpNames, QuotedPacketProtocolNames) {
+    auto quoted = [](unsigned proto) {
+        char inner[160];
+        // the quoted original packet: a bare 20-byte IPv4 header whose protocol byte is the test parameter
+        std::snprintf(inner, sizeof inner, "45000014 00000000 40%02x 0000 0a000002 08080808", proto);
+        return support::parse(ipv4Packet(1, "08080808", "0a000002", std::string("03 01 0000 00000000") + inner)).info;
+    };
+    EXPECT_NE(quoted(1).find("ICMP"), std::string::npos);
+    EXPECT_NE(quoted(6).find("TCP"), std::string::npos);
+    EXPECT_NE(quoted(58).find("ICMPv6"), std::string::npos);
+    EXPECT_NE(quoted(47).find("protocol 47"), std::string::npos);
+}
+
+TEST(HttpNames, StandardPhrasesWhenTheLineHasNone) {
+    struct Case { unsigned code; const char *phrase; };
+    const Case cases[] = {{100, "Continue"}, {101, "Switching Protocols"}, {200, "OK"}, {201, "Created"}, {202, "Accepted"},
+                          {204, "No Content"}, {206, "Partial Content"}, {301, "Moved Permanently"}, {302, "Found"},
+                          {304, "Not Modified"}, {307, "Temporary Redirect"}, {308, "Permanent Redirect"}, {400, "Bad Request"},
+                          {401, "Unauthorized"}, {403, "Forbidden"}, {404, "Not Found"}, {405, "Method Not Allowed"},
+                          {408, "Request Timeout"}, {429, "Too Many Requests"}, {500, "Internal Server Error"},
+                          {502, "Bad Gateway"}, {503, "Service Unavailable"}, {504, "Gateway Timeout"}};
+    for (const auto &c: cases) {
+        const auto p = tcpTo("c351", "HTTP/1.1 " + std::to_string(c.code) + "\r\n\r\n");
+        EXPECT_EQ(p.protocol, "HTTP") << c.code;
+        EXPECT_NE(find(p.fields, std::string("Response Phrase (standard): ") + c.phrase), nullptr) << c.code;
+    }
+    const auto unknown = tcpTo("c351", "HTTP/1.1 299\r\n\r\n");
+    EXPECT_EQ(find(unknown.fields, "Response Phrase"), nullptr) << "no invented phrase for unknown codes";
+}
