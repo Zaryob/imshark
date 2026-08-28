@@ -204,8 +204,8 @@ TEST(EspNull, EspInUdpOnPort4500AndTheHierarchy) {
 
 // Rule 4: the load pass decides, the detail view follows - also when the setting differs by then
 TEST(EspNull, TheDetailViewFollowsTheLoadPass) {
-    const std::vector<std::vector<char>> frames = {
-        std::vector<char>(ipFrame(kEspTcp).begin(), ipFrame(kEspTcp).end())};
+    const Bytes frame = ipFrame(kEspTcp);
+    const std::vector<std::vector<char>> frames = {std::vector<char>(frame.begin(), frame.end())};
     const std::string path = support::writeTemp("esp_null.pcap", support::pcapBytes(frames));
     core::FileProcessor fp;
     fp.sessions().setEspNullHeuristic(true);
