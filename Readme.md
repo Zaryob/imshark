@@ -74,6 +74,10 @@ ctest --test-dir build --output-on-failure
 
 Testler GoogleTest ile yazılmıştır (`brew install googletest` / `apt install libgtest-dev`; vcpkg'de `tests` özelliği varsayılan açıktır). Ayrıştırıcı/okuyucu için birim ve mutasyon-fuzz testleri, arayüz için ise pencere açmadan çalışan ImGui duman testleri içerir. GoogleTest yoksa testler uyarıyla atlanır; `-DIMSHARK_BUILD_TESTS=OFF` ile kapatılabilir.
 
+**Kapsama:** `tools/coverage.sh` (clang kaynak tabanlı kapsama; `--html` ile HTML rapor) birim testlerinin dosya bazında kapsamını verir. Şu an çekirdek ve UI birlikte satır kapsamı ≈ %92, dal kapsamı ≈ %79; en zayıf yerler menü/pencere etkileşimleri (`chrome.cpp`, `details.cpp`).
+
+`-DIMSHARK_SANITIZE=ON` çekirdek dahil tüm hedefleri ASan+UBSan ile derler (yapılandırma, çekirdek instrument edilmeden kalırsa hata verir).
+
 ## Dizin yapısı
 
 ```
