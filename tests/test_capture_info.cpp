@@ -268,3 +268,139 @@ TEST(CaptureInfo, DamagedOptionsAndRecordsNeverCrash) {
         (void)cap.ok;
     }
 }
+
+// ---- if_tsoffset and undefined interfaces --------------------------------------------------------------------
+
+namespace {
+    std::vector<char> idbWithOffset(bool be, uint16_t linkType, int tsresol, int64_t offsetSeconds, int fcsLen = -1) {
+        std::vector<char> body;
+        put<uint16_t>(body, linkType, be);
+        put<uint16_t>(body, 0, be);
+        put<uint32_t>(body, 65535, be);
+        if (tsresol >= 0) option(body, be, 9, std::string(1, static_cast<char>(tsresol)));
+        if (offsetSeconds != 0) option(body, be, 14, u64(be, static_cast<uint64_t>(offsetSeconds)));
+        if (fcsLen >= 0) option(body, be, 13, std::string(1, static_cast<char>(fcsLen)));
+        endOptions(body, be);
+        return block(be, 1, body);
+    }
+
+    std::vector<char> spb(bool be) {
+        std::vector<char> body;
+        put<uint32_t>(body, static_cast<uint32_t>(kFrame.size()), be);
+        body.insert(body.end(), kFrame.begin(), kFrame.end());
+        body.insert(body.end(), (4 - kFrame.size() % 4) % 4, 0);
+        return block(be, 3, body);
+    }
+}
+
+TEST(PcapngTimeOffset, IsAddedToTheTimestampsOfItsInterface) {
+    for (bool be: {false, true}) {
+        SCOPED_TRACE(be ? "big endian" : "little endian");
+        std::vector<char> f;
+        append(f, shb(be, false));
+        append(f, idbWithOffset(be, 1, 6, 1000));          // microseconds, +1000 s
+        append(f, idbWithOffset(be, 1, 6, 1100));          // another interface, +1100 s
+        append(f, epb(be, 0, 5000000));                    // 5 s (+1000)  = 1005
+        append(f, epb(be, 1, 5000000));                    // 5 s (+1100)  = 1105
+        append(f, epb(be, 0, 6500000));                    // 6.5 s (+1000) = 1006.5
+        Loaded cap(f);
+        ASSERT_TRUE(cap.ok) << cap.message;
+        ASSERT_EQ(cap.packets.size(), 3u);
+        EXPECT_NEAR(cap.packets[0].time, 0.0, 1e-9);
+        EXPECT_NEAR(cap.packets[1].time, 100.0, 1e-6) << "the second interface's clock is 100 s ahead";
+        EXPECT_NEAR(cap.packets[2].time, 1.5, 1e-6);
+
+        core::FileProcessor fp;
+        std::vector<packet::PacketInfo> packets;
+        std::string message;
+        ASSERT_TRUE(fp.processPcapngFile(cap.path, packets, message));
+        EXPECT_NEAR(fp.captureStartEpoch(), 1005.0, 1e-6) << "absolute start time includes the offset";
+    }
+}
+
+TEST(PcapngTimeOffset, NegativeOffsetsAndNoOffset) {
+    std::vector<char> f;
+    append(f, shb(false, false));
+    append(f, idbWithOffset(false, 1, 6, -3600));
+    append(f, epb(false, 0, 7200000000ull));               // 7200 s - 3600 s = 3600 s
+    append(f, epb(false, 0, 7201000000ull));
+    Loaded cap(f);
+    ASSERT_TRUE(cap.ok) << cap.message;
+    EXPECT_NEAR(cap.packets[1].time - cap.packets[0].time, 1.0, 1e-9);
+    core::FileProcessor fp;
+    std::vector<packet::PacketInfo> packets;
+    std::string message;
+    ASSERT_TRUE(fp.processPcapngFile(cap.path, packets, message));
+    EXPECT_NEAR(fp.captureStartEpoch(), 3600.0, 1e-6);
+
+    std::vector<char> plain;
+    append(plain, shb(false, false));
+    append(plain, idbWithOffset(false, 1, 6, 0));
+    append(plain, epb(false, 0, 2000000));
+    core::FileProcessor fp2;
+    std::vector<packet::PacketInfo> p2;
+    const auto path = support::writeTemp("tsoffset_plain.pcapng", plain);
+    ASSERT_TRUE(fp2.processPcapngFile(path, p2, message));
+    EXPECT_NEAR(fp2.captureStartEpoch(), 2.0, 1e-6);
+    std::remove(path.c_str());
+}
+
+TEST(PcapngInterfaces, UndefinedInterfaceIsNotGuessedToBeEthernet) {
+    std::vector<char> f;
+    append(f, shb(false, false));
+    append(f, idbWithOffset(false, 1, -1, 0));
+    append(f, epb(false, 0, 1000000));                     // fine
+    append(f, epb(false, 7, 2000000));                     // interface 7 does not exist
+    append(f, epb(false, 0, 3000000));
+    Loaded cap(f);
+    ASSERT_TRUE(cap.ok);
+    ASSERT_EQ(cap.packets.size(), 3u) << "the packet is kept";
+    EXPECT_EQ(cap.packets[0].protocol, "ARP");
+    EXPECT_EQ(cap.packets[1].link_type, packet::kUndefinedLinkType);
+    EXPECT_EQ(cap.packets[1].protocol, "Unknown");
+    EXPECT_EQ(cap.packets[1].info, "Packet refers to an undefined capture interface");
+    EXPECT_EQ(cap.packets[2].protocol, "ARP") << "neighbouring packets are not affected";
+    EXPECT_NE(cap.message.find("interface 7"), std::string::npos) << cap.message;
+    EXPECT_NE(cap.message.find("1 packet(s)"), std::string::npos) << cap.message;
+    EXPECT_EQ(cap.info.interfaces[0].packets, 2u) << "only packets of a defined interface are counted";
+}
+
+TEST(PcapngInterfaces, SimplePacketBlocksWithoutAnyInterface) {
+    std::vector<char> f;
+    append(f, shb(false, false));
+    append(f, spb(false));                                 // an SPB needs interface 0, but none was defined
+    Loaded cap(f);
+    ASSERT_TRUE(cap.ok);
+    ASSERT_EQ(cap.packets.size(), 1u);
+    EXPECT_EQ(cap.packets[0].link_type, packet::kUndefinedLinkType);
+    EXPECT_FALSE(cap.message.empty());
+}
+
+TEST(PcapngInterfaces, InterfacesAreScopedToTheirSection) {
+    std::vector<char> f;
+    append(f, shb(false, false));
+    append(f, idbWithOffset(false, 1, -1, 0));
+    append(f, epb(false, 0, 1000000));
+    append(f, shb(false, false));                          // new section: interface 0 of the old one is gone
+    append(f, epb(false, 0, 2000000));
+    Loaded cap(f);
+    ASSERT_TRUE(cap.ok);
+    ASSERT_EQ(cap.packets.size(), 2u);
+    EXPECT_EQ(cap.packets[0].protocol, "ARP");
+    EXPECT_EQ(cap.packets[1].link_type, packet::kUndefinedLinkType);
+}
+
+TEST(PcapngInterfaces, FcsLengthOptionIsUsedPerInterface) {
+    std::vector<char> f;
+    append(f, shb(false, false));
+    append(f, idbWithOffset(false, 1, -1, 0, 4));          // 4 FCS bytes per frame
+    append(f, idbWithOffset(false, 1, -1, 0));             // none
+    append(f, epb(false, 0, 1000000));
+    append(f, epb(false, 1, 2000000));
+    Loaded cap(f);
+    ASSERT_TRUE(cap.ok);
+    EXPECT_EQ(cap.packets[0].fcs_length, 4);
+    EXPECT_EQ(cap.packets[1].fcs_length, 0);
+    EXPECT_EQ(cap.info.interfaces[0].packets, 1u);
+    EXPECT_EQ(cap.info.interfaces[1].packets, 1u);
+}

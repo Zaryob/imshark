@@ -71,7 +71,7 @@ namespace {
             return static_cast<double>(static_cast<int64_t>(seconds - baseSeconds)) + (fraction - baseFraction);
         }
 
-        double startEpoch() const { return set ? static_cast<double>(baseSeconds) + baseFraction : 0.0; }
+        double startEpoch() const { return set ? static_cast<double>(static_cast<int64_t>(baseSeconds)) + baseFraction : 0.0; }
     };
 
     struct Interface {
@@ -80,7 +80,14 @@ namespace {
         uint64_t ticksPerSecond = kDefaultTicksPerSecond;
         std::string name, description;
         uint8_t fcsLength = 0; // FCS bytes per frame from if_fcslen option
+        int64_t tsOffset = 0;  // if_tsoffset: seconds to add to the timestamps of this interface
     };
+
+    // 64-bit option values are stored as two 32-bit words in the file's byte order (high word first if big endian)
+    uint64_t read64(const Endian &e, const uint8_t *v, bool bigEndian) {
+        const uint32_t first = e.u32(v), second = e.u32(v + 4);
+        return bigEndian ? (static_cast<uint64_t>(first) << 32) | second : (static_cast<uint64_t>(second) << 32) | first;
+    }
 
     // true if the multi-byte integers of the file are big endian (Endian::swap says "differs from this machine")
     bool fileBigEndian(const Endian &e) { return (std::endian::native == std::endian::little) == e.swap; }
@@ -177,6 +184,8 @@ namespace {
                     for (unsigned i = 0; i < exponent; ++i) t *= 10;
                     iface.ticksPerSecond = t;
                 }
+            } else if (code == 14 && len == 8) { // if_tsoffset: signed seconds added to every timestamp
+                iface.tsOffset = static_cast<int64_t>(read64(e, v, fileBigEndian(e)));
             } else if (code == 13 && len == 1) { // if_fcslen: number of FCS bytes per frame
                 iface.fcsLength = v[0];
             }
@@ -304,6 +313,15 @@ bool core::FileProcessor::processPcapngFile(const std::string &filepath, std::ve
     Endian e;
     bool haveSection = false;
     std::vector<Interface> interfaces;
+    // Packets may name an interface that no Interface Description Block defined. They are kept (not guessed to be
+    // Ethernet) with an "undefined link type" and the problem is reported once at the end.
+    size_t undefinedInterfaceRefs = 0;
+    uint32_t firstUndefinedInterface = 0;
+    auto interfaceFor = [&](uint32_t id) -> const Interface * {
+        if (id < interfaces.size()) return &interfaces[id];
+        if (undefinedInterfaceRefs++ == 0) firstUndefinedInterface = id;
+        return nullptr;
+    };
     size_t sectionBase = 0; // index of the section's first interface in info_.interfaces
     TimeBase timeBase;
     double lastTime = 0;
@@ -412,12 +430,11 @@ bool core::FileProcessor::processPcapngFile(const std::string &filepath, std::ve
                 const uint32_t capturedLength = e.u32(body + 12);
                 if (capturedLength > bodySize - 20) return fail("Enhanced Packet Block has invalid captured length");
 
-                const uint64_t tps = interfaceId < interfaces.size()
-                                         ? interfaces[interfaceId].ticksPerSecond
-                                         : kDefaultTicksPerSecond;
-                lastTime = timeBase.relative(ticks / tps, ticks % tps, tps);
-                const uint32_t linkType = interfaceId < interfaces.size() ? interfaces[interfaceId].linkType : 1;
-                const uint8_t epbFcs = interfaceId < interfaces.size() ? interfaces[interfaceId].fcsLength : 0;
+                const Interface *itf = interfaceFor(interfaceId);
+                const uint64_t tps = itf ? itf->ticksPerSecond : kDefaultTicksPerSecond;
+                lastTime = timeBase.relative(ticks / tps + static_cast<uint64_t>(itf ? itf->tsOffset : 0), ticks % tps, tps);
+                const uint32_t linkType = itf ? itf->linkType : packet::kUndefinedLinkType;
+                const uint8_t epbFcs = itf ? itf->fcsLength : 0;
 
                 // Only captured_length bytes are packet data; the rest is padding and options.
                 const char *data = reinterpret_cast<const char *>(body + 20);
@@ -442,12 +459,11 @@ bool core::FileProcessor::processPcapngFile(const std::string &filepath, std::ve
                 const uint32_t capturedLength = e.u32(body + 12);
                 if (capturedLength > bodySize - 20) return fail("Packet Block has invalid captured length");
 
-                const uint64_t tps = interfaceId < interfaces.size()
-                                         ? interfaces[interfaceId].ticksPerSecond
-                                         : kDefaultTicksPerSecond;
-                lastTime = timeBase.relative(ticks / tps, ticks % tps, tps);
-                const uint32_t linkType = interfaceId < interfaces.size() ? interfaces[interfaceId].linkType : 1;
-                const uint8_t pbFcs = interfaceId < interfaces.size() ? interfaces[interfaceId].fcsLength : 0;
+                const Interface *itf = interfaceFor(interfaceId);
+                const uint64_t tps = itf ? itf->ticksPerSecond : kDefaultTicksPerSecond;
+                lastTime = timeBase.relative(ticks / tps + static_cast<uint64_t>(itf ? itf->tsOffset : 0), ticks % tps, tps);
+                const uint32_t linkType = itf ? itf->linkType : packet::kUndefinedLinkType;
+                const uint8_t pbFcs = itf ? itf->fcsLength : 0;
                 const char *data = reinterpret_cast<const char *>(body + 20);
 
                 bool hasComment = false;
@@ -474,8 +490,9 @@ bool core::FileProcessor::processPcapngFile(const std::string &filepath, std::ve
                 if (sectionBase < info_.interfaces.size()) info_.interfaces[sectionBase].packets++;
                 // SPBs carry no timestamp; reuse the previous packet's time.
                 const char *data = reinterpret_cast<const char *>(body + 4);
-                const uint8_t spbFcs = interfaces.empty() ? 0 : interfaces[0].fcsLength;
-                addPacket(parser, packets, lastTime, interfaces.empty() ? 1 : interfaces[0].linkType, blockStart + 8 + 4,
+                const Interface *itf = interfaceFor(0);   // an SPB always belongs to the first interface
+                const uint8_t spbFcs = itf ? itf->fcsLength : 0;
+                addPacket(parser, packets, lastTime, itf ? itf->linkType : packet::kUndefinedLinkType, blockStart + 8 + 4,
                           originalLength, std::vector<char>(data, data + captured), false, spbFcs);
             } break;
             case kBlockNRB: { // name resolution records: type, length, value (padded to 4)
@@ -507,9 +524,7 @@ bool core::FileProcessor::processPcapngFile(const std::string &filepath, std::ve
                 auto &itf = info_.interfaces[sectionBase + id];
                 forEachOption(e, body + 12, bodySize - 12, [&](uint16_t code, const uint8_t *v, size_t len) {
                     if ((code == 4 || code == 5) && len == 8) {
-                        const uint32_t first = e.u32(v), second = e.u32(v + 4);
-                        const uint64_t value = fileBigEndian(e) ? (static_cast<uint64_t>(first) << 32) | second
-                                                                 : (static_cast<uint64_t>(second) << 32) | first;
+                        const uint64_t value = read64(e, v, fileBigEndian(e));
                         itf.hasStats = true;
                         (code == 4 ? itf.received : itf.dropped) = value;
                     }
@@ -526,6 +541,10 @@ bool core::FileProcessor::processPcapngFile(const std::string &filepath, std::ve
     }
     captureStart_ = timeBase.startEpoch();
     reportProgress(control, fileSize, packets.size() - firstPacket);
+    if (undefinedInterfaceRefs > 0 && message.empty()) {
+        message = std::to_string(undefinedInterfaceRefs) + " packet(s) refer to interface " + std::to_string(firstUndefinedInterface) +
+                  ", which no Interface Description Block defines; they are shown without protocol decoding";
+    }
     return true;
 }
 

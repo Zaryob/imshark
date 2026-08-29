@@ -76,9 +76,9 @@ Hedef: paketlerden konuşmalara ve oturumlara çıkmak.
 
 Hedef: geçerli paketleri sessizce atlamamak veya yanlış protokol başlığı gibi yorumlamamak. Yeni protokol eklemeden önce bu aşama tamamlanır.
 
-- [ ] pcap `LinkType` alanını alt 16 bitten oku; FCS varlık/uzunluk bilgisini ayrı tut ve çerçeve sonundaki FCS'yi protokol yükünden ayır. *(Sentetik Ethernet/FCS örneği şu anda `Unknown` oluyor; `0x0fffffff` maskesi FCS bayrağını link type'a katıyor)* — **S**
-- [ ] pcapng eski Packet Block (`0x00000002`) desteği; SHB/IDB/EPB/SPB ile birlikte paket sayısı ve bayt ofsetlerini doğrula. *(Sentetik tek paketli dosya şu anda başarılı açılıp 0 paket gösteriyor)* — **S**
-- [ ] pcapng `if_tsoffset`, arayüz/FCS seçenekleri ve EPB arayüz kimliği doğrulaması; tanımsız arayüzü Ethernet varsayma — **M**
+- [x] pcap `LinkType` alanını alt 16 bitten oku; FCS varlık/uzunluk bilgisini ayrı tut ve çerçeve sonundaki FCS'yi protokol yükünden ayır. *(Yapıldı; `LinkTypeMaskingWithFcsFlags` ve `FcsStrippedFromDissection` testleri)* — **S**
+- [x] pcapng eski Packet Block (`0x00000002`) desteği; SHB/IDB/EPB/SPB ile birlikte paket sayısı ve bayt ofsetlerini doğrula. *(Yapıldı; `LegacyPacketBlockIsLoaded` testi)* — **S**
+- [x] pcapng `if_tsoffset`, arayüz/FCS seçenekleri ve EPB arayüz kimliği doğrulaması; tanımsız arayüzü Ethernet varsayma. *(Yapıldı: `if_tsoffset` (işaretli, arayüz başına, iki bayt sırası), tanımsız arayüz `kUndefinedLinkType` ile korunur ve dosya mesajında bildirilir, arayüzler bölüm kapsamlıdır)* — **M**
 - [ ] IPv6 Fragment Header: offset/M/identification alanlarını çöz; ilk olmayan parçayı L4 başlığı gibi yorumlama; henüz birleştirilemeyen parçayı açıkça işaretle. *(Sentetik sonraki parça şu anda UDP gibi çözülebiliyor)* — **S**
 - [ ] IPv6 parçalanma birleştirme: eksik, yinelenen, sıra dışı ve çakışan parçalar; sınırlı bellek/zaman aşımı; alan ağacında kaynak paketler — **M**
 - [ ] IPv4/IPv6 birleştirilmiş datagram yükünü Follow Stream'e aktar; ham çerçeve ofseti ile birleştirilmiş veri ofsetini ayır — **M**

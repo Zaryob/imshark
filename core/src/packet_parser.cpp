@@ -174,7 +174,8 @@ void packet::PacketParser::parsePacket(packet::PacketInfo &pack, const std::vect
         } break;
         default:
             pack.protocol = "Unknown";
-            pack.info = "Unsupported link type " + std::to_string(pack.link_type);
+            pack.info = pack.link_type == packet::kUndefinedLinkType ? "Packet refers to an undefined capture interface"
+                                                                      : "Unsupported link type " + std::to_string(pack.link_type);
             return;
     }
     pack.l2_size = static_cast<uint16_t>(l3Offset);

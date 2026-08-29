@@ -12,6 +12,9 @@
 
 
 namespace packet {
+    /// link_type of a packet that names a capture interface the file never defined (nothing is guessed for it).
+    constexpr uint32_t kUndefinedLinkType = 0xFFFFFFFFu;
+
     /// One node of the protocol tree shown in the packet details pane: a label plus the byte range
     /// of the frame (`raw_data`) it was decoded from. `length == 0` means "no bytes" (derived values).
     struct Field {
