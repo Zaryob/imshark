@@ -75,7 +75,7 @@ namespace packet {
         uint16_t ether_type = 0;     // outermost payload type after the link layer / VLAN tags
         uint16_t src_port = 0;       // TCP/UDP ports (0 if not applicable)
         uint16_t dst_port = 0;
-        uint16_t ip_id = 0;          // IPv4 identification
+        uint32_t ip_id = 0;          // IPv4 identification (16 bit) / IPv6 Fragment Header identification (32 bit)
         // Facts of the application protocol, filled by its dissector (meaning depends on `protocol`):
         //   DNS/MDNS: app_text = first question name, app_type = its type, app_flags = flags word, app_code = rcode
         //   HTTP:     app_text = Host, app_text2 = request URI or response Content-Type, app_type = method (1 = GET ...),

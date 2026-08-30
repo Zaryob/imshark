@@ -94,6 +94,7 @@ void packet::PacketParser::parsePacket(packet::PacketInfo &pack, const std::vect
     } else {
         ctx.reassembledPayload = reassembledPayload_;
         ctx.fragmentNumbers = fragmentNumbers_;
+        ctx.reassembledProtocol = reassembledProtocol_;
     }
 
     if (ctx.wantFields()) {

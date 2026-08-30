@@ -26,19 +26,26 @@ namespace {
         for (auto &c: f.children) zeroRanges(c);
     }
 
-    // A fragment of an IPv4 datagram: wait for the rest; once the datagram is complete, decode its payload.
-    void dissectFragment(dissect::Context &ctx, const char *payload, size_t avail, uint8_t protocol, bool moreFragments, uint32_t fragOffset) {
+    void ipv6Chain(dissect::Context &ctx, const char *data, size_t avail, uint8_t nextHeader, Field *layer, bool allowFragment);
+
+    // A fragment of an IPv4 or IPv6 datagram: wait for the rest; once the datagram is complete, decode its payload.
+    // `protocol` is the upper layer protocol this fragment announces (only the offset 0 fragment's value is used).
+    void dissectFragment(dissect::Context &ctx, const char *payload, size_t avail, uint8_t protocol, bool moreFragments,
+                         uint32_t fragOffset, bool v6) {
         using namespace dissect;
         auto &pack = ctx.pack;
         const bool replay = ctx.mode == ParseMode::Replay;
+        const char *family = v6 ? "IPv6" : "IPv4";
 
-        bool complete = false;
+        bool complete = false, overlap = false;
         std::vector<char> whole;
         std::vector<uint32_t> numbers;
+        uint8_t wholeProtocol = protocol;
         if (replay) {
             if (pack.ip_frag == 2 && ctx.reassembledPayload) {
                 complete = true;
                 whole = *ctx.reassembledPayload;
+                wholeProtocol = ctx.reassembledProtocol;
                 if (ctx.fragmentNumbers) numbers = *ctx.fragmentNumbers;
             }
         } else if (ctx.reassembler) {
@@ -47,12 +54,17 @@ namespace {
             f.moreFragments = moreFragments;
             f.data.assign(payload, payload + avail);
             f.packetNumber = static_cast<uint32_t>(pack.number);
-            const std::string key = pack.source + ">" + pack.destination + "#" + std::to_string(pack.ip_id) + "/" + std::to_string(protocol);
-            auto r = ctx.reassembler->add(key, f);
+            f.protocol = protocol;
+            f.time = pack.time;
+            const std::string key = std::string(family) + ":" + pack.source + ">" + pack.destination + "#" + std::to_string(pack.ip_id) + "/" +
+                                    (v6 ? "" : std::to_string(protocol));
+            auto r = ctx.reassembler->add(key, f, /*strictOverlap=*/v6);   // RFC 5722: IPv6 drops datagrams with overlaps
+            overlap = r.overlapDiscarded;
             if (r.complete) {
                 complete = true;
                 whole = std::move(r.payload);
                 numbers = std::move(r.fragmentNumbers);
+                wholeProtocol = r.protocol;
                 if (ctx.completed) {
                     for (uint32_t n: numbers) if (n != static_cast<uint32_t>(pack.number)) ctx.completed->push_back({n, static_cast<uint32_t>(pack.number)});
                 }
@@ -66,9 +78,11 @@ namespace {
 
         if (!complete) {
             pack.ip_frag = 1;
-            pack.protocol = "IPv4";
-            pack.info = "Fragmented IP protocol (proto=" + ipProtocolName(protocol) + ", off=" + std::to_string(fragOffset) +
-                        ", ID=" + hexString(pack.ip_id, 4) + ")" +
+            pack.protocol = family;
+            pack.ip_protocol = protocol;
+            pack.info = std::string("Fragmented ") + (v6 ? "IPv6" : "IP") + " protocol (proto=" + ipProtocolName(protocol) + ", off=" + std::to_string(fragOffset) +
+                        ", ID=" + hexString(pack.ip_id, v6 ? 8 : 4) + ")" +
+                        (overlap ? " [Overlapping fragments: datagram discarded (RFC 5722)]" : "") +
                         (pack.reassembled_in ? " [Reassembled in #" + std::to_string(pack.reassembled_in) + "]" : "");
             return;
         }
@@ -79,11 +93,18 @@ namespace {
         packet::PacketInfo nested = pack;
         nested.fields.clear();
         Context nctx{nested, whole.data(), whole.size(), ctx.tcp, ctx.registry, ctx.mode};
-        if (const Dissector *next = ctx.registry.findIpProtocol(protocol)) (*next)(nctx, whole.data(), whole.size());
-        else nested.protocol = "Other";
+        nested.ip_protocol = wholeProtocol;
+        if (v6) {
+            ipv6Chain(nctx, whole.data(), whole.size(), wholeProtocol, nullptr, /*allowFragment=*/false);
+        } else if (const Dissector *next = ctx.registry.findIpProtocol(wholeProtocol)) {
+            (*next)(nctx, whole.data(), whole.size());
+        } else {
+            nested.protocol = "Other";
+        }
 
         pack.protocol = nested.protocol;
         pack.info = nested.info;
+        pack.ip_protocol = nested.ip_protocol;
         pack.src_port = nested.src_port;
         pack.dst_port = nested.dst_port;
         pack.tcp_flags = nested.tcp_flags;
@@ -98,9 +119,59 @@ namespace {
         if (ctx.wantFields()) {
             std::string from;
             for (uint32_t n: numbers) from += (from.empty() ? "#" : ", #") + std::to_string(n);
-            Field &layer = ctx.addLayer("[Reassembled IPv4 payload (" + std::to_string(whole.size()) + " bytes) from frames " + from + "]", 0, 0);
+            Field &layer = ctx.addLayer(std::string("[Reassembled ") + family + " payload (" + std::to_string(whole.size()) + " bytes) from frames " + from + "]", 0, 0);
             layer.children = std::move(nested.fields);
             for (auto &c: layer.children) zeroRanges(c); // offsets inside the reassembled data do not map to bytes of this frame
+        }
+    }
+
+    // Walks the IPv6 extension headers (hop-by-hop, routing, destination options, AH and - at the top level - the
+    // fragment header) starting at `data`, then hands the upper layer to its dissector.
+    void ipv6Chain(dissect::Context &ctx, const char *data, size_t avail, uint8_t nextHeader, Field *layer, bool allowFragment) {
+        using namespace dissect;
+        auto &pack = ctx.pack;
+        size_t pos = 0;
+        while (nextHeader == 0 || nextHeader == 43 || nextHeader == 44 || nextHeader == 51 || nextHeader == 60) {
+            if (avail - pos < 8) { ctx.markMalformed("IPv6 extension header truncated"); return; }
+            const uint8_t following = static_cast<uint8_t>(data[pos]);
+            const size_t extLen = nextHeader == 44 ? 8
+                                  : nextHeader == 51 ? (static_cast<size_t>(static_cast<uint8_t>(data[pos + 1])) + 2) * 4
+                                  : (static_cast<size_t>(static_cast<uint8_t>(data[pos + 1])) + 1) * 8;
+            if (extLen > avail - pos) { ctx.markMalformed("IPv6 extension header truncated"); return; }
+            const size_t o = ctx.offsetOf(data + pos);
+
+            if (nextHeader == 44) { // Fragment Header (RFC 8200 4.5)
+                const uint16_t field = be16(data + pos + 2);
+                const uint32_t fragOffset = static_cast<uint32_t>(field >> 3) * 8;
+                const bool more = field & 1;
+                const uint32_t id = be32(data + pos + 4);
+                if (layer) {
+                    Field &f = layer->add("Fragment Header (" + std::string(more || fragOffset ? "fragment" : "atomic fragment") + ", ID " + hexString(id, 8) + ")", o, 8);
+                    f.add("Next Header: " + ipProtocolName(following), o, 1);
+                    f.add("Offset: " + std::to_string(fragOffset), o + 2, 2);
+                    f.add(std::string("More Fragments: ") + (more ? "Yes" : "No"), o + 3, 1);
+                    f.add("Identification: " + hexString(id, 8), o + 4, 4);
+                }
+                if (!allowFragment) { ctx.markMalformed("IPv6 fragment header inside reassembled data"); return; }
+                if (fragOffset != 0 || more) { // a real fragment (an "atomic fragment" with offset 0 and M = 0 is a whole packet)
+                    pack.ip_id = id;
+                    pack.length = pack.length >= extLen ? pack.length - static_cast<uint32_t>(extLen) : 0;
+                    dissectFragment(ctx, data + pos + 8, avail - pos - 8, following, more, fragOffset, /*v6=*/true);
+                    return;
+                }
+            } else if (layer) {
+                layer->add("Extension Header (type " + std::to_string(nextHeader) + ", " + std::to_string(extLen) + " bytes)", o, extLen);
+            }
+            pack.length = pack.length >= extLen ? pack.length - static_cast<uint32_t>(extLen) : 0; // the payload excludes extension headers
+            pos += extLen;
+            nextHeader = following;
+        }
+
+        pack.ip_protocol = nextHeader;
+        if (const Dissector *d = ctx.registry.findIpProtocol(nextHeader)) {
+            (*d)(ctx, data + pos, avail - pos);
+        } else {
+            pack.protocol = "Other";
         }
     }
 } // namespace
@@ -153,7 +224,7 @@ void dissect::dissectIPv4(Context &ctx, const char *base, size_t len) {
     pack.ip_id = network::ntoh16(ipHeader.id);
     const uint16_t fragField = network::ntoh16(ipHeader.flags_frag_off);
     if ((fragField & 0x2000) || (fragField & 0x1FFF) != 0) { // More Fragments flag set, or not the first piece
-        dissectFragment(ctx, base + ipHeaderLen, avail, ipHeader.protocol, (fragField & 0x2000) != 0, (fragField & 0x1FFF) * 8u);
+        dissectFragment(ctx, base + ipHeaderLen, avail, ipHeader.protocol, (fragField & 0x2000) != 0, (fragField & 0x1FFF) * 8u, /*v6=*/false);
         return;
     }
     if (const Dissector *next = ctx.registry.findIpProtocol(ipHeader.protocol)) {
@@ -205,27 +276,5 @@ void dissect::dissectIPv6(Context &ctx, const char *base, size_t len) {
         l->add("Destination Address: " + pack.destination, o + 24, 16);
     }
 
-    // Skip extension headers (hop-by-hop, routing, fragment, destination options, AH)
-    while (nextHeader == 0 || nextHeader == 43 || nextHeader == 44 || nextHeader == 51 || nextHeader == 60) {
-        if (avail < 8) { ctx.markMalformed("IPv6 extension header truncated"); return; }
-        const uint8_t following = static_cast<uint8_t>(base[next]);
-        const size_t extLen = nextHeader == 44 ? 8
-                              : nextHeader == 51 ? (static_cast<size_t>(static_cast<uint8_t>(base[next + 1])) + 2) * 4
-                              : (static_cast<size_t>(static_cast<uint8_t>(base[next + 1])) + 1) * 8;
-        if (extLen > avail) { ctx.markMalformed("IPv6 extension header truncated"); return; }
-        if (l) {
-            l->add("Extension Header (type " + std::to_string(nextHeader) + ", " + std::to_string(extLen) + " bytes)",
-                   o + next, extLen);
-        }
-        next += extLen;
-        avail -= extLen;
-        nextHeader = following;
-    }
-
-    pack.ip_protocol = nextHeader;
-    if (const Dissector *d = ctx.registry.findIpProtocol(nextHeader)) {
-        (*d)(ctx, base + next, avail);
-    } else {
-        pack.protocol = "Other";
-    }
+    ipv6Chain(ctx, base + next, avail, nextHeader, l, /*allowFragment=*/true);
 }

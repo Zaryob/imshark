@@ -558,20 +558,47 @@ bool core::readPacketBytes(const std::string &filepath, const packet::PacketInfo
 
 namespace {
     // The IPv4 fragment (payload slice + flags) inside a captured Ethernet/link frame
+    // The IP fragment (payload slice + flags) carried by a captured frame: IPv4 or IPv6 (Fragment Header).
     bool readFragment(const std::vector<char> &frame, const packet::PacketInfo &p, network::IpFragment &out) {
         const size_t ip = p.l2_size;
-        if (frame.size() < ip + 20) return false;
         const auto u8 = [&](size_t i) { return static_cast<uint8_t>(frame[ip + i]); };
-        const size_t ihl = static_cast<size_t>(u8(0) & 0x0F) * 4;
-        const size_t total = (static_cast<size_t>(u8(2)) << 8) | u8(3);
-        const uint16_t field = static_cast<uint16_t>((u8(6) << 8) | u8(7));
-        if (ihl < 20 || total < ihl || frame.size() < ip + ihl) return false;
-        const size_t end = std::min(frame.size(), ip + total);
-        out.offset = (field & 0x1FFF) * 8u;
-        out.moreFragments = (field & 0x2000) != 0;
         out.packetNumber = static_cast<uint32_t>(p.number);
-        out.data.assign(frame.begin() + static_cast<std::ptrdiff_t>(ip + ihl), frame.begin() + static_cast<std::ptrdiff_t>(end));
-        return true;
+        out.time = p.time;
+
+        if (p.ip_version == 4) {
+            if (frame.size() < ip + 20) return false;
+            const size_t ihl = static_cast<size_t>(u8(0) & 0x0F) * 4;
+            const size_t total = (static_cast<size_t>(u8(2)) << 8) | u8(3);
+            const uint16_t field = static_cast<uint16_t>((u8(6) << 8) | u8(7));
+            if (ihl < 20 || total < ihl || frame.size() < ip + ihl) return false;
+            const size_t end = std::min(frame.size(), ip + total);
+            out.offset = (field & 0x1FFF) * 8u;
+            out.moreFragments = (field & 0x2000) != 0;
+            out.protocol = u8(9);
+            out.data.assign(frame.begin() + static_cast<std::ptrdiff_t>(ip + ihl), frame.begin() + static_cast<std::ptrdiff_t>(end));
+            return true;
+        }
+        if (p.ip_version == 6) {
+            if (frame.size() < ip + 40) return false;
+            const size_t payloadEnd = std::min(frame.size(), ip + 40 + ((static_cast<size_t>(u8(4)) << 8) | u8(5)));
+            uint8_t next = u8(6);
+            size_t pos = ip + 40;
+            while (next == 0 || next == 43 || next == 51 || next == 60) { // headers in front of the Fragment Header
+                if (pos + 8 > payloadEnd) return false;
+                const size_t len = next == 51 ? (static_cast<size_t>(static_cast<uint8_t>(frame[pos + 1])) + 2) * 4
+                                              : (static_cast<size_t>(static_cast<uint8_t>(frame[pos + 1])) + 1) * 8;
+                next = static_cast<uint8_t>(frame[pos]);
+                pos += len;
+            }
+            if (next != 44 || pos + 8 > payloadEnd) return false;
+            const uint16_t field = static_cast<uint16_t>((static_cast<uint8_t>(frame[pos + 2]) << 8) | static_cast<uint8_t>(frame[pos + 3]));
+            out.offset = static_cast<uint32_t>(field >> 3) * 8;
+            out.moreFragments = (field & 1) != 0;
+            out.protocol = static_cast<uint8_t>(frame[pos]);
+            out.data.assign(frame.begin() + static_cast<std::ptrdiff_t>(pos + 8), frame.begin() + static_cast<std::ptrdiff_t>(payloadEnd));
+            return true;
+        }
+        return false;
     }
 } // namespace
 
@@ -590,17 +617,21 @@ bool core::buildPacketDetails(const std::string &filepath, const packet::PacketI
         CaptureReader reader(filepath);
         std::vector<network::IpFragment> fragments;
         std::vector<char> frame;
+        uint8_t wholeProtocol = 0;
         for (const auto &p: *allPackets) {
-            if (p.ip_version != 4 || p.ip_frag == 0 || p.ip_id != summary.ip_id || p.ip_protocol != summary.ip_protocol ||
-                p.source != summary.source || p.destination != summary.destination) continue;
+            // the earlier fragments were annotated with the packet that completed their datagram while loading
+            if (!(p.number == summary.number || (p.ip_frag == 1 && p.reassembled_in == static_cast<uint32_t>(summary.number)))) continue;
             network::IpFragment f;
             if (reader.read(p, frame) && readFragment(frame, p, f)) fragments.push_back(std::move(f));
         }
         if (network::assembleIpv4Payload(fragments, reassembled)) {
-            for (const auto &f: fragments) fragmentNumbers.push_back(f.packetNumber);
+            for (const auto &f: fragments) {
+                fragmentNumbers.push_back(f.packetNumber);
+                if (f.offset == 0 && wholeProtocol == 0) wholeProtocol = f.protocol;
+            }
             std::sort(fragmentNumbers.begin(), fragmentNumbers.end());
             fragmentNumbers.erase(std::unique(fragmentNumbers.begin(), fragmentNumbers.end()), fragmentNumbers.end());
-            parser.setReassembly(&reassembled, &fragmentNumbers);
+            parser.setReassembly(&reassembled, &fragmentNumbers, wholeProtocol);
         }
     }
 
