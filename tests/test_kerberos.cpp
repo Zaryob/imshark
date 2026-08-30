@@ -68,6 +68,34 @@ namespace {
     const std::string kApRep = bytes("6f233021a003020105a10302010fa2153013a003020112a20c040a1111111111"
         "1111111111");
 
+    // KRB-SAFE / KRB-PRIV / KRB-CRED and a TGS-REQ whose padata carries an AP-REQ, an encrypted timestamp, ETYPE-INFO2 and PAC-REQUEST:
+    // built by the same independent DER encoder (Python) and checked with openssl asn1parse -inform DER, e.g. kSafe:
+    //   appl [ 20 ] { SEQUENCE { cont [ 0 ] INTEGER :05, cont [ 1 ] INTEGER :14, cont [ 2 ] { SEQUENCE { cont [ 0 ] OCTET STRING :hello world,
+    //   cont [ 1 ] GENERALIZEDTIME :20260101000000Z, cont [ 3 ] INTEGER :4D } }, cont [ 3 ] { SEQUENCE { cont [ 0 ] INTEGER :10, cont [ 1 ] OCTET STRING } } } }
+    // kTgsReq2 padata: SEQUENCE { cont [ 1 ] INTEGER :01, cont [ 2 ] OCTET STRING [HEX DUMP]:6E81... (an AP-REQ) }, { :02 ... EncryptedData },
+    //   { :13 (19) ETYPE-INFO2 salt CORP.COMalice }, { :80 (128) 3005A0030101FF }
+    const std::string kSafe = bytes("7450304ea003020105a103020114a2293027a00d040b68656c6c6f20776f726c"
+        "64a111180f32303236303130313030303030305aa30302014da3173015a00302"
+        "0110a10e040cabababababababababababab");
+    const std::string kPriv = bytes("75293027a003020105a103020115a31b3019a003020112a21204102222222222"
+        "2222222222222222222222");
+    const std::string kCred = bytes("76753073a003020105a103020116a250304e614c304aa003020105a10a1b0843"
+        "4f52502e434f4da21d301ba003020102a11430121b066b72627467741b08434f"
+        "52502e434f4da3183016a003020112a103020102a20a04083333333333333333"
+        "a3153013a003020100a20c040a44444444444444444444");
+    const std::string kTgsReq2 = bytes("6c8201703082016ca103020105a20302010ca381ee3081eb308191a103020101"
+        "a281890481866e8183308180a003020105a10302010ea20703050020000000a3"
+        "526150304ea003020105a10a1b08434f52502e434f4da221301fa003020102a1"
+        "1830161b04636966731b0e66696c65732e636f72702e636f6da3183016a00302"
+        "0112a103020103a20a0408cccccccccccccccca4173015a003020112a20e040c"
+        "ffffffffffffffffffffffff301da103020102a21604143012a003020112a20b"
+        "04095555555555555555553023a103020113a21c041a30183016a003020112a1"
+        "0f1b0d434f52502e434f4d616c6963653011a10402020080a20904073005a003"
+        "0101ffa46f306da00703050040810000a20a1b08434f52502e434f4da321301f"
+        "a003020102a11830161b04636966731b0e66696c65732e636f72702e636f6da5"
+        "11180f32303337303931333032343830355aa611180f32303337303932303032"
+        "343830355aa70302012aa8083006020112020111");
+
     std::string mark(const std::string &m) {   // RFC 4120 7.2.2: 4 byte length in front on TCP
         std::string out(4, '\0');
         out[0] = static_cast<char>(m.size() >> 24);
@@ -217,6 +245,79 @@ TEST(Kerberos, ADatagramCutShortIsMalformedButAStreamSegmentIsNot) {
     flow.client(a.substr(0, 60)).client(a.substr(60));
     flow.load();
     EXPECT_FALSE(matches("malformed", flow.packets()[0]));
+}
+
+TEST(Kerberos, KrbSafePrivAndCredAreLabelledAndTheirCiphersAreMarkedEncrypted) {
+    const auto safe = udp(kSafe, true);
+    EXPECT_EQ(safe.info, "KRB-SAFE");
+    EXPECT_EQ(safe.app_type, 20u);
+    EXPECT_TRUE(matches("kerberos.msg_type == 20", safe));
+    EXPECT_EQ(udp(kPriv, true).info, "KRB-PRIV");
+    EXPECT_EQ(udp(kCred, true).info, "KRB-CRED");
+    EXPECT_TRUE(matches("kerberos.msg_type == 21", udp(kPriv, true)));
+    EXPECT_TRUE(matches("kerberos.msg_type == 22", udp(kCred, true)));
+
+    Flow flow(50000, 88, "krb_safe_priv_cred");
+    flow.client(mark(kSafe)).client(mark(kPriv)).client(mark(kCred));
+    flow.load();
+    const auto s = flow.details(0);
+    EXPECT_NE(find(s.fields, "Kerberos (KRB-SAFE)"), nullptr);
+    EXPECT_NE(find(s.fields, "user-data: 11 bytes (integrity protected, not encrypted)"), nullptr);
+    EXPECT_NE(find(s.fields, "timestamp: 20260101000000Z"), nullptr);
+    EXPECT_NE(find(s.fields, "seq-number: 77"), nullptr);
+    EXPECT_NE(find(s.fields, "cksumtype: hmac-sha1-96-aes256 (16)"), nullptr);
+    const auto pr = flow.details(1);
+    EXPECT_NE(find(pr.fields, "Kerberos (KRB-PRIV)"), nullptr);
+    EXPECT_NE(find(pr.fields, "enc-part"), nullptr);
+    EXPECT_NE(find(pr.fields, "etype: aes256-cts-hmac-sha1-96 (18)"), nullptr);
+    EXPECT_NE(find(pr.fields, "cipher: 16 bytes (encrypted)"), nullptr);
+    const auto cr = flow.details(2);
+    EXPECT_NE(find(cr.fields, "Kerberos (KRB-CRED)"), nullptr);
+    EXPECT_NE(find(cr.fields, "tickets"), nullptr);
+    EXPECT_NE(find(cr.fields, "sname: krbtgt/CORP.COM"), nullptr);
+    EXPECT_NE(find(cr.fields, "cipher: 8 bytes (encrypted)"), nullptr);
+    EXPECT_NE(find(cr.fields, "etype: unknown (0)"), nullptr) << "the cred's own enc-part uses etype 0 (null)";
+    flow.expectReplayEqualsLoad();
+}
+
+TEST(Kerberos, EncryptedDataOfTicketsAndAuthenticatorsIsLabelledEncrypted) {
+    Flow flow(50000, 88, "krb_encrypted");
+    flow.client(mark(kApReq)).server(mark(kApRep)).server(mark(kAsRep));
+    flow.load();
+    const auto req = flow.details(0);
+    EXPECT_NE(find(req.fields, "ap-options: 0x20000000 (mutual-required)"), nullptr);
+    EXPECT_NE(find(req.fields, "authenticator"), nullptr);
+    EXPECT_NE(find(req.fields, "cipher: 12 bytes (encrypted)"), nullptr);
+    EXPECT_NE(find(req.fields, "cipher: 8 bytes (encrypted)"), nullptr) << "the ticket's enc-part";
+    EXPECT_NE(find(req.fields, "kvno: 3"), nullptr);
+    EXPECT_NE(find(flow.details(1).fields, "cipher: 10 bytes (encrypted)"), nullptr);
+    EXPECT_NE(find(flow.details(2).fields, "cipher: 16 bytes (encrypted)"), nullptr);
+}
+
+TEST(Kerberos, PaDataValuesAreDecodedFurtherAndKdcOptionsAreNamed) {
+    const auto p = udp(kTgsReq2, true);
+    EXPECT_EQ(p.info, "TGS-REQ sname=cifs/files.corp.com realm=CORP.COM padata=PA-TGS-REQ,PA-ENC-TIMESTAMP,PA-ETYPE-INFO2,PA-PAC-REQUEST");
+    Flow flow(50000, 88, "krb_padata");
+    flow.client(mark(kTgsReq2));
+    flow.load();
+    const auto d = flow.details(0);
+    EXPECT_NE(find(d.fields, "Kerberos (AP-REQ)"), nullptr) << "PA-TGS-REQ carries an AP-REQ";
+    EXPECT_NE(find(d.fields, "ap-options: 0x20000000 (mutual-required)"), nullptr);
+    EXPECT_NE(find(d.fields, "PA-ENC-TS-ENC"), nullptr);
+    EXPECT_NE(find(d.fields, "cipher: 9 bytes (encrypted)"), nullptr);
+    EXPECT_NE(find(d.fields, "ETYPE-INFO2: aes256-cts-hmac-sha1-96 (18) salt=CORP.COMalice"), nullptr);
+    EXPECT_NE(find(d.fields, "include-pac: true"), nullptr);
+    EXPECT_NE(find(d.fields, "kdc-options: 0x40810000 (forwardable, renewable, canonicalize)"), nullptr);
+    EXPECT_NE(find(d.fields, "rtime: 20370920024805Z"), nullptr);
+    EXPECT_NE(find(d.fields, "ENCTYPE: aes128-cts-hmac-sha1-96 (17)"), nullptr);
+}
+
+TEST(Kerberos, NewMessagesStayInsideTheFrameWhenCutOrMutated) {
+    for (const std::string *m: {&kSafe, &kPriv, &kCred, &kTgsReq2}) {
+        const auto frame = support::udpPacket("0a000001", "0a000002", "c350", "0058", *m);
+        framesweep::sweep(framesweep::Bytes(frame.begin(), frame.end()), 0x4b61);
+        appflow::sweepPayload(mark(*m), 88, 0x4b62);
+    }
 }
 
 TEST(Kerberos, RealCapturesWhenAvailable) {

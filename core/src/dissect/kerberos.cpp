@@ -257,6 +257,70 @@ Field &node(Context &ctx, Field &parent, const std::string &label, const BerTlv 
     return parent.add(label, offsetOfTlv(ctx, t), t.total);
 }
 
+// Checksum types (RFC 3961, RFC 3962, RFC 4757)
+const char *checksumTypeName(int64_t t) {
+    switch (t) {
+        case 1: return "crc32";
+        case 2: return "rsa-md4";
+        case 4: return "rsa-md5";
+        case 8: return "rsa-md5-des";
+        case 12: return "hmac-sha1-des3";
+        case 15: return "hmac-sha1-96-aes128";
+        case 16: return "hmac-sha1-96-aes256";
+        case 19: return "cmac-camellia128";
+        case 20: return "cmac-camellia256";
+        case -138: return "hmac-md5";
+        default: return nullptr;
+    }
+}
+
+struct FlagName {
+    int bit;   // RFC 4120 5.2.8: bit 0 is the most significant of the 32
+    const char *name;
+};
+
+std::string flagList(uint32_t value, const FlagName *names, size_t count) {
+    std::string out;
+    for (size_t i = 0; i < count; ++i) {
+        if (!(value & (0x80000000u >> names[i].bit))) continue;
+        if (!out.empty()) out += ", ";
+        out += names[i].name;
+    }
+    return out;
+}
+
+// KDCOptions (RFC 4120 5.4.1)
+std::string kdcOptionNames(uint32_t v) {
+    static const FlagName names[] = {{1, "forwardable"}, {2, "forwarded"}, {3, "proxiable"}, {4, "proxy"}, {5, "allow-postdate"},
+        {6, "postdated"}, {8, "renewable"}, {14, "request-anonymous"}, {15, "canonicalize"}, {26, "disable-transited-check"},
+        {27, "renewable-ok"}, {28, "enc-tkt-in-skey"}, {30, "renew"}, {31, "validate"}};
+    return flagList(v, names, sizeof names / sizeof *names);
+}
+
+// APOptions (RFC 4120 5.5.1)
+std::string apOptionNames(uint32_t v) {
+    static const FlagName names[] = {{1, "use-session-key"}, {2, "mutual-required"}};
+    return flagList(v, names, sizeof names / sizeof *names);
+}
+
+// BIT STRING of 32 flags: first content byte is the number of unused bits, then the bytes, most significant first
+bool flags32(const BerTlv &bits, uint32_t &out) {
+    if (!bits.isUniversal(asn1::tag::BitString) || !bits.value || bits.length < 2) return false;
+    out = 0;
+    for (size_t i = 1; i < bits.length && i <= 4; ++i) out |= static_cast<uint32_t>(bits.value[i]) << (8 * (4 - i));
+    return true;
+}
+
+// EncryptedData ::= SEQUENCE { etype [0], kvno [1] OPTIONAL, cipher [2] OCTET STRING }: the cipher is never decoded
+void addEncryptedData(Context &ctx, Field &parent, const std::string &label, const BerTlv &enc) {
+    int64_t et = 0, kvno = 0;
+    BerTlv cipher;
+    Field &e = node(ctx, parent, label, enc);
+    if (ctxInt(enc, 0, et)) e.add("etype: " + named(etypeName(et), et));
+    if (ctxInt(enc, 1, kvno)) e.add("kvno: " + std::to_string(kvno));
+    if (ctxChild(enc, 2, cipher)) node(ctx, e, "cipher: " + std::to_string(cipher.length) + " bytes (encrypted)", cipher);
+}
+
 // Ticket ::= [APPLICATION 1] SEQUENCE { tkt-vno [0], realm [1], sname [2], enc-part [3] }
 void addTicket(Context &ctx, Field &parent, const BerTlv &ticketApp) {
     BerTlv seq;
@@ -264,29 +328,74 @@ void addTicket(Context &ctx, Field &parent, const BerTlv &ticketApp) {
     Field &t = node(ctx, parent, "ticket", ticketApp);
     if (!readBerTlv(r, seq)) return;
     BerTlv v;
+    int64_t vno = 0;
+    if (ctxInt(seq, 0, vno)) t.add("tkt-vno: " + std::to_string(vno));
     if (ctxChild(seq, 1, v)) node(ctx, t, "realm: " + text(v), v);
     if (ctxChild(seq, 2, v)) node(ctx, t, "sname: " + principal(v), v);
     BerTlv enc;
-    if (ctxChild(seq, 3, enc)) {
-        int64_t et = 0, kvno = 0;
-        Field &e = node(ctx, t, "enc-part", enc);
-        if (ctxInt(enc, 0, et)) e.add("etype: " + named(etypeName(et), et));
-        if (ctxInt(enc, 1, kvno)) e.add("kvno: " + std::to_string(kvno));
+    if (ctxChild(seq, 3, enc)) addEncryptedData(ctx, t, "enc-part", enc);
+}
+
+void addPrincipal(Context &ctx, Field &parent, const char *label, const BerTlv &pn) {
+    int64_t nt = -1;
+    const std::string n = principal(pn, &nt);
+    Field &c = node(ctx, parent, std::string(label) + ": " + n, pn);
+    if (nt >= 0) c.add("name-type: " + named(nameTypeName(nt), nt));
+}
+
+// Checksum ::= SEQUENCE { cksumtype [0], checksum [1] OCTET STRING }
+void addChecksum(Context &ctx, Field &parent, const BerTlv &ck) {
+    int64_t ct = 0;
+    BerTlv sum;
+    Field &c = node(ctx, parent, "cksum", ck);
+    if (ctxInt(ck, 0, ct)) c.add("cksumtype: " + named(checksumTypeName(ct), ct));
+    if (ctxChild(ck, 1, sum)) node(ctx, c, "checksum: " + std::to_string(sum.length) + " bytes", sum);
+}
+
+// The padata-value of a few PA-DATA types is decoded further: it is itself a Kerberos structure
+void addPaDataValue(Context &ctx, Field &n, const PaData &pa, int depth) {
+    BerTlv val, inner;
+    if (!ctxChild(pa.element, 2, val) || !val.isUniversal(asn1::tag::OctetString)) return;
+    ByteReader vr(val.value, val.length);
+    switch (pa.type) {
+        case 1: // PA-TGS-REQ: an AP-REQ
+            if (depth < 2 && val.length > 0) {
+                Field &k = n.add("Kerberos", ctx.offsetOf(reinterpret_cast<const char *>(val.value)), val.length);
+                decodeKerberosMessage(ctx, val.value, val.length, &k, depth + 1);
+            }
+            break;
+        case 2: // PA-ENC-TIMESTAMP: EncryptedData
+            if (readBerTlv(vr, inner)) addEncryptedData(ctx, n, "PA-ENC-TS-ENC", inner);
+            break;
+        case 19: { // PA-ETYPE-INFO2: SEQUENCE OF ETYPE-INFO2-ENTRY { etype [0], salt [1] KerberosString OPTIONAL, s2kparams [2] }
+            if (!readBerTlv(vr, inner) || !inner.constructed) break;
+            ByteReader er(inner.value, inner.length);
+            BerTlv entry, salt;
+            int count = 0;
+            while (er.remaining() > 0 && readBerTlv(er, entry) && count++ < 16) {
+                int64_t et = 0;
+                if (!ctxInt(entry, 0, et)) continue;
+                std::string label = "ETYPE-INFO2: " + named(etypeName(et), et);
+                if (ctxChild(entry, 1, salt)) label += " salt=" + text(salt);
+                node(ctx, n, label, entry);
+            }
+            break;
+        }
+        case 128: { // PA-PAC-REQUEST: SEQUENCE { include-pac [0] BOOLEAN }
+            BerTlv b;
+            if (readBerTlv(vr, inner) && ctxChild(inner, 0, b) && b.length > 0) n.add(std::string("include-pac: ") + (b.value[0] ? "true" : "false"), offsetOfTlv(ctx, b), b.total);
+            break;
+        }
+        default: break;
     }
 }
 
-void addEncryptedData(Context &ctx, Field &parent, const std::string &label, const BerTlv &enc) {
-    int64_t et = 0, kvno = 0;
-    Field &e = node(ctx, parent, label, enc);
-    if (ctxInt(enc, 0, et)) e.add("etype: " + named(etypeName(et), et));
-    if (ctxInt(enc, 1, kvno)) e.add("kvno: " + std::to_string(kvno));
-}
-
-void addPaData(Context &ctx, Field &parent, const std::vector<PaData> &list, const BerTlv &seqOf) {
+void addPaData(Context &ctx, Field &parent, const std::vector<PaData> &list, const BerTlv &seqOf, int depth) {
     Field &p = node(ctx, parent, "padata (" + std::to_string(list.size()) + ")", seqOf);
     for (const auto &pa: list) {
         const char *n = paDataTypeName(pa.type);
-        node(ctx, p, "PA-DATA " + named(n ? n : "unknown", pa.type), pa.element);
+        Field &f = node(ctx, p, "PA-DATA " + named(n ? n : "unknown", pa.type), pa.element);
+        addPaDataValue(ctx, f, pa, depth);
     }
 }
 
@@ -305,56 +414,41 @@ StreamFrame frameKerberos(const char *data, size_t length) {
     return StreamFrame{length < total ? StreamFrame::Kind::NeedMore : StreamFrame::Kind::Complete, total};
 }
 
-void dissectKerberos(Context &ctx, const char *data, size_t length) {
-    if (!data || length == 0) return;
-    auto &pack = ctx.pack;
-    const auto *bytes = reinterpret_cast<const uint8_t *>(data);
-
-    // TCP: 4 byte record mark in front (its first byte is zero, a message starts with an APPLICATION tag 0x6a..0x7e)
-    size_t mark = 0;
-    if (length >= 5 && bytes[0] < 0x40) mark = 4;
-    const uint8_t *msg = bytes + mark;
-    const size_t msgAvail = length - mark;
-
-    pack.protocol = "Kerberos";
-    if (msgAvail < 2 || (msg[0] & 0xe0) != 0x60 || (msg[0] & 0x1f) == 0x1f) {
-        pack.info = "Kerberos";
-        ctx.markMalformed("Kerberos message does not start with an APPLICATION tag");
-        return;
-    }
+KerberosSummary decodeKerberosMessage(Context &ctx, const uint8_t *msg, size_t msgAvail, Field *root, int depth) {
+    KerberosSummary s;
+    if (msgAvail < 2 || (msg[0] & 0xe0) != 0x60 || (msg[0] & 0x1f) == 0x1f) return s;
     const uint32_t appTag = msg[0] & 0x1f;
     size_t appHeader = 2, appBody = msg[1];
     if (msg[1] >= 0x80) {
         const size_t count = msg[1] & 0x7f;
-        if (count == 0 || count > 4 || msgAvail < 2 + count) {
-            pack.info = "Kerberos";
-            ctx.markMalformed("Kerberos message length unreadable");
-            return;
-        }
+        if (count == 0 || count > 4 || msgAvail < 2 + count) return s;
         appBody = 0;
         for (size_t i = 0; i < count; ++i) appBody = (appBody << 8) | msg[2 + i];
         appHeader = 2 + count;
     }
-    const bool cut = appHeader + appBody > msgAvail;   // a segment of a longer message, or a cut capture
+    s.tagOk = true;
+    s.cut = appHeader + appBody > msgAvail;   // a segment of a longer message, or a cut capture
+    s.length = std::min(msgAvail, appHeader + appBody);
     const char *typeName = kerberosMsgTypeName(appTag);
-    pack.app_type = static_cast<uint16_t>(appTag);
+    s.appTag = appTag;
 
     int64_t msgType = appTag;
     BerTlv app;
     ByteReader ar(msg, msgAvail);
-    const bool appOk = !cut && readBerTlv(ar, app);
+    const bool appOk = !s.cut && readBerTlv(ar, app);
     BerTlv body;
     bool haveBody = false;
     if (appOk) {
         ByteReader br(app.value, app.length);
         haveBody = readBerTlv(br, body) && body.isUniversal(asn1::tag::Sequence);
     }
+    s.bodyOk = appOk && haveBody;
 
     int64_t innerType = 0;
     BerTlv t;
     BerTlv reqBody;
     std::string cnameText, snameText, crealmText, realmText, etext;
-    BerTlv ticket, authenticator, encPart, ctime, stime, edata;
+    BerTlv ticket, authenticator, encPart, ctime, stime, edata, apOptions, safeBody, cksum, tickets;
     bool haveTicket = false, haveEnc = false, haveReqBody = false, haveEdata = false;
     std::vector<PaData> padata;
     BerTlv padataSeq;
@@ -384,6 +478,7 @@ void dissectKerberos(Context &ctx, const char *data, size_t length) {
             if (ctxChild(body, 6, encPart)) haveEnc = true;
             realmText = crealmText;
         } else if (appTag == 14) {
+            ctxChild(body, 2, apOptions);
             if (ctxChild(body, 3, ticket)) haveTicket = true;
             if (ctxChild(body, 4, authenticator)) haveEnc = true;
             if (haveTicket) {   // the service the ticket is for
@@ -396,6 +491,14 @@ void dissectKerberos(Context &ctx, const char *data, size_t length) {
             }
         } else if (appTag == 15) {
             if (ctxChild(body, 2, encPart)) haveEnc = true;
+        } else if (appTag == 20) { // KRB-SAFE: safe-body [2], cksum [3]
+            ctxChild(body, 2, safeBody);
+            ctxChild(body, 3, cksum);
+        } else if (appTag == 21) { // KRB-PRIV: enc-part [3]
+            if (ctxChild(body, 3, encPart)) haveEnc = true;
+        } else if (appTag == 22) { // KRB-CRED: tickets [2] SEQUENCE OF Ticket, enc-part [3]
+            ctxChild(body, 2, tickets);
+            if (ctxChild(body, 3, encPart)) haveEnc = true;
         } else if (appTag == 30) {
             ctxInt(body, 6, errorCode);
             ctxInt(body, 5, susec);
@@ -426,42 +529,48 @@ void dissectKerberos(Context &ctx, const char *data, size_t length) {
     if (errorCode >= 0) {
         const char *en = kerberosErrorCodeName(errorCode);
         summary += " " + std::string(en ? en : "error") + " (" + std::to_string(errorCode) + ")";
-        pack.app_code = static_cast<uint16_t>(errorCode);
     }
     if (!cnameText.empty()) summary += " cname=" + cnameText;
     if (!snameText.empty()) summary += " sname=" + snameText;
     if (!realmText.empty()) summary += " realm=" + realmText;
     if (havePadata && !padata.empty()) summary += " padata=" + paNames(padata);
-    pack.info = summary;
-    pack.app_text = realmText;
-    pack.app_text2 = cnameText + "\n" + snameText;   // kerberos.cname / kerberos.sname
+    s.msgType = msgType;
+    s.errorCode = errorCode;
+    s.typeName = typeStr;
+    s.cname = cnameText;
+    s.sname = snameText;
+    s.crealm = crealmText;
+    s.realm = realmText;
+    s.info = summary;
 
-    if (ctx.wantFields()) {
-        const size_t o = ctx.offsetOf(data) + mark;
-        Field &root = ctx.addLayer("Kerberos (" + typeStr + ")", o, std::min(msgAvail, appHeader + appBody));
-        if (mark) root.add("Record Mark: " + std::to_string(be32(data)) + " bytes", ctx.offsetOf(data), 4);
+    if (root && ctx.wantFields()) {
+        root->text = "Kerberos (" + typeStr + ")";
+        root->length = static_cast<uint32_t>(s.length);
         if (haveBody) {
-            if (pvno > 0) root.add("pvno: " + std::to_string(pvno));
-            root.add("msg-type: " + named(innerName ? innerName : typeName, msgType));
-            if (havePadata && appTag != 30) addPaData(ctx, root, padata, padataSeq);
+            if (pvno > 0) root->add("pvno: " + std::to_string(pvno));
+            root->add("msg-type: " + named(innerName ? innerName : typeName, msgType));
+            if (havePadata && appTag != 30) addPaData(ctx, *root, padata, padataSeq, depth);
+            if (appTag == 14) {
+                uint32_t o = 0;
+                if (flags32(apOptions, o)) {
+                    const std::string names = apOptionNames(o);
+                    node(ctx, *root, "ap-options: " + hexString(o, 8) + (names.empty() ? "" : " (" + names + ")"), apOptions);
+                }
+            }
             if (haveReqBody) {
-                Field &b = node(ctx, root, "req-body", reqBody);
+                Field &b = node(ctx, *root, "req-body", reqBody);
                 BerTlv v;
-                if (ctxChild(reqBody, 0, v) && v.value && v.length > 0 && v.isUniversal(asn1::tag::BitString)) b.add("kdc-options: " + hexString(v.length >= 5 ? be32(reinterpret_cast<const char *>(v.value) + 1) : 0, 8), offsetOfTlv(ctx, v), v.total);
-                if (ctxChild(reqBody, 1, v)) {
-                    int64_t nt = -1;
-                    const std::string n = principal(v, &nt);
-                    Field &c = node(ctx, b, "cname: " + n, v);
-                    if (nt >= 0) c.add("name-type: " + named(nameTypeName(nt), nt));
+                uint32_t o = 0;
+                if (ctxChild(reqBody, 0, v) && flags32(v, o)) {
+                    const std::string names = kdcOptionNames(o);
+                    node(ctx, b, "kdc-options: " + hexString(o, 8) + (names.empty() ? "" : " (" + names + ")"), v);
                 }
+                if (ctxChild(reqBody, 1, v)) addPrincipal(ctx, b, "cname", v);
                 if (ctxChild(reqBody, 2, v)) node(ctx, b, "realm: " + text(v), v);
-                if (ctxChild(reqBody, 3, v)) {
-                    int64_t nt = -1;
-                    const std::string n = principal(v, &nt);
-                    Field &c = node(ctx, b, "sname: " + n, v);
-                    if (nt >= 0) c.add("name-type: " + named(nameTypeName(nt), nt));
-                }
+                if (ctxChild(reqBody, 3, v)) addPrincipal(ctx, b, "sname", v);
+                if (ctxChild(reqBody, 4, v)) node(ctx, b, "from: " + text(v), v);
                 if (ctxChild(reqBody, 5, v)) node(ctx, b, "till: " + text(v), v);
+                if (ctxChild(reqBody, 6, v)) node(ctx, b, "rtime: " + text(v), v);
                 int64_t nonce = 0;
                 if (ctxInt(reqBody, 7, nonce)) b.add("nonce: " + std::to_string(nonce));
                 if (ctxChild(reqBody, 8, v)) {
@@ -474,38 +583,96 @@ void dissectKerberos(Context &ctx, const char *data, size_t length) {
                         if (et.asInt64(x)) node(ctx, e, "ENCTYPE: " + named(etypeName(x), x), et);
                     }
                 }
+                if (ctxChild(reqBody, 10, v)) addEncryptedData(ctx, b, "enc-authorization-data", v);
+                if (ctxChild(reqBody, 11, v) && v.constructed) {   // additional-tickets: SEQUENCE OF Ticket
+                    Field &a = node(ctx, b, "additional-tickets", v);
+                    ByteReader tr(v.value, v.length);
+                    BerTlv tk;
+                    int n = 0;
+                    while (tr.remaining() > 0 && readBerTlv(tr, tk) && n++ < 8) addTicket(ctx, a, tk);
+                }
             }
             if (appTag == 11 || appTag == 13) {
                 BerTlv v;
-                if (ctxChild(body, 3, v)) node(ctx, root, "crealm: " + text(v), v);
-                if (ctxChild(body, 4, v)) node(ctx, root, "cname: " + cnameText, v);
+                if (ctxChild(body, 3, v)) node(ctx, *root, "crealm: " + text(v), v);
+                if (ctxChild(body, 4, v)) addPrincipal(ctx, *root, "cname", v);
             }
-            if (haveTicket) addTicket(ctx, root, ticket);
-            if (haveEnc) addEncryptedData(ctx, root, appTag == 14 ? "authenticator" : "enc-part", appTag == 14 ? authenticator : encPart);
+            if (haveTicket) addTicket(ctx, *root, ticket);
+            if (appTag == 22 && tickets.value && tickets.constructed) {
+                Field &a = node(ctx, *root, "tickets", tickets);
+                ByteReader tr(tickets.value, tickets.length);
+                BerTlv tk;
+                int n = 0;
+                while (tr.remaining() > 0 && readBerTlv(tr, tk) && n++ < 16) addTicket(ctx, a, tk);
+            }
+            if (appTag == 20 && safeBody.value && safeBody.constructed) { // KRB-SAFE-BODY: user-data [0], timestamp [1], usec [2], seq-number [3]: integrity only, not encrypted
+                Field &sb = node(ctx, *root, "safe-body", safeBody);
+                BerTlv v;
+                if (ctxChild(safeBody, 0, v)) node(ctx, sb, "user-data: " + std::to_string(v.length) + " bytes (integrity protected, not encrypted)", v);
+                if (ctxChild(safeBody, 1, v)) node(ctx, sb, "timestamp: " + text(v), v);
+                int64_t n = 0;
+                if (ctxInt(safeBody, 3, n)) sb.add("seq-number: " + std::to_string(n));
+                if (cksum.value && cksum.constructed) addChecksum(ctx, *root, cksum);
+            }
+            if (haveEnc) {
+                const char *label = appTag == 14 ? "authenticator" : "enc-part";
+                addEncryptedData(ctx, *root, label, appTag == 14 ? authenticator : encPart);
+            }
             if (appTag == 30) {
-                if (ctime.value) node(ctx, root, "ctime: " + text(ctime), ctime);
-                if (stime.value) node(ctx, root, "stime: " + text(stime), stime);
-                if (susec >= 0) root.add("susec: " + std::to_string(susec));
+                if (ctime.value) node(ctx, *root, "ctime: " + text(ctime), ctime);
+                if (stime.value) node(ctx, *root, "stime: " + text(stime), stime);
+                if (susec >= 0) root->add("susec: " + std::to_string(susec));
                 const char *en = kerberosErrorCodeName(errorCode);
-                if (errorCode >= 0) root.add("error-code: " + named(en ? en : "unknown error", errorCode));
-                if (!crealmText.empty()) root.add("crealm: " + crealmText);
-                if (!cnameText.empty()) root.add("cname: " + cnameText);
-                if (!realmText.empty()) root.add("realm: " + realmText);
-                if (!snameText.empty()) root.add("sname: " + snameText);
-                if (!etext.empty()) root.add("e-text: " + etext);
+                if (errorCode >= 0) root->add("error-code: " + named(en ? en : "unknown error", errorCode));
+                if (!crealmText.empty()) root->add("crealm: " + crealmText);
+                if (!cnameText.empty()) root->add("cname: " + cnameText);
+                if (!realmText.empty()) root->add("realm: " + realmText);
+                if (!snameText.empty()) root->add("sname: " + snameText);
+                if (!etext.empty()) root->add("e-text: " + etext);
                 if (haveEdata) {
-                    Field &e = node(ctx, root, "e-data", edata);
-                    if (havePadata) addPaData(ctx, e, padata, padataSeq);
+                    Field &e = node(ctx, *root, "e-data", edata);
+                    if (havePadata) addPaData(ctx, e, padata, padataSeq, depth);
                 }
             }
         } else if (appOk) {
-            root.add("[the message body is not a SEQUENCE]");
+            root->add("[the message body is not a SEQUENCE]");
         }
     }
+    return s;
+}
+
+void dissectKerberos(Context &ctx, const char *data, size_t length) {
+    if (!data || length == 0) return;
+    auto &pack = ctx.pack;
+    const auto *bytes = reinterpret_cast<const uint8_t *>(data);
+
+    // TCP: 4 byte record mark in front (its first byte is zero, a message starts with an APPLICATION tag 0x6a..0x7e)
+    size_t mark = 0;
+    if (length >= 5 && bytes[0] < 0x40) mark = 4;
+    const uint8_t *msg = bytes + mark;
+    const size_t msgAvail = length - mark;
+
+    pack.protocol = "Kerberos";
+    Field *root = nullptr;
+    if (ctx.wantFields()) {
+        root = &ctx.addLayer("Kerberos", ctx.offsetOf(data) + mark, msgAvail);
+        if (mark) root->add("Record Mark: " + std::to_string(be32(data)) + " bytes", ctx.offsetOf(data), 4);
+    }
+    const KerberosSummary s = decodeKerberosMessage(ctx, msg, msgAvail, root);
+    if (!s.tagOk) {
+        pack.info = "Kerberos";
+        ctx.markMalformed(msgAvail < 2 || (msg[0] & 0xe0) != 0x60 || (msg[0] & 0x1f) == 0x1f ? "Kerberos message does not start with an APPLICATION tag" : "Kerberos message length unreadable");
+        return;
+    }
+    pack.app_type = static_cast<uint16_t>(s.appTag);
+    if (s.errorCode >= 0) pack.app_code = static_cast<uint16_t>(s.errorCode);
+    pack.info = s.info;
+    pack.app_text = s.realm;
+    pack.app_text2 = s.cname + "\n" + s.sname;   // kerberos.cname / kerberos.sname
 
     // a message that continues in the next segment (cut) is not an error; one whose parts contradict each other is
-    if (!cut && (!appOk || !haveBody)) ctx.markMalformed("Kerberos message body unreadable");
-    else if (cut && pack.ip_protocol == 17) ctx.markMalformed("Kerberos datagram shorter than its length");
+    if (!s.cut && !s.bodyOk) ctx.markMalformed("Kerberos message body unreadable");
+    else if (s.cut && pack.ip_protocol == 17) ctx.markMalformed("Kerberos datagram shorter than its length");
 }
 
 } // namespace dissect
