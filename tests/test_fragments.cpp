@@ -75,7 +75,8 @@ TEST(Fragments, InOrderDatagramIsReassembledAtTheLastFragment) {
     EXPECT_EQ(last.info, "Standard query 0x1234 A example.com");
     EXPECT_EQ(last.src_port, 50000);
     EXPECT_EQ(last.dst_port, 53);
-    EXPECT_EQ(last.payload_length, 0u) << "the payload is not contiguous in this frame";
+    EXPECT_EQ(last.payload_length, 29u) << "the DNS message, positioned inside the reassembled datagram (after the UDP header)";
+    EXPECT_EQ(last.payload_offset, 8u);
 }
 
 TEST(Fragments, EveryArrivalOrderGivesTheSameResultAtTheCompletingPacket) {
@@ -459,4 +460,94 @@ TEST(Fragments6, FilterAndStatistics) {
     EXPECT_EQ(count("udp"), 1);
     EXPECT_EQ(count("ip.fragment"), 0) << "the IPv4 field does not match IPv6 packets";
     EXPECT_EQ(count("dns && ipv6.addr == 2001:db8::/32"), 1);
+}
+
+// ---- reassembled datagrams in Follow Stream ---------------------------------------------------------------------------
+
+#include <stream/follow.h>
+
+namespace {
+    std::string streamText(const stream::Stream &s, stream::Direction d) {
+        std::string out;
+        for (const auto &c: s.chunks) if (c.direction == d) out += c.data;
+        return out;
+    }
+
+    stream::Stream follow(const Loaded &cap, uint32_t index) {
+        stream::Stream s;
+        EXPECT_TRUE(stream::reassemble(cap.path, cap.packets, stream::conversationPackets(cap.packets, index), s));
+        return s;
+    }
+
+    // a UDP datagram from c350 -> 0035 carrying `text`, as raw bytes
+    std::vector<char> udpDatagramWith(const std::string &text) {
+        std::vector<char> d = hex("c350 0035");
+        const uint16_t len = static_cast<uint16_t>(8 + text.size());
+        d.push_back(static_cast<char>(len >> 8));
+        d.push_back(static_cast<char>(len & 0xff));
+        d.push_back(0);
+        d.push_back(0);
+        d.insert(d.end(), text.begin(), text.end());
+        return d;
+    }
+}
+
+TEST(FollowFragments, UdpDatagramsSplitOverFragmentsIpv4AndIpv6) {
+    const std::string big = "0123456789abcdefghijklmnopqrstuvwxyz-fragmented-payload";   // 55 bytes: needs several fragments
+    const auto datagram = udpDatagramWith(big);                                             // 63 bytes
+
+    for (bool v6: {false, true}) {
+        SCOPED_TRACE(v6 ? "IPv6" : "IPv4");
+        std::vector<std::vector<char>> frames;
+        if (!v6) {
+            frames = {support::udpPacket("0a000001", "0a000002", "c350", "0035", "before"),
+                      fragment(datagram, 0, 24, 7, true), fragment(datagram, 24, 24, 7, true), fragment(datagram, 48, 15, 7, false),
+                      support::udpPacket("0a000001", "0a000002", "c350", "0035", "after")};
+        } else {
+            // the IPv6 helper in this file uses fixed addresses; build the plain datagrams to match
+            auto plain = [&](const std::string &text) {
+                const auto d = udpDatagramWith(text);
+                return frag6(d, 0, d.size(), 0, false);   // offset 0, M = 0: an atomic fragment is a whole packet
+            };
+            frames = {plain("before"), frag6(datagram, 0, 24, 7, true), frag6(datagram, 24, 24, 7, true), frag6(datagram, 48, 15, 7, false), plain("after")};
+        }
+        Loaded cap(frames);
+        ASSERT_EQ(cap.packets.size(), 5u);
+        ASSERT_EQ(cap.packets[3].ip_frag, 2);
+        EXPECT_EQ(cap.packets[3].payload_length, big.size()) << "relative to the reassembled data";
+        EXPECT_EQ(cap.packets[3].payload_offset, 8u) << "right behind the UDP header, not a frame offset";
+
+        const auto s = follow(cap, 3);
+        EXPECT_FALSE(s.tcp);
+        EXPECT_EQ(s.packets, 3) << "before, the datagram (counted at its last fragment) and after; the earlier fragments are not separate packets";
+        EXPECT_EQ(streamText(s, stream::Direction::AtoB), "before" + big + "after");
+        ASSERT_EQ(s.chunks.size(), 1u) << "all in one direction";
+    }
+}
+
+TEST(FollowFragments, ATcpSegmentSplitOverFragments) {
+    // TCP header (20 bytes) + payload, as the IP payload of IPv4 fragments (protocol 6)
+    std::vector<char> segment = hex("c350 0050 00000001 00000000 5018 2000 0000 0000");
+    const std::string text = "fragmented segment payload!";
+    segment.insert(segment.end(), text.begin(), text.end());                     // 20 + 27 bytes
+    const auto frames = std::vector<std::vector<char>>{
+        support::tcpPacket("0a000001", "0a000002", "c350", "0050", "00000000", "00000000", "02"),   // SYN, seq 0 -> data starts at 1
+        fragment(segment, 0, 24, 3, true, "0a000001", "0a000002", "06"),
+        fragment(segment, 24, 23, 3, false, "0a000001", "0a000002", "06"),
+        support::tcpPacket("0a000001", "0a000002", "c350", "0050", "0000001c", "00000000", "18", " and more")};   // seq 28 = 1 + 27
+    Loaded cap(frames);
+    ASSERT_EQ(cap.packets.size(), 4u);
+    EXPECT_EQ(cap.packets[2].protocol, "TCP");
+    EXPECT_EQ(cap.packets[2].tcp_len, text.size());
+    const auto s = follow(cap, 2);
+    EXPECT_TRUE(s.tcp);
+    EXPECT_EQ(streamText(s, stream::Direction::AtoB), text + " and more");
+    EXPECT_EQ(s.missingBytes, 0u);
+}
+
+TEST(FollowFragments, ADatagramWhoseFragmentsAreMissingContributesNothingAndDoesNotCrash) {
+    const auto datagram = udpDatagramWith("incomplete");
+    Loaded cap({fragment(datagram, 0, 8, 9, true), support::udpPacket("0a000001", "0a000002", "c350", "0035", "plain")});
+    const auto s = follow(cap, 1);
+    EXPECT_EQ(streamText(s, stream::Direction::AtoB), "plain");
 }

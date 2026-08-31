@@ -120,13 +120,21 @@ namespace stream {
 
         Builder builder(out, maxBytes);
         Half halves[2];
+        core::CaptureReader fragmentReader(capturePath);   // only used for datagrams that were reassembled from fragments
 
         const bool completed = core::scanPackets(capturePath, packets, indices, [&](const packet::PacketInfo &p, const std::vector<char> &frame) {
             const Direction dir = (p.source == out.addressA && p.src_port == out.portA) ? Direction::AtoB : Direction::BtoA;
             Half &half = halves[dir == Direction::AtoB ? 0 : 1];
 
             std::string data;
-            if (p.payload_length > 0 && static_cast<uint64_t>(p.payload_offset) + p.payload_length <= frame.size()) {
+            if (p.ip_frag == 2) {
+                // reassembled from fragments: the payload position is relative to the reassembled IP payload, not to this frame
+                std::vector<char> whole;
+                if (p.payload_length > 0 && core::reassembleIpPayload(fragmentReader, packets, p, whole) &&
+                    static_cast<uint64_t>(p.payload_offset) + p.payload_length <= whole.size()) {
+                    data.assign(whole.data() + p.payload_offset, p.payload_length);
+                }
+            } else if (p.payload_length > 0 && static_cast<uint64_t>(p.payload_offset) + p.payload_length <= frame.size()) {
                 data.assign(frame.data() + p.payload_offset, p.payload_length);
             }
 
