@@ -79,7 +79,7 @@ namespace {
         uint32_t snapLen = 0;
         uint64_t ticksPerSecond = kDefaultTicksPerSecond;
         std::string name, description;
-        uint8_t fcsLength = 0; // FCS bytes per frame from if_fcslen option
+        uint8_t fcsLength = 0; // FCS bytes per frame (pcap network field / pcapng if_fcslen)
         int64_t tsOffset = 0;  // if_tsoffset: seconds to add to the timestamps of this interface
     };
 
@@ -186,8 +186,10 @@ namespace {
                 }
             } else if (code == 14 && len == 8) { // if_tsoffset: signed seconds added to every timestamp
                 iface.tsOffset = static_cast<int64_t>(read64(e, v, fileBigEndian(e)));
-            } else if (code == 13 && len == 1) { // if_fcslen: number of FCS bytes per frame
-                iface.fcsLength = v[0];
+            } else if (code == 13 && len == 1) {
+                // if_fcslen is the length of the FCS in BITS (pcapng spec: 32 for an Ethernet CRC). Values below 8 cannot
+                // be a bit count, so they are read leniently as bytes (some writers store the byte count).
+                iface.fcsLength = v[0] >= 8 ? static_cast<uint8_t>(v[0] / 8) : v[0];
             }
         });
     }
@@ -232,7 +234,9 @@ bool core::FileProcessor::processPcapFile(const std::string &filepath, std::vect
     // when the FCS-present flag (bit 29) is set.
     const uint32_t rawLinkType = e.u32(gh + 20);
     const uint32_t linkType = rawLinkType & 0xFFFF;
-    const uint8_t fcsLen = (rawLinkType >> 28) & 0xF;
+    // Bits 28..31: bit 28 says that an FCS length is given, bits 29..31 hold it in units of 16 bits
+    // (pcap savefile format). 0x50000001 therefore means "Ethernet, 4 FCS bytes"; without bit 28 nothing is known.
+    const uint8_t fcsLen = (rawLinkType & 0x10000000u) ? static_cast<uint8_t>(((rawLinkType >> 29) & 0x7) * 2) : 0;
 
     info_ = CaptureInfo();
     info_.fileSize = fileSize;

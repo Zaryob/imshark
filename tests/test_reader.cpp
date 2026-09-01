@@ -356,16 +356,38 @@ TEST(Readers, ProgressAndCancellation) {
 }
 
 TEST(PcapReader, LinkTypeMaskingWithFcsFlags) {
-    // A pcap file whose "network" field has FCS flags in the upper bits: 0x40000001 means
-    // link type 1 (Ethernet) with 4 bytes of FCS (bits 28..31 = 4). Before the fix the mask
-    // 0x0fffffff would produce 1, but any value like 0x10000001 would produce a wrong link type.
-    const uint32_t networkField = 0x40000001; // FCS length = 4, link type = Ethernet
+    // The "network" field carries FCS information in the upper bits: bit 28 = "FCS length present", bits 29..31 = the
+    // length in 16-bit units. 0x50000001 is Ethernet with 4 bytes of FCS.
+    const uint32_t networkField = 0x50000001;
     auto bytes = pcapFile(false, 0xa1b2c3d4, {{1, 0}}, networkField);
     auto r = load("fcs.pcap", bytes, false);
     ASSERT_TRUE(r.ok) << r.message;
     ASSERT_EQ(r.packets.size(), 1u);
     EXPECT_EQ(r.packets[0].link_type, 1u) << "link type must be the lower 16 bits only";
-    EXPECT_EQ(r.packets[0].fcs_length, 4u) << "FCS length from bits 28..31";
+    EXPECT_EQ(r.packets[0].fcs_length, 4u) << "FCS length from bits 29..31 in 16-bit units, valid because bit 28 is set";
+}
+
+TEST(PcapReader, FcsFieldFollowsTheSpecification) {
+    struct Case { uint32_t network; uint32_t linkType; unsigned fcs; const char *why; };
+    const Case cases[] = {
+        {0x00000001, 1, 0, "no FCS information"},
+        {0x40000001, 1, 0, "a length without the 'present' bit is not valid (bit 28 is clear)"},
+        {0xE0000001, 1, 0, "length 7 but bit 28 clear: still not valid"},
+        {0x10000001, 1, 0, "present bit with length 0: an explicitly absent FCS"},
+        {0x30000001, 1, 2, "bit 28 + length 1 (x16 bits) = 2 bytes"},
+        {0x50000001, 1, 4, "bit 28 + length 2 = 4 bytes (the Ethernet CRC)"},
+        {0x90000001, 1, 8, "bit 28 + length 4 = 8 bytes"},
+        {0xF0000071, 0x71, 14, "length 7 = 14 bytes, other link type"},
+        {0x0ABC0001, 1, 0, "bits 16..27 are reserved and ignored"},
+    };
+    for (const auto &c: cases) {
+        SCOPED_TRACE(c.why);
+        auto r = load("fcsfield.pcap", pcapFile(false, 0xa1b2c3d4, {{1, 0}}, c.network), false);
+        ASSERT_TRUE(r.ok) << r.message;
+        ASSERT_EQ(r.packets.size(), 1u);
+        EXPECT_EQ(r.packets[0].link_type, c.linkType);
+        EXPECT_EQ(r.packets[0].fcs_length, c.fcs);
+    }
 }
 
 TEST(PcapReader, FcsStrippedFromDissection) {
@@ -375,7 +397,7 @@ TEST(PcapReader, FcsStrippedFromDissection) {
     frame.push_back('\xDE'); frame.push_back('\xAD'); frame.push_back('\xBE'); frame.push_back('\xEF'); // fake FCS
 
     std::vector<char> f;
-    const uint32_t networkField = 0x40000001; // FCS length = 4, Ethernet
+    const uint32_t networkField = 0x50000001; // FCS present, 2 x 16 bits = 4 bytes, Ethernet
     const bool be = false;
     put<uint32_t>(f, 0xa1b2c3d4, be);
     put<uint16_t>(f, 2, be);
