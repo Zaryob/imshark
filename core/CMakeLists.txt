@@ -38,6 +38,7 @@ add_library(imshark_core STATIC
     src/dissect/snmp.cpp
     src/dissect/ldap.cpp
     src/dissect/kerberos.cpp
+    src/dissect/spnego.cpp
     src/dissect/smb2.cpp
     src/dissect/dcerpc.cpp
     src/dissect/nfs.cpp

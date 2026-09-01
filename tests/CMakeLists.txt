@@ -104,6 +104,7 @@ add_executable(imshark_tests
     test_ike.cpp
     test_ldap.cpp
     test_kerberos.cpp
+    test_spnego.cpp
     test_smb2.cpp
     test_dcerpc.cpp
     test_nfs.cpp
