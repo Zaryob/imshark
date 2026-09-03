@@ -91,6 +91,10 @@ const dissect::Registry &dissect::Registry::builtin() {
         r.registerTcpStream(389, {"LDAP", frameLdap, dissectLdap});
         r.registerTcpPort(636, dissectLdap);
         r.registerTcpStream(636, {"LDAP", frameLdap, dissectLdap});
+        r.registerTcpPort(3268, dissectLdap);   // Active Directory global catalog
+        r.registerTcpStream(3268, {"LDAP", frameLdap, dissectLdap});
+        r.registerTcpPort(3269, dissectLdap);   // ... over TLS
+        r.registerTcpStream(3269, {"LDAP", frameLdap, dissectLdap});
         r.registerTcpPort(88, dissectKerberos);
         r.registerTcpStream(88, {"Kerberos", frameKerberos, dissectKerberos});
         r.registerTcpPort(445, dissectSmb2);

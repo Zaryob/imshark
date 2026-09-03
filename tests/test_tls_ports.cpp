@@ -15,7 +15,7 @@ namespace {
 }
 
 TEST(TlsOnProtocolPorts, ARecordIsTlsOnEveryPortThatRegistersAStreamProtocol) {
-    for (uint16_t port: {636, 389, 5432, 3306, 1433, 445, 139, 88, 135, 2049, 111}) {
+    for (uint16_t port: {636, 389, 3268, 3269, 5432, 3306, 1433, 445, 139, 88, 135, 2049, 111}) {
         Flow flow(50000, port, "tlsport" + std::to_string(port));
         flow.client(kClientHello).server(kServerHello).client(kAppData);
         flow.load();
