@@ -280,6 +280,36 @@ TEST(Kerberos, KrbSafePrivAndCredAreLabelledAndTheirCiphersAreMarkedEncrypted) {
     flow.expectReplayEqualsLoad();
 }
 
+TEST(Kerberos, EveryChecksumTypeIsNamedAsInTheIanaRegistry) {
+    // kSafe with the cksumtype replaced; the INTEGER is re-encoded in the shortest two's complement form and the lengths follow it
+    auto safeWith = [](int type) {
+        std::string v;
+        if (type >= -128 && type <= 127) v = std::string(1, static_cast<char>(type));
+        else v = std::string{static_cast<char>((type >> 8) & 0xff), static_cast<char>(type & 0xff)};
+        const size_t extra = v.size() - 1;
+        std::string m = kSafe;
+        // outer APPLICATION 20 length (0x50), SEQUENCE (0x4e), [3] (0x17), SEQUENCE (0x15), [0] (0x03) and the INTEGER (0x01) grow by extra
+        const std::string tail = m.substr(m.size() - 25);   // a3 17 30 15 a0 03 02 01 10 a1 0e 04 0c + 12 bytes of checksum
+        std::string t = std::string{static_cast<char>(0xa3), static_cast<char>(0x17 + extra), 0x30, static_cast<char>(0x15 + extra), static_cast<char>(0xa0), static_cast<char>(3 + extra), 0x02, static_cast<char>(1 + extra)} + v + tail.substr(9);
+        m = m.substr(0, m.size() - 25) + t;
+        m[1] = static_cast<char>(m[1] + extra);
+        m[3] = static_cast<char>(m[3] + extra);
+        return m;
+    };
+    const std::pair<int, const char *> expected[] = {
+        {1, "CRC32"}, {2, "rsa-md4"}, {3, "rsa-md4-des"}, {4, "des-mac"}, {5, "des-mac-k"}, {6, "rsa-md4-des-k"}, {7, "rsa-md5"}, {8, "rsa-md5-des"},
+        {9, "rsa-md5-des3"}, {10, "sha1"}, {12, "hmac-sha1-des3-kd"}, {13, "hmac-sha1-des3"}, {14, "sha1"}, {15, "hmac-sha1-96-aes128"},
+        {16, "hmac-sha1-96-aes256"}, {17, "cmac-camellia128"}, {18, "cmac-camellia256"}, {19, "hmac-sha256-128-aes128"},
+        {20, "hmac-sha384-192-aes256"}, {-138, "hmac-md5"}, {11, "unknown"}, {99, "unknown"}};
+    for (const auto &[type, name]: expected) {
+        const std::string want = std::string("cksumtype: ") + name + " (" + std::to_string(type) + ")";
+        Flow flow(50000, 88, "krb_cksum_" + std::to_string(type + 1000));
+        flow.client(mark(safeWith(type)));
+        flow.load();
+        EXPECT_NE(find(flow.details(0).fields, want), nullptr) << want;
+    }
+}
+
 TEST(Kerberos, EncryptedDataOfTicketsAndAuthenticatorsIsLabelledEncrypted) {
     Flow flow(50000, 88, "krb_encrypted");
     flow.client(mark(kApReq)).server(mark(kApRep)).server(mark(kAsRep));

@@ -257,18 +257,28 @@ Field &node(Context &ctx, Field &parent, const std::string &label, const BerTlv 
     return parent.add(label, offsetOfTlv(ctx, t), t.total);
 }
 
-// Checksum types (RFC 3961, RFC 3962, RFC 4757)
+// Checksum types (IANA Kerberos Checksum Type Numbers: RFC 3961, 3962, 6803, 8009, 4757)
 const char *checksumTypeName(int64_t t) {
     switch (t) {
-        case 1: return "crc32";
+        case 1: return "CRC32";
         case 2: return "rsa-md4";
-        case 4: return "rsa-md5";
+        case 3: return "rsa-md4-des";
+        case 4: return "des-mac";
+        case 5: return "des-mac-k";
+        case 6: return "rsa-md4-des-k";
+        case 7: return "rsa-md5";
         case 8: return "rsa-md5-des";
-        case 12: return "hmac-sha1-des3";
+        case 9: return "rsa-md5-des3";
+        case 10: return "sha1";
+        case 12: return "hmac-sha1-des3-kd";
+        case 13: return "hmac-sha1-des3";
+        case 14: return "sha1";
         case 15: return "hmac-sha1-96-aes128";
         case 16: return "hmac-sha1-96-aes256";
-        case 19: return "cmac-camellia128";
-        case 20: return "cmac-camellia256";
+        case 17: return "cmac-camellia128";
+        case 18: return "cmac-camellia256";
+        case 19: return "hmac-sha256-128-aes128";
+        case 20: return "hmac-sha384-192-aes256";
         case -138: return "hmac-md5";
         default: return nullptr;
     }
