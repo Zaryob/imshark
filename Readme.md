@@ -74,6 +74,8 @@ ctest --test-dir build --output-on-failure
 
 Testler GoogleTest ile yazılmıştır (`brew install googletest` / `apt install libgtest-dev`; vcpkg'de `tests` özelliği varsayılan açıktır). Ayrıştırıcı/okuyucu için birim ve mutasyon-fuzz testleri, arayüz için ise pencere açmadan çalışan ImGui duman testleri içerir. GoogleTest yoksa testler uyarıyla atlanır; `-DIMSHARK_BUILD_TESTS=OFF` ile kapatılabilir.
 
+**Regresyon corpus'u:** `tests/corpus/` küçük sentetik sınır durumlarını (FCS, eski Packet Block, zaman ofseti, tanımsız arayüz, IPv4/IPv6 parçaları, QinQ…) ve `manifest.json` içinde tarif edilen gerçek Wireshark örnek yakalamalarını (URL + SHA-256 + beklenen sonuç) içerir. Sentetik dosyalar `python3 tools/make_corpus.py` ile deterministik üretilir. Gerçek yakalamalar depoya konmaz; bir dizine indirip `IMSHARK_CORPUS_DIR=/dizin ctest …` ile çalıştırırsanız doğrulanır, yoksa atlanır (CI de indirmez).
+
 **Kapsama:** `tools/coverage.sh` (clang kaynak tabanlı kapsama; `--html` ile HTML rapor) birim testlerinin dosya bazında kapsamını verir. Şu an çekirdek ve UI birlikte satır kapsamı ≈ %92, dal kapsamı ≈ %79; en zayıf yerler menü/pencere etkileşimleri (`chrome.cpp`, `details.cpp`).
 
 `-DIMSHARK_SANITIZE=ON` çekirdek dahil tüm hedefleri ASan+UBSan ile derler (yapılandırma, çekirdek instrument edilmeden kalırsa hata verir).

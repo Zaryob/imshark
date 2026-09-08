@@ -1,0 +1,4 @@
+tests/corpus/*.pcap binary
+tests/corpus/*.pcapng binary
+tests/data/*.pcap binary
+tests/data/*.gz binary
