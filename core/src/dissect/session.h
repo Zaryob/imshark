@@ -15,6 +15,7 @@
 
 #include "dtls_decrypt.h"
 #include "sctp_session.h"
+#include "smb2_session.h"
 #include "tls_decrypt.h"
 #include "tls_session.h"
 
@@ -67,6 +68,7 @@ public:
         tlsDecrypt_.clear();
         dtls_.clear();
         sctp_.clear();
+        smb2_.clear();
         tlsCaptureKeys_.clear();   // the keys the user supplied (tlsExternalKeys) outlive a new capture
         tlsUpgrades_.clear();
         serverEndpoints_.clear();
@@ -430,6 +432,23 @@ public:
     const SctpMessage *sctpMessage(uint32_t index) const { return sctp_.message(index); }
     const SctpTable &sctpTable() const { return sctp_; }
 
+    // ---- SMB2 trees, files and request / response matching (see smb2_session.h) ---------------------------------
+    /// Load pass: takes command `index` of the message at TCP stream sequence `seq` of `packet`. Returns the note that was stored
+    /// (nullptr if frozen or out of budget; then the "smb2" table is state lost).
+    const Smb2Note *observeSmb2(const std::string &connection, uint32_t packet, int64_t seq, uint8_t index, const Smb2Command &command) {
+        if (frozen_) return nullptr;
+        bool lost = false;
+        const Smb2Note *note = smb2_.observe(connection, packet, seq, index, command, maxMemoryPerTable_, lost);
+        if (lost || !note) markStateLost("smb2");
+        return note;
+    }
+    /// What the load pass resolved for a command (nullptr if nothing was stored: table frozen too early, state lost).
+    const Smb2Note *smb2Note(uint32_t packet, int64_t seq, uint8_t index) const { return smb2_.note(packet, seq, index); }
+    /// Load pass: the open file with this FileId on the connection (the interface for protocols over named pipes: `pipe` says
+    /// whether it was opened on an IPC share). Replay reads Smb2Note::file / kPipe of the command instead.
+    const Smb2OpenFile *smb2OpenFile(const std::string &connection, uint64_t persistent, uint64_t volatileId) const { return smb2_.openFile(connection, persistent, volatileId); }
+    const Smb2Table &smb2Table() const { return smb2_; }
+
     // ---- TLS key material (see tls/keylog.h) ----------------------------------------------------
     /// Secrets the user supplied (key log file / text). They stay when clear() starts a new capture.
     tls::KeyStore &tlsExternalKeys() { return tlsExternalKeys_; }
@@ -527,7 +546,7 @@ public:
     void setEspNullHeuristic(bool on) { espNullHeuristic_ = on; }
     bool espNullHeuristic() const { return espNullHeuristic_; }
 
-    size_t totalMemoryUsage() const { return ftpMemory_ + tftpMemory_ + connectionMemory_ + usbMemory_ + btMemory_ + tls_.memory() + tlsDecrypt_.memory() + dtls_.memory(); }
+    size_t totalMemoryUsage() const { return ftpMemory_ + tftpMemory_ + connectionMemory_ + usbMemory_ + btMemory_ + tls_.memory() + tlsDecrypt_.memory() + dtls_.memory() + smb2_.memory(); }
 
 private:
     static std::string directionKey(const std::string &srcIp, uint16_t srcPort, const std::string &dstIp, uint16_t dstPort) {
@@ -569,6 +588,7 @@ private:
     TlsDecryptTable tlsDecrypt_;
     DtlsTable dtls_;
     SctpTable sctp_;
+    Smb2Table smb2_;
     tls::KeyStore tlsExternalKeys_;
     tls::KeyStore tlsCaptureKeys_;
 };
