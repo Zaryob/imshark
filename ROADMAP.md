@@ -72,7 +72,7 @@ Hedef: paketlerden konuşmalara ve oturumlara çıkmak.
 - [x] pcapng yorumları, arayüz/istatistik/ad çözümleme bilgileri: File > Capture File Properties — **S**
 - [x] Sıkıştırılmış girdiler (`.pcap.gz`, `.pcapng.gz`): harici kütüphanesiz akış tabanlı gzip çözücü — **S**
 
-## v0.7.1 — Dosya ve parça doğruluğu
+## v0.7.1 — Dosya ve parça doğruluğu ✅ tamamlandı
 
 Hedef: geçerli paketleri sessizce atlamamak veya yanlış protokol başlığı gibi yorumlamamak. Yeni protokol eklemeden önce bu aşama tamamlanır.
 

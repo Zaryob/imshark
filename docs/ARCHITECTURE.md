@@ -87,7 +87,7 @@ registry.registerUdpPort(53, dissectDns);              // application layer
 - `network/tcp_connection` — bağlantıyı uç noktalarla anahtarlar, yön başına ISN, sonraki beklenen seq, atlanan aralıklar ve son ACK/pencere tutar; her segment için yeniden iletim / sıra dışı / kayıp segment / dup-ACK / sıfır pencere / keep-alive / pencere güncellemesi bayrakları üretir (32-bit sarma dikkate alınır). Sonuç özette saklanır; tek paket yeniden kurulurken (Replay) bağlantı tablosu gerekmez.
 - `capture_reader` — dosyayı açık tutan `CaptureReader` ve bir paket listesini sırayla okuyan `scanPackets` (ilerleme + iptal). Bayt/hex arama ve Follow Stream bunun üzerine kuruludur ve arka plan iş parçacıklarında çalışır; yakalama değişmeden önce `cancelBackgroundJobs` ile durdurulur.
 - `stream/follow` — bir TCP/UDP konuşmasının paketlerini bulur ve yükü yeniden birleştirir: TCP segmentleri sıraya dizilir, sıra dışı veri boşluk dolana kadar tutulur, yeniden iletimler yalnızca yeni baytlarıyla katkı yapar, hiç yakalanmayan boşluklar "eksik bayt" olarak raporlanır. Özet, yükün çerçeve içindeki yerini (`payload_offset/length`) tutar.
-- `network/ip_reassembly` + `dissect/ip.cpp` — yükleme sırasında IPv4 parçaları toplanır; datagramı tamamlayan paket birleşmiş yükü çözer, önceki parçalara okuyucu "[Reassembled in #N]" yazar. Ayrıntıda son parçanın ağacı, diğer parçalar dosyadan okunarak yeniden kurulur ve "[Reassembled IPv4 payload …]" katmanı olarak eklenir.
+- `network/ip_reassembly` + `dissect/ip.cpp` — yükleme sırasında IPv4 ve IPv6 parçaları toplanır (IPv6: Fragment Header, offset-0 parçanın protokolü, birleşmiş yükte uzantı başlıkları, RFC 5722 çakışma kuralı, 60 sn zaman aşımı); datagramı tamamlayan paket birleşmiş yükü çözer, önceki parçalara okuyucu "[Reassembled in #N]" yazar. Ayrıntıda son parçanın ağacı, diğer parçalar dosyadan okunarak yeniden kurulur ve "[Reassembled IPv4 payload …]" katmanı olarak eklenir.
 
 ### Dışa aktarma, gzip ve yakalama bilgisi
 
@@ -96,6 +96,14 @@ registry.registerUdpPort(53, dissectDns);              // application layer
 - `capture_info.h` — okuyucuların topladığı dosya düzeyi bilgi: biçim, bölüm üstbilgisi (yorum/donanım/OS/uygulama), arayüzler (ad, link type, snaplen, çözünürlük, paket sayısı, ISB'den alınan/düşen), ad çözümleme kayıtları ve paket yorumları.
 - Registry **heuristic TCP dissector**'ları destekler: port tabanlı dissector yoksa sırayla denenir (HTTP, TLS); biri yükü tanırsa true döner.
 - Özet alanları: protokole özgü gerçekler `app_type/app_flags/app_code/app_text/app_text2` alanlarında tutulur (DNS sorgu adı/türü/rcode, HTTP host/URI/yöntem/durum, TLS SNI/el sıkışma türü, DHCP mesaj türü, NTP kipi…) ve görüntüleme filtresinin `dns.*`, `http.*`, `tls.*`, `dhcp.*`, `ntp.*`, `icmp.*` alanlarını besler.
+
+### Parça yükünün konumu
+
+`PacketInfo::payload_offset/length` normalde çerçeveye göredir. Birleştirilmiş bir datagramı tamamlayan pakette (`ip_frag == 2`) ise **birleşmiş IP yüküne** göredir; çerçevedeki ham bayt ofseti ile birleşmiş veri ofseti bilerek ayrıdır. Yükü okumak için `core::reassembleIpPayload` kullanılır (ayrıntı kurucu ve Follow Stream ortak).
+
+### Regresyon corpus'u
+
+`tests/corpus/manifest.json` her dosyayı kaynağı, SHA-256'sı ve beklentileriyle tarif eder. Sentetik dosyalar `tools/make_corpus.py` ile üretilir (beklentiler tasarım gereği yazılır); gerçek Wireshark örnekleri isteğe bağlıdır (`IMSHARK_CORPUS_DIR`). Her dosya ayrıntı/filtre/istatistik/dışa aktarma hattından geçirilir.
 
 ## 5. Arayüz (`src/ui/`)
 
