@@ -1,16 +1,19 @@
 // SMB2 / SMB3 ([MS-SMB2]) over Direct TCP (port 445: a zero byte and a 24 bit length in front) or NetBIOS (port 139: the NBSS
 // session service header with its message types). Decoded: the 64 byte header of every command of a compound message (sync and
-// async form, NextCommand), the SMB3 Transform header (encrypted messages are named, not decrypted), and the bodies of Negotiate
-// (dialects / chosen dialect), Session Setup (NTLMSSP message type, user and domain of the authenticate message), Tree Connect (share
-// path), Create (file name), Read and Write (length and offset). Not decoded: file ids to names, trees to shares (no session tables).
+// async form, credits, NextCommand, related operations), the SMB3 Transform header (encrypted messages are named, not decrypted),
+// and the bodies of Negotiate (dialects, contexts), Session Setup (NTLMSSP message type, user and domain of the authenticate
+// message), Tree Connect, Create (with its create contexts), Close, Flush, Read, Write, IOCTL, Query Directory, Change Notify,
+// Query Info and Set Info (common [MS-FSCC] information classes), Lock, Oplock Break and the Error response.
 #include "smb2.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <string>
 #include <vector>
 
 #include "reader.h"
+#include "smb2_session.h"
 #include "util.h"
 
 using packet::Field;
@@ -133,6 +136,726 @@ std::string utf16(const uint8_t *p, size_t bytes, size_t maxChars = 200) {
     return out;
 }
 
+std::string hex64(uint64_t v) {
+    char b[24];
+    std::snprintf(b, sizeof b, "0x%016llx", static_cast<unsigned long long>(v));
+    return b;
+}
+
+std::string asciiHex(const uint8_t *p, size_t n) {
+    std::string out;
+    char b[4];
+    for (size_t i = 0; i < n; ++i) { std::snprintf(b, sizeof b, "%02x", p[i]); out += b; }
+    return out;
+}
+
+uint64_t le64(const uint8_t *p) { return static_cast<uint64_t>(le32(reinterpret_cast<const char *>(p))) | (static_cast<uint64_t>(le32(reinterpret_cast<const char *>(p) + 4)) << 32); }
+
+// FILETIME (100 ns since 1601-01-01 UTC) as "YYYY-MM-DD HH:MM:SS UTC"; civil-from-days after H. Hinnant
+std::string fileTime(uint64_t ft) {
+    if (ft == 0) return "not set";
+    if (ft >= 0x7FFFFFFFFFFFFFFFull) return "never";
+    const int64_t secs = static_cast<int64_t>(ft / 10000000ull) - 11644473600ll;
+    int64_t days = secs / 86400, rem = secs % 86400;
+    if (rem < 0) { rem += 86400; --days; }
+    days += 719468;
+    const int64_t era = (days >= 0 ? days : days - 146096) / 146097;
+    const int64_t doe = days - era * 146097;
+    const int64_t yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+    const int64_t doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    const int64_t mp = (5 * doy + 2) / 153;
+    const int64_t d = doy - (153 * mp + 2) / 5 + 1;
+    const int64_t m = mp < 10 ? mp + 3 : mp - 9;
+    const int64_t y = yoe + era * 400 + (m <= 2);
+    char b[48];
+    std::snprintf(b, sizeof b, "%04lld-%02lld-%02lld %02lld:%02lld:%02lld UTC", static_cast<long long>(y), static_cast<long long>(m), static_cast<long long>(d),
+                  static_cast<long long>(rem / 3600), static_cast<long long>(rem % 3600 / 60), static_cast<long long>(rem % 60));
+    return b;
+}
+
+std::string bitNames(uint32_t v, const std::pair<uint32_t, const char *> *names, size_t count) {
+    std::string out;
+    for (size_t i = 0; i < count; ++i) if (v & names[i].first) out += (out.empty() ? "" : ", ") + std::string(names[i].second);
+    return out;
+}
+
+// [MS-FSCC] 2.6 file attributes
+std::string attributesText(uint32_t a) {
+    static const std::pair<uint32_t, const char *> names[] = {{0x1, "READONLY"}, {0x2, "HIDDEN"}, {0x4, "SYSTEM"}, {0x10, "DIRECTORY"}, {0x20, "ARCHIVE"}, {0x80, "NORMAL"},
+        {0x100, "TEMPORARY"}, {0x200, "SPARSE_FILE"}, {0x400, "REPARSE_POINT"}, {0x800, "COMPRESSED"}, {0x4000, "ENCRYPTED"}};
+    const std::string n = bitNames(a, names, std::size(names));
+    return hexString(a, 8) + (n.empty() ? "" : " (" + n + ")");
+}
+
+// [MS-FSCC] 2.4 FILE_INFORMATION_CLASS
+const char *fileInfoClassName(uint8_t c) {
+    switch (c) {
+        case 1: return "FileDirectoryInformation";
+        case 2: return "FileFullDirectoryInformation";
+        case 3: return "FileBothDirectoryInformation";
+        case 4: return "FileBasicInformation";
+        case 5: return "FileStandardInformation";
+        case 6: return "FileInternalInformation";
+        case 7: return "FileEaInformation";
+        case 8: return "FileAccessInformation";
+        case 9: return "FileNameInformation";
+        case 10: return "FileRenameInformation";
+        case 11: return "FileLinkInformation";
+        case 12: return "FileNamesInformation";
+        case 13: return "FileDispositionInformation";
+        case 14: return "FilePositionInformation";
+        case 15: return "FileFullEaInformation";
+        case 16: return "FileModeInformation";
+        case 17: return "FileAlignmentInformation";
+        case 18: return "FileAllInformation";
+        case 19: return "FileAllocationInformation";
+        case 20: return "FileEndOfFileInformation";
+        case 21: return "FileAlternateNameInformation";
+        case 22: return "FileStreamInformation";
+        case 23: return "FilePipeInformation";
+        case 24: return "FilePipeLocalInformation";
+        case 25: return "FilePipeRemoteInformation";
+        case 28: return "FileCompressionInformation";
+        case 29: return "FileObjectIdInformation";
+        case 32: return "FileQuotaInformation";
+        case 33: return "FileReparsePointInformation";
+        case 34: return "FileNetworkOpenInformation";
+        case 35: return "FileAttributeTagInformation";
+        case 37: return "FileIdBothDirectoryInformation";
+        case 38: return "FileIdFullDirectoryInformation";
+        case 39: return "FileValidDataLengthInformation";
+        case 40: return "FileShortNameInformation";
+        default: return nullptr;
+    }
+}
+
+// [MS-FSCC] 2.5 FS_INFORMATION_CLASS
+const char *fsInfoClassName(uint8_t c) {
+    switch (c) {
+        case 1: return "FileFsVolumeInformation";
+        case 2: return "FileFsLabelInformation";
+        case 3: return "FileFsSizeInformation";
+        case 4: return "FileFsDeviceInformation";
+        case 5: return "FileFsAttributeInformation";
+        case 6: return "FileFsControlInformation";
+        case 7: return "FileFsFullSizeInformation";
+        case 8: return "FileFsObjectIdInformation";
+        case 11: return "FileFsSectorSizeInformation";
+        default: return nullptr;
+    }
+}
+
+// FSCTL codes: CTL_CODE(DeviceType, Function, Method, Access) = (DeviceType << 16) | (Access << 14) | (Function << 2) | Method
+const char *ctlCodeName(uint32_t code) {
+    switch (code) {
+        case 0x00060194: return "FSCTL_DFS_GET_REFERRALS";
+        case 0x000601B0: return "FSCTL_DFS_GET_REFERRALS_EX";
+        case 0x0011400C: return "FSCTL_PIPE_PEEK";
+        case 0x00110018: return "FSCTL_PIPE_WAIT";
+        case 0x0011C017: return "FSCTL_PIPE_TRANSCEIVE";
+        case 0x000900A4: return "FSCTL_SET_REPARSE_POINT";
+        case 0x000900A8: return "FSCTL_GET_REPARSE_POINT";
+        case 0x000900C4: return "FSCTL_SET_SPARSE";
+        case 0x000940CF: return "FSCTL_QUERY_ALLOCATED_RANGES";
+        case 0x000980C8: return "FSCTL_SET_ZERO_DATA";
+        case 0x001401D4: return "FSCTL_LMR_REQUEST_RESILIENCY";
+        case 0x001401FC: return "FSCTL_QUERY_NETWORK_INTERFACE_INFO";
+        case 0x00140204: return "FSCTL_VALIDATE_NEGOTIATE_INFO";
+        case 0x00140078: return "FSCTL_SRV_REQUEST_RESUME_KEY";
+        case 0x00144064: return "FSCTL_SRV_ENUMERATE_SNAPSHOTS";
+        case 0x001440F2: return "FSCTL_SRV_COPYCHUNK";
+        case 0x001480F2: return "FSCTL_SRV_COPYCHUNK_WRITE";
+        default: return nullptr;
+    }
+}
+
+const char *shareTypeName(uint8_t t) { return t == 1 ? "Disk" : t == 2 ? "Pipe" : t == 3 ? "Print" : "unknown"; }
+
+const char *dispositionName(uint32_t d) {
+    switch (d) {
+        case 0: return "FILE_SUPERSEDE";
+        case 1: return "FILE_OPEN";
+        case 2: return "FILE_CREATE";
+        case 3: return "FILE_OPEN_IF";
+        case 4: return "FILE_OVERWRITE";
+        case 5: return "FILE_OVERWRITE_IF";
+        default: return "unknown";
+    }
+}
+
+const char *createActionName(uint32_t a) {
+    switch (a) {
+        case 0: return "FILE_SUPERSEDED";
+        case 1: return "FILE_OPENED";
+        case 2: return "FILE_CREATED";
+        case 3: return "FILE_OVERWRITTEN";
+        default: return "unknown";
+    }
+}
+
+const char *createContextName(const std::string &tag) {
+    if (tag == "ExtA") return "extended attributes";
+    if (tag == "SecD") return "security descriptor";
+    if (tag == "DHnQ") return "durable handle request";
+    if (tag == "DHnC") return "durable handle reconnect";
+    if (tag == "AlSi") return "allocation size";
+    if (tag == "MxAc") return "query maximal access";
+    if (tag == "TWrp") return "timewarp";
+    if (tag == "QFid") return "query on disk id";
+    if (tag == "RqLs") return "lease";
+    if (tag == "DH2Q") return "durable handle request v2";
+    if (tag == "DH2C") return "durable handle reconnect v2";
+    if (tag == "AAPL") return "Apple extensions";
+    return nullptr;
+}
+
+const char *negotiateContextName(uint16_t t) {
+    switch (t) {
+        case 1: return "SMB2_PREAUTH_INTEGRITY_CAPABILITIES";
+        case 2: return "SMB2_ENCRYPTION_CAPABILITIES";
+        case 3: return "SMB2_COMPRESSION_CAPABILITIES";
+        case 5: return "SMB2_NETNAME_NEGOTIATE_CONTEXT_ID";
+        case 6: return "SMB2_TRANSPORT_CAPABILITIES";
+        case 7: return "SMB2_RDMA_TRANSFORM_CAPABILITIES";
+        case 8: return "SMB2_SIGNING_CAPABILITIES";
+        default: return "unknown";
+    }
+}
+
+const char *cipherName(uint16_t c) {
+    switch (c) {
+        case 1: return "AES-128-CCM";
+        case 2: return "AES-128-GCM";
+        case 3: return "AES-256-CCM";
+        case 4: return "AES-256-GCM";
+        default: return "unknown";
+    }
+}
+
+// One command of a message: the bytes, the fields read from them, and the line it adds to the Info column.
+struct Cmd {
+    Context &ctx;
+    Field *layer = nullptr;               // the layer of this command (null when no tree is wanted)
+    const uint8_t *b = nullptr;           // first byte of the body (after the 64 byte header)
+    size_t bodyLen = 0;                   // bytes of this command after the header
+    size_t abs = 0;                       // frame offset of the header
+    uint16_t command = 0;
+    bool response = false;
+    uint32_t status = 0;
+    uint16_t structSize = 0;
+    std::string summary;                  // Info text of this command
+    Smb2Command facts;                    // what the session table is told
+
+    explicit Cmd(Context &c) : ctx(c) {}
+
+    bool has(size_t at, size_t n) const { return at <= bodyLen && n <= bodyLen - at; }
+    uint8_t u8(size_t at) const { return has(at, 1) ? b[at] : 0; }
+    uint16_t u16(size_t at) const { return has(at, 2) ? le16(reinterpret_cast<const char *>(b) + at) : 0; }
+    uint32_t u32(size_t at) const { return has(at, 4) ? le32(reinterpret_cast<const char *>(b) + at) : 0; }
+    uint64_t u64(size_t at) const { return has(at, 8) ? le64(b + at) : 0; }
+
+    /// A buffer the body points to with an offset counted from the start of the header; true when it lies inside this command.
+    bool buffer(uint64_t headerOffset, uint64_t length, const uint8_t *&p) const {
+        if (headerOffset < kHeader || headerOffset - kHeader > bodyLen || length > bodyLen - (headerOffset - kHeader)) return false;
+        p = b + (headerOffset - kHeader);
+        return true;
+    }
+
+    /// Adds a node under `under` (or the layer when null) for bytes counted from the start of the header; clipped to this command.
+    Field *add(Field *under, const std::string &text, size_t headerOffset, size_t length) {
+        Field *parent = under ? under : layer;
+        if (!parent || !ctx.wantFields()) return nullptr;
+        const size_t limit = kHeader + bodyLen;
+        if (headerOffset > limit) { headerOffset = limit; length = 0; }
+        length = std::min(length, limit - headerOffset);
+        return &parent->add(text, abs + headerOffset, length);
+    }
+    /// Same for a field of the body at body offset `at`.
+    Field *field(const std::string &text, size_t at, size_t length, Field *under = nullptr) { return add(under, text, kHeader + at, length); }
+};
+
+// Body offset of the FileId of a command (-1: the command has none there). [MS-SMB2] 2.2.x
+int fileIdAt(const Cmd &c) {
+    const uint16_t s = c.structSize;
+    if (!c.response) {
+        switch (c.command) {
+            case 6: return s == 24 ? 8 : -1;      // Close
+            case 7: return s == 24 ? 8 : -1;      // Flush
+            case 8: return s == 49 ? 16 : -1;     // Read
+            case 9: return s == 49 ? 16 : -1;     // Write
+            case 0x0A: return s == 48 ? 8 : -1;   // Lock
+            case 0x0B: return s == 57 ? 8 : -1;   // Ioctl
+            case 0x0E: return s == 33 ? 8 : -1;   // Query Directory
+            case 0x0F: return s == 32 ? 8 : -1;   // Change Notify
+            case 0x10: return s == 41 ? 24 : -1;  // Query Info
+            case 0x11: return s == 33 ? 16 : -1;  // Set Info
+            case 0x12: return s == 24 ? 8 : -1;   // Oplock Break acknowledgment
+            default: return -1;
+        }
+    }
+    if (c.command == 5 && s == 89) return 64;    // Create response
+    if (c.command == 0x12 && s == 24) return 8;  // Oplock Break notification / response
+    if (c.command == 0x0B && s == 49) return 8;  // Ioctl response
+    return -1;
+}
+
+std::string ntStatusText(uint32_t status) {
+    if (const char *n = ntStatusName(status)) return n;
+    char buf[32];
+    std::snprintf(buf, sizeof buf, "NT_STATUS_0x%08X", status);
+    return buf;
+}
+
+// Reads what the session table needs from the body (the same bytes the body decoders show).
+void readFacts(Cmd &c) {
+    Smb2Command &f = c.facts;
+    if (const int at = fileIdAt(c); at >= 0 && c.has(static_cast<size_t>(at), 16)) {
+        f.hasFileId = true;
+        f.filePersistent = c.u64(static_cast<size_t>(at));
+        f.fileVolatile = c.u64(static_cast<size_t>(at) + 8);
+    }
+    const uint8_t *p = nullptr;
+    if (!c.response && c.command == 5 && c.structSize == 57) {
+        if (c.buffer(c.u16(44), c.u16(46), p)) f.name = utf16(p, c.u16(46), 128);
+    } else if (!c.response && c.command == 3 && c.structSize == 9) {
+        if (c.buffer(c.u16(4), c.u16(6), p)) f.name = utf16(p, c.u16(6), 128);
+    } else if (c.response && c.command == 3 && c.structSize == 16) {
+        f.shareType = c.u8(2);
+    } else if (!c.response && c.command == 0x10 && c.structSize == 41) {
+        f.infoType = c.u8(2); f.infoClass = c.u8(3);
+    } else if (!c.response && c.command == 0x11 && c.structSize == 33) {
+        f.infoType = c.u8(2); f.infoClass = c.u8(3);
+    } else if (!c.response && c.command == 0x0E && c.structSize == 33) {
+        f.infoType = 1; f.infoClass = c.u8(2);
+    } else if (!c.response && c.command == 0x0B && c.structSize == 57) {
+        f.ctlCode = c.u32(4);
+    }
+}
+
+void fileIdItem(Cmd &c) {
+    const int at = fileIdAt(c);
+    if (at < 0 || !c.has(static_cast<size_t>(at), 16)) return;
+    c.field("File ID: persistent " + hex64(c.facts.filePersistent) + ", volatile " + hex64(c.facts.fileVolatile), static_cast<size_t>(at), 16);
+}
+
+void negotiateContexts(Cmd &c, size_t headerOffset, size_t count) {
+    if (headerOffset < kHeader || count == 0) return;
+    size_t at = headerOffset - kHeader;
+    Field *list = c.field("Negotiate Contexts (" + std::to_string(count) + ")", at, c.bodyLen > at ? c.bodyLen - at : 0);
+    for (size_t i = 0; i < count && i < 16 && c.has(at, 8); ++i) {
+        const uint16_t type = c.u16(at), dl = c.u16(at + 2);
+        if (!c.has(at + 8, dl)) break;
+        const std::string name = negotiateContextName(type);
+        Field *n = c.field(name + " (" + std::to_string(type) + ", " + std::to_string(dl) + " bytes)", at, 8 + dl, list);
+        if (n && type == 2 && dl >= 2) {
+            const uint16_t cc = c.u16(at + 8);
+            std::string ciphers;
+            for (uint16_t k = 0; k < cc && k < 8 && 2 + static_cast<size_t>(k) * 2 + 2 <= dl; ++k) ciphers += (ciphers.empty() ? "" : ", ") + std::string(cipherName(c.u16(at + 10 + k * 2)));
+            c.field("Ciphers (" + std::to_string(cc) + "): " + ciphers, at + 8, 2 + std::min<size_t>(cc, 8) * 2, n);
+        } else if (n && type == 1 && dl >= 4) {
+            const uint16_t hc = c.u16(at + 8);
+            c.field("Hash algorithms: " + std::to_string(hc) + (hc && dl >= 6 && c.u16(at + 12) == 1 ? " (SHA-512)" : ""), at + 8, 2, n);
+        } else if (n && type == 8 && dl >= 2) {
+            const uint16_t sc = c.u16(at + 8);
+            std::string algs;
+            for (uint16_t k = 0; k < sc && k < 8 && 2 + static_cast<size_t>(k) * 2 + 2 <= dl; ++k) {
+                const uint16_t a = c.u16(at + 10 + k * 2);
+                algs += (algs.empty() ? "" : ", ") + std::string(a == 0 ? "HMAC-SHA256" : a == 1 ? "AES-CMAC" : a == 2 ? "AES-GMAC" : "unknown");
+            }
+            c.field("Signing algorithms (" + std::to_string(sc) + "): " + algs, at + 8, 2 + std::min<size_t>(sc, 8) * 2, n);
+        }
+        at += (8 + static_cast<size_t>(dl) + 7) & ~static_cast<size_t>(7);
+    }
+}
+
+// Create contexts: a chain of { Next(4), NameOffset(2), NameLength(2), Reserved(2), DataOffset(2), DataLength(4) } counted from each entry
+std::string createContexts(Cmd &c, size_t headerOffset, size_t length) {
+    if (length == 0 || headerOffset < kHeader || headerOffset - kHeader > c.bodyLen) return std::string();
+    size_t at = headerOffset - kHeader;
+    const size_t end = std::min<size_t>(c.bodyLen, at + length);
+    Field *list = c.field("Create Contexts (" + std::to_string(length) + " bytes)", at, end - at);
+    std::string names;
+    for (int i = 0; i < 16 && at + 16 <= end; ++i) {
+        const uint32_t next = c.u32(at);
+        const uint16_t nameOff = c.u16(at + 4), nameLen = c.u16(at + 6);
+        const uint32_t dataLen = c.u32(at + 12);
+        std::string tag;
+        if (nameOff >= 16 && at + nameOff + nameLen <= end) tag = printableText(c.b + at + nameOff, nameLen, 16);
+        const char *desc = createContextName(tag);
+        names += (names.empty() ? "" : ", ") + (tag.empty() ? std::string("?") : tag);
+        c.field("Context " + (tag.empty() ? std::string("?") : tag) + (desc ? std::string(" (") + desc + ")" : "") + ", data " + std::to_string(dataLen) + " bytes", at,
+                next ? std::min<size_t>(next, end - at) : end - at, list);
+        if (next == 0 || next < 16 || at + next >= end) break;
+        at += next;
+    }
+    return names;
+}
+
+std::string accessText(uint32_t share) {
+    static const std::pair<uint32_t, const char *> names[] = {{1, "READ"}, {2, "WRITE"}, {4, "DELETE"}};
+    const std::string n = bitNames(share, names, std::size(names));
+    return hexString(share, 8) + (n.empty() ? "" : " (" + n + ")");
+}
+
+// The information structure of Query Info (response) / Set Info (request): the common classes of [MS-FSCC]
+void infoBuffer(Cmd &c, Field *under, uint8_t type, uint8_t cls, size_t at, size_t length) {
+    if (!c.ctx.wantFields() || length == 0 || !c.has(at, length)) return;
+    auto time = [&](const char *label, size_t o) { c.field(std::string(label) + ": " + fileTime(c.u64(at + o)), at + o, 8, under); };
+    auto num = [&](const char *label, size_t o, size_t n) {
+        c.field(std::string(label) + ": " + std::to_string(n == 8 ? c.u64(at + o) : n == 4 ? c.u32(at + o) : c.u8(at + o)), at + o, n, under);
+    };
+    if (type == 1) {
+        switch (cls) {
+            case 4:   // FileBasicInformation: CreationTime, LastAccessTime, LastWriteTime, ChangeTime, FileAttributes, Reserved
+                if (length >= 36) {
+                    time("Creation Time", 0); time("Last Access Time", 8); time("Last Write Time", 16); time("Change Time", 24);
+                    c.field("File Attributes: " + attributesText(c.u32(at + 32)), at + 32, 4, under);
+                }
+                break;
+            case 5:   // FileStandardInformation: AllocationSize, EndOfFile, NumberOfLinks, DeletePending, Directory, Reserved
+                if (length >= 22) {
+                    num("Allocation Size", 0, 8); num("End Of File", 8, 8); num("Number Of Links", 16, 4);
+                    c.field(std::string("Delete Pending: ") + (c.u8(at + 20) ? "yes" : "no"), at + 20, 1, under);
+                    c.field(std::string("Directory: ") + (c.u8(at + 21) ? "yes" : "no"), at + 21, 1, under);
+                }
+                break;
+            case 9: case 21: case 40:   // FileNameInformation and the like: FileNameLength(4), FileName
+                if (length >= 4 && c.has(at + 4, c.u32(at))) c.field("File Name: " + utf16(c.b + at + 4, c.u32(at), 128), at + 4, c.u32(at), under);
+                break;
+            case 10: case 11:   // FileRenameInformation / FileLinkInformation: ReplaceIfExists(1), Reserved(7), RootDirectory(8), FileNameLength(4), FileName
+                if (length >= 20) {
+                    c.field(std::string("Replace If Exists: ") + (c.u8(at) ? "yes" : "no"), at, 1, under);
+                    if (c.has(at + 20, c.u32(at + 16))) c.field("File Name: " + utf16(c.b + at + 20, c.u32(at + 16), 128), at + 20, c.u32(at + 16), under);
+                }
+                break;
+            case 13:   // FileDispositionInformation: DeletePending(1)
+                c.field(std::string("Delete Pending: ") + (c.u8(at) ? "yes" : "no"), at, 1, under);
+                break;
+            case 14: if (length >= 8) num("Current Byte Offset", 0, 8); break;
+            case 19: if (length >= 8) num("Allocation Size", 0, 8); break;
+            case 20: case 39: if (length >= 8) num("End Of File", 0, 8); break;
+            case 34:   // FileNetworkOpenInformation: four times, AllocationSize, EndOfFile, FileAttributes, Reserved
+                if (length >= 56) {
+                    time("Creation Time", 0); time("Last Access Time", 8); time("Last Write Time", 16); time("Change Time", 24);
+                    num("Allocation Size", 32, 8); num("End Of File", 40, 8);
+                    c.field("File Attributes: " + attributesText(c.u32(at + 48)), at + 48, 4, under);
+                }
+                break;
+            case 35:   // FileAttributeTagInformation: FileAttributes, ReparseTag
+                if (length >= 8) {
+                    c.field("File Attributes: " + attributesText(c.u32(at)), at, 4, under);
+                    c.field("Reparse Tag: " + hexString(c.u32(at + 4), 8), at + 4, 4, under);
+                }
+                break;
+            case 7: if (length >= 4) num("EA Size", 0, 4); break;
+            case 6: if (length >= 8) num("Index Number", 0, 8); break;
+            default: break;
+        }
+    } else if (type == 2) {
+        switch (cls) {
+            case 3:   // FileFsSizeInformation: TotalAllocationUnits, AvailableAllocationUnits, SectorsPerAllocationUnit, BytesPerSector
+                if (length >= 24) { num("Total Allocation Units", 0, 8); num("Available Allocation Units", 8, 8); num("Sectors Per Allocation Unit", 16, 4); num("Bytes Per Sector", 20, 4); }
+                break;
+            case 7:   // FileFsFullSizeInformation: Total, CallerAvailable, ActualAvailable, SectorsPerAllocationUnit, BytesPerSector
+                if (length >= 32) { num("Total Allocation Units", 0, 8); num("Caller Available Allocation Units", 8, 8); num("Actual Available Allocation Units", 16, 8); num("Sectors Per Allocation Unit", 24, 4); num("Bytes Per Sector", 28, 4); }
+                break;
+            case 5:   // FileFsAttributeInformation: FileSystemAttributes, MaximumComponentNameLength, FileSystemNameLength, FileSystemName
+                if (length >= 12) {
+                    c.field("File System Attributes: " + hexString(c.u32(at), 8), at, 4, under);
+                    num("Maximum Component Name Length", 4, 4);
+                    if (c.has(at + 12, c.u32(at + 8))) c.field("File System Name: " + utf16(c.b + at + 12, c.u32(at + 8), 64), at + 12, c.u32(at + 8), under);
+                }
+                break;
+            case 1:   // FileFsVolumeInformation: VolumeCreationTime, VolumeSerialNumber, VolumeLabelLength, SupportsObjects, Reserved, VolumeLabel
+                if (length >= 18) {
+                    time("Volume Creation Time", 0);
+                    c.field("Volume Serial Number: " + hexString(c.u32(at + 8), 8), at + 8, 4, under);
+                    if (c.has(at + 18, c.u32(at + 12))) c.field("Volume Label: " + utf16(c.b + at + 18, c.u32(at + 12), 64), at + 18, c.u32(at + 12), under);
+                }
+                break;
+            default: break;
+        }
+    } else if (type == 3 && length >= 4) {
+        c.field("Security descriptor revision: " + std::to_string(c.u8(at)), at, 1, under);
+    }
+}
+
+std::string infoClassText(uint8_t type, uint8_t cls) {
+    const char *n = type == 1 ? fileInfoClassName(cls) : type == 2 ? fsInfoClassName(cls) : nullptr;
+    return n ? n : "class " + std::to_string(cls);
+}
+const char *infoTypeName(uint8_t t) { return t == 1 ? "File" : t == 2 ? "File System" : t == 3 ? "Security" : t == 4 ? "Quota" : "unknown"; }
+
+std::string securityInfoText(uint32_t flags) {
+    static const std::pair<uint32_t, const char *> names[] = {{1, "OWNER"}, {2, "GROUP"}, {4, "DACL"}, {8, "SACL"}};
+    const std::string n = bitNames(flags, names, std::size(names));
+    return hexString(flags, 8) + (n.empty() ? "" : " (" + n + ")");
+}
+
+// the body of one command; `note` is what the load pass found out about it (may be null)
+void decodeBody(Cmd &c, const Smb2Note *note, bool first, Context &ctx) {
+    auto &pack = ctx.pack;
+    const uint16_t s = c.structSize;
+    if (!c.has(0, 2)) return;
+    c.field("Structure Size: " + std::to_string(s), 0, 2);
+
+    // an error response has its own body ([MS-SMB2] 2.2.2) whatever the command is
+    const bool errorStatus = (c.status & 0xC0000000u) == 0xC0000000u && !(c.command == 1 && c.status == 0xC0000016u);
+    if (c.response && errorStatus && s == 9) {
+        const uint32_t byteCount = c.u32(4);
+        c.field("Error Context Count: " + std::to_string(c.u8(2)), 2, 1);
+        c.field("Byte Count: " + std::to_string(byteCount), 4, 4);
+        if (byteCount) c.field("Error Data (" + std::to_string(std::min<size_t>(byteCount, c.bodyLen > 8 ? c.bodyLen - 8 : 0)) + " bytes)", 8, std::min<size_t>(byteCount, c.bodyLen > 8 ? c.bodyLen - 8 : 0));
+        return;
+    }
+
+    fileIdItem(c);
+    const uint8_t *p = nullptr;
+    switch (c.command) {
+        case 0:   // Negotiate
+            if (!c.response && s == 36) { // DialectCount, SecurityMode, Reserved, Capabilities, ClientGuid, NegotiateContextOffset/ClientStartTime, NegotiateContextCount
+                const uint16_t count = c.u16(2);
+                c.field("Security Mode: " + hexString(c.u16(4), 4) + ((c.u16(4) & 2) ? " (signing required)" : (c.u16(4) & 1) ? " (signing enabled)" : ""), 4, 2);
+                c.field("Capabilities: " + hexString(c.u32(8), 8), 8, 4);
+                std::string list;
+                bool has311 = false;
+                for (uint16_t i = 0; i < count && i < 16 && c.has(36 + static_cast<size_t>(i) * 2, 2); ++i) {
+                    const uint16_t d = c.u16(36 + static_cast<size_t>(i) * 2);
+                    has311 |= d == 0x0311;
+                    list += (list.empty() ? "" : ", ") + std::string(dialectName(d));
+                }
+                c.field("Dialects (" + std::to_string(count) + "): " + list, 36, std::min<size_t>(static_cast<size_t>(count) * 2, c.bodyLen > 36 ? c.bodyLen - 36 : 0));
+                if (!list.empty()) c.summary += " [" + list + "]";
+                if (has311) negotiateContexts(c, c.u32(28), c.u16(32));
+            } else if (c.response && s == 65) { // SecurityMode, DialectRevision, NegotiateContextCount, ServerGuid, Capabilities, MaxTransact/Read/Write, times, SecurityBuffer
+                const uint16_t dialect = c.u16(4);
+                c.field("Security Mode: " + hexString(c.u16(2), 4) + ((c.u16(2) & 2) ? " (signing required)" : (c.u16(2) & 1) ? " (signing enabled)" : ""), 2, 2);
+                c.field(std::string("Dialect: ") + dialectName(dialect) + " (" + hexString(dialect, 4) + ")", 4, 2);
+                c.field("Capabilities: " + hexString(c.u32(24), 8), 24, 4);
+                c.field("Max Transact Size: " + std::to_string(c.u32(28)), 28, 4);
+                c.field("Max Read Size: " + std::to_string(c.u32(32)), 32, 4);
+                c.field("Max Write Size: " + std::to_string(c.u32(36)), 36, 4);
+                c.field("System Time: " + fileTime(c.u64(40)), 40, 8);
+                c.summary += std::string(" [") + dialectName(dialect) + "]";
+                if (first) { pack.app_code = dialect; pack.app_flags |= kFlagDialect; }
+                if (dialect == 0x0311) negotiateContexts(c, c.u32(60), c.u16(6));
+            }
+            break;
+        case 1: // Session Setup (the security buffer is decoded by sessionSetupBody)
+            break;
+        case 3: // Tree Connect
+            if (!c.response && s == 9) { // Flags/Reserved, PathOffset, PathLength, Path
+                if (c.buffer(c.u16(4), c.u16(6), p)) {
+                    c.add(nullptr, "Path: " + c.facts.name, c.u16(4), c.u16(6));
+                    c.summary += ", Path: " + c.facts.name;
+                    if (first) pack.app_text = c.facts.name;
+                }
+            } else if (c.response && s == 16) { // ShareType, Reserved, ShareFlags, Capabilities, MaximalAccess
+                c.field(std::string("Share Type: ") + shareTypeName(c.u8(2)) + " (" + std::to_string(c.u8(2)) + ")", 2, 1);
+                c.field("Share Flags: " + hexString(c.u32(4), 8), 4, 4);
+                c.field("Capabilities: " + hexString(c.u32(8), 8), 8, 4);
+                c.field("Maximal Access: " + hexString(c.u32(12), 8), 12, 4);
+            }
+            break;
+        case 5: // Create
+            if (!c.response && s == 57) {
+                c.field("Requested Oplock Level: " + std::to_string(c.u8(3)), 3, 1);
+                c.field("Impersonation Level: " + std::to_string(c.u32(4)), 4, 4);
+                c.field("Desired Access: " + hexString(c.u32(24), 8), 24, 4);
+                c.field("File Attributes: " + attributesText(c.u32(28)), 28, 4);
+                c.field("Share Access: " + accessText(c.u32(32)), 32, 4);
+                c.field(std::string("Disposition: ") + dispositionName(c.u32(36)) + " (" + std::to_string(c.u32(36)) + ")", 36, 4);
+                c.field("Create Options: " + hexString(c.u32(40), 8) + ((c.u32(40) & 1) ? " (directory)" : "") + ((c.u32(40) & 0x1000) ? " (delete on close)" : ""), 40, 4);
+                if (c.buffer(c.u16(44), c.u16(46), p)) {
+                    const std::string& name = c.facts.name;
+                    c.add(nullptr, "File Name: " + (name.empty() ? std::string("<root>") : name), c.u16(44), c.u16(46));
+                    c.summary += ", File: " + (name.empty() ? std::string("<root>") : name);
+                    if (first) pack.app_text = name;
+                }
+                const std::string ctxNames = createContexts(c, c.u32(48), c.u32(52));
+                if (!ctxNames.empty()) c.summary += " [" + ctxNames + "]";
+            } else if (c.response && s == 89) { // OplockLevel, Flags, CreateAction, times, AllocationSize, EndofFile, FileAttributes, Reserved2, FileId, CreateContexts
+                c.field("Oplock Level: " + std::to_string(c.u8(2)), 2, 1);
+                c.field(std::string("Create Action: ") + createActionName(c.u32(4)) + " (" + std::to_string(c.u32(4)) + ")", 4, 4);
+                c.field("Creation Time: " + fileTime(c.u64(8)), 8, 8);
+                c.field("Last Write Time: " + fileTime(c.u64(24)), 24, 8);
+                c.field("Allocation Size: " + std::to_string(c.u64(40)), 40, 8);
+                c.field("End Of File: " + std::to_string(c.u64(48)), 48, 8);
+                c.field("File Attributes: " + attributesText(c.u32(56)), 56, 4);
+                if (c.has(48, 8)) c.summary += ", Size: " + std::to_string(c.u64(48));
+                const std::string ctxNames = createContexts(c, c.u32(80), c.u32(84));
+                if (!ctxNames.empty()) c.summary += " [" + ctxNames + "]";
+            }
+            break;
+        case 6: // Close
+            if (!c.response && s == 24) { // Flags, Reserved, FileId
+                c.field("Flags: " + hexString(c.u16(2), 4) + ((c.u16(2) & 1) ? " (POSTQUERY_ATTRIB)" : ""), 2, 2);
+            } else if (c.response && s == 60) { // Flags, Reserved, CreationTime, LastAccessTime, LastWriteTime, ChangeTime, AllocationSize, EndofFile, FileAttributes
+                c.field("Flags: " + hexString(c.u16(2), 4), 2, 2);
+                if (c.u16(2) & 1) {
+                    c.field("Creation Time: " + fileTime(c.u64(8)), 8, 8);
+                    c.field("Last Write Time: " + fileTime(c.u64(24)), 24, 8);
+                    c.field("Allocation Size: " + std::to_string(c.u64(40)), 40, 8);
+                    c.field("End Of File: " + std::to_string(c.u64(48)), 48, 8);
+                    c.field("File Attributes: " + attributesText(c.u32(56)), 56, 4);
+                }
+            }
+            break;
+        case 8: // Read
+            if (!c.response && s == 49) { // Padding, Flags, Length, Offset, FileId, MinimumCount, Channel, RemainingBytes
+                c.field("Length: " + std::to_string(c.u32(4)), 4, 4);
+                c.field("Offset: " + std::to_string(c.u64(8)), 8, 8);
+                c.field("Minimum Count: " + std::to_string(c.u32(32)), 32, 4);
+                c.summary += ", Len: " + std::to_string(c.u32(4)) + ", Off: " + std::to_string(c.u64(8));
+            } else if (c.response && s == 17) { // DataOffset, Reserved, DataLength, DataRemaining
+                c.field("Data Offset: " + std::to_string(c.u8(2)), 2, 1);
+                c.field("Data Length: " + std::to_string(c.u32(4)), 4, 4);
+                c.field("Data Remaining: " + std::to_string(c.u32(8)), 8, 4);
+                c.summary += ", Len: " + std::to_string(c.u32(4));
+            }
+            break;
+        case 9: // Write
+            if (!c.response && s == 49) { // DataOffset, Length, Offset, FileId, Channel, RemainingBytes, ..., Flags
+                c.field("Data Offset: " + std::to_string(c.u16(2)), 2, 2);
+                c.field("Length: " + std::to_string(c.u32(4)), 4, 4);
+                c.field("Offset: " + std::to_string(c.u64(8)), 8, 8);
+                c.field("Flags: " + hexString(c.u32(44), 8), 44, 4);
+                c.summary += ", Len: " + std::to_string(c.u32(4)) + ", Off: " + std::to_string(c.u64(8));
+            } else if (c.response && s == 17) { // Reserved, Count, Remaining
+                c.field("Count: " + std::to_string(c.u32(4)), 4, 4);
+                c.summary += ", Len: " + std::to_string(c.u32(4));
+            }
+            break;
+        case 0x0B: // IOCTL
+            if (!c.response && s == 57) { // Reserved, CtlCode, FileId, InputOffset, InputCount, MaxInputResponse, OutputOffset, OutputCount, MaxOutputResponse, Flags
+                const uint32_t code = c.u32(4);
+                const char *name = ctlCodeName(code);
+                c.field(std::string("Function: ") + (name ? name : "unknown") + " (" + hexString(code, 8) + ")", 4, 4);
+                c.field("Input Count: " + std::to_string(c.u32(28)), 28, 4);
+                c.field("Max Input Response: " + std::to_string(c.u32(32)), 32, 4);
+                c.field("Output Count: " + std::to_string(c.u32(40)), 40, 4);
+                c.field("Max Output Response: " + std::to_string(c.u32(44)), 44, 4);
+                c.field(std::string("Flags: ") + hexString(c.u32(48), 8) + ((c.u32(48) & 1) ? " (IS_FSCTL)" : ""), 48, 4);
+                c.summary += std::string(", ") + (name ? name : hexString(code, 8));
+                if (c.u32(28)) c.summary += ", In: " + std::to_string(c.u32(28));
+            } else if (c.response && s == 49) { // Reserved, CtlCode, FileId, InputOffset, InputCount, OutputOffset, OutputCount, Flags
+                const uint32_t code = c.u32(4);
+                const char *name = ctlCodeName(code);
+                c.field(std::string("Function: ") + (name ? name : "unknown") + " (" + hexString(code, 8) + ")", 4, 4);
+                c.field("Input Count: " + std::to_string(c.u32(28)), 28, 4);
+                c.field("Output Count: " + std::to_string(c.u32(36)), 36, 4);
+                c.summary += std::string(", ") + (name ? name : hexString(code, 8));
+                if (c.u32(36)) c.summary += ", Out: " + std::to_string(c.u32(36));
+            }
+            break;
+        case 0x0E: // Query Directory
+            if (!c.response && s == 33) { // FileInformationClass, Flags, FileIndex, FileId, FileNameOffset, FileNameLength, OutputBufferLength
+                const uint8_t cls = c.u8(2), flags = c.u8(3);
+                c.field("File Information Class: " + infoClassText(1, cls) + " (" + std::to_string(cls) + ")", 2, 1);
+                c.field("Flags: " + hexString(flags, 2) + ((flags & 1) ? " (RESTART_SCANS)" : "") + ((flags & 2) ? " (RETURN_SINGLE_ENTRY)" : ""), 3, 1);
+                c.field("Output Buffer Length: " + std::to_string(c.u32(28)), 28, 4);
+                if (c.buffer(c.u16(24), c.u16(26), p)) {
+                    const std::string pattern = utf16(p, c.u16(26), 128);
+                    c.add(nullptr, "Search Pattern: " + pattern, c.u16(24), c.u16(26));
+                    c.summary += ", Pattern: " + pattern;
+                }
+                c.summary += ", " + infoClassText(1, cls);
+            } else if (c.response && s == 9) { // OutputBufferOffset, OutputBufferLength
+                c.field("Output Buffer Length: " + std::to_string(c.u32(4)), 4, 4);
+                c.summary += ", Len: " + std::to_string(c.u32(4));
+            }
+            break;
+        case 0x0F: // Change Notify
+            if (!c.response && s == 32) { // Flags, OutputBufferLength, FileId, CompletionFilter
+                c.field(std::string("Flags: ") + hexString(c.u16(2), 4) + ((c.u16(2) & 1) ? " (WATCH_TREE)" : ""), 2, 2);
+                c.field("Completion Filter: " + hexString(c.u32(24), 8), 24, 4);
+                c.summary += (c.u16(2) & 1) ? ", Watch tree" : "";
+            } else if (c.response && s == 9) {
+                c.field("Output Buffer Length: " + std::to_string(c.u32(4)), 4, 4);
+            }
+            break;
+        case 0x10: // Query Info
+            if (!c.response && s == 41) { // InfoType, FileInfoClass, OutputBufferLength, InputBufferOffset, Reserved, InputBufferLength, AdditionalInformation, Flags, FileId
+                const uint8_t type = c.u8(2), cls = c.u8(3);
+                c.field(std::string("Info Type: ") + infoTypeName(type) + " (" + std::to_string(type) + ")", 2, 1);
+                if (type == 1 || type == 2) c.field("Info Class: " + infoClassText(type, cls) + " (" + std::to_string(cls) + ")", 3, 1);
+                c.field("Output Buffer Length: " + std::to_string(c.u32(4)), 4, 4);
+                if (type == 3) c.field("Additional Information: " + securityInfoText(c.u32(16)), 16, 4);
+                c.summary += std::string(", ") + (type == 1 || type == 2 ? infoClassText(type, cls) : std::string(infoTypeName(type)) + " info");
+            } else if (c.response && s == 9) { // OutputBufferOffset, OutputBufferLength
+                const uint32_t len = c.u32(4);
+                c.field("Output Buffer Length: " + std::to_string(len), 4, 4);
+                if (note && (note->flags & Smb2Note::kMatched)) {
+                    c.summary += std::string(", ") + (note->infoType == 1 || note->infoType == 2 ? infoClassText(note->infoType, note->infoClass) : std::string(infoTypeName(note->infoType)) + " info");
+                    if (c.buffer(c.u16(2), len, p)) {
+                        Field *info = c.add(nullptr, std::string(infoTypeName(note->infoType)) + " information: " + infoClassText(note->infoType, note->infoClass), c.u16(2), len);
+                        infoBuffer(c, info, note->infoType, note->infoClass, c.u16(2) - kHeader, len);
+                    }
+                } else {
+                    c.summary += ", Len: " + std::to_string(len);
+                }
+            }
+            break;
+        case 0x11: // Set Info
+            if (!c.response && s == 33) { // InfoType, FileInfoClass, BufferLength, BufferOffset, Reserved, AdditionalInformation, FileId
+                const uint8_t type = c.u8(2), cls = c.u8(3);
+                const uint32_t len = c.u32(4);
+                c.field(std::string("Info Type: ") + infoTypeName(type) + " (" + std::to_string(type) + ")", 2, 1);
+                if (type == 1 || type == 2) c.field("Info Class: " + infoClassText(type, cls) + " (" + std::to_string(cls) + ")", 3, 1);
+                c.field("Buffer Length: " + std::to_string(len), 4, 4);
+                if (type == 3) c.field("Additional Information: " + securityInfoText(c.u32(12)), 12, 4);
+                c.summary += std::string(", ") + (type == 1 || type == 2 ? infoClassText(type, cls) : std::string(infoTypeName(type)) + " info");
+                if (c.buffer(c.u16(8), len, p)) {
+                    Field *info = c.add(nullptr, std::string(infoTypeName(type)) + " information: " + infoClassText(type, cls), c.u16(8), len);
+                    infoBuffer(c, info, type, cls, c.u16(8) - kHeader, len);
+                    if (type == 1 && cls == 20 && len >= 8) c.summary += ", Size: " + std::to_string(c.u64(c.u16(8) - kHeader));
+                    if (type == 1 && cls == 13 && len >= 1 && c.u8(c.u16(8) - kHeader)) c.summary += ", Delete";
+                }
+            }
+            break;
+        case 0x0A: // Lock
+            if (!c.response && s == 48) c.field("Lock Count: " + std::to_string(c.u16(2)), 2, 2);
+            break;
+        case 0x12: // Oplock Break (notification, acknowledgment, response with the 24 byte structure; the lease forms are 44 / 36 bytes)
+            if (s == 24) c.field("Oplock Level: " + std::to_string(c.u8(2)), 2, 1);
+            else if (s == 44 || s == 36) c.field("Lease break", 0, 0);
+            break;
+        default: break;
+    }
+}
+
+// Session Setup: the security buffer is NTLMSSP, or SPNEGO that wraps it
+void sessionSetup(Cmd &c, bool first, Context &ctx) {
+    const uint16_t s = c.structSize;
+    if (!((!c.response && s == 25) || (c.response && s == 9))) return;
+    const size_t offAt = c.response ? 4 : 12, lenAt = c.response ? 6 : 14;
+    const uint16_t off = c.u16(offAt), len = c.u16(lenAt);
+    const uint8_t *sec = nullptr;
+    if (len == 0 || !c.buffer(off, len, sec)) return;
+    size_t at = std::string::npos;
+    for (size_t i = 0; i + 12 <= len; ++i) if (std::memcmp(sec + i, "NTLMSSP\0", 8) == 0) { at = i; break; }
+    if (at == std::string::npos) {
+        c.add(nullptr, "Security Blob (" + std::to_string(len) + " bytes)", off, len);
+        return;
+    }
+    const uint32_t type = le32(reinterpret_cast<const char *>(sec) + at + 8);
+    const char *tn = type == 1 ? "NTLMSSP_NEGOTIATE" : type == 2 ? "NTLMSSP_CHALLENGE" : type == 3 ? "NTLMSSP_AUTH" : "NTLMSSP";
+    c.add(nullptr, std::string("Security Blob: ") + tn, off + at, len - at);
+    c.summary += std::string(" [") + tn + "]";
+    if (type == 3 && len - at >= 52) { // domain (28), user (36): length (2), max (2), offset (4) relative to the signature
+        auto sec16 = [&](size_t p) { return static_cast<size_t>(sec[at + p] | (sec[at + p + 1] << 8)); };
+        auto sec32 = [&](size_t p) { return static_cast<size_t>(le32(reinterpret_cast<const char *>(sec) + at + p)); };
+        const size_t dl = sec16(28), dO = sec32(32), ul = sec16(36), uO = sec32(40);
+        const std::string dom = dO + dl <= len - at ? utf16(sec + at + dO, dl, 64) : std::string();
+        const std::string usr = uO + ul <= len - at ? utf16(sec + at + uO, ul, 64) : std::string();
+        if (!usr.empty()) {
+            c.add(nullptr, "NTLMSSP User: " + (dom.empty() ? usr : dom + "\\" + usr), off + at + uO, ul);
+            c.summary += " user=" + (dom.empty() ? usr : dom + "\\" + usr);
+            if (first) ctx.pack.app_text = (dom.empty() ? usr : dom + "\\" + usr);
+        }
+    }
+}
+
 } // namespace
 
 StreamFrame frameSmb2(const char *data, size_t length) {
@@ -210,8 +933,6 @@ void dissectSmb2(Context &ctx, const char *data, size_t length) {
 
     pack.protocol = "SMB2";
     std::string infoAll;
-    std::vector<std::pair<std::string, std::pair<size_t, size_t>>> layers;   // layer text, offset, length (one per command)
-    std::vector<std::vector<std::pair<std::string, std::pair<size_t, size_t>>>> layerItems;
     const char *malformed = nullptr;
     size_t pos = 0;   // offset of the current command inside msg
     int commands = 0;
@@ -234,35 +955,39 @@ void dissectSmb2(Context &ctx, const char *data, size_t length) {
         const uint32_t status = le32(h + 8);
         const uint32_t flags = le32(h + 16);
         const uint32_t nextCommand = le32(h + 20);
-        const uint64_t messageId = static_cast<uint64_t>(le32(h + 24)) | (static_cast<uint64_t>(le32(h + 28)) << 32);
-        const bool response = (flags & 1) != 0, async = (flags & 2) != 0, isSigned = (flags & 8) != 0;
+        const uint64_t messageId = le64(msg + pos + 24);
+        const bool response = (flags & 1) != 0, async = (flags & 2) != 0, related = (flags & 4) != 0, isSigned = (flags & 8) != 0;
         const uint32_t treeId = async ? 0 : le32(h + 36);
-        const uint64_t asyncId = async ? (static_cast<uint64_t>(le32(h + 32)) | (static_cast<uint64_t>(le32(h + 36)) << 32)) : 0;
-        const uint64_t sessionId = static_cast<uint64_t>(le32(h + 40)) | (static_cast<uint64_t>(le32(h + 44)) << 32);
+        const uint64_t asyncId = async ? le64(msg + pos + 32) : 0;
+        const uint64_t sessionId = le64(msg + pos + 40);
         const size_t end = (nextCommand != 0 && nextCommand >= kHeader && nextCommand <= avail) ? pos + nextCommand : msgLen;   // this command's bytes
         const size_t body = pos + kHeader;
-        const size_t bodyLen = end > body ? end - body : 0;
-        const uint8_t *b = msg + body;
-        const size_t abs = o + base + pos;   // frame offset of this command
+        const bool first = commands == 0;
 
+        Cmd c(ctx);
+        c.b = msg + body;
+        c.bodyLen = end > body ? end - body : 0;
+        c.abs = o + base + pos;
+        c.command = command;
+        c.response = response;
+        c.status = status;
+        c.structSize = c.u16(0);
         const std::string cmdName = commandName(command);
-        std::string summary = cmdName + (response ? " Response" : " Request");
-        if (response) {
-            const char *stName = ntStatusName(status);
-            if (stName) {
-                summary += ", " + std::string(stName);
-            } else {
-                char buf[32];
-                std::snprintf(buf, sizeof buf, ", NT_STATUS_0x%08X", status);
-                summary += buf;
-            }
-        }
-        std::vector<std::pair<std::string, std::pair<size_t, size_t>>> items;
-        auto add = [&](const std::string &text, size_t off, size_t len) { items.push_back({text, {abs + off, len}}); };
-        auto rd16 = [&](size_t at, uint16_t &v) { if (at + 2 > bodyLen) return false; v = le16(reinterpret_cast<const char *>(b) + at); return true; };
-        auto rd32 = [&](size_t at, uint32_t &v) { if (at + 4 > bodyLen) return false; v = le32(reinterpret_cast<const char *>(b) + at); return true; };
+        c.summary = cmdName + (response ? " Response" : " Request");
+        if (response) c.summary += ", " + ntStatusText(status);
+        if (ctx.wantFields()) c.layer = &ctx.addLayer("SMB2 (" + cmdName + (response ? " Response" : " Request") + ")", c.abs, std::min<size_t>(end - pos, kHeader + c.bodyLen));
 
-        if (commands == 0) {
+        c.facts.command = command;
+        c.facts.response = response;
+        c.facts.async = async;
+        c.facts.related = related;
+        c.facts.status = status;
+        c.facts.messageId = messageId;
+        c.facts.sessionId = sessionId;
+        c.facts.treeId = treeId;
+        readFacts(c);
+
+        if (first) {
             pack.app_type = command;
             if (response) pack.app_flags |= kFlagResponse;
             if (isSigned) pack.app_flags |= kFlagSigned;
@@ -270,116 +995,36 @@ void dissectSmb2(Context &ctx, const char *data, size_t length) {
             if (response) pack.app_stream = status;
         }
 
-        add("Command: " + cmdName + " (" + std::to_string(command) + ")", 12, 2);
-        add(std::string("Flags: ") + hexString(flags, 8) + (response ? " (Response)" : " (Request)") + (async ? " (Async)" : "") + (isSigned ? " (Signed)" : ""), 16, 4);
-        if (nextCommand != 0) add("Next Command: " + std::to_string(nextCommand), 20, 4);
-        add("Message ID: " + std::to_string(messageId), 24, 8);
-        if (async) add("Async ID: " + hexString(static_cast<uint32_t>(asyncId), 8), 32, 8);
-        else add("Tree ID: " + hexString(treeId, 8), 36, 4);
-        add("Session ID: " + hexString(static_cast<uint32_t>(sessionId), 8), 40, 8);
+        // ---- header ---------------------------------------------------------------------------------------------------
+        c.add(nullptr, "Credit Charge: " + std::to_string(le16(h + 6)), 6, 2);
+        c.add(nullptr, "Command: " + cmdName + " (" + std::to_string(command) + ")", 12, 2);
+        c.add(nullptr, std::string(response ? "Credits granted: " : "Credits requested: ") + std::to_string(le16(h + 14)), 14, 2);
+        c.add(nullptr, std::string("Flags: ") + hexString(flags, 8) + (response ? " (Response)" : " (Request)") + (async ? " (Async)" : "") + (related ? " (Related operations)" : "") + (isSigned ? " (Signed)" : ""), 16, 4);
+        if (nextCommand != 0) c.add(nullptr, "Next Command: " + std::to_string(nextCommand), 20, 4);
+        c.add(nullptr, "Message ID: " + std::to_string(messageId), 24, 8);
+        if (async) c.add(nullptr, "Async ID: " + hex64(asyncId), 32, 8);
+        else c.add(nullptr, "Tree ID: " + hexString(treeId, 8), 36, 4);
+        c.add(nullptr, "Session ID: " + hex64(sessionId), 40, 8);
+        if (isSigned) c.add(nullptr, "Signature: " + asciiHex(msg + pos + 48, 16), 48, 16);
         if (response) {
             const char *stName = ntStatusName(status);
-            add("NT Status: " + hexString(status, 8) + (stName ? " (" + std::string(stName) + ")" : ""), 8, 4);
+            c.add(nullptr, "NT Status: " + hexString(status, 8) + (stName ? " (" + std::string(stName) + ")" : ""), 8, 4);
         }
 
-        // ---- bodies ------------------------------------------------------------------------------------------------
-        uint16_t structSize = 0;
-        if (rd16(0, structSize)) {
-            if (command == 0 && !response && structSize == 36) { // Negotiate Request: DialectCount, SecurityMode, Reserved, Capabilities, ClientGuid, ..., Dialects
-                uint16_t count = 0;
-                if (rd16(2, count)) {
-                    std::string list;
-                    for (uint16_t i = 0; i < count && i < 16 && 36 + static_cast<size_t>(i) * 2 + 2 <= bodyLen; ++i) {
-                        uint16_t d = 0;
-                        rd16(36 + static_cast<size_t>(i) * 2, d);
-                        list += (list.empty() ? "" : ", ") + std::string(dialectName(d));
-                    }
-                    add("Dialects (" + std::to_string(count) + "): " + list, kHeader + 36, std::min<size_t>(static_cast<size_t>(count) * 2, bodyLen > 36 ? bodyLen - 36 : 0));
-                    if (!list.empty()) summary += " [" + list + "]";
-                }
-            } else if (command == 0 && response && structSize == 65) { // Negotiate Response: SecurityMode, DialectRevision, ...
-                uint16_t dialect = 0;
-                if (rd16(4, dialect)) {
-                    add(std::string("Dialect: ") + dialectName(dialect) + " (" + hexString(dialect, 4) + ")", kHeader + 4, 2);
-                    summary += std::string(" [") + dialectName(dialect) + "]";
-                    if (commands == 0) { pack.app_code = dialect; pack.app_flags |= kFlagDialect; }
-                }
-            } else if (command == 1 && ((!response && structSize == 25) || (response && structSize == 9))) { // Session Setup
-                uint16_t off = 0, len = 0;
-                const size_t offAt = response ? 4 : 12, lenAt = response ? 6 : 14;
-                if (rd16(offAt, off) && rd16(lenAt, len) && off >= kHeader && off - kHeader + len <= bodyLen && len > 0) {
-                    const uint8_t *sec = b + (off - kHeader);
-                    // the security buffer is NTLMSSP or SPNEGO that wraps it: find the signature
-                    size_t at = std::string::npos;
-                    for (size_t i = 0; i + 12 <= len; ++i) if (std::memcmp(sec + i, "NTLMSSP\0", 8) == 0) { at = i; break; }
-                    if (at != std::string::npos) {
-                        const uint32_t type = le32(reinterpret_cast<const char *>(sec) + at + 8);
-                        const char *tn = type == 1 ? "NTLMSSP_NEGOTIATE" : type == 2 ? "NTLMSSP_CHALLENGE" : type == 3 ? "NTLMSSP_AUTH" : "NTLMSSP";
-                        add(std::string("Security Blob: ") + tn, off + at, len - at);
-                        summary += std::string(" [") + tn + "]";
-                        if (type == 3 && len - at >= 52) { // domain (28), user (36): length (2), max (2), offset (4) relative to the signature
-                            auto sec16 = [&](size_t p) { return static_cast<size_t>(sec[at + p] | (sec[at + p + 1] << 8)); };
-                            auto sec32 = [&](size_t p) { return static_cast<size_t>(le32(reinterpret_cast<const char *>(sec) + at + p)); };
-                            const size_t dl = sec16(28), dO = sec32(32), ul = sec16(36), uO = sec32(40);
-                            const std::string dom = dO + dl <= len - at ? utf16(sec + at + dO, dl, 64) : std::string();
-                            const std::string usr = uO + ul <= len - at ? utf16(sec + at + uO, ul, 64) : std::string();
-                            if (!usr.empty()) {
-                                add("NTLMSSP User: " + (dom.empty() ? usr : dom + "\\" + usr), off + at + uO, ul);
-                                summary += " user=" + (dom.empty() ? usr : dom + "\\" + usr);
-                                if (commands == 0) pack.app_text = (dom.empty() ? usr : dom + "\\" + usr);
-                            }
-                        }
-                    } else {
-                        add("Security Blob (" + std::to_string(len) + " bytes)", off, len);
-                    }
-                }
-            } else if (command == 3 && !response && structSize == 9) { // Tree Connect Request: Reserved(2), PathOffset(2), PathLength(2), Path
-                uint16_t off = 0, len = 0;
-                if (rd16(4, off) && rd16(6, len) && off >= kHeader && off - kHeader + len <= bodyLen) {
-                    const std::string path = utf16(b + (off - kHeader), len, 128);
-                    add("Path: " + path, off, len);
-                    summary += ", Path: " + path;
-                    if (commands == 0) pack.app_text = path;
-                }
-            } else if (command == 5 && !response && structSize == 57) { // Create Request: ..., NameOffset(2) @44, NameLength(2) @46
-                uint16_t off = 0, len = 0;
-                if (rd16(44, off) && rd16(46, len) && off >= kHeader && off - kHeader + len <= bodyLen) {
-                    const std::string name = utf16(b + (off - kHeader), len, 128);
-                    add("File Name: " + (name.empty() ? std::string("<root>") : name), off, len);
-                    summary += ", File: " + (name.empty() ? std::string("<root>") : name);
-                    if (commands == 0) pack.app_text = name;
-                }
-            } else if ((command == 8 || command == 9) && !response && structSize == 49) { // Read / Write Request: Length(4) @4, Offset(8) @8
-                uint32_t len = 0, offLo = 0;
-                if (rd32(4, len) && rd32(8, offLo)) {
-                    add("Length: " + std::to_string(len), kHeader + 4, 4);
-                    add("Offset: " + std::to_string(offLo), kHeader + 8, 4);
-                    summary += ", Len: " + std::to_string(len) + ", Off: " + std::to_string(offLo);
-                }
-            }
-        }
+        // ---- body -----------------------------------------------------------------------------------------------------
+        if (command == 1) sessionSetup(c, first, ctx);
+        decodeBody(c, nullptr, first, ctx);
         if (nextCommand != 0 && !(nextCommand >= kHeader && nextCommand <= avail)) malformed = "SMB2 NextCommand outside the message";
-        if (treeId != 0 && !async) summary += ", TreeID: " + hexString(treeId, 4);
+        if (treeId != 0 && !async) c.summary += ", TreeID: " + hexString(treeId, 4);
 
-        infoAll += (commands ? ", " : "") + summary;
-        layers.push_back({"SMB2 (" + cmdName + (response ? " Response" : " Request") + ")", {abs, std::min<size_t>(end - pos, kHeader + bodyLen)}});
-        layerItems.push_back(std::move(items));
+        infoAll += (commands ? ", " : "") + c.summary;
         ++commands;
         if (nextCommand == 0 || malformed) break;
         pos += nextCommand;
     }
     if (commands > 1) pack.app_flags |= kFlagCompound;
     pack.info = infoAll;
-
-    if (ctx.wantFields()) {
-        for (size_t i = 0; i < layers.size(); ++i) {
-            Field &l = ctx.addLayer(layers[i].first, layers[i].second.first, layers[i].second.second);
-            for (const auto &it: layerItems[i]) { // only what lies inside the captured bytes
-                if (it.second.first <= o + length) l.add(it.first, it.second.first, std::min(it.second.second, o + length - it.second.first));
-            }
-        }
-        if (layers.empty()) ctx.addLayer("SMB2", o + base, msgLen);
-    }
+    if (commands == 0 && ctx.wantFields()) ctx.addLayer("SMB2", o + base, msgLen);
     if (malformed) ctx.markMalformed(malformed);
 }
 

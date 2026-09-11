@@ -106,6 +106,7 @@ add_executable(imshark_tests
     test_kerberos.cpp
     test_spnego.cpp
     test_smb2.cpp
+    test_smb2_bodies.cpp
     test_smb2_session.cpp
     test_dcerpc.cpp
     test_nfs.cpp
