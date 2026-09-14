@@ -137,7 +137,11 @@ TEST(Smb2, SessionSetupRoundNamesTheNtlmsspMessagesAndTheUser) {
     EXPECT_EQ(k[3].info, "Session Setup Response, STATUS_SUCCESS");
     EXPECT_EQ(k[4].info, "Session Setup Response, STATUS_LOGON_FAILURE");
     EXPECT_TRUE(matches("smb2.nt_status == 0xC000006D", k[4]));
-    EXPECT_NE(find(flow.details(2).fields, "NTLMSSP User: CORP\\alice"), nullptr);
+    // the NTLMSSP message is decoded by the NTLM provider node under the security buffer (it used to be one "NTLMSSP User" line)
+    EXPECT_NE(find(flow.details(2).fields, "NTLM Secure Service Provider"), nullptr);
+    EXPECT_NE(find(flow.details(2).fields, "Domain: CORP"), nullptr);
+    EXPECT_NE(find(flow.details(2).fields, "User: alice"), nullptr);
+    EXPECT_NE(find(flow.details(2).fields, "Workstation: PC01"), nullptr);
     flow.expectReplayEqualsLoad();
 }
 

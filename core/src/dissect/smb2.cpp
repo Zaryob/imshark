@@ -14,6 +14,7 @@
 
 #include "reader.h"
 #include "smb2_session.h"
+#include "spnego.h"
 #include "util.h"
 
 using packet::Field;
@@ -824,36 +825,225 @@ void decodeBody(Cmd &c, const Smb2Note *note, bool first, Context &ctx) {
     }
 }
 
-// Session Setup: the security buffer is NTLMSSP, or SPNEGO that wraps it
+// [MS-NLMP] 2.2.2.5 NegotiateFlags
+std::string ntlmFlagNames(uint32_t f) {
+    static const std::pair<uint32_t, const char *> names[] = {{0x1, "UNICODE"}, {0x2, "OEM"}, {0x4, "REQUEST_TARGET"}, {0x10, "SIGN"}, {0x20, "SEAL"},
+        {0x80, "LM_KEY"}, {0x200, "NTLM"}, {0x8000, "ALWAYS_SIGN"}, {0x80000, "EXTENDED_SESSIONSECURITY"}, {0x800000, "TARGET_INFO"}, {0x2000000, "VERSION"},
+        {0x20000000, "128"}, {0x40000000, "KEY_EXCH"}, {0x80000000u, "56"}};
+    return hexString(f, 8) + (bitNames(f, names, std::size(names)).empty() ? "" : " (" + bitNames(f, names, std::size(names)) + ")");
+}
+
+// An NTLMSSP message ([MS-NLMP] 2.2.1) found by the security blob decoder: its type, the fields of the three messages and, for
+// the authenticate message, "DOMAIN\user" (returned in `user`). `under` may be null (no tree wanted).
+void ntlmssp(Context &ctx, Field *under, const uint8_t *m, size_t n, std::string &user) {
+    if (n < 12) return;
+    const size_t base = ctx.offsetOf(reinterpret_cast<const char *>(m));
+    auto u16le = [&](size_t at) { return at + 2 <= n ? static_cast<uint32_t>(m[at] | (m[at + 1] << 8)) : 0u; };
+    auto u32le = [&](size_t at) { return at + 4 <= n ? le32(reinterpret_cast<const char *>(m) + at) : 0u; };
+    const uint32_t type = u32le(8);
+    const size_t flagsAt = type == 1 ? 12 : type == 2 ? 20 : type == 3 ? 60 : n;
+    const uint32_t flags = flagsAt + 4 <= n ? u32le(flagsAt) : 1u;   // no flags field: assume Unicode
+    const bool unicode = (flags & 1) != 0;
+    auto note = [&](const std::string &text, size_t at, size_t len) { if (under) under->add(text, base + at, std::min(len, n > at ? n - at : 0)); };
+    // a security buffer field: Len(2) MaxLen(2) BufferOffset(4); returns the text of a string buffer
+    auto buffer = [&](size_t at, size_t &off, size_t &len) {
+        len = u16le(at);
+        off = u32le(at + 4);
+        return at + 8 <= n && off <= n && len <= n - off;
+    };
+    auto text = [&](size_t at, size_t max, bool &ok) {
+        size_t off = 0, len = 0;
+        ok = buffer(at, off, len);
+        if (!ok) return std::string();
+        return unicode ? utf16(m + off, len, max) : printableText(m + off, len, max);
+    };
+    auto stringField = [&](const char *label, size_t at) {
+        bool ok = false;
+        const std::string v = text(at, 64, ok);
+        size_t off = 0, len = 0;
+        buffer(at, off, len);
+        if (ok && len) note(std::string(label) + ": " + v, off, len);
+        return v;
+    };
+    auto version = [&](size_t at) {
+        if ((flags & 0x02000000) && at + 8 <= n) note("Version: " + std::to_string(m[at]) + "." + std::to_string(m[at + 1]) + " (build " + std::to_string(u16le(at + 2)) + ")", at, 8);
+    };
+    if (!under && type != 3) return;
+    if (type == 1) {          // NEGOTIATE: NegotiateFlags, DomainNameFields, WorkstationFields, Version
+        note("Negotiate Flags: " + ntlmFlagNames(flags), 12, 4);
+        stringField("Calling workstation domain", 16);
+        stringField("Calling workstation name", 24);
+        version(32);
+    } else if (type == 2) {   // CHALLENGE: TargetNameFields, NegotiateFlags, ServerChallenge, Reserved, TargetInfoFields, Version
+        stringField("Target Name", 12);
+        note("Negotiate Flags: " + ntlmFlagNames(flags), 20, 4);
+        if (n >= 32) note("NTLM Server Challenge: " + asciiHex(m + 24, 8), 24, 8);
+        size_t off = 0, len = 0;
+        if (n >= 48 && buffer(40, off, len) && len) {
+            note("Target Info (" + std::to_string(len) + " bytes)", off, len);
+            for (size_t at = off, count = 0; at + 4 <= off + len && count < 16; ++count) {
+                const uint16_t id = static_cast<uint16_t>(u16le(at)), vl = static_cast<uint16_t>(u16le(at + 2));
+                if (id == 0 || at + 4 + vl > off + len) break;
+                static const char *names[] = {"EOL", "NetBIOS computer name", "NetBIOS domain name", "DNS computer name", "DNS domain name", "DNS tree name", "Flags", "Timestamp", "Single host", "Target name", "Channel bindings"};
+                const std::string label = id < std::size(names) ? names[id] : "AV pair " + std::to_string(id);
+                if (id >= 1 && id <= 5 && id != 6) note(label + ": " + utf16(m + at + 4, vl, 64), at, 4 + vl);
+                else if (id == 7 && vl == 8) note(label + ": " + fileTime(le64(m + at + 4)), at, 12);
+                else note(label + " (" + std::to_string(vl) + " bytes)", at, 4 + vl);
+                at += 4 + static_cast<size_t>(vl);
+            }
+        }
+        version(48);
+    } else if (type == 3) {   // AUTHENTICATE: LmChallengeResponse, NtChallengeResponse, Domain, User, Workstation, EncryptedRandomSessionKey, NegotiateFlags, Version
+        size_t off = 0, len = 0;
+        if (under && n >= 20) {
+            if (buffer(12, off, len)) note("LM Response (" + std::to_string(len) + " bytes)", off, len);
+            if (buffer(20, off, len)) note("NT Response (" + std::to_string(len) + " bytes" + (len > 24 ? ", NTLMv2" : "") + ")", off, len);
+        }
+        bool okD = false, okU = false;
+        const std::string dom = n >= 36 ? text(28, 64, okD) : std::string();
+        const std::string usr = n >= 44 ? text(36, 64, okU) : std::string();
+        if (under) {
+            stringField("Domain", 28);
+            stringField("User", 36);
+            stringField("Workstation", 44);
+            if (n >= 64) note("Negotiate Flags: " + ntlmFlagNames(flags), 60, 4);
+            version(64);
+        }
+        if (okU && !usr.empty()) user = dom.empty() ? usr : dom + "\\" + usr;
+    }
+}
+
+// Session Setup: the security buffer is SPNEGO (with NTLMSSP or Kerberos inside), a bare Kerberos token or a bare NTLMSSP message
 void sessionSetup(Cmd &c, bool first, Context &ctx) {
     const uint16_t s = c.structSize;
     if (!((!c.response && s == 25) || (c.response && s == 9))) return;
     const size_t offAt = c.response ? 4 : 12, lenAt = c.response ? 6 : 14;
     const uint16_t off = c.u16(offAt), len = c.u16(lenAt);
+    if (!c.response) {
+        c.field("Security Mode: " + hexString(c.u8(3), 2) + ((c.u8(3) & 2) ? " (signing required)" : (c.u8(3) & 1) ? " (signing enabled)" : ""), 3, 1);
+        c.field("Capabilities: " + hexString(c.u32(4), 8), 4, 4);
+    } else {
+        c.field(std::string("Session Flags: ") + hexString(c.u16(2), 4) + ((c.u16(2) & 1) ? " (guest)" : "") + ((c.u16(2) & 2) ? " (null session)" : "") + ((c.u16(2) & 4) ? " (encrypt data)" : ""), 2, 2);
+    }
     const uint8_t *sec = nullptr;
     if (len == 0 || !c.buffer(off, len, sec)) return;
-    size_t at = std::string::npos;
-    for (size_t i = 0; i + 12 <= len; ++i) if (std::memcmp(sec + i, "NTLMSSP\0", 8) == 0) { at = i; break; }
-    if (at == std::string::npos) {
-        c.add(nullptr, "Security Blob (" + std::to_string(len) + " bytes)", off, len);
-        return;
-    }
-    const uint32_t type = le32(reinterpret_cast<const char *>(sec) + at + 8);
-    const char *tn = type == 1 ? "NTLMSSP_NEGOTIATE" : type == 2 ? "NTLMSSP_CHALLENGE" : type == 3 ? "NTLMSSP_AUTH" : "NTLMSSP";
-    c.add(nullptr, std::string("Security Blob: ") + tn, off + at, len - at);
-    c.summary += std::string(" [") + tn + "]";
-    if (type == 3 && len - at >= 52) { // domain (28), user (36): length (2), max (2), offset (4) relative to the signature
-        auto sec16 = [&](size_t p) { return static_cast<size_t>(sec[at + p] | (sec[at + p + 1] << 8)); };
-        auto sec32 = [&](size_t p) { return static_cast<size_t>(le32(reinterpret_cast<const char *>(sec) + at + p)); };
-        const size_t dl = sec16(28), dO = sec32(32), ul = sec16(36), uO = sec32(40);
-        const std::string dom = dO + dl <= len - at ? utf16(sec + at + dO, dl, 64) : std::string();
-        const std::string usr = uO + ul <= len - at ? utf16(sec + at + uO, ul, 64) : std::string();
-        if (!usr.empty()) {
-            c.add(nullptr, "NTLMSSP User: " + (dom.empty() ? usr : dom + "\\" + usr), off + at + uO, ul);
-            c.summary += " user=" + (dom.empty() ? usr : dom + "\\" + usr);
-            if (first) ctx.pack.app_text = (dom.empty() ? usr : dom + "\\" + usr);
+    Field *node = c.add(nullptr, "Security Buffer (" + std::to_string(len) + " bytes)", off, len);
+    SecurityBlob blob = decodeSecurityBlob(ctx, sec, len, node);
+    if (!blob.ok) {   // something in front of an NTLMSSP message that is not a GSS-API token: look for the signature
+        for (size_t i = 0; i + 12 <= len; ++i) {
+            if (std::memcmp(sec + i, "NTLMSSP\0", 8) == 0) {
+                blob.ok = blob.hasNtlmssp = true;
+                blob.ntlmssp = sec + i;
+                blob.ntlmsspLength = len - i;
+                const uint32_t type = le32(reinterpret_cast<const char *>(sec) + i + 8);
+                blob.summary = type == 1 ? "NTLMSSP_NEGOTIATE" : type == 2 ? "NTLMSSP_CHALLENGE" : type == 3 ? "NTLMSSP_AUTH" : "NTLMSSP";
+                break;
+            }
         }
     }
+    if (!blob.ok) return;
+    c.summary += " [" + blob.summary + "]";
+    if (blob.hasNtlmssp) {
+        std::string user;
+        Field *n = ctx.wantFields() && node ? &node->add("NTLM Secure Service Provider", ctx.offsetOf(reinterpret_cast<const char *>(blob.ntlmssp)), blob.ntlmsspLength) : nullptr;
+        ntlmssp(ctx, n, blob.ntlmssp, blob.ntlmsspLength, user);
+        if (!user.empty()) {
+            c.summary += " user=" + user;
+            if (first) ctx.pack.app_text = user;
+        }
+    }
+}
+
+// ---- SMB1: recognised only ---------------------------------------------------------------------------------------------------
+const char *smb1CommandName(uint8_t cmd) {
+    switch (cmd) {
+        case 0x00: return "Create Directory";
+        case 0x01: return "Delete Directory";
+        case 0x02: return "Open";
+        case 0x03: return "Create";
+        case 0x04: return "Close";
+        case 0x05: return "Flush";
+        case 0x06: return "Delete";
+        case 0x07: return "Rename";
+        case 0x08: return "Query Information";
+        case 0x0A: return "Read";
+        case 0x0B: return "Write";
+        case 0x24: return "Locking AndX";
+        case 0x25: return "Transaction";
+        case 0x2B: return "Echo";
+        case 0x2D: return "Open AndX";
+        case 0x2E: return "Read AndX";
+        case 0x2F: return "Write AndX";
+        case 0x32: return "Transaction2";
+        case 0x71: return "Tree Disconnect";
+        case 0x72: return "Negotiate";
+        case 0x73: return "Session Setup AndX";
+        case 0x74: return "Logoff AndX";
+        case 0x75: return "Tree Connect AndX";
+        case 0xA0: return "NT Transact";
+        case 0xA2: return "NT Create AndX";
+        case 0xA4: return "NT Cancel";
+        default: return nullptr;
+    }
+}
+
+// The 32 byte SMB1 header and, for Negotiate, the dialect strings (request) / the chosen dialect index (response): the part that
+// tells a client how a connection moves on to SMB2 (the "SMB 2.002" / "SMB 2.???" dialects of a multi-protocol negotiate).
+void dissectSmb1(Context &ctx, const uint8_t *m, size_t n, size_t abs) {
+    auto &pack = ctx.pack;
+    pack.protocol = "SMB";
+    if (n < 33) {
+        pack.info = "SMB1 [Truncated header]";
+        if (ctx.wantFields()) ctx.addLayer("Server Message Block (SMB1)", abs, n);
+        return;
+    }
+    const uint8_t cmd = m[4];
+    const uint32_t status = le32(reinterpret_cast<const char *>(m) + 5);
+    const uint8_t flags = m[9];
+    const uint16_t flags2 = le16(reinterpret_cast<const char *>(m) + 10);
+    const bool reply = (flags & 0x80) != 0;
+    const char *known = smb1CommandName(cmd);
+    const std::string name = known ? known : "Command " + hexString(cmd, 2);
+    std::string info = "SMB1 " + name + (reply ? " Response" : " Request");
+    if (reply && (flags2 & 0x4000)) info += ", " + ntStatusText(status);   // SMB_FLAGS2_NT_STATUS: the status is an NTSTATUS
+    const uint8_t words = m[32];
+    std::vector<std::string> dialects;
+    Field *layer = ctx.wantFields() ? &ctx.addLayer("Server Message Block (SMB1)", abs, n) : nullptr;
+    auto item = [&](const std::string &t, size_t at, size_t len) { if (layer) layer->add(t, abs + at, std::min(len, n > at ? n - at : 0)); };
+    item("Command: " + name + " (" + hexString(cmd, 2) + ")", 4, 1);
+    item("NT Status: " + hexString(status, 8), 5, 4);
+    item("Flags: " + hexString(flags, 2) + (reply ? " (Reply)" : ""), 9, 1);
+    item("Flags2: " + hexString(flags2, 4), 10, 2);
+    item("Tree ID: " + hexString(le16(reinterpret_cast<const char *>(m) + 24), 4), 24, 2);
+    item("Process ID: " + hexString(le16(reinterpret_cast<const char *>(m) + 26), 4), 26, 2);
+    item("User ID: " + hexString(le16(reinterpret_cast<const char *>(m) + 28), 4), 28, 2);
+    item("Multiplex ID: " + hexString(le16(reinterpret_cast<const char *>(m) + 30), 4), 30, 2);
+    item("Word Count: " + std::to_string(words), 32, 1);
+    if (cmd == 0x72) {
+        if (!reply && words == 0 && n >= 35) {   // ByteCount, then BufferFormat 0x02 + a NUL terminated dialect string each
+            const size_t byteCount = le16(reinterpret_cast<const char *>(m) + 33);
+            size_t at = 35;
+            const size_t end = std::min(n, 35 + byteCount);
+            while (at < end && dialects.size() < 16 && m[at] == 0x02) {
+                size_t e = at + 1;
+                while (e < end && m[e] != 0) ++e;
+                dialects.push_back(printableText(m + at + 1, e - at - 1, 40));
+                at = e + 1;
+            }
+            std::string list;
+            for (const auto &d: dialects) list += (list.empty() ? "" : ", ") + d;
+            if (layer) {
+                Field &l = layer->add("Requested Dialects (" + std::to_string(dialects.size()) + "): " + list, abs + 35, end > 35 ? end - 35 : 0);
+                for (const auto &d: dialects) l.add(d + (d == "SMB 2.002" || d == "SMB 2.???" ? " (SMB2)" : ""), abs + 35, 0);
+            }
+            if (!list.empty()) info += " [" + list + "]";
+        } else if (reply && words >= 1 && n >= 35) {   // DialectIndex is the first word
+            const uint16_t index = le16(reinterpret_cast<const char *>(m) + 33);
+            item(index == 0xFFFF ? "Dialect Index: 0xFFFF (no dialect chosen)" : "Dialect Index: " + std::to_string(index), 33, 2);
+            info += index == 0xFFFF ? ", no dialect chosen" : ", Dialect index " + std::to_string(index);
+        }
+    }
+    pack.info = info;
 }
 
 } // namespace
@@ -899,9 +1089,7 @@ void dissectSmb2(Context &ctx, const char *data, size_t length) {
     const uint8_t *msg = bytes + base;
     const size_t msgLen = length - base;
     if (smbMagic(msg, 0xff)) {
-        pack.protocol = "SMB";
-        pack.info = "SMB (Legacy SMB1)";
-        if (ctx.wantFields()) ctx.addLayer("Server Message Block (SMB1)", o + base, msgLen);
+        dissectSmb1(ctx, msg, msgLen, o + base);
         return;
     }
     if (smbMagic(msg, 0xfd)) { // SMB3 Transform header ([MS-SMB2] 2.2.41): the message is encrypted
