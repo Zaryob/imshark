@@ -27,7 +27,7 @@ constexpr size_t kMaxMessage = 8u << 20;   // not more than the stream table buf
 constexpr size_t kHeader = 64;
 
 // app_flags
-constexpr uint16_t kFlagResponse = 1, kFlagSigned = 2, kFlagEncrypted = 4, kFlagCompressed = 8, kFlagDialect = 0x10, kFlagAsync = 0x20, kFlagCompound = 0x40;
+constexpr uint16_t kFlagResponse = 1, kFlagSigned = 2, kFlagEncrypted = 4, kFlagCompressed = 8, kFlagDialect = 0x10, kFlagAsync = 0x20, kFlagCompound = 0x40, kFlagPipe = 0x80;
 
 const char *commandName(uint16_t cmd) {
     switch (cmd) {
@@ -1122,6 +1122,12 @@ void dissectSmb2(Context &ctx, const char *data, size_t length) {
     pack.protocol = "SMB2";
     std::string infoAll;
     const char *malformed = nullptr;
+    // trees, files and request/response matching (rule 4): the load pass hands every command to the session table, Replay reads
+    // the note the load pass stored for it
+    SessionTables *sessions = ctx.sessions;
+    const bool loadPass = ctx.mode != ParseMode::Replay && sessions && !sessions->isFrozen();
+    const std::string connection = sessions ? smb2ConnectionKey(pack.source, pack.src_port, pack.destination, pack.dst_port) : std::string();
+    const uint32_t number = static_cast<uint32_t>(pack.number);
     size_t pos = 0;   // offset of the current command inside msg
     int commands = 0;
 
@@ -1199,11 +1205,35 @@ void dissectSmb2(Context &ctx, const char *data, size_t length) {
             c.add(nullptr, "NT Status: " + hexString(status, 8) + (stName ? " (" + std::string(stName) + ")" : ""), 8, 4);
         }
 
+        const Smb2Note *note = nullptr;
+        if (sessions) note = loadPass ? sessions->observeSmb2(connection, number, ctx.tcpStreamSeq, static_cast<uint8_t>(commands), c.facts)
+                                      : sessions->smb2Note(number, ctx.tcpStreamSeq, static_cast<uint8_t>(commands));
+        if (c.layer) {   // what the session table found out about this command
+            if (note) {
+                if (note->flags & Smb2Note::kMatched) c.add(nullptr, "[Request in frame " + std::to_string(note->requestPacket) + "]", 0, 0);
+                if (note->flags & Smb2Note::kAnswered) c.add(nullptr, "[Response in frame " + std::to_string(note->responsePacket) + "]", 0, 0);
+                if (note->flags & Smb2Note::kInterim) c.add(nullptr, "[Interim response: the final response follows]", 0, 0);
+                if (note->flags & Smb2Note::kUnmatched) c.add(nullptr, "[No request with this Message ID was seen]", 0, 0);
+                if (note->flags & Smb2Note::kRelated) c.add(nullptr, "[Related operation: the ids of the command before are used]", 0, 0);
+                if (!note->share.empty()) c.add(nullptr, "[Share: " + note->share + "]", 0, 0);
+                if (!note->file.empty()) c.add(nullptr, std::string("[") + ((note->flags & Smb2Note::kPipe) ? "Named pipe: " : "File: ") + note->file + "]", 0, 0);
+            } else if (sessions && sessions->isTableStateLost("smb2")) {
+                c.add(nullptr, "[SMB2 session state lost: the share and file of this command are not known]", 0, 0);
+            }
+        }
+
         // ---- body -----------------------------------------------------------------------------------------------------
         if (command == 1) sessionSetup(c, first, ctx);
-        decodeBody(c, nullptr, first, ctx);
+        decodeBody(c, note, first, ctx);
         if (nextCommand != 0 && !(nextCommand >= kHeader && nextCommand <= avail)) malformed = "SMB2 NextCommand outside the message";
-        if (treeId != 0 && !async) c.summary += ", TreeID: " + hexString(treeId, 4);
+        // the file the command works on (from its FileId or its request), else the share, else the raw tree id
+        if (note && !note->file.empty() && !(command == 5 && !response)) c.summary += ", File: " + note->file;
+        else if (note && !note->share.empty() && !(command == 3 && !response)) c.summary += ", Share: " + note->share;
+        else if (treeId != 0 && !async) c.summary += ", TreeID: " + hexString(treeId, 4);
+        if (first && note) {
+            pack.app_text2 = note->file;
+            if (note->flags & Smb2Note::kPipe) pack.app_flags |= kFlagPipe;
+        }
 
         infoAll += (commands ? ", " : "") + c.summary;
         ++commands;

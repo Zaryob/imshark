@@ -270,10 +270,12 @@ smb2	boolean	SMB2 / SMB3	152	152	48516f558002a7c3
 smb2.cmd	unsigned	SMB2 command of the first message in the packet (0 Negotiate, 1 Session Setup, 3 Tree Connect, 5 Create, 8 Read, 9 Write)	60	60	19ca3e665990c93a
 smb2.dialect	unsigned	SMB2 dialect revision chosen by a Negotiate response (0x0311 = SMB 3.1.1)	46	46	113379cdc979571d
 smb2.encrypted	boolean	SMB3 message in a Transform header (encrypted, content not shown)	152	152	ad289e6cded4c3c3
+smb2.file	string	SMB2 file the first command works on: the Create name, or the name behind its FileId / matched request (session table)	48	48	7ae4ee0f250edf47
 smb2.filename	string	SMB2 file name of a Create request	1	1	5d5de30fec3cc345
 smb2.flags.response	boolean	SMB2 response flag of the first message	60	60	1a05bd075b2a6003
 smb2.flags.signed	boolean	SMB2 signed flag of the first message	60	60	936d43d983d68343
 smb2.nt_status	unsigned	SMB2 NT status of a response (first message)	20	20	8a9860852f07c941
+smb2.pipe	boolean	SMB2 first command works on a named pipe (a file of an IPC$ share, or the IPC$ tree itself)	60	60	7bd7efb9c7793803
 smb2.tree	string	SMB2 share path of a Tree Connect request	0	0	236e177ee4bbadc3
 smb2.user	string	SMB2 user of an NTLMSSP authenticate message (domain\user)	0	0	236e177ee4bbadc3
 smtp	boolean	SMTP	143	143	62f40c1e9c874183

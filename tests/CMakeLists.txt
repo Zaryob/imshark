@@ -109,6 +109,7 @@ add_executable(imshark_tests
     test_smb2_bodies.cpp
     test_smb2_security.cpp
     test_smb2_session.cpp
+    test_smb2_tables.cpp
     test_dcerpc.cpp
     test_nfs.cpp
     test_postgres.cpp

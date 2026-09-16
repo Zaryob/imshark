@@ -281,10 +281,12 @@ in the [User Guide](USER_GUIDE.md#display-filters). Names are lower case.
 | `smb2.cmd` | unsigned | SMB2 command of the first message in the packet (0 Negotiate, 1 Session Setup, 3 Tree Connect, 5 Create, 8 Read, 9 Write) |
 | `smb2.dialect` | unsigned | SMB2 dialect revision chosen by a Negotiate response (0x0311 = SMB 3.1.1) |
 | `smb2.encrypted` | boolean | SMB3 message in a Transform header (encrypted, content not shown) |
+| `smb2.file` | string | SMB2 file the first command works on: the Create name, or the name behind its FileId / matched request (session table) |
 | `smb2.filename` | string | SMB2 file name of a Create request |
 | `smb2.flags.response` | boolean | SMB2 response flag of the first message |
 | `smb2.flags.signed` | boolean | SMB2 signed flag of the first message |
 | `smb2.nt_status` | unsigned | SMB2 NT status of a response (first message) |
+| `smb2.pipe` | boolean | SMB2 first command works on a named pipe (a file of an IPC$ share, or the IPC$ tree itself) |
 | `smb2.tree` | string | SMB2 share path of a Tree Connect request |
 | `smb2.user` | string | SMB2 user of an NTLMSSP authenticate message (domain\user) |
 | `smtp` | boolean | SMTP |
@@ -407,4 +409,4 @@ in the [User Guide](USER_GUIDE.md#display-filters). Names are lower case.
 | `wlan.ssid` | string | 802.11 SSID |
 | `wlan.ta` | string | 802.11 Transmitter MAC address |
 
-397 fields.
+399 fields.

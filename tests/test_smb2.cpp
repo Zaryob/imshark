@@ -152,11 +152,12 @@ TEST(Smb2, TreeConnectCreateReadAndWrite) {
     const auto &k = flow.packets();
     EXPECT_EQ(k[0].info, "Tree Connect Request, Path: \\\\files\\share");
     EXPECT_TRUE(matches("smb2.tree == \"\\\\\\\\files\\\\share\"", k[0]));
-    EXPECT_EQ(k[1].info, "Tree Connect Response, STATUS_SUCCESS, TreeID: 0x0005");
-    EXPECT_EQ(k[2].info, "Create Request, File: docs\\report.txt, TreeID: 0x0005");
+    // with the session table (smb2_session.h) the tree id of a response / request is shown as the share it was connected to
+    EXPECT_EQ(k[1].info, "Tree Connect Response, STATUS_SUCCESS, Share: \\\\files\\share");
+    EXPECT_EQ(k[2].info, "Create Request, File: docs\\report.txt, Share: \\\\files\\share");
     EXPECT_TRUE(matches("smb2.filename == \"docs\\\\report.txt\" && smb2.cmd == 5", k[2]));
-    EXPECT_EQ(k[3].info, "Read Request, Len: 65536, Off: 4096, TreeID: 0x0005");
-    EXPECT_EQ(k[4].info, "Write Request, Len: 5, Off: 0, TreeID: 0x0005");
+    EXPECT_EQ(k[3].info, "Read Request, Len: 65536, Off: 4096, Share: \\\\files\\share");
+    EXPECT_EQ(k[4].info, "Write Request, Len: 5, Off: 0, Share: \\\\files\\share");
     EXPECT_NE(find(flow.details(2).fields, "File Name: docs\\report.txt"), nullptr);
     EXPECT_NE(find(flow.details(0).fields, "Path: \\\\files\\share"), nullptr);
     flow.expectReplayEqualsLoad();
