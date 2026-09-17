@@ -36,11 +36,15 @@ namespace core {
     /// `allPackets` (the whole loaded capture) is only needed for the last fragment of a reassembled IPv4
     /// datagram: the other fragments are found in it and read from the file.
     bool buildPacketDetails(const std::string &filepath, const packet::PacketInfo &summary, packet::PacketInfo &details,
-                            const std::vector<packet::PacketInfo> *allPackets = nullptr, const CaptureInfo *info = nullptr);
+                            const std::vector<packet::PacketInfo> *allPackets = nullptr, const CaptureInfo *info = nullptr,
+                            const dissect::Registry *registry = nullptr);
 
     class FileProcessor {
         packet::PacketParser parser;
     public:
+        /// `registry` selects the dissectors (default: the built-in ones); it must outlive the processor.
+        explicit FileProcessor(const dissect::Registry &registry = dissect::Registry::builtin()) : parser(registry) {}
+
         bool processPcapFile(const std::string &filepath, std::vector<packet::PacketInfo> &packets,
                              std::string &message, LoadControl *control = nullptr);
 

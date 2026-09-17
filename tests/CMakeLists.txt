@@ -28,6 +28,7 @@ add_executable(imshark_tests
     test_stats.cpp
     test_stream.cpp
     test_tcp.cpp
+    test_tcp_reassembly.cpp
     test_time_format.cpp
     test_utils.cpp
     test_ui_smoke.cpp

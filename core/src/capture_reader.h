@@ -49,4 +49,11 @@ namespace core {
     bool reassembleIpPayload(CaptureReader &reader, const std::vector<packet::PacketInfo> &packets,
                              const packet::PacketInfo &completing, std::vector<char> &payload,
                              std::vector<uint32_t> *fragmentNumbers = nullptr, uint8_t *protocol = nullptr);
+
+    /// Rebuilds the message a packet completed (`completing.tcp_pdu_state == 2`): the bytes of its direction of the
+    /// connection in [tcp_pdu_start, tcp_pdu_start + tcp_pdu_len), taken from the packets of that direction in capture
+    /// order (segments that were themselves reassembled from IP fragments are handled). `numbers` receives the packets
+    /// that contributed bytes. Returns false if a byte is missing or a frame cannot be read.
+    bool reassembleTcpPdu(CaptureReader &reader, const std::vector<packet::PacketInfo> &packets, const packet::PacketInfo &completing,
+                          std::string &pdu, std::vector<uint32_t> &numbers);
 } // namespace core

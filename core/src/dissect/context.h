@@ -10,6 +10,7 @@
 
 namespace dissect {
     class Registry;
+    class TcpStreams;
 
     /// What a parse run produces.
     enum class ParseMode {
@@ -37,6 +38,14 @@ namespace dissect {
         const std::vector<uint32_t> *fragmentNumbers = nullptr;
         uint8_t reassembledProtocol = 0;   // upper layer protocol of `reassembledPayload`
 
+        // TCP message reassembly. While a capture is read in order, `streams` cuts messages out of the byte streams and
+        // `completedTcp` receives (earlier segment packet, completing packet) pairs. In Replay mode of a completing packet
+        // `tcpPdu` (and `tcpPduPackets`) hold the message and the packets it is made of instead.
+        TcpStreams *streams = nullptr;
+        std::vector<std::pair<uint32_t, uint32_t>> *completedTcp = nullptr;
+        const std::string *tcpPdu = nullptr;
+        const std::vector<uint32_t> *tcpPduPackets = nullptr;
+
         /// Dissectors skip building the (comparatively expensive) field tree when this is false.
         bool wantFields() const { return mode != ParseMode::Summary; }
 
@@ -57,8 +66,27 @@ namespace dissect {
         }
     };
 
+    /// Answer of a stream framer about the bytes at the start of a message.
+    struct StreamFrame {
+        enum class Kind {
+            Reject,      // these bytes are not this protocol
+            NeedMore,    // a message starts here but it is not complete yet
+            Complete,    // the first message is `length` bytes long
+            UntilClose,  // the message runs until the sender closes the connection (FIN/RST)
+        } kind = Kind::Reject;
+        size_t length = 0;
+    };
+    using StreamFramer = std::function<StreamFrame(const char *data, size_t available)>;
+
+    struct Context;
     /// A dissector decodes `length` bytes starting at `data` (never reads beyond them), fills `ctx.pack`
     /// (protocol, info, header copy, field tree) and may hand the payload to the next layer through
     /// `ctx.registry`.
     using Dissector = std::function<void(Context &ctx, const char *data, size_t length)>;
+
+    struct StreamProtocol {
+        std::string name;
+        StreamFramer frame;
+        Dissector dissect;   // decodes ONE complete message
+    };
 } // namespace dissect

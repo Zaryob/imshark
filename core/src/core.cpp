@@ -148,6 +148,14 @@ namespace {
                 f.info += " [Reassembled in #" + std::to_string(completing) + "]";
             }
         }
+        // this packet completed a TCP message: tell the earlier segments of it where it was reassembled
+        for (const auto &[segment, completing]: parser.takeCompletedTcpPdus()) {
+            if (segment >= 1 && segment <= packets.size() && packets[segment - 1].tcp_pdu_state == 1) {
+                auto &s = packets[segment - 1];
+                s.tcp_reassembled_in = completing;
+                s.info += " [Reassembled in #" + std::to_string(completing) + "]";
+            }
+        }
         packets.emplace_back(std::move(pack));
     }
 
@@ -565,12 +573,13 @@ namespace {
 } // namespace
 
 bool core::buildPacketDetails(const std::string &filepath, const packet::PacketInfo &summary, packet::PacketInfo &details,
-                              const std::vector<packet::PacketInfo> *allPackets, const CaptureInfo *info) {
+                              const std::vector<packet::PacketInfo> *allPackets, const CaptureInfo *info,
+                              const dissect::Registry *registry) {
     std::vector<char> bytes;
     if (!readPacketBytes(filepath, summary, bytes)) return false;
 
     details = summary;
-    packet::PacketParser parser; // fresh parser: TCP numbers come from `summary` (Replay mode)
+    packet::PacketParser parser(registry ? *registry : dissect::Registry::builtin()); // fresh parser: TCP numbers come from `summary` (Replay mode)
 
     // the last fragment of a datagram needs the earlier ones to show the reassembled protocols
     std::vector<char> reassembled;
@@ -581,6 +590,14 @@ bool core::buildPacketDetails(const std::string &filepath, const packet::PacketI
         if (reassembleIpPayload(reader, *allPackets, summary, reassembled, &fragmentNumbers, &wholeProtocol)) {
             parser.setReassembly(&reassembled, &fragmentNumbers, wholeProtocol);
         }
+    }
+
+    // the packet that completes a TCP message needs the bytes of the earlier segments
+    std::string tcpPdu;
+    std::vector<uint32_t> tcpPduPackets;
+    if (summary.tcp_pdu_state == 2 && allPackets) {
+        CaptureReader reader(filepath);
+        if (reassembleTcpPdu(reader, *allPackets, summary, tcpPdu, tcpPduPackets)) parser.setTcpPdu(&tcpPdu, &tcpPduPackets);
     }
 
     parser.parsePacket(details, bytes, dissect::ParseMode::Replay);
