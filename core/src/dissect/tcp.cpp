@@ -93,6 +93,35 @@ namespace {
             for (auto &c: layer.children) zeroRanges(c); // offsets inside the reassembled data do not map to bytes of this frame
         }
     }
+
+    // Messages that follow the first one inside the same segment (pipelined requests, several DNS answers in one
+    // push): each is framed again from the payload and decoded in place, its Info appended to the first one's.
+    void dissectFollowing(Context &ctx, const char *payload, size_t payloadLen, size_t from, uint16_t srcPort, uint16_t dstPort) {
+        auto &pack = ctx.pack;
+        const auto appType = pack.app_type;
+        const auto appFlags = pack.app_flags;
+        const auto appCode = pack.app_code;
+        const auto appText = pack.app_text;
+        const auto appText2 = pack.app_text2;
+        size_t at = from;
+        int count = 0;
+        while (at < payloadLen && count < 64) {
+            const StreamProtocol *protocol = selectStreamProtocol(ctx, srcPort, dstPort, payload + at, payloadLen - at);
+            if (!protocol) break;
+            const StreamFrame f = protocol->frame(payload + at, payloadLen - at);
+            if (f.kind != StreamFrame::Kind::Complete || f.length == 0 || f.length > payloadLen - at) break;
+            const std::string before = pack.info;
+            protocol->dissect(ctx, payload + at, f.length);
+            pack.info = before + ", " + pack.info;
+            at += f.length;
+            ++count;
+        }
+        pack.app_type = appType;
+        pack.app_flags = appFlags;
+        pack.app_code = appCode;
+        pack.app_text = appText;
+        pack.app_text2 = appText2;
+    }
 } // namespace
 
 void dissect::dissectTcp(Context &ctx, const char *data, size_t length) {
@@ -217,6 +246,7 @@ void dissect::dissectTcp(Context &ctx, const char *data, size_t length) {
             if (skip >= 0 && static_cast<size_t>(skip) + pack.tcp_pdu_len <= payloadLen) {
                 if (const StreamProtocol *protocol = selectStreamProtocol(ctx, srcPort, dstPort, payload + skip, pack.tcp_pdu_len)) {
                     protocol->dissect(ctx, payload + skip, pack.tcp_pdu_len);   // in this frame: the fields keep their real offsets
+                    dissectFollowing(ctx, payload, payloadLen, static_cast<size_t>(skip) + pack.tcp_pdu_len, srcPort, dstPort);
                     handled = true;
                 }
             }
@@ -224,6 +254,8 @@ void dissect::dissectTcp(Context &ctx, const char *data, size_t length) {
             const StreamProtocol *protocol = selectStreamProtocol(ctx, srcPort, dstPort, ctx.tcpPdu->data(), ctx.tcpPdu->size());
             if (protocol) {
                 dissectPdu(ctx, *ctx.tcpPdu, *protocol, ctx.tcpPduPackets ? *ctx.tcpPduPackets : std::vector<uint32_t>());
+                const int32_t end = static_cast<int32_t>(pack.tcp_pdu_start + pack.tcp_pdu_len - static_cast<uint32_t>(seq >= 0 ? seq : 0));
+                if (end > 0 && static_cast<size_t>(end) < payloadLen) dissectFollowing(ctx, payload, payloadLen, static_cast<size_t>(end), srcPort, dstPort);
                 handled = true;
             }
         }
@@ -244,6 +276,8 @@ void dissect::dissectTcp(Context &ctx, const char *data, size_t length) {
             pack.tcp_pdu_start = pdu.startSeq;
             pack.tcp_pdu_len = static_cast<uint32_t>(pdu.data.size());
             dissectPdu(ctx, pdu.data, *pdu.protocol, pdu.packets);
+            const int32_t end = static_cast<int32_t>(pdu.startSeq + pdu.data.size() - static_cast<uint32_t>(seq >= 0 ? seq : 0));
+            if (end > 0 && static_cast<size_t>(end) < payloadLen) dissectFollowing(ctx, payload, payloadLen, static_cast<size_t>(end), srcPort, dstPort);
             handled = true;
         } else if (result.action == StreamFeedResult::Action::Whole) {
             const StreamPdu &pdu = result.pdus.front();
@@ -253,6 +287,7 @@ void dissect::dissectTcp(Context &ctx, const char *data, size_t length) {
             const size_t skip = pdu.startSeq - static_cast<uint32_t>(seq >= 0 ? seq : 0);
             if (skip + pdu.data.size() <= payloadLen) {
                 pdu.protocol->dissect(ctx, payload + skip, pdu.data.size());
+                dissectFollowing(ctx, payload, payloadLen, skip + pdu.data.size(), srcPort, dstPort);
                 handled = true;
             }
         }

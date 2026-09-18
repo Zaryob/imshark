@@ -326,9 +326,18 @@ void dissect::dissectDns(Context &ctx, const char *data, size_t length) { dissec
 
 void dissect::dissectMdns(Context &ctx, const char *data, size_t length) { dissectMessage(ctx, data, length, "MDNS"); }
 
+dissect::StreamFrame dissect::frameDnsTcp(const char *data, size_t length) {
+    // a 2-byte length followed by a message that is at least a DNS header long and no longer than the length says
+    if (length < 2) return {StreamFrame::Kind::NeedMore, 0};
+    const size_t declared = be16(data);
+    if (declared < sizeof(network::DNSHeader)) return {StreamFrame::Kind::Reject, 0};
+    if (length < declared + 2) return {StreamFrame::Kind::NeedMore, 0};
+    return {StreamFrame::Kind::Complete, declared + 2};
+}
+
 void dissect::dissectDnsTcp(Context &ctx, const char *data, size_t length) {
-    // DNS over TCP: every message is preceded by its length (RFC 1035 4.2.2). A message split over several
-    // segments is not reassembled here; what is present gets decoded.
+    // DNS over TCP: every message is preceded by its length (RFC 1035 4.2.2). Whole messages come from the
+    // stream reassembly; what is present gets decoded when that did not apply (a capture that starts mid-stream).
     if (length < 2) {
         ctx.pack.protocol = "DNS";
         ctx.markMalformed("DNS over TCP: missing length field");

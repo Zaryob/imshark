@@ -159,7 +159,7 @@ TEST(TcpReassembly, SeveralMessagesInOneStreamAndPipelining) {
                  seg(1000 + a.size() + b.size(), c.substr(0, 5)), seg(1000 + a.size() + b.size() + 5, c.substr(5))});
     EXPECT_EQ(cap.packets[1].tcp_pdu_state, 1);
     EXPECT_EQ(cap.packets[2].tcp_pdu_state, 2) << "completes the first message (the second one fits behind it)";
-    EXPECT_EQ(cap.packets[2].info, "TESTMSG: first message");
+    EXPECT_EQ(cap.packets[2].info, "TESTMSG: first message, TESTMSG: second") << "the whole message that follows in the segment is decoded as well";
     EXPECT_EQ(cap.packets[3].tcp_pdu_state, 1) << "starts the third message";
     EXPECT_EQ(cap.packets[4].tcp_pdu_state, 2);
     EXPECT_EQ(cap.packets[4].info, "TESTMSG: third one here");
@@ -284,15 +284,17 @@ TEST(TcpReassembly, RandomCuttingReorderingAndDuplicationFindsEveryMessage) {
         for (size_t i = 0; i < cap.packets.size(); ++i) {
             const auto &p = cap.packets[i];
             if (p.protocol == "TESTMSG") {
-                found.push_back(p.info.substr(9));
+                std::string rest = p.info.substr(9);
+                for (size_t cut; (cut = rest.find(", TESTMSG: ")) != std::string::npos;) {
+                    found.push_back(rest.substr(0, cut));
+                    rest = rest.substr(cut + 11);
+                }
+                found.push_back(rest);
                 const auto d = cap.details(i);                                   // rebuilding agrees with the loading pass
                 ASSERT_EQ(d.info, p.info) << "round " << round << " packet " << i + 1;
                 ASSERT_EQ(d.protocol, p.protocol);
             }
         }
-        size_t expectedViaStream = 0;
-        for (const auto &p: cap.packets) expectedViaStream += p.tcp_pdu_state >= 2;
-        EXPECT_EQ(found.size(), expectedViaStream) << "round " << round;
         EXPECT_LE(found.size(), messages.size());
         for (const auto &f: found) EXPECT_NE(std::find(messages.begin(), messages.end(), f), messages.end()) << "round " << round << ": a message that was never sent";
     }
@@ -313,4 +315,70 @@ TEST(TcpReassembly, RandomCorruptionNeverCrashes) {
             parser.parsePacket(p, frame, (round % 2) ? dissect::ParseMode::Full : dissect::ParseMode::Summary);
         }
     }
+}
+
+namespace {
+    // a DNS query for "a.test" A, with the 2-byte TCP length prefix
+    std::string dnsQuery(uint16_t id, const std::string &label = "a") {
+        std::string m;
+        m += static_cast<char>(id >> 8); m += static_cast<char>(id & 0xff);
+        m += std::string("\x01\x00\x00\x01\x00\x00\x00\x00\x00\x00", 10);
+        m += static_cast<char>(label.size()) + label + "\x04test" + std::string("\x00\x00\x01\x00\x01", 5);
+        std::string out;
+        out += static_cast<char>(m.size() >> 8); out += static_cast<char>(m.size() & 0xff);
+        return out + m;
+    }
+    const dissect::Registry &builtin() { return dissect::Registry::builtin(); }
+}
+
+TEST(DnsOverTcp, MessageSplitAfterTheLengthPrefixIsReassembled) {
+    const std::string q = dnsQuery(0x1234);
+    core::FileProcessor fp(builtin());
+    std::vector<packet::PacketInfo> packets;
+    std::string msg;
+    const std::string path = support::writeTemp("dnstcp1.pcap", support::pcapBytes({syn("0035"), seg(1000, q.substr(0, 2), "0035"), seg(1002, q.substr(2, 7), "0035"), seg(1009, q.substr(9), "0035")}));
+    ASSERT_TRUE(fp.processPcapFile(path, packets, msg)) << msg;
+    EXPECT_EQ(packets[1].tcp_pdu_state, 1);
+    EXPECT_EQ(packets[3].protocol, "DNS");
+    EXPECT_NE(packets[3].info.find("Standard query 0x1234 A a.test"), std::string::npos) << packets[3].info;
+    packet::PacketInfo d;
+    ASSERT_TRUE(core::buildPacketDetails(path, packets[3], d, &packets, &fp.captureInfo(), &builtin()));
+    EXPECT_EQ(d.info, packets[3].info);
+    std::remove(path.c_str());
+}
+
+TEST(DnsOverTcp, SeveralMessagesInOneSegmentAreAllDecoded) {
+    const std::string joined = dnsQuery(1, "a") + dnsQuery(2, "b") + dnsQuery(3, "c");
+    core::FileProcessor fp(builtin());
+    std::vector<packet::PacketInfo> packets;
+    std::string msg;
+    const std::string path = support::writeTemp("dnstcp2.pcap", support::pcapBytes({syn("0035"), seg(1000, joined, "0035")}));
+    ASSERT_TRUE(fp.processPcapFile(path, packets, msg)) << msg;
+    const auto &p = packets[1];
+    EXPECT_EQ(p.protocol, "DNS");
+    EXPECT_NE(p.info.find("0x1 A a.test"), std::string::npos) << p.info;
+    EXPECT_NE(p.info.find("0x2 A b.test"), std::string::npos) << p.info;
+    EXPECT_NE(p.info.find("0x3 A c.test"), std::string::npos) << p.info;
+    packet::PacketInfo d;
+    ASSERT_TRUE(core::buildPacketDetails(path, p, d, &packets, &fp.captureInfo(), &builtin()));
+    EXPECT_EQ(d.info, p.info) << "details agree with the loading pass";
+    std::remove(path.c_str());
+}
+
+TEST(DnsOverTcp, TheTailOfOneMessageAndWholeNextOnesShareASegment) {
+    const std::string a = dnsQuery(1, "a"), b = dnsQuery(2, "b"), c = dnsQuery(3, "c");
+    const std::string all = a + b + c;
+    core::FileProcessor fp(builtin());
+    std::vector<packet::PacketInfo> packets;
+    std::string msg;
+    const std::string path = support::writeTemp("dnstcp3.pcap", support::pcapBytes({syn("0035"), seg(1000, all.substr(0, 10), "0035"), seg(1010, all.substr(10), "0035")}));
+    ASSERT_TRUE(fp.processPcapFile(path, packets, msg)) << msg;
+    const auto &p = packets[2];
+    EXPECT_EQ(p.tcp_pdu_state, 2);
+    EXPECT_NE(p.info.find("0x1 A a"), std::string::npos) << p.info;
+    EXPECT_NE(p.info.find("0x3 A c"), std::string::npos) << p.info;
+    packet::PacketInfo d;
+    ASSERT_TRUE(core::buildPacketDetails(path, p, d, &packets, &fp.captureInfo(), &builtin()));
+    EXPECT_EQ(d.info, p.info);
+    std::remove(path.c_str());
 }
