@@ -13,6 +13,7 @@
 #include <packet/ipsec_table.h>
 #include <tls/keylog.h>
 
+#include "dcerpc_session.h"
 #include "dtls_decrypt.h"
 #include "sctp_session.h"
 #include "smb2_session.h"
@@ -69,6 +70,7 @@ public:
         dtls_.clear();
         sctp_.clear();
         smb2_.clear();
+        dcerpc_.clear();
         tlsCaptureKeys_.clear();   // the keys the user supplied (tlsExternalKeys) outlive a new capture
         tlsUpgrades_.clear();
         serverEndpoints_.clear();
@@ -449,6 +451,25 @@ public:
     const Smb2OpenFile *smb2OpenFile(const std::string &connection, uint64_t persistent, uint64_t volatileId) const { return smb2_.openFile(connection, persistent, volatileId); }
     const Smb2Table &smb2Table() const { return smb2_; }
 
+    // ---- DCE/RPC contexts, calls, fragments and endpoint mapper results (see dcerpc_session.h) ---------------------------
+    /// Load pass: takes PDU `index` of the message at stream sequence `seq` of `packet`. Returns the note that was stored (nullptr if
+    /// frozen or out of budget; then the "dcerpc" table is state lost).
+    const DceNote *observeDceRpc(const std::string &stream, uint32_t packet, int64_t seq, uint8_t index, const DcePdu &pdu, std::string_view stub,
+                                 const std::string &serverIp, const std::string &fallbackInterface) {
+        if (frozen_) return nullptr;
+        bool lost = false;
+        const DceNote *note = dcerpc_.observe(stream, packet, seq, index, pdu, stub, serverIp, fallbackInterface, maxMemoryPerTable_, lost);
+        if (lost || !note) markStateLost("dcerpc");
+        return note;
+    }
+    /// What the load pass resolved for a PDU (nullptr if nothing was stored).
+    const DceNote *dceRpcNote(uint32_t packet, int64_t seq, uint8_t index) const { return dcerpc_.note(packet, seq, index); }
+    const DceMessage *dceRpcMessage(uint32_t index) const { return dcerpc_.message(index); }
+    /// The interface the endpoint mapper mapped `ip`:`port` to as of packet `packet` (nullptr: the port is not an endpoint it announced).
+    /// Both passes ask with the packet's number, so a packet decodes the same when it is replayed.
+    const DceMappedEndpoint *dceRpcEndpoint(const std::string &ip, uint16_t port, bool udp, uint32_t packet) const { return dcerpc_.endpoint(ip, port, udp, packet); }
+    const DceRpcTable &dceRpcTable() const { return dcerpc_; }
+
     // ---- TLS key material (see tls/keylog.h) ----------------------------------------------------
     /// Secrets the user supplied (key log file / text). They stay when clear() starts a new capture.
     tls::KeyStore &tlsExternalKeys() { return tlsExternalKeys_; }
@@ -546,7 +567,7 @@ public:
     void setEspNullHeuristic(bool on) { espNullHeuristic_ = on; }
     bool espNullHeuristic() const { return espNullHeuristic_; }
 
-    size_t totalMemoryUsage() const { return ftpMemory_ + tftpMemory_ + connectionMemory_ + usbMemory_ + btMemory_ + tls_.memory() + tlsDecrypt_.memory() + dtls_.memory() + smb2_.memory(); }
+    size_t totalMemoryUsage() const { return ftpMemory_ + tftpMemory_ + connectionMemory_ + usbMemory_ + btMemory_ + tls_.memory() + tlsDecrypt_.memory() + dtls_.memory() + smb2_.memory() + dcerpc_.memory(); }
 
 private:
     static std::string directionKey(const std::string &srcIp, uint16_t srcPort, const std::string &dstIp, uint16_t dstPort) {
@@ -589,6 +610,7 @@ private:
     DtlsTable dtls_;
     SctpTable sctp_;
     Smb2Table smb2_;
+    DceRpcTable dcerpc_;
     tls::KeyStore tlsExternalKeys_;
     tls::KeyStore tlsCaptureKeys_;
 };

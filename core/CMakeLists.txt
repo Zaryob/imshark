@@ -42,6 +42,7 @@ add_library(imshark_core STATIC
     src/dissect/spnego.cpp
     src/dissect/smb2.cpp
     src/dissect/dcerpc.cpp
+    src/dissect/dcerpc_session.cpp
     src/dissect/nfs.cpp
     src/dissect/postgres.cpp
     src/dissect/mysql.cpp
