@@ -7,6 +7,7 @@
 //                         sequence and acknowledgement numbers; load() returns the packets of the loading pass
 //   appflow::details      the Replay of packet `index` (uses the frozen session tables of the loading pass)
 //   appflow::expectReplayEqualsLoad   every packet's Replay shows the same protocol, Info and application facts as the loading pass
+//                         asUdp() turns the conversation into UDP datagrams
 //   appflow::sweepPayload one segment cut at every length and mutated at seeded random bytes, both directions: no crash under ASan,
 //                         every field of every node inside its frame
 #include <gtest/gtest.h>
@@ -36,6 +37,8 @@ namespace appflow {
     public:
         Flow(uint16_t clientPort, uint16_t serverPort, std::string name) : clientPort_(clientPort), serverPort_(serverPort), name_(std::move(name)) {}
 
+        /// The conversation is UDP datagrams (the same addresses and ports) instead of TCP segments.
+        Flow &asUdp() { udp_ = true; return *this; }
         Flow &client(const std::string &data) { segments_.push_back({true, data}); return *this; }
         Flow &server(const std::string &data) { segments_.push_back({false, data}); return *this; }
 
@@ -44,6 +47,12 @@ namespace appflow {
             uint32_t clientSeq = 1000, serverSeq = 5000;
             std::vector<std::vector<char>> out;
             for (const auto &s: segments_) {
+                if (udp_) {
+                    const auto h4 = [](uint16_t v) { char b[8]; std::snprintf(b, sizeof b, "%04x", v); return std::string(b); };
+                    out.push_back(s.fromClient ? support::udpPacket("0a000001", "0a000002", h4(clientPort_), h4(serverPort_), s.data)
+                                               : support::udpPacket("0a000002", "0a000001", h4(serverPort_), h4(clientPort_), s.data));
+                    continue;
+                }
                 const auto hex8 = [](uint32_t v) { char b[16]; std::snprintf(b, sizeof b, "%08x", v); return std::string(b); };
                 const auto hex4 = [](uint16_t v) { char b[8]; std::snprintf(b, sizeof b, "%04x", v); return std::string(b); };
                 if (s.fromClient) {
@@ -95,6 +104,7 @@ namespace appflow {
         uint16_t clientPort_, serverPort_;
         std::string name_, path_;
         std::vector<Segment> segments_;
+        bool udp_ = false;
         core::FileProcessor fp_;
         std::vector<packet::PacketInfo> packets_;
     };
@@ -105,6 +115,16 @@ namespace appflow {
             const auto h4 = [](uint16_t v) { char b[8]; std::snprintf(b, sizeof b, "%04x", v); return std::string(b); };
             auto f = toServer ? support::tcpPacket("0a000001", "0a000002", "c350", h4(port), "00000001", "00000001", "18", data)
                               : support::tcpPacket("0a000002", "0a000001", h4(port), "c350", "00000001", "00000001", "18", data);
+            return framesweep::Bytes(f.begin(), f.end());
+        };
+        for (bool toServer: {true, false}) framesweep::sweep(frame(toServer, payload), seed + (toServer ? 1 : 2));
+    }
+
+    /// The same for a UDP datagram.
+    inline void sweepDatagram(const std::string &payload, uint16_t port, uint32_t seed) {
+        const auto frame = [&](bool toServer, const std::string &data) {
+            const auto h4 = [](uint16_t v) { char b[8]; std::snprintf(b, sizeof b, "%04x", v); return std::string(b); };
+            auto f = toServer ? support::udpPacket("0a000001", "0a000002", "c350", h4(port), data) : support::udpPacket("0a000002", "0a000001", h4(port), "c350", data);
             return framesweep::Bytes(f.begin(), f.end());
         };
         for (bool toServer: {true, false}) framesweep::sweep(frame(toServer, payload), seed + (toServer ? 1 : 2));

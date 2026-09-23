@@ -124,6 +124,7 @@ const dissect::Registry &dissect::Registry::builtin() {
         r.registerUdpPort(53, dissectDns);
         r.registerUdpPort(88, dissectKerberos);
         r.registerUdpPort(111, dissectNfs);
+        r.registerUdpPort(135, dissectDceRpcDatagram);   // the endpoint mapper over ncadg_ip_udp (connectionless PDUs, RPC version 4)
         r.registerUdpPort(2049, dissectNfs);
         r.registerUdpPort(5060, dissectSip);
         r.registerUdpPort(20000, dissectDnp3);
@@ -149,7 +150,7 @@ const dissect::Registry &dissect::Registry::builtin() {
         both("LDAP", nullptr, dissectLdap, std::make_shared<StreamProtocol>(StreamProtocol{"LDAP", frameLdap, dissectLdap}));
         both("Kerberos", dissectKerberos, dissectKerberos, std::make_shared<StreamProtocol>(StreamProtocol{"Kerberos", frameKerberos, dissectKerberos}));
         both("SMB2", nullptr, dissectSmb2, std::make_shared<StreamProtocol>(StreamProtocol{"SMB2", frameSmb2, dissectSmb2}));
-        both("DCERPC", nullptr, dissectDceRpc, std::make_shared<StreamProtocol>(StreamProtocol{"DCERPC", frameDceRpc, dissectDceRpc}));
+        both("DCERPC", dissectDceRpcDatagram, dissectDceRpc, std::make_shared<StreamProtocol>(StreamProtocol{"DCERPC", frameDceRpc, dissectDceRpc}));
         both("NFS", dissectNfs, dissectNfs, std::make_shared<StreamProtocol>(StreamProtocol{"NFS", frameRpc, dissectNfs}));
         both("Portmap", dissectNfs, dissectNfs, std::make_shared<StreamProtocol>(StreamProtocol{"Portmap", frameRpc, dissectNfs}));
         both("PGSQL", nullptr, dissectPostgreSql, std::make_shared<StreamProtocol>(StreamProtocol{"PGSQL", framePostgreSql, dissectPostgreSql}));

@@ -482,6 +482,165 @@ bool decodeConnectionOriented(Context &ctx, const char *data, size_t length, con
     return true;
 }
 
+// Decodes the connectionless (version 4) PDU at data[0..length): the 80 byte header of C706 12.4 (rpc_vers, ptype, flags1, flags2,
+// drep[3], serial_hi, object, if_id, act_id, server_boot, if_vers, seqnum, opnum, ihint, ahint, len, fragnum, auth_proto, serial_lo)
+// and the body. flags1: 0x02 last fragment, 0x04 fragment, 0x08 no fack, 0x10 maybe, 0x20 idempotent, 0x40 broadcast. The header
+// names the interface and the operation in every PDU, so no Bind is needed; a call is told from the next one by the activity and the
+// sequence number. A PDU with an authentication protocol carries its verifier at the end of the body without a length: the body is
+// then not told apart into stub data and verifier and is not interpreted.
+bool decodeConnectionless(Context &ctx, const char *data, size_t length, Decoded &out) {
+    constexpr size_t kHeader = 80;
+    if (!data || length < kHeader) return false;
+    const auto *bytes = reinterpret_cast<const uint8_t *>(data);
+    if (bytes[0] != 4 || bytes[1] > 10 || (bytes[4] & 0xEE) != 0) return false;
+
+    const uint8_t pduType = bytes[1], flags1 = bytes[2], flags2 = bytes[3];
+    const bool le = (bytes[4] & 0x10) != 0;
+    const auto u16 = [&](size_t at) { return le ? le16(reinterpret_cast<const char *>(bytes) + at) : be16(reinterpret_cast<const char *>(bytes) + at); };
+    const auto u32 = [&](size_t at) { return le ? le32(reinterpret_cast<const char *>(bytes) + at) : be32(reinterpret_cast<const char *>(bytes) + at); };
+    const std::string object = dceFormatUuid(bytes + 8, le), iface = dceFormatUuid(bytes + 24, le), activity = dceFormatUuid(bytes + 40, le);
+    const uint32_t serverBoot = u32(56), ifVersion = u32(60), seqnum = u32(64);
+    const uint16_t opnum = u16(68), ihint = u16(70), ahint = u16(72), bodyLen = u16(74), fragNum = u16(76);
+    const uint8_t authProto = bytes[78];
+    const unsigned serial = (static_cast<unsigned>(bytes[7]) << 8) | bytes[79];
+    const size_t o = ctx.offsetOf(data);
+    const bool cut = kHeader + static_cast<size_t>(bodyLen) > length;
+    const size_t have = std::min<size_t>(kHeader + bodyLen, length);
+    const bool multi = (flags1 & 0x04) != 0 || fragNum != 0;
+    const bool last = (flags1 & 0x02) != 0;
+    const auto node = [&](Field &parent, const std::string &text, size_t at, size_t len) -> Field & {
+        if (at > have) { at = have; len = 0; }
+        return parent.add(text, o + at, std::min(len, have - at));
+    };
+
+    const std::string typeName = pduTypeName(pduType);
+    out.ok = true;
+    out.type = pduType;
+    out.callId = seqnum;
+    out.iface = iface;
+    out.request = pduType == 0;
+    out.opnum = opnum;
+    out.authService = authProto ? authServiceName(authProto) : std::string();
+    const bool hasStub = pduType == 0 || pduType == 2 || pduType == 3;
+    out.sealed = authProto != 0 && (pduType == 0 || pduType == 2);   // the verifier is not told apart from the stub data: neither is read
+    out.fragment = multi;
+    const char *malformed = nullptr;
+    if (pduType == 3 || pduType == 6) {   // fault / reject: a status word
+        if (!cut && bodyLen < 4) malformed = "DCE/RPC datagram body shorter than the status of its type";
+    } else if (pduType == 9) {            // fack: version, pad, window size, max tpdu, max path tpdu, serial number, selack length
+        if (!cut && bodyLen < 16) malformed = "DCE/RPC datagram body shorter than the fack header";
+    }
+    std::string summary = typeName + " (Seq: " + std::to_string(seqnum) + ")";
+    if (pduType == 0) summary += ", Opnum: " + std::to_string(opnum);
+    std::string status;
+    if ((pduType == 3 || pduType == 6) && have >= kHeader + 4) {
+        status = hexString(u32(kHeader), 8);
+        summary += ", Status: " + status;
+    }
+    summary += ", " + interfaceText(iface);
+    if (authProto) summary += ", Auth: " + out.authService;
+
+    DcePdu pdu;
+    pdu.connectionless = true;
+    pdu.type = pduType;
+    pdu.callId = seqnum;
+    pdu.fragment = fragNum;
+    pdu.first = !multi || fragNum == 0;
+    pdu.last = !multi || last;
+    pdu.little = le;
+    pdu.encrypted = out.sealed;
+    pdu.opnum = opnum;
+    pdu.interfaceUuid = iface;
+    pdu.interfaceVersion = ifVersion;
+    SessionTables *sessions = ctx.sessions;
+    const bool loadPass = ctx.mode != ParseMode::Replay && sessions && !sessions->isFrozen();
+    const DceNote *note = nullptr;
+    if (sessions && !cut && !malformed && hasStub) {
+        const uint32_t number = static_cast<uint32_t>(ctx.pack.number);
+        const std::string stream = "cl:" + activity;
+        if (loadPass) {
+            const std::string_view stub(reinterpret_cast<const char *>(bytes) + kHeader, have - kHeader);
+            note = sessions->observeDceRpc(stream, number, -1, 0, pdu, stub, ctx.pack.source, std::string());
+        } else {
+            note = sessions->dceRpcNote(number, -1, 0);
+        }
+    }
+    if (multi) summary += " [fragment " + std::to_string(fragNum) + (last ? ", last" : "") + "]";
+    const DceMessage *message = nullptr;
+    if (note && (note->flags & DceNote::kCompletes)) {
+        message = sessions->dceRpcMessage(note->message);
+        if (message && message->fragments > 1) {
+            out.reassembled = true;
+            summary += " [Reassembled: " + std::to_string(message->fragments) + " fragments, " + std::to_string(message->bytes) + " bytes]";
+        }
+    }
+
+    out.info = summary;
+    if (ctx.wantFields()) {
+        Field &root = ctx.addLayer("DCE/RPC (" + typeName + ", connectionless)", o, have);
+        root.add("Version: 4", o, 1);
+        root.add("PDU Type: " + typeName + " (" + std::to_string(pduType) + ")", o + 1, 1);
+        {
+            Field &f = root.add("Flags1: " + hexString(flags1, 2) + ((flags1 & 0x02) ? " Last fragment" : "") + ((flags1 & 0x04) ? " Fragment" : "") +
+                                    ((flags1 & 0x08) ? " No fack" : "") + ((flags1 & 0x10) ? " Maybe" : "") + ((flags1 & 0x20) ? " Idempotent" : "") + ((flags1 & 0x40) ? " Broadcast" : ""), o + 2, 1);
+            static const std::pair<uint8_t, const char *> bits[] = {{0x02, "Last Fragment"}, {0x04, "Fragment"}, {0x08, "No Fragment Ack"}, {0x10, "Maybe"}, {0x20, "Idempotent"}, {0x40, "Broadcast"}};
+            for (const auto &[bit, name]: bits) f.add(std::string(name) + ": " + ((flags1 & bit) ? "Set" : "Not set"), o + 2, 1);
+        }
+        root.add("Flags2: " + hexString(flags2, 2) + ((flags2 & 0x02) ? " Cancel pending" : ""), o + 3, 1);
+        root.add(std::string("Data Representation: ") + (le ? "little-endian" : "big-endian") + " (" + hexString(bytes[4], 2) + " " + hexString(bytes[5], 2) + " " + hexString(bytes[6], 2) + ")", o + 4, 3);
+        root.add("Serial Number: " + std::to_string(serial), o + 7, 1);
+        root.add("Object: " + object, o + 8, 16);
+        root.add("Interface: " + interfaceText(iface) + " v" + versionText(ifVersion), o + 24, 20);
+        root.add("Activity: " + activity, o + 40, 16);
+        root.add("Server Boot Time: " + std::to_string(serverBoot), o + 56, 4);
+        root.add("Sequence Number: " + std::to_string(seqnum), o + 64, 4);
+        root.add("Operation: " + std::to_string(opnum), o + 68, 2);
+        root.add("Interface Hint: " + hexString(ihint, 4), o + 70, 2);
+        root.add("Activity Hint: " + hexString(ahint, 4), o + 72, 2);
+        root.add("Body Length: " + std::to_string(bodyLen), o + 74, 2);
+        root.add("Fragment Number: " + std::to_string(fragNum), o + 76, 2);
+        root.add("Auth Protocol: " + (authProto ? authServiceName(authProto) + " (" + std::to_string(authProto) + ")" : std::string("None")), o + 78, 1);
+        if (!status.empty()) root.add((pduType == 3 ? "Fault Status: " : "Reject Status: ") + status, o + kHeader, 4);
+        if (pduType == 9 && have >= kHeader + 16) {
+            root.add("Fack Version: " + std::to_string(bytes[kHeader]), o + kHeader, 1);
+            root.add("Window Size: " + std::to_string(u16(kHeader + 2)), o + kHeader + 2, 2);
+            root.add("Max TPDU: " + std::to_string(u32(kHeader + 4)), o + kHeader + 4, 4);
+            root.add("Max Path TPDU: " + std::to_string(u32(kHeader + 8)), o + kHeader + 8, 4);
+            root.add("Serial Number: " + std::to_string(u16(kHeader + 12)), o + kHeader + 12, 2);
+        }
+        if (note) {
+            if (note->flags & DceNote::kMatched) {
+                root.add("[Request in frame " + std::to_string(note->requestPacket) + "]");
+            }
+            if (note->flags & DceNote::kDuplicate) root.add("[Fragment " + std::to_string(fragNum) + " was seen before: the first copy is kept]");
+            if (note->flags & DceNote::kCompletedLater) root.add("[Reassembled in frame " + std::to_string(note->completedIn) + "]");
+            if (message && message->fragments > 1) {
+                std::string frames;
+                for (uint32_t p: message->packets) frames += (frames.empty() ? "#" : ", #") + std::to_string(p);
+                root.add("[Reassembled stub data: " + std::to_string(message->bytes) + " bytes in " + std::to_string(message->fragments) + " fragments, frames " + frames + "]");
+            }
+            if (message && message->epm) {
+                Field &epm = root.add("Endpoint mapper answer: " + std::to_string(message->towers.size()) + " tower(s)");
+                for (const DceTower &t: message->towers) {
+                    std::string text = interfaceText(t.uuid) + " v" + versionText(t.version) + ": " + (t.protocol.empty() ? std::string("unknown protocol") : t.protocol);
+                    if (t.port) text += " " + (t.host.empty() ? std::string("*") : t.host) + ":" + std::to_string(t.port);
+                    else if (!t.address.empty()) text += " " + t.address;
+                    epm.add(text);
+                }
+            }
+        } else if (sessions && sessions->isTableStateLost("dcerpc")) {
+            root.add("[DCE/RPC session state lost: the fragments of this PDU are not known]");
+        }
+        if (hasStub && have > kHeader + (pduType == 3 ? 4u : 0u)) {
+            const size_t at = kHeader + (pduType == 3 ? 4u : 0u);
+            node(root, std::string(authProto ? "Body (" : "Stub data (") + std::to_string(have - at) + " bytes" +
+                           (authProto ? ", stub data and " + out.authService + " verifier together, not interpreted" : std::string()) + ")", at, have - at);
+        }
+    }
+    out.malformed = malformed;
+    return true;
+}
+
 // the interface to assume for a TCP connection that has no accepted Bind in the capture: the endpoint mapper's well known port, else
 // the interface the endpoint mapper announced for the server's port
 std::string assumedInterface(const Context &ctx) {
@@ -526,6 +685,24 @@ void dissectDceRpc(Context &ctx, const char *data, size_t length) {
     if (d.request) pack.app_code = d.opnum;
     pack.app_flags = static_cast<uint16_t>((d.request ? kDceFlagOpnum : 0) | (static_cast<uint16_t>(d.authLevel & 7) << kDceAuthShift) | (d.sealed ? kDceFlagSealed : 0) |
                                            (d.reassembled ? kDceFlagReassembled : 0) | (d.fragment ? kDceFlagFragment : 0));
+    pack.app_text = d.iface;
+    pack.app_text2 = d.authService;
+    pack.info = d.info;
+    if (d.malformed) ctx.markMalformed(d.malformed);   // after the summary: it replaces it
+}
+
+void dissectDceRpcDatagram(Context &ctx, const char *data, size_t length) {
+    auto &pack = ctx.pack;
+    Decoded d;
+    // a datagram that is not a version 4 PDU is not this protocol's: UDP names it
+    if (!data || length < 80 || static_cast<uint8_t>(data[0]) != 4 || static_cast<uint8_t>(data[1]) > 10 || (static_cast<uint8_t>(data[4]) & 0xEE) != 0) return;
+    pack.protocol = "DCERPC";
+    if (!decodeConnectionless(ctx, data, length, d)) { pack.protocol.clear(); return; }
+    pack.app_type = d.type;
+    pack.app_stream = d.callId;
+    if (d.request) pack.app_code = d.opnum;
+    pack.app_flags = static_cast<uint16_t>(kDceFlagConnectionless | (d.request ? kDceFlagOpnum : 0) | (d.sealed ? kDceFlagSealed : 0) | (d.reassembled ? kDceFlagReassembled : 0) |
+                                           (d.fragment ? kDceFlagFragment : 0));
     pack.app_text = d.iface;
     pack.app_text2 = d.authService;
     pack.info = d.info;
