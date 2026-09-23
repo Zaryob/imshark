@@ -18,6 +18,9 @@
 // Added (v1.2, IKE payloads): ike.message_id, ike.initiator_spi, ike.responder_spi, ike.notify.type, ike.fragment, ike.fragment.number,
 // ike.fragment.total (read app_stream / app_text / app_flags / app_text2, which the IKE dissector now fills); no other line changed.
 // Changed (v1.2, ESP-NULL): `esp` is now has_esp, esp.spi/esp.sequence read the IPsec table too (no value here); esp.null is new.
+// Added (v1.3, DCE/RPC): dcerpc.auth_level, dcerpc.auth_service, dcerpc.sealed, dcerpc.fragment, dcerpc.reassembled. Changed: dcerpc.cn_call_id
+// is now empty for a connectionless PDU (app_flags bit 1, which some synthetic packets set: its count on them is lower) and its
+// description says so; the description of dcerpc.if_uuid also covers the interface of the context a Request / Response used.
 #include <gtest/gtest.h>
 
 #include <algorithm>

@@ -24,10 +24,15 @@ in the [User Guide](USER_GUIDE.md#display-filters). Names are lower case.
 | `bt.bd_addr` | string | Bluetooth BD_ADDR of the remote device of an ACL link (aa:bb:cc:dd:ee:ff; only when an HCI connection event in the capture named the handle) |
 | `bt.handle` | string | Bluetooth ACL connection handle (0x0040 form) |
 | `dcerpc` | boolean | DCE/RPC |
-| `dcerpc.cn_call_id` | unsigned | DCE/RPC call id |
-| `dcerpc.if_uuid` | string | DCE/RPC interface UUID of the first presentation context of a Bind / Alter_context |
+| `dcerpc.auth_level` | unsigned | DCE/RPC authentication level of the PDU's verifier (1 none ... 5 packet integrity, 6 packet privacy) |
+| `dcerpc.auth_service` | string | DCE/RPC authentication service of the PDU's verifier (NTLMSSP, Kerberos, SPNEGO, ...) |
+| `dcerpc.cn_call_id` | unsigned | DCE/RPC call id of a connection-oriented PDU |
+| `dcerpc.fragment` | boolean | DCE/RPC PDU is one fragment of a call split over several PDUs |
+| `dcerpc.if_uuid` | string | DCE/RPC interface UUID: of the first presentation context of a Bind / Alter_context, of the context a Request / Response used |
 | `dcerpc.opnum` | unsigned | DCE/RPC operation number of a Request |
 | `dcerpc.pkt_type` | unsigned | DCE/RPC PDU type (0 Request, 2 Response, 3 Fault, 11 Bind, 12 Bind_ack) |
+| `dcerpc.reassembled` | boolean | DCE/RPC PDU completes a call that was split into fragments |
+| `dcerpc.sealed` | boolean | DCE/RPC stub data is sealed (packet privacy): labelled, not interpreted |
 | `dhcp` | boolean | DHCP |
 | `dhcp.option.hostname` | string | DHCP host name option |
 | `dhcp.type` | unsigned | DHCP message type (1 = Discover, 2 = Offer, 3 = Request, 5 = ACK ...) |
@@ -409,4 +414,4 @@ in the [User Guide](USER_GUIDE.md#display-filters). Names are lower case.
 | `wlan.ssid` | string | 802.11 SSID |
 | `wlan.ta` | string | 802.11 Transmitter MAC address |
 
-399 fields.
+404 fields.

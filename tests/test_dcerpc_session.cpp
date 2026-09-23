@@ -217,6 +217,13 @@ TEST(DceRpcTable, FragmentsOfOneCallAreChainedAndTheEarlierOnesLearnWhereItCompl
     EXPECT_EQ(x.t.noteCount(), 3u);
 }
 
+TEST(DceRpcTable, TheFirstFragmentOfARequestIsTheRequestTheResponseRefersTo) {
+    Table x;
+    x.observe("s", 1, request(5, 0, 3, true, false), "aa");
+    x.observe("s", 2, request(5, 0, 3, false, true), "bb");
+    EXPECT_EQ(x.observe("s", 3, response(5, 0))->requestPacket, 1u);
+}
+
 TEST(DceRpcTable, ARequestAndItsResponseAreSeparateChains) {
     Table x;
     x.observe("s", 1, request(5, 0, 3, true, false), "aaaa");

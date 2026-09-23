@@ -169,6 +169,7 @@ private:
         std::string iface;
         uint32_t version = 0;
         uint32_t packet = 0;
+        bool assumed = false;           // the interface was assumed, not named by a Bind
     };
     struct Part {
         uint32_t size = 0;

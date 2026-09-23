@@ -261,11 +261,16 @@ const DceNote *DceRpcTable::observe(const std::string &stream, uint32_t packet, 
             n.flags |= DceNote::kMatched;
             n.requestPacket = cit->second.packet;
             if (!pdu.connectionless) n.opnum = cit->second.opnum;
-            if (n.iface.empty()) { n.iface = cit->second.iface; n.ifVersion = cit->second.version; n.flags &= static_cast<uint16_t>(~DceNote::kUnknownContext); }
+            if (n.iface.empty()) {
+                n.iface = cit->second.iface;
+                n.ifVersion = cit->second.version;
+                n.flags &= static_cast<uint16_t>(~DceNote::kUnknownContext);
+                if (cit->second.assumed) n.flags |= DceNote::kAssumed;
+            }
         }
         if (n.iface.empty() && !fallbackInterface.empty()) { n.iface = fallbackInterface; n.flags |= DceNote::kAssumed; }
-        if (isRequest) {
-            Call c{pdu.opnum, n.iface, n.ifVersion, packet};
+        if (isRequest && (pdu.first || cit == calls_.end())) {   // the first fragment names the call; later fragments repeat it
+            Call c{pdu.opnum, n.iface, n.ifVersion, packet, (n.flags & DceNote::kAssumed) != 0};
             const size_t cost = sizeof(Call) + callKey.capacity() + c.iface.capacity() + 64;
             if (cit != calls_.end()) {
                 release(sizeof(Call) + cit->first.capacity() + cit->second.iface.capacity() + 64);

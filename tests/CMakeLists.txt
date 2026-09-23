@@ -112,6 +112,7 @@ add_executable(imshark_tests
     test_smb2_tables.cpp
     test_dcerpc.cpp
     test_dcerpc_session.cpp
+    test_dcerpc_flows.cpp
     test_nfs.cpp
     test_postgres.cpp
     test_mysql.cpp
