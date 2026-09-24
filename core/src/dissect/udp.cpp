@@ -1,5 +1,6 @@
 #include "protocols.h"
 
+#include "dcerpc.h"
 #include "registry.h"
 #include "util.h"
 #include "checksum.h"
@@ -66,6 +67,13 @@ void dissect::dissectUdp(Context &ctx, const char *data, size_t length) {
         if (ctx.sessions && ctx.sessions->matchOrUpdateTftpSession(srcPort, dstPort)) {
             dissectTftp(ctx, payload, payloadLen);
             return true;
+        }
+        if (ctx.sessions) {   // a port the endpoint mapper announced for a UDP interface (as of this packet): connectionless DCE/RPC
+            const uint32_t number = static_cast<uint32_t>(pack.number);
+            if (ctx.sessions->dceRpcEndpoint(pack.destination, dstPort, true, number) || ctx.sessions->dceRpcEndpoint(pack.source, srcPort, true, number)) {
+                dissectDceRpcDatagram(ctx, payload, payloadLen);
+                if (!pack.protocol.empty()) return true;
+            }
         }
         for (const auto &heuristic: ctx.registry.udpHeuristics()) if (heuristic(ctx, payload, payloadLen)) return true;
         return false;

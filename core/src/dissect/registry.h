@@ -62,6 +62,12 @@ namespace dissect {
             std::shared_ptr<StreamProtocol> stream;
         };
         void registerProtocolName(const std::string &name, Handlers h) { named_[name] = std::move(h); }
+        /// The stream protocol registered under a Decode As name (nullptr if there is none): for the ports a session table found out
+        /// about (DCE/RPC endpoints the endpoint mapper announced) rather than a port the registry knows.
+        const StreamProtocol *findNamedStream(const std::string &name) const {
+            const auto it = named_.find(name);
+            return it == named_.end() ? nullptr : it->second.stream.get();
+        }
         /// Names usable for the transport, sorted.
         std::vector<std::string> protocolNames(bool tcp) const;
         /// Makes `port` carry `protocol` (replacing whatever was registered for it). False if the protocol does not

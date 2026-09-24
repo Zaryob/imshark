@@ -13,6 +13,7 @@
 #include <gtest/gtest.h>
 
 #include <cstdio>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -31,35 +32,40 @@ namespace appflow {
     struct Segment {
         bool fromClient;
         std::string data;
+        uint16_t clientPort = 0, serverPort = 0;   // the connection it belongs to
     };
 
     class Flow {
     public:
         Flow(uint16_t clientPort, uint16_t serverPort, std::string name) : clientPort_(clientPort), serverPort_(serverPort), name_(std::move(name)) {}
 
+        /// The segments that follow belong to another connection (client port, server port) between the same two hosts.
+        Flow &on(uint16_t clientPort, uint16_t serverPort) { clientPort_ = clientPort; serverPort_ = serverPort; return *this; }
+
         /// The conversation is UDP datagrams (the same addresses and ports) instead of TCP segments.
         Flow &asUdp() { udp_ = true; return *this; }
-        Flow &client(const std::string &data) { segments_.push_back({true, data}); return *this; }
-        Flow &server(const std::string &data) { segments_.push_back({false, data}); return *this; }
+        Flow &client(const std::string &data) { segments_.push_back({true, data, clientPort_, serverPort_}); return *this; }
+        Flow &server(const std::string &data) { segments_.push_back({false, data, clientPort_, serverPort_}); return *this; }
 
         /// The frames of the conversation (sequence/acknowledgement numbers follow the data sent so far).
         std::vector<std::vector<char>> frames() const {
-            uint32_t clientSeq = 1000, serverSeq = 5000;
+            std::map<std::pair<uint16_t, uint16_t>, std::pair<uint32_t, uint32_t>> seqs;   // per connection: next client / server sequence number
             std::vector<std::vector<char>> out;
             for (const auto &s: segments_) {
-                if (udp_) {
-                    const auto h4 = [](uint16_t v) { char b[8]; std::snprintf(b, sizeof b, "%04x", v); return std::string(b); };
-                    out.push_back(s.fromClient ? support::udpPacket("0a000001", "0a000002", h4(clientPort_), h4(serverPort_), s.data)
-                                               : support::udpPacket("0a000002", "0a000001", h4(serverPort_), h4(clientPort_), s.data));
-                    continue;
-                }
                 const auto hex8 = [](uint32_t v) { char b[16]; std::snprintf(b, sizeof b, "%08x", v); return std::string(b); };
                 const auto hex4 = [](uint16_t v) { char b[8]; std::snprintf(b, sizeof b, "%04x", v); return std::string(b); };
+                if (udp_) {
+                    out.push_back(s.fromClient ? support::udpPacket("0a000001", "0a000002", hex4(s.clientPort), hex4(s.serverPort), s.data)
+                                               : support::udpPacket("0a000002", "0a000001", hex4(s.serverPort), hex4(s.clientPort), s.data));
+                    continue;
+                }
+                auto it = seqs.emplace(std::make_pair(s.clientPort, s.serverPort), std::make_pair(1000u, 5000u)).first;
+                uint32_t &clientSeq = it->second.first, &serverSeq = it->second.second;
                 if (s.fromClient) {
-                    out.push_back(support::tcpPacket("0a000001", "0a000002", hex4(clientPort_), hex4(serverPort_), hex8(clientSeq), hex8(serverSeq), "18", s.data));
+                    out.push_back(support::tcpPacket("0a000001", "0a000002", hex4(s.clientPort), hex4(s.serverPort), hex8(clientSeq), hex8(serverSeq), "18", s.data));
                     clientSeq += static_cast<uint32_t>(s.data.size());
                 } else {
-                    out.push_back(support::tcpPacket("0a000002", "0a000001", hex4(serverPort_), hex4(clientPort_), hex8(serverSeq), hex8(clientSeq), "18", s.data));
+                    out.push_back(support::tcpPacket("0a000002", "0a000001", hex4(s.serverPort), hex4(s.clientPort), hex8(serverSeq), hex8(clientSeq), "18", s.data));
                     serverSeq += static_cast<uint32_t>(s.data.size());
                 }
             }

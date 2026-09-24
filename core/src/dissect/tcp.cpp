@@ -1,5 +1,6 @@
 #include "protocols.h"
 
+#include "dcerpc.h"
 #include "tcp_streams.h"
 #include "checksum.h"
 
@@ -197,6 +198,20 @@ namespace {
 namespace {
     using namespace dissect;
 
+    // True if the endpoint mapper announced the server side of this segment (the port of a TCP interface it mapped), as of this packet.
+    bool isMappedDceEndpoint(const Context &ctx, uint16_t srcPort, uint16_t dstPort) {
+        if (!ctx.sessions) return false;
+        const uint32_t number = static_cast<uint32_t>(ctx.pack.number);
+        return ctx.sessions->dceRpcEndpoint(ctx.pack.destination, dstPort, false, number) || ctx.sessions->dceRpcEndpoint(ctx.pack.source, srcPort, false, number);
+    }
+
+    // The stream protocol of the ports of a segment: the one the registry has for them, else DCE/RPC for a port the endpoint
+    // mapper announced earlier in the capture (decided while it loaded, the packet number keeps Replay of earlier packets as they were).
+    const StreamProtocol *streamByPort(const Context &ctx, uint16_t srcPort, uint16_t dstPort) {
+        if (const StreamProtocol *byPort = ctx.registry.findTcpStream(srcPort, dstPort)) return byPort;
+        return isMappedDceEndpoint(ctx, srcPort, dstPort) ? ctx.registry.findNamedStream("DCERPC") : nullptr;
+    }
+
     const StreamProtocol *tlsStreamProtocol(const Context &ctx) {
         for (const auto &h: ctx.registry.tcpStreamHeuristics()) {
             if (h->name == "TLS") return h.get();
@@ -226,7 +241,7 @@ namespace {
     // A direction that already has a stream protocol continues as TLS when its next message opens a TLS record on a port whose
     // own protocol is not TLS (or the connection was switched).
     const StreamProtocol *tlsTakeOver(Context &ctx, uint16_t srcPort, uint16_t dstPort, const char *data, size_t size, uint32_t startSeq) {
-        if (!ctx.registry.findTcpStream(srcPort, dstPort)) return nullptr;
+        if (!streamByPort(ctx, srcPort, dstPort)) return nullptr;
         const StreamProtocol *tls = tlsStreamProtocol(ctx);
         if (!tls) return nullptr;
         const bool switched = ctx.sessions && ctx.sessions->isTlsUpgraded(ctx.pack.source, srcPort, ctx.pack.destination, dstPort, startSeq);
@@ -239,7 +254,7 @@ namespace {
     // message; else the protocol registered for the port, else the first heuristic whose framer does not reject the bytes.
     // nullptr if none applies.
     const StreamProtocol *selectStreamProtocol(Context &ctx, uint16_t srcPort, uint16_t dstPort, const char *data, size_t size, uint32_t startSeq) {
-        if (const StreamProtocol *byPort = ctx.registry.findTcpStream(srcPort, dstPort)) {
+        if (const StreamProtocol *byPort = streamByPort(ctx, srcPort, dstPort)) {
             const StreamProtocol *tls = tlsStreamProtocol(ctx);
             const bool switched = ctx.sessions && ctx.sessions->isTlsUpgraded(ctx.pack.source, srcPort, ctx.pack.destination, dstPort, startSeq);
             if (tls && startsTlsRecord(*tls, data, size, switched)) return tls;
@@ -536,11 +551,13 @@ void dissect::dissectTcp(Context &ctx, const char *data, size_t length) {
     } else if (ctx.sessions && payloadLen > 0 && ctx.sessions->isTlsUpgraded(pack.source, srcPort, pack.destination, dstPort, payloadSeq)) {
         // the connection was switched to TLS (STARTTLS family): encrypted bytes are not the port protocol's, TLS gets what it can read
         dissectTls(ctx, payload, payloadLen);
-    } else if (payloadLen > 0 && ctx.registry.findTcpStream(srcPort, dstPort) && tlsStreamProtocol(ctx) &&
+    } else if (payloadLen > 0 && streamByPort(ctx, srcPort, dstPort) && tlsStreamProtocol(ctx) &&
                startsTlsRecord(*tlsStreamProtocol(ctx), payload, payloadLen, false)) {
         dissectTls(ctx, payload, payloadLen);   // LDAPS, a database behind TLS: not what the port's own dissector reads (no stream state here)
     } else if (const Dissector *app = ctx.registry.findTcpPort(srcPort, dstPort)) {
         (*app)(ctx, payload, payloadLen);
+    } else if (payloadLen > 0 && isMappedDceEndpoint(ctx, srcPort, dstPort) && frameDceRpc(payload, payloadLen).kind != StreamFrame::Kind::Reject) {
+        dissectDceRpc(ctx, payload, payloadLen);   // a port the endpoint mapper announced, not framed as a stream (no stream tables here)
     } else if (payloadLen > 0) {
         for (const auto &heuristic: ctx.registry.tcpHeuristics()) {
             if (heuristic(ctx, payload, payloadLen)) break;
