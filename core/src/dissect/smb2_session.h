@@ -24,7 +24,7 @@
 //
 // Interface for protocols carried over named pipes (DCE/RPC): openFile() answers, in the load pass, whether a FileId is an open
 // file of the connection and whether it is a pipe (its tree is an IPC share); for Replay the note of the command carries the same
-// answer (Smb2Note::file, kPipe).
+// answer (Smb2Note::file, kPipe) and the FileId that tells one pipe handle of the connection from another.
 #include <cstdint>
 #include <map>
 #include <string>
@@ -68,6 +68,8 @@ struct Smb2Note {
     uint32_t responsePacket = 0;   // request: packet of the final response
     uint8_t infoType = 0, infoClass = 0;
     uint32_t ctlCode = 0;
+    bool hasFileId = false;        // the command worked on a FileId (its own, the matched request's, the previous command's in a related compound)
+    uint64_t filePersistent = 0, fileVolatile = 0;
     std::string share;             // the share of the tree the command used ("" if unknown)
     std::string file;              // the file the command used (Create name; name of the FileId; "" if unknown)
 };

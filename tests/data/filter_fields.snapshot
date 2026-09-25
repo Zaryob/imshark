@@ -12,14 +12,14 @@ bgp.type	unsigned	BGP message type (1 = OPEN, 2 = UPDATE, 3 = NOTIFICATION, 4 = 
 bt.addr	string	Bluetooth source or destination: host, controller (hciN), a BD_ADDR, or a connection handle	2700	5026	f7b38c6312c6d702
 bt.bd_addr	string	Bluetooth BD_ADDR of the remote device of an ACL link (aa:bb:cc:dd:ee:ff; only when an HCI connection event in the capture named the handle)	756	822	b9b0afa347902aa3
 bt.handle	string	Bluetooth ACL connection handle (0x0040 form)	761	761	52fe014158261e7d
-dcerpc	boolean	DCE/RPC	150	150	a424813429b2c343
+dcerpc	boolean	DCE/RPC	169	169	460e20f20ff37403
 dcerpc.auth_level	unsigned	DCE/RPC authentication level of the PDU's verifier (1 none ... 5 packet integrity, 6 packet privacy)	97	97	508d7f0bc7381643
 dcerpc.auth_service	string	DCE/RPC authentication service of the PDU's verifier (NTLMSSP, Kerberos, SPNEGO, ...)	117	117	4dadd15e65487b5e
-dcerpc.cn_call_id	unsigned	DCE/RPC call id of a connection-oriented PDU	88	88	5c108767586656dc
+dcerpc.cn_call_id	unsigned	DCE/RPC call id of a connection-oriented PDU (not kept for a PDU inside an SMB2 packet)	88	88	5c108767586656dc
 dcerpc.fragment	boolean	DCE/RPC PDU is one fragment of a call split over several PDUs	150	150	0764b28f4124dbe2
-dcerpc.if_uuid	string	DCE/RPC interface UUID: of the first presentation context of a Bind / Alter_context, of the context a Request / Response used	118	118	ea17ea265568a815
-dcerpc.opnum	unsigned	DCE/RPC operation number of a Request	64	64	5973597d318f84b1
-dcerpc.pkt_type	unsigned	DCE/RPC PDU type (0 Request, 2 Response, 3 Fault, 11 Bind, 12 Bind_ack)	150	150	a9a9a6e137fb133f
+dcerpc.if_uuid	string	DCE/RPC interface UUID: of the first presentation context of a Bind / Alter_context, of the context a Request / Response used	134	134	1db3c563e245615b
+dcerpc.opnum	unsigned	DCE/RPC operation number of a Request	74	74	2630a8955bd8a6fa
+dcerpc.pkt_type	unsigned	DCE/RPC PDU type (0 Request, 2 Response, 3 Fault, 11 Bind, 12 Bind_ack); also of a PDU in the first SMB2 command of a packet (named pipe)	169	169	4daa6b23f686dd3b
 dcerpc.reassembled	boolean	DCE/RPC PDU completes a call that was split into fragments	150	150	3e43c2b4f04e8f42
 dcerpc.sealed	boolean	DCE/RPC stub data is sealed (packet privacy): labelled, not interpreted	150	150	d07a607da03c49e3
 dhcp	boolean	DHCP	166	166	8d2da8d065fd2f43

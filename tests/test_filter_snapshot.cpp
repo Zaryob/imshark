@@ -21,6 +21,9 @@
 // Added (v1.3, DCE/RPC): dcerpc.auth_level, dcerpc.auth_service, dcerpc.sealed, dcerpc.fragment, dcerpc.reassembled. Changed: dcerpc.cn_call_id
 // is now empty for a connectionless PDU (app_flags bit 1, which some synthetic packets set: its count on them is lower) and its
 // description says so; the description of dcerpc.if_uuid also covers the interface of the context a Request / Response used.
+// Changed (v1.3, DCE/RPC over named pipes): dcerpc, dcerpc.pkt_type, dcerpc.opnum and dcerpc.if_uuid also match an SMB2 packet whose first command
+// carried a PDU (app_flags bits 8..14 of an SMB2 packet, app_code, app_text), so their counts on the synthetic SMB2 packets whose flags set
+// those bits are higher; the descriptions of dcerpc.cn_call_id and dcerpc.pkt_type say what is kept for such a packet.
 #include <gtest/gtest.h>
 
 #include <algorithm>

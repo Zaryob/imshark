@@ -139,6 +139,9 @@ const Smb2Note *Smb2Table::observe(const std::string &connection, uint32_t packe
             if (endsWithNoCase(cmd.name, "\\IPC$")) n.flags |= Smb2Note::kPipe;
         }
 
+        n.hasFileId = hasFile;
+        n.filePersistent = persistent;
+        n.fileVolatile = volatileId;
         if (cmd.command != kSmb2Cancel && cmd.messageId != kAllOnes && !c.pending.count(cmd.messageId)) {
             Pending p;
             p.noteKey = key;
@@ -180,6 +183,9 @@ const Smb2Note *Smb2Table::observe(const std::string &connection, uint32_t packe
             n.infoType = p.infoType;
             n.infoClass = p.infoClass;
             n.ctlCode = p.ctlCode;
+            n.hasFileId = p.hasFileId;
+            n.filePersistent = p.filePersistent;
+            n.fileVolatile = p.fileVolatile;
             if (p.pipe) n.flags |= Smb2Note::kPipe;
             if (interim) {
                 n.flags |= Smb2Note::kInterim;
@@ -253,6 +259,9 @@ const Smb2Note *Smb2Table::observe(const std::string &connection, uint32_t packe
         c.lastSession = session;
         c.lastTree = tree;
         if (cmd.hasFileId) {   // a Create response; the responses after it in the message keep its ids
+            n.hasFileId = true;
+            n.filePersistent = cmd.filePersistent;
+            n.fileVolatile = cmd.fileVolatile;
             c.lastHasFile = true;
             c.lastPersistent = cmd.filePersistent;
             c.lastVolatile = cmd.fileVolatile;

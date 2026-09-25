@@ -12,6 +12,7 @@
 #include <string>
 #include <vector>
 
+#include "dcerpc.h"
 #include "reader.h"
 #include "smb2_session.h"
 #include "spnego.h"
@@ -431,6 +432,21 @@ void readFacts(Cmd &c) {
     } else if (!c.response && c.command == 0x0B && c.structSize == 57) {
         f.ctlCode = c.u32(4);
     }
+}
+
+// The bytes a Write request, a Read response or an IOCTL FSCTL_PIPE_TRANSCEIVE request / response carries ([MS-SMB2] 2.2.21, 2.2.20, 2.2.31,
+// 2.2.32): the data a named pipe transfers. False for every other command or when the buffer does not lie inside the command.
+bool pipeTransfer(const Cmd &c, const uint8_t *&p, size_t &n) {
+    constexpr uint32_t kPipeTransceive = 0x0011C017;   // FSCTL_PIPE_TRANSCEIVE
+    uint64_t offset = 0, length = 0;
+    if (c.command == 9 && !c.response && c.structSize == 49) { offset = c.u16(2); length = c.u32(4); }                                   // Write: DataOffset, Length
+    else if (c.command == 8 && c.response && c.structSize == 17) { offset = c.u8(2); length = c.u32(4); }                                // Read: DataOffset, DataLength
+    else if (c.command == 0x0B && !c.response && c.structSize == 57 && c.u32(4) == kPipeTransceive) { offset = c.u32(24); length = c.u32(28); }   // InputOffset, InputCount
+    else if (c.command == 0x0B && c.response && c.structSize == 49 && c.u32(4) == kPipeTransceive) { offset = c.u32(32); length = c.u32(36); }   // OutputOffset, OutputCount
+    else return false;
+    if (length == 0 || !c.buffer(offset, length, p)) return false;
+    n = static_cast<size_t>(length);
+    return true;
 }
 
 void fileIdItem(Cmd &c) {
@@ -1233,6 +1249,26 @@ void dissectSmb2(Context &ctx, const char *data, size_t length) {
         if (first && note) {
             pack.app_text2 = note->file;
             if (note->flags & Smb2Note::kPipe) pack.app_flags |= kFlagPipe;
+        }
+        // DCE/RPC over a named pipe: the data of this transfer is a PDU, tied to the pipe handle (connection + FileId) in the DCE/RPC table
+        if (note && (note->flags & Smb2Note::kPipe) && note->hasFileId) {
+            const uint8_t *transfer = nullptr;
+            size_t transferLen = 0;
+            if (pipeTransfer(c, transfer, transferLen)) {
+                const std::string pipeStream = connection + "/" + std::to_string(note->filePersistent) + ":" + std::to_string(note->fileVolatile);
+                const DceRpcPipeResult pdu = dissectDceRpcPipe(ctx, reinterpret_cast<const char *>(transfer), transferLen, pipeStream, ctx.tcpStreamSeq, static_cast<uint8_t>(commands));
+                if (pdu.decoded) {   // the layer of the PDU follows the layer of this command
+                    c.summary += ", DCERPC " + pdu.info;
+                    if (first) {
+                        pack.app_flags |= static_cast<uint16_t>(kDcePipePdu | (pdu.request ? kDcePipeOpnum : 0) | ((pdu.type & 0x1f) << kDcePipeTypeShift));
+                        if (pdu.request) pack.app_code = pdu.opnum;
+                        pack.app_text = pdu.interfaceUuid;
+                    }
+                    if (pdu.malformed && !malformed) malformed = pdu.malformed;
+                } else if (c.layer && ctx.wantFields()) {
+                    c.add(nullptr, "[Named pipe data (" + std::to_string(transferLen) + " bytes): not a DCE/RPC PDU]", static_cast<size_t>(transfer - msg - pos), transferLen);
+                }
+            }
         }
 
         infoAll += (commands ? ", " : "") + c.summary;

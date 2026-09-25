@@ -709,4 +709,25 @@ void dissectDceRpcDatagram(Context &ctx, const char *data, size_t length) {
     if (d.malformed) ctx.markMalformed(d.malformed);   // after the summary: it replaces it
 }
 
+DceRpcPipeResult dissectDceRpcPipe(Context &ctx, const char *data, size_t length, const std::string &pipeStream, int64_t seq, uint8_t index) {
+    DceRpcPipeResult r;
+    // a pipe transfer is one PDU fragment (a bigger one is split by the pipe: only its first transfer starts with a header); bytes that
+    // do not open a version 5 PDU are somebody else's (a continuation, a non-DCE/RPC pipe)
+    if (!data || length < 16 || frameDceRpc(data, length).kind == StreamFrame::Kind::Reject) return r;
+    Carrier carrier;
+    carrier.stream = pipeStream;
+    carrier.seq = seq;
+    carrier.index = index;
+    Decoded d;
+    if (!decodeConnectionOriented(ctx, data, length, carrier, d)) return r;
+    r.decoded = true;
+    r.info = d.info;
+    r.type = d.type;
+    r.request = d.request;
+    r.opnum = d.opnum;
+    r.interfaceUuid = d.iface;
+    r.malformed = d.malformed;
+    return r;
+}
+
 } // namespace dissect

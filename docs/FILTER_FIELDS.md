@@ -26,11 +26,11 @@ in the [User Guide](USER_GUIDE.md#display-filters). Names are lower case.
 | `dcerpc` | boolean | DCE/RPC |
 | `dcerpc.auth_level` | unsigned | DCE/RPC authentication level of the PDU's verifier (1 none ... 5 packet integrity, 6 packet privacy) |
 | `dcerpc.auth_service` | string | DCE/RPC authentication service of the PDU's verifier (NTLMSSP, Kerberos, SPNEGO, ...) |
-| `dcerpc.cn_call_id` | unsigned | DCE/RPC call id of a connection-oriented PDU |
+| `dcerpc.cn_call_id` | unsigned | DCE/RPC call id of a connection-oriented PDU (not kept for a PDU inside an SMB2 packet) |
 | `dcerpc.fragment` | boolean | DCE/RPC PDU is one fragment of a call split over several PDUs |
 | `dcerpc.if_uuid` | string | DCE/RPC interface UUID: of the first presentation context of a Bind / Alter_context, of the context a Request / Response used |
 | `dcerpc.opnum` | unsigned | DCE/RPC operation number of a Request |
-| `dcerpc.pkt_type` | unsigned | DCE/RPC PDU type (0 Request, 2 Response, 3 Fault, 11 Bind, 12 Bind_ack) |
+| `dcerpc.pkt_type` | unsigned | DCE/RPC PDU type (0 Request, 2 Response, 3 Fault, 11 Bind, 12 Bind_ack); also of a PDU in the first SMB2 command of a packet (named pipe) |
 | `dcerpc.reassembled` | boolean | DCE/RPC PDU completes a call that was split into fragments |
 | `dcerpc.sealed` | boolean | DCE/RPC stub data is sealed (packet privacy): labelled, not interpreted |
 | `dhcp` | boolean | DHCP |

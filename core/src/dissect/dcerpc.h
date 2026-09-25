@@ -40,6 +40,7 @@ struct DceRpcPipeResult {
     bool request = false;
     uint16_t opnum = 0;
     std::string interfaceUuid;
+    const char *malformed = nullptr;   // why the complete PDU does not decode (the caller marks its packet after naming it)
 };
 
 /// Decodes the bytes of one SMB2 Write / Read / IOCTL FSCTL_PIPE_TRANSCEIVE transfer on a named pipe: a PDU, added as a layer of the
