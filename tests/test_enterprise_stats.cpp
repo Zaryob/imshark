@@ -89,6 +89,7 @@ TEST(EnterpriseStats, AMalformedMessageOfEachProtocolIsCountedByTheExpertInfo) {
         {"postgres", 5432, false, false, bytes("510000000100")},                                      // length below 4
         {"mysql", 3306, true, false, bytes("01000000" "ff")},                                         // ERR without an error code
         {"tds", 1433, false, false, bytes("10010010" "0000" "0100" "0000000000000000")},              // Login7 of 8 payload bytes
+        {"dcerpc-auth", 135, false, false, bytes("05000003" "10000000" "18002000" "01000000" "00000000" "00000000")},         // Request that announces 32 bytes of authentication verifier in 24
     };
     for (const auto &c: cases) {
         EXPECT_EQ(malformedPackets(segment(c.port, c.fromServer, c.udp, c.payload), std::string("mal_") + c.name), 1u) << c.name;
@@ -107,8 +108,35 @@ TEST(EnterpriseStats, AMessageCutByTheSegmentIsNotMalformed) {
         {"mysql", 3306, true, bytes("14000000" "ff")},
         {"tds", 1433, false, bytes("10010080" "0000" "0100" "0000000000000000")},
         {"smb2", 445, false, bytes("00000200fe534d4240000000")},
+        {"dcerpc-auth", 135, false, bytes("05000003" "10000000" "48002000" "01000000" "00000000" "00000000")},
     };
     for (const auto &c: cases) {
         EXPECT_EQ(malformedPackets(segment(c.port, c.fromServer, false, c.payload), std::string("cut_") + c.name), 0u) << c.name;
     }
+}
+
+TEST(EnterpriseStats, ConnectionlessDceRpcIsNamedUnderUdpAndItsMalformedDatagramsAreCounted) {
+    // a version 4 Request header (80 bytes) with a 4 byte body, and a Fault whose body is shorter than its status word
+    const auto header = [](const std::string &length) {
+        return bytes("04002000" "10000000" + std::string(32, '0') + "c84f324b7016d30112785a47bf6ee188" "33221100554477668899aabbccddeeff" "0000005f" "03000000" "05000000" +
+                     std::string("0f00" "ffff" "ffff") + length + "0000" "00" "00");
+    };
+    const std::string request = header("0400") + bytes("00000000");
+    ASSERT_EQ(request.size(), 84u);
+    Flow flow(50000, 135, "hier_cl");
+    flow.asUdp().client(request);
+    flow.load();
+    EXPECT_EQ(flow.packets()[0].protocol, "DCERPC");
+    const auto root = stats::protocolHierarchy(flow.packets(), nullptr);
+    const auto *udp = findNode(root, "User Datagram Protocol");
+    ASSERT_NE(udp, nullptr);
+    EXPECT_NE(findNode(*udp, "Distributed Computing Environment / Remote Procedure Calls"), nullptr) << "below UDP";
+    std::string fault = request;
+    fault[1] = 3;                                        // Fault
+    fault[74] = 2;                                       // a body of 2 bytes: no status word
+    fault.resize(82);
+    EXPECT_EQ(malformedPackets(segment(135, true, true, fault), "mal_cl"), 1u);
+    std::string cutRequest = request;
+    cutRequest[74] = 40;                                 // a body that the datagram does not hold
+    EXPECT_EQ(malformedPackets(segment(135, false, true, cutRequest), "cut_cl"), 0u);
 }
