@@ -17,6 +17,9 @@ namespace core {
     /// `control->totalBytes / bytesProcessed` report the compressed bytes consumed.
     bool gunzipFile(const std::string &inPath, const std::string &outPath, std::string &error, LoadControl *control = nullptr);
 
+    /// Decompresses gzip data held in memory. Fails (with `error`) on damaged data or when the output would exceed `maxOutput` bytes.
+    bool gunzipMemory(const std::string &compressed, std::string &out, uint64_t maxOutput, std::string &error);
+
     /// Size of the decompressed data of the last successful gunzipFile call on this thread (for reporting).
     uint64_t lastGunzipOutputSize();
 } // namespace core
