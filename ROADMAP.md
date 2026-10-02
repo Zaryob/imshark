@@ -93,7 +93,7 @@ Hedef: bir protokolün adını göstermekten mesajı ve alanlarını doğru çö
 - [x] TCP mesaj birleştirmeyi dissector'lara aç: iki yönlü akış, sıra dışı/yeniden iletilmiş segmentler, eksik bayt aralıkları, bağlantı kapanışı ve bellek sınırları; paket detayını yeniden kurarken aynı sonuç — **L**
 - [ ] TCP seçeneklerinde SACK bloklarının sınırlarını ve MPTCP alt tür/alanlarını çöz; çok yollu akışları birleştirmeyi ayrı genişleme olarak tut — **M**
 - [x] DNS/TCP uzunluk öneki ve mesaj gövdesi segmentlere bölündüğünde birleştir; aynı TCP yükündeki birden fazla DNS mesajını ayrı çöz — **M**
-- [ ] HTTP/1.x mesaj sınırları: bölünmüş başlık/gövde, Content-Length, chunked aktarım ve aynı akıştaki ardışık mesajlar; gzip gövdeyi çöz, çözülmüş boyutu sınırla — **L**
+- [x] HTTP/1.x mesaj sınırları: bölünmüş başlık/gövde, Content-Length, chunked aktarım ve aynı akıştaki ardışık mesajlar; gzip gövdeyi çöz, çözülmüş boyutu sınırla — **L**
 - [ ] TLS record ve handshake mesajlarını TCP segmentleri ve record'lar arasında birleştir; Client/ServerHello, extension ve açık Certificate alanlarını genişlet. *(Şifre çözme ayrı aşama)* — **L**
 - [ ] Protokol seçimini port + içerik + oturum durumu ile yap; kullanıcıya TCP/UDP için Decode As eşlemesi sun. Standart dışı portta DNS tanıma ve SMTP STARTTLS sonrası TLS'ye geçiş; yanlış pozitiflere karşı mesaj yapısını doğrula — **M**
 - [ ] DNS RDATA kapsamı: SOA'nın kalan zaman alanları, EDNS seçenekleri/extended RCODE, DS/DNSKEY/RRSIG/NSEC ve SVCB/HTTPS; desteklenmeyen kayıtları ham veri olarak açıkça göster — **M**
@@ -187,7 +187,7 @@ Mevcut parser ile indirilebilen **10 gerçek dosya** çalıştırıldı; bu sonu
 | `dns_port.pcap` | 2 DNS paketi UDP olarak kaldı | v0.7.2 tanıma/Decode As |
 | `PRIV_bootp-both_overload.pcap`, `PRIV_bootp-both_overload_empty-no_end.pcap` | DHCP tanındı; option 52 bilinmiyor, `sname`/`file` seçenekleri çözülmedi | v0.7.2 DHCP |
 | `ipv4frags.pcap` | 3 paket: 2 ICMP, 1 IPv4; tamamlanan datagram ICMP olarak çözüldü | v0.7.1 regresyon |
-| `http.cap` | 43 paket: 5 HTTP, 2 DNS, 36 TCP; TCP etiketi tek başına eksik ayrıştırma kanıtı değildir | v0.7.2 mesaj sınırları |
+| `http.cap` | 43 paket: 7 HTTP, 2 DNS, 34 TCP (çok segmentli yanıtların ilk segmentleri artık HTTP olarak çözülür) | tamamlandı |
 | `http_PPI.cap` | 140 paketin tamamı `Unknown`, link type 192 | v0.9.2 PPI/802.11 |
 | `BT_USB_LinCooked_Eth_80211_RT.ntar.gz` | Çok bölümlü/çok link type'lı pcapng açıldı; 27.228 paketin 27.152'si `Unknown` | v0.9.2 ve v1.1+ USB/Bluetooth |
 

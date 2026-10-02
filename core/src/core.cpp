@@ -150,7 +150,7 @@ namespace {
         }
         // this packet completed a TCP message: tell the earlier segments of it where it was reassembled
         for (const auto &[segment, completing]: parser.takeCompletedTcpPdus()) {
-            if (segment >= 1 && segment <= packets.size() && packets[segment - 1].tcp_pdu_state == 1) {
+            if (segment >= 1 && segment <= packets.size() && (packets[segment - 1].tcp_pdu_state == 1 || packets[segment - 1].tcp_pdu_state == 4)) {
                 auto &s = packets[segment - 1];
                 s.tcp_reassembled_in = completing;
                 s.info += " [Reassembled in #" + std::to_string(completing) + "]";

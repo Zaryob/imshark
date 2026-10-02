@@ -3,9 +3,14 @@
 
 #include "util.h"
 
+#include <gzip.h>
+
+#include <algorithm>
 #include <cctype>
 #include <cstdlib>
 #include <cstring>
+#include <string>
+#include <vector>
 
 using packet::Field;
 
@@ -61,7 +66,170 @@ namespace {
         while (b > a && (s[b - 1] == ' ' || s[b - 1] == '\t')) --b;
         return s.substr(a, b - a);
     }
+
+    // ---- message boundaries ---------------------------------------------------------------------------------------
+    constexpr size_t kMaxHeaders = 64 * 1024;           // a message whose headers are longer is not treated as HTTP
+    constexpr size_t kStreamedBody = 4u << 20;          // bodies longer than this are not buffered: only the headers form the message
+    constexpr uint64_t kMaxDecoded = 16u << 20;         // largest decompressed body shown
+
+    enum class Scan { Reject, NeedMore, Done };
+
+    // 2: `data` starts like an HTTP/1.x message, 1: could still (too few bytes), 0: it does not
+    int startsLikeHttp(const char *data, size_t n) {
+        int result = 0;
+        auto test = [&](const char *prefix) {
+            const size_t len = std::strlen(prefix), m = std::min(n, len);
+            if (std::memcmp(data, prefix, m) == 0) result = std::max(result, n >= len ? 2 : 1);
+        };
+        for (const auto &m: kMethods) test((std::string(m.name) + " ").c_str());
+        test("HTTP/1.");
+        return result;
+    }
+
+    // Walks the chunks of a chunked body starting at `start`. Done: `end` is just after the last chunk and its trailers.
+    Scan scanChunks(const char *d, size_t n, size_t start, size_t &end, std::string *decoded) {
+        size_t pos = start;
+        while (true) {
+            size_t e = pos;
+            while (e < n && d[e] != '\n') ++e;
+            if (e >= n) return (n - pos <= 1024) ? Scan::NeedMore : Scan::Reject;
+            size_t lineEnd = (e > pos && d[e - 1] == '\r') ? e - 1 : e;
+            uint64_t size = 0;
+            size_t digits = 0, i = pos;
+            for (; i < lineEnd; ++i, ++digits) {
+                const char c = d[i];
+                const int v = (c >= '0' && c <= '9') ? c - '0' : (c >= 'a' && c <= 'f') ? c - 'a' + 10 : (c >= 'A' && c <= 'F') ? c - 'A' + 10 : -1;
+                if (v < 0) break;
+                if (digits >= 8) return Scan::Reject;
+                size = size * 16 + static_cast<uint64_t>(v);
+            }
+            if (digits == 0 || (i < lineEnd && d[i] != ';' && d[i] != ' ')) return Scan::Reject;
+            pos = e + 1;
+            if (size == 0) {   // trailers up to the empty line
+                while (true) {
+                    size_t t = pos;
+                    while (t < n && d[t] != '\n') ++t;
+                    if (t >= n) return (n - pos <= kMaxHeaders) ? Scan::NeedMore : Scan::Reject;
+                    const bool empty = t == pos || (t == pos + 1 && d[pos] == '\r');
+                    pos = t + 1;
+                    if (empty) { end = pos; return Scan::Done; }
+                }
+            }
+            if (n - pos < size + 1) return Scan::NeedMore;
+            if (decoded) decoded->append(d + pos, size);
+            pos += size;
+            if (d[pos] == '\r') {
+                if (n - pos < 2) return Scan::NeedMore;
+                if (d[pos + 1] != '\n') return Scan::Reject;
+                pos += 2;
+            } else if (d[pos] == '\n') {
+                ++pos;
+            } else {
+                return Scan::Reject;
+            }
+        }
+    }
+
+    struct Head {
+        size_t headerEnd = 0;            // bytes of the start line and headers, including the empty line
+        bool response = false;
+        unsigned status = 0;
+        bool chunked = false;
+        bool hasLength = false;
+        uint64_t length = 0;
+        bool gzip = false;
+        bool head = false;               // a HEAD request: its response has no body
+    };
+
+    // Reads the start line and headers; Done fills `h`.
+    Scan scanHead(const char *d, size_t n, Head &h) {
+        const int start = startsLikeHttp(d, n);
+        if (start == 0) return Scan::Reject;
+        size_t pos = 0;
+        bool first = true;
+        h = Head{};
+        h.response = n >= 7 && std::memcmp(d, "HTTP/1.", 7) == 0;
+        bool lengthSeen = false;
+        while (true) {
+            size_t e = pos;
+            while (e < n && d[e] != '\n') {
+                const unsigned char c = static_cast<unsigned char>(d[e]);
+                if (first && ((c < 32 && c != '\r' && c != '\t') || c >= 127)) return Scan::Reject;
+                ++e;
+            }
+            if (e >= n) return (n <= kMaxHeaders && start >= 1) ? Scan::NeedMore : Scan::Reject;
+            if (start == 1) return Scan::NeedMore;
+            const size_t textEnd = (e > pos && d[e - 1] == '\r') ? e - 1 : e;
+            if (first) {
+                if (textEnd == pos) return Scan::Reject;
+                if (h.response) {
+                    const char *sp = static_cast<const char *>(std::memchr(d, ' ', textEnd));
+                    h.status = sp ? static_cast<unsigned>(std::atoi(std::string(sp + 1, d + textEnd - sp - 1).c_str())) : 0;
+                } else {
+                    h.head = std::memcmp(d, "HEAD ", 5) == 0;
+                }
+                first = false;
+            } else if (textEnd == pos) {
+                h.headerEnd = e + 1;
+                return Scan::Done;
+            } else {
+                const std::string line(d + pos, textEnd - pos);
+                const size_t colon = line.find(':');
+                if (colon != std::string::npos && colon > 0) {
+                    const std::string name = lower(line.substr(0, colon)), value = trim(line.substr(colon + 1));
+                    if (name == "content-length") {
+                        uint64_t v = 0;
+                        if (value.empty() || value.size() > 15) return Scan::Reject;
+                        for (char c: value) {
+                            if (c < '0' || c > '9') return Scan::Reject;
+                            v = v * 10 + static_cast<uint64_t>(c - '0');
+                        }
+                        if (lengthSeen && v != h.length) return Scan::Reject;   // conflicting lengths: not a message we can trust
+                        lengthSeen = h.hasLength = true;
+                        h.length = v;
+                    } else if (name == "transfer-encoding") {
+                        h.chunked = lower(value).find("chunked") != std::string::npos;
+                    } else if (name == "content-encoding") {
+                        const std::string v = lower(value);
+                        h.gzip = v.find("gzip") != std::string::npos;
+                    }
+                }
+            }
+            if (e - 0 > kMaxHeaders) return Scan::Reject;
+            pos = e + 1;
+        }
+    }
 } // namespace
+
+dissect::StreamFrame dissect::frameHttp(const char *data, size_t n) {
+    Head h;
+    switch (scanHead(data, n, h)) {
+        case Scan::Reject: return {StreamFrame::Kind::Reject, 0};
+        case Scan::NeedMore: return {StreamFrame::Kind::NeedMore, 0};
+        case Scan::Done: break;
+    }
+    const bool noBody = h.response && ((h.status >= 100 && h.status < 200) || h.status == 204 || h.status == 304);
+    if (noBody) return {StreamFrame::Kind::Complete, h.headerEnd};
+    if (h.chunked) {
+        size_t end = 0;
+        switch (scanChunks(data, n, h.headerEnd, end, nullptr)) {
+            case Scan::Reject: return {StreamFrame::Kind::Reject, 0};
+            case Scan::NeedMore: return {StreamFrame::Kind::NeedMore, 0};
+            case Scan::Done: return {StreamFrame::Kind::Complete, end};
+        }
+    }
+    if (h.hasLength) {
+        if (h.length == 0) return {StreamFrame::Kind::Complete, h.headerEnd};
+        if (h.length > kStreamedBody) return {StreamFrame::Kind::Complete, h.headerEnd};   // too large to buffer
+        // the response to a HEAD request announces a length but sends no body: the next message follows right away
+        if (h.response && n - h.headerEnd >= 7 && std::memcmp(data + h.headerEnd, "HTTP/1.", 7) == 0) return {StreamFrame::Kind::Complete, h.headerEnd};
+        if (n - h.headerEnd < h.length) return {StreamFrame::Kind::NeedMore, 0};
+        return {StreamFrame::Kind::Complete, h.headerEnd + static_cast<size_t>(h.length)};
+    }
+    // a request without a length has no body; a response without one runs until the server closes, which is not buffered:
+    // the headers are the message and the body follows as ordinary segments
+    return {StreamFrame::Kind::Complete, h.headerEnd};
+}
 
 bool dissect::dissectHttp(Context &ctx, const char *data, size_t length) {
     // 1. does the payload start like an HTTP message?
@@ -163,7 +331,30 @@ bool dissect::dissectHttp(Context &ctx, const char *data, size_t length) {
         }
         for (const auto &h: headers) l.add(text(*h.line), o + h.line->start, h.line->next - h.line->start);
         if (headersComplete) l.add("\\r\\n (end of headers)", o + lines.back().start, lines.back().next - lines.back().start);
-        if (bodyStart < length) l.add("File Data: " + std::to_string(length - bodyStart) + " bytes", o + bodyStart, length - bodyStart);
+        if (bodyStart < length) {
+            Field &body = l.add("File Data: " + std::to_string(length - bodyStart) + " bytes", o + bodyStart, length - bodyStart);
+            Head head;
+            std::string payload(data + bodyStart, length - bodyStart);
+            if (scanHead(data, bodyStart, head) == Scan::Done) {
+                if (head.chunked) {
+                    std::string plain;
+                    size_t end = 0;
+                    if (scanChunks(data, length, bodyStart, end, &plain) == Scan::Done) {
+                        body.add("De-chunked entity body (" + std::to_string(plain.size()) + " bytes)", o + bodyStart, length - bodyStart);
+                        payload = std::move(plain);
+                    }
+                }
+                if (head.gzip && !payload.empty()) {
+                    std::string inflated, error;
+                    if (core::gunzipMemory(payload, inflated, kMaxDecoded, error)) {
+                        body.add("Content-encoded entity body (gzip): " + std::to_string(payload.size()) + " bytes -> " + std::to_string(inflated.size()) + " bytes",
+                                 o + bodyStart, length - bodyStart);
+                    } else {
+                        body.add("[Could not decompress the gzip body: " + error + "]");
+                    }
+                }
+            }
+        }
         if (!headersComplete) l.add("[Headers continue in later segments]");
     }
     return true;

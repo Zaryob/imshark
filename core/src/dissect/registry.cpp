@@ -18,6 +18,7 @@ const dissect::Registry &dissect::Registry::builtin() {
         r.registerIpProtocol(17, dissectUdp);
 
         // application layer, recognised by content when no port matched
+        r.registerTcpStreamHeuristic({"HTTP", frameHttp, [](Context &c, const char *d, size_t n) { dissectHttp(c, d, n); }});
         r.registerTcpHeuristic(dissectHttp);
         r.registerTcpHeuristic(dissectTls);
 

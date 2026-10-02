@@ -159,6 +159,7 @@ TEST(Dns, OverTcpWithLengthPrefixAndMdns) {
     const std::string cut = u16(500) + msg;
     const auto partial = support::parse(support::tcpPacket("0a000001", "08080808", "c350", "0035", "00000001", "00000001", "18", bytes(cut)));
     EXPECT_NE(partial.info.find("[TCP segment of a reassembled PDU]"), std::string::npos) << partial.info;
+    EXPECT_NE(partial.info.find("message continues in later segments"), std::string::npos) << partial.info << " (decoded as far as it goes)";
 
     const auto mdns = viaUdp(message(0, 0x0000, 1, 0, 0, 0, nameHex("printer.local") + "000c" "0001"), "14e9", "14e9");
     EXPECT_EQ(mdns.protocol, "MDNS");

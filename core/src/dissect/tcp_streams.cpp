@@ -71,6 +71,7 @@ namespace dissect {
         }
 
         bool inPending = false, added = false;
+        const bool wasEmpty = d.buf.empty() && d.pending.empty();
         if (size > 0) {
             if (diff(relSeq, d.next) > 0 && d.plain && d.buf.empty() && d.pending.empty()) {
                 d.next = d.bufStart = relSeq;                     // not a stream protocol: nothing to wait for, resynchronise
@@ -153,7 +154,10 @@ namespace dissect {
         const bool anyReassembled = std::any_of(result.pdus.begin(), result.pdus.end(), [](const StreamPdu &p) { return !p.wholeInSegment; });
         if (anyReassembled) result.action = StreamFeedResult::Action::Pdu;
         else if (!result.pdus.empty()) result.action = StreamFeedResult::Action::Whole;
-        else if ((sawPartial && added) || inPending) result.action = StreamFeedResult::Action::Segment;
+        else if ((sawPartial && added) || inPending) {
+            result.action = StreamFeedResult::Action::Segment;
+            result.startsMessage = wasEmpty && !inPending;
+        }
         else result.action = StreamFeedResult::Action::None;
         return result;
     }
