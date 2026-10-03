@@ -211,10 +211,10 @@ in the [User Guide](USER_GUIDE.md#display-filters). Names are lower case.
 | `mysql.ssl_request` | boolean | MySQL SSL request (TLS handshake follows) |
 | `mysql.user` | string | MySQL user name of the login request |
 | `mysql.version` | string | MySQL server version of the initial handshake |
-| `nfs` | boolean | Network File System call |
+| `nfs` | boolean | Network File System call or matched reply |
 | `nfs.name` | string | NFS file name of a LOOKUP / CREATE / MKDIR / REMOVE / RMDIR call |
-| `nfs.proc` | unsigned | NFS procedure of a call (v3: 1 GETATTR, 3 LOOKUP, 6 READ, 7 WRITE; v4: 1 COMPOUND) |
-| `nfs.version` | unsigned | NFS protocol version of a call |
+| `nfs.proc` | unsigned | NFS procedure of a call or matched reply (v3: 1 GETATTR, 3 LOOKUP, 6 READ, 7 WRITE; v4: 1 COMPOUND) |
+| `nfs.version` | unsigned | NFS protocol version of a call or matched reply |
 | `ntp` | boolean | NTP |
 | `ntp.ctrl.opcode` | unsigned | Opcode of an NTP control message (2 = read variables) |
 | `ntp.mode` | unsigned | NTP mode (3 = client, 4 = server) |
@@ -240,7 +240,7 @@ in the [User Guide](USER_GUIDE.md#display-filters). Names are lower case.
 | `pgsql.ssl_request` | boolean | PostgreSQL SSLRequest |
 | `pgsql.type` | string | PostgreSQL message type letter (Q SimpleQuery, P Parse, R Authentication, Z ReadyForQuery, ...) |
 | `pgsql.user` | string | PostgreSQL user of a StartupMessage |
-| `portmap.proc` | unsigned | Portmap procedure of a call (3 GETPORT) |
+| `portmap.proc` | unsigned | Portmap procedure of a call or matched reply (3 GETPORT) |
 | `ppi.dlt` | unsigned | PPI encapsulated Data Link Type |
 | `ppp` | boolean | Point-to-Point Protocol |
 | `ppp.ipcp.code` | unsigned | IPCP Code |
@@ -258,11 +258,16 @@ in the [User Guide](USER_GUIDE.md#display-filters). Names are lower case.
 | `radiotap.datarate` | float | Radiotap/PPI data rate in Mb/s |
 | `radiotap.dbm_antsignal` | float | Radiotap/PPI antenna signal in dBm |
 | `rpc` | boolean | ONC RPC (also NFS, Portmap and Mount) |
+| `rpc.duplicate_reply` | boolean | ONC RPC second reply to the same call |
+| `rpc.fragment` | boolean | ONC RPC record fragment that is not the last one of its record |
+| `rpc.matched` | boolean | ONC RPC reply whose call was seen earlier in the capture (xid, addresses and ports agree) |
 | `rpc.msgtyp` | unsigned | ONC RPC message type (0 call, 1 reply) |
-| `rpc.procedure` | unsigned | ONC RPC procedure number of a call |
-| `rpc.program` | unsigned | ONC RPC program number of a call (100003 NFS, 100000 Portmap, 100005 Mount) |
-| `rpc.programversion` | unsigned | ONC RPC program version of a call |
+| `rpc.procedure` | unsigned | ONC RPC procedure number of a call, or of the call a matched reply answers |
+| `rpc.program` | unsigned | ONC RPC program number of a call, or of the call a matched reply answers (100003 NFS, 100000 Portmap, 100005 Mount) |
+| `rpc.programversion` | unsigned | ONC RPC program version of a call, or of the call a matched reply answers |
+| `rpc.reassembled` | boolean | ONC RPC message joined from the several fragments of its TCP record (shown on the last fragment) |
 | `rpc.reply_denied` | boolean | ONC RPC reply that was denied (RPC_MISMATCH or AUTH_ERROR) |
+| `rpc.retransmission` | boolean | ONC RPC call seen again (same xid, program, version and procedure) |
 | `rpc.state_accept` | unsigned | ONC RPC accept status of an accepted reply (0 SUCCESS, 1 PROG_UNAVAIL, 2 PROG_MISMATCH, 3 PROC_UNAVAIL ...) |
 | `rpc.xid` | unsigned | ONC RPC transaction id |
 | `sctp` | boolean | Stream Control Transmission Protocol |
@@ -414,4 +419,4 @@ in the [User Guide](USER_GUIDE.md#display-filters). Names are lower case.
 | `wlan.ssid` | string | 802.11 SSID |
 | `wlan.ta` | string | 802.11 Transmitter MAC address |
 
-404 fields.
+409 fields.

@@ -18,7 +18,6 @@ namespace filter::fh {
     inline bool ipv4(const PacketInfo &p) { return p.ip_version == 4; }
     // ONC RPC and the programs that name their own protocol (NFS, Portmap, Mount)
     inline bool isRpc(const PacketInfo &p) { return p.protocol == "RPC" || p.protocol == "NFS" || p.protocol == "NFSv4" || p.protocol == "Portmap" || p.protocol == "Mount"; }
-    inline bool isRpcCall(const PacketInfo &p) { return isRpc(p) && (p.app_flags & 1) == 0 && !p.app_text.empty(); }
     inline bool ipv6(const PacketInfo &p) { return p.ip_version == 6; }
     // a fragment that is not the last one carries no complete TCP/UDP header to speak of
     inline bool hasTcp(const PacketInfo &p) { return p.ip_version != 0 && p.ip_protocol == 6 && p.ip_frag != 1; }

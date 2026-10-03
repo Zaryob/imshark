@@ -24,6 +24,12 @@
 // Changed (v1.3, DCE/RPC over named pipes): dcerpc, dcerpc.pkt_type, dcerpc.opnum and dcerpc.if_uuid also match an SMB2 packet whose first command
 // carried a PDU (app_flags bits 8..14 of an SMB2 packet, app_code, app_text), so their counts on the synthetic SMB2 packets whose flags set
 // those bits are higher; the descriptions of dcerpc.cn_call_id and dcerpc.pkt_type say what is kept for such a packet.
+// Added (v1.3, ONC RPC matching): rpc.matched, rpc.retransmission, rpc.duplicate_reply, rpc.reassembled, rpc.fragment (app_flags bits 2..5).
+// Changed: rpc.program / rpc.programversion / rpc.procedure also match a reply that was matched with its call (the program number is in
+// app_text, the version in app_flags bits 8..15), so their counts on the synthetic packets are higher; rpc.state_accept / rpc.reply_denied
+// match every RPC reply, not only the protocol "RPC" (a matched reply is named after its program); nfs.name / mount.path are for calls
+// only and nfs.name for version 3 only (the NFSv4 operation numbers will share app_text2), so their counts are lower; nfs.version of a
+// reply reads the version bits. Descriptions of nfs, nfs.proc, nfs.version and portmap.proc say "or matched reply".
 #include <gtest/gtest.h>
 
 #include <algorithm>

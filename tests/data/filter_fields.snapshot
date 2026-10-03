@@ -184,7 +184,7 @@ mac_control	boolean	Ethernet MAC Control	442	442	1336253c7c2b7043
 mac_control.opcode	unsigned	MAC Control opcode (0x0001 PAUSE, 0x0101 PFC)	442	442	41e14c02da937dd4
 malformed	boolean	Packet that could not be fully decoded	3102	3102	592aaef761d98d43
 mdns	boolean	Multicast DNS	142	142	bacb5bc089ac8143
-mount.path	string	Mount directory path of a MNT / UMNT call	126	126	39f3ca677a3b2bcf
+mount.path	string	Mount directory path of a MNT / UMNT call	71	71	095bbc8018907e2d
 mpls	boolean	MultiProtocol Label Switching	642	642	5d53dd071310e243
 mpls.bottom_of_stack	boolean	MPLS Bottom of Stack flag (outermost label)	642	642	a3fb16d0842aa282
 mpls.exp	unsigned	MPLS Experimental (TC) Bits	642	642	41a0be2dbd888c02
@@ -200,10 +200,10 @@ mysql.query	string	MySQL SQL text of COM_QUERY / COM_STMT_PREPARE (or the schema
 mysql.ssl_request	boolean	MySQL SSL request (TLS handshake follows)	170	170	cfda4df9670878c2
 mysql.user	string	MySQL user name of the login request	62	62	63a88a586643c282
 mysql.version	string	MySQL server version of the initial handshake	47	47	061c1cda5571c6da
-nfs	boolean	Network File System call	297	297	93fece66d4752003
-nfs.name	string	NFS file name of a LOOKUP / CREATE / MKDIR / REMOVE / RMDIR call	236	236	ff509be9868a4abc
-nfs.proc	unsigned	NFS procedure of a call (v3: 1 GETATTR, 3 LOOKUP, 6 READ, 7 WRITE; v4: 1 COMPOUND)	297	297	63fe22613a586fef
-nfs.version	unsigned	NFS protocol version of a call	297	297	e76f9c80dd7be6cb
+nfs	boolean	Network File System call or matched reply	297	297	93fece66d4752003
+nfs.name	string	NFS file name of a LOOKUP / CREATE / MKDIR / REMOVE / RMDIR call	3	3	3d4526fe59caa9a5
+nfs.proc	unsigned	NFS procedure of a call or matched reply (v3: 1 GETATTR, 3 LOOKUP, 6 READ, 7 WRITE; v4: 1 COMPOUND)	297	297	63fe22613a586fef
+nfs.version	unsigned	NFS protocol version of a call or matched reply	297	297	925b9ecc4287718f
 ntp	boolean	NTP	172	172	8bbf68298bc550c3
 ntp.ctrl.opcode	unsigned	Opcode of an NTP control message (2 = read variables)	8	8	1c0e9d892bd8aaae
 ntp.mode	unsigned	NTP mode (3 = client, 4 = server)	172	172	11889a9f5ae90a01
@@ -229,7 +229,7 @@ pgsql.query	string	PostgreSQL SQL text of a SimpleQuery or Parse message	129	129
 pgsql.ssl_request	boolean	PostgreSQL SSLRequest	164	164	ef7504b064a54582
 pgsql.type	string	PostgreSQL message type letter (Q SimpleQuery, P Parse, R Authentication, Z ReadyForQuery, ...)	0	0	236e177ee4bbadc3
 pgsql.user	string	PostgreSQL user of a StartupMessage	2	2	a331cc2228413e87
-portmap.proc	unsigned	Portmap procedure of a call (3 GETPORT)	159	159	6c1555dbe8782f54
+portmap.proc	unsigned	Portmap procedure of a call or matched reply (3 GETPORT)	159	159	6c1555dbe8782f54
 ppi.dlt	unsigned	PPI encapsulated Data Link Type	11450	11450	cd321a67f092eb2d
 ppp	boolean	Point-to-Point Protocol	8878	8878	771371aa788c0d43
 ppp.ipcp.code	unsigned	IPCP Code	403	403	a6a485cc11085b4e
@@ -247,12 +247,17 @@ radiotap.channel.freq	unsigned	Radiotap/PPI channel frequency in MHz	11476	11476
 radiotap.datarate	float	Radiotap/PPI data rate in Mb/s	11905	11905	3312d96bc0efe6a7
 radiotap.dbm_antsignal	float	Radiotap/PPI antenna signal in dBm	11963	11963	42b55280c2822fcc
 rpc	boolean	ONC RPC (also NFS, Portmap and Mount)	751	751	a57f10dd18654d83
+rpc.duplicate_reply	boolean	ONC RPC second reply to the same call	300	300	7cc4432684c937a3
+rpc.fragment	boolean	ONC RPC record fragment that is not the last one of its record	751	751	21f0ffdf7ff14dc2
+rpc.matched	boolean	ONC RPC reply whose call was seen earlier in the capture (xid, addresses and ports agree)	300	300	85cc0552036df0a2
 rpc.msgtyp	unsigned	ONC RPC message type (0 call, 1 reply)	751	751	eb9f5b25d58888e2
-rpc.procedure	unsigned	ONC RPC procedure number of a call	363	363	0205eaca1070f46d
-rpc.program	unsigned	ONC RPC program number of a call (100003 NFS, 100000 Portmap, 100005 Mount)	363	363	5bfd7b86c824b008
-rpc.programversion	unsigned	ONC RPC program version of a call	363	363	46d639b7410f6fec
-rpc.reply_denied	boolean	ONC RPC reply that was denied (RPC_MISMATCH or AUTH_ERROR)	63	63	8ed46fc93ae43e42
-rpc.state_accept	unsigned	ONC RPC accept status of an accepted reply (0 SUCCESS, 1 PROG_UNAVAIL, 2 PROG_MISMATCH, 3 PROC_UNAVAIL ...)	25	25	7cbb5ea0a56f6c15
+rpc.procedure	unsigned	ONC RPC procedure number of a call, or of the call a matched reply answers	605	605	ae1d9c0e8fcd36bf
+rpc.program	unsigned	ONC RPC program number of a call, or of the call a matched reply answers (100003 NFS, 100000 Portmap, 100005 Mount)	605	605	6a769111a3c25203
+rpc.programversion	unsigned	ONC RPC program version of a call, or of the call a matched reply answers	605	605	9152d5122f5ba107
+rpc.reassembled	boolean	ONC RPC message joined from the several fragments of its TCP record (shown on the last fragment)	751	751	7a45a56b355f2803
+rpc.reply_denied	boolean	ONC RPC reply that was denied (RPC_MISMATCH or AUTH_ERROR)	300	300	92d27b277620e522
+rpc.retransmission	boolean	ONC RPC call seen again (same xid, program, version and procedure)	363	363	b3ed0b3be9bb6063
+rpc.state_accept	unsigned	ONC RPC accept status of an accepted reply (0 SUCCESS, 1 PROG_UNAVAIL, 2 PROG_MISMATCH, 3 PROC_UNAVAIL ...)	139	139	3c1baf8f04205152
 rpc.xid	unsigned	ONC RPC transaction id	751	751	b79a95905d6f3059
 sctp	boolean	Stream Control Transmission Protocol	1039	1039	f60a210b635d8983
 sctp.checksum.status	unsigned	SCTP CRC-32C: 0 = bad, 1 = good, 2 = unverified, 3 = not present	1039	1039	124a99bcf51ddc63

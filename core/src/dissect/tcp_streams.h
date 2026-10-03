@@ -69,6 +69,7 @@ namespace dissect {
             size_t pendingBytes = 0;
             const StreamProtocol *protocol = nullptr;
             bool plain = false;              // the last bytes were not a stream protocol: a hole just resynchronises
+            bool midMessage = false;         // the last message said it continues: the next bytes are framed by the protocol's continuation framer
         };
 
         /// Returns false if the segment had no new bytes (a pure retransmission).

@@ -104,9 +104,9 @@ const dissect::Registry &dissect::Registry::builtin() {
         r.registerTcpPort(135, dissectDceRpc);
         r.registerTcpStream(135, {"DCERPC", frameDceRpc, dissectDceRpc});
         r.registerTcpPort(2049, dissectNfs);
-        r.registerTcpStream(2049, {"NFS", frameRpc, dissectNfs});
+        r.registerTcpStream(2049, {"NFS", frameRpc, dissectNfs, frameRpcContinuation});
         r.registerTcpPort(111, dissectNfs);
-        r.registerTcpStream(111, {"Portmap", frameRpc, dissectNfs});
+        r.registerTcpStream(111, {"Portmap", frameRpc, dissectNfs, frameRpcContinuation});
         r.registerTcpPort(5432, dissectPostgreSql);
         r.registerTcpStream(5432, {"PGSQL", framePostgreSql, dissectPostgreSql});
         r.registerTcpPort(3306, dissectMySql);
@@ -151,8 +151,8 @@ const dissect::Registry &dissect::Registry::builtin() {
         both("Kerberos", dissectKerberos, dissectKerberos, std::make_shared<StreamProtocol>(StreamProtocol{"Kerberos", frameKerberos, dissectKerberos}));
         both("SMB2", nullptr, dissectSmb2, std::make_shared<StreamProtocol>(StreamProtocol{"SMB2", frameSmb2, dissectSmb2}));
         both("DCERPC", dissectDceRpcDatagram, dissectDceRpc, std::make_shared<StreamProtocol>(StreamProtocol{"DCERPC", frameDceRpc, dissectDceRpc}));
-        both("NFS", dissectNfs, dissectNfs, std::make_shared<StreamProtocol>(StreamProtocol{"NFS", frameRpc, dissectNfs}));
-        both("Portmap", dissectNfs, dissectNfs, std::make_shared<StreamProtocol>(StreamProtocol{"Portmap", frameRpc, dissectNfs}));
+        both("NFS", dissectNfs, dissectNfs, std::make_shared<StreamProtocol>(StreamProtocol{"NFS", frameRpc, dissectNfs, frameRpcContinuation}));
+        both("Portmap", dissectNfs, dissectNfs, std::make_shared<StreamProtocol>(StreamProtocol{"Portmap", frameRpc, dissectNfs, frameRpcContinuation}));
         both("PGSQL", nullptr, dissectPostgreSql, std::make_shared<StreamProtocol>(StreamProtocol{"PGSQL", framePostgreSql, dissectPostgreSql}));
         both("MySQL", nullptr, dissectMySql, std::make_shared<StreamProtocol>(StreamProtocol{"MySQL", frameMySql, dissectMySql}));
         both("TDS", nullptr, dissectTds, std::make_shared<StreamProtocol>(StreamProtocol{"TDS", frameTds, dissectTds}));

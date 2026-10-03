@@ -10,6 +10,12 @@ std::string portKey(const std::string &ip, uint16_t port, bool udp) { return ip 
 
 } // namespace
 
+std::string rpcConversationKey(const std::string &ipA, uint16_t portA, const std::string &ipB, uint16_t portB, bool &fromLow) {
+    const std::string a = ipA + ":" + std::to_string(portA), b = ipB + ":" + std::to_string(portB);
+    fromLow = a < b;
+    return fromLow ? a + "|" + b : b + "|" + a;
+}
+
 void RpcTable::clear() {
     notes_.clear();
     assemblies_.clear();

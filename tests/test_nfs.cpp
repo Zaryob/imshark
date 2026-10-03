@@ -155,16 +155,21 @@ TEST(Nfs, UdpHasNoRecordMarkAndASmallXidIsNotMistakenForOne) {
     EXPECT_EQ(reply.info, "RPC Reply (XID: 0x12345678) Accepted SUCCESS");
 }
 
+// Changed with the multi-fragment reassembly (v1.3): this used to send a GETATTR record marked "not the last fragment" followed by a
+// whole LOOKUP record, which RFC 5531 section 11 reads as one record (the LOOKUP bytes are the rest of it). The record is now cut into
+// two fragments; test_rpc_flows.cpp has the reassembly cases.
 TEST(Nfs, RecordMarkingWithSeveralFragmentsAndSegments) {
     Flow flow(50000, 2049, "nfs_marks");
-    flow.client(mark(kGetattr, false)).client(mark(kLookup)).client(mark(kRead).substr(0, 20)).client(mark(kRead).substr(20) + mark(kNull));
+    flow.client(mark(kGetattr.substr(0, 40), false)).client(mark(kGetattr.substr(40))).client(mark(kLookup))
+        .client(mark(kRead).substr(0, 20)).client(mark(kRead).substr(20) + mark(kNull));
     flow.load();
     const auto &k = flow.packets();
-    EXPECT_NE(k[0].info.find("[not the last fragment of the record]"), std::string::npos) << k[0].info;
-    EXPECT_EQ(k[1].info.rfind("NFS v3 LOOKUP Call", 0), 0u);
-    EXPECT_NE(k[2].info.find("[TCP segment of a reassembled PDU]"), std::string::npos) << k[2].info;
-    EXPECT_EQ(k[3].info.rfind("NFS v3 READ Call (XID: 0x1234567b)", 0), 0u) << k[3].info;
-    EXPECT_NE(k[3].info.find(", NFS v3 NULL Call"), std::string::npos) << k[3].info;
+    EXPECT_EQ(k[0].info, "NFS v3 GETATTR Call (XID: 0x12345678) [not the last fragment of the record]");
+    EXPECT_EQ(k[1].info, "NFS v3 GETATTR Call (XID: 0x12345678), fh=0102030405060708... [Reassembled: 2 fragments, 108 bytes]");
+    EXPECT_EQ(k[2].info.rfind("NFS v3 LOOKUP Call", 0), 0u);
+    EXPECT_NE(k[3].info.find("[TCP segment of a reassembled PDU]"), std::string::npos) << k[3].info;
+    EXPECT_EQ(k[4].info.rfind("NFS v3 READ Call (XID: 0x1234567b)", 0), 0u) << k[4].info;
+    EXPECT_NE(k[4].info.find(", NFS v3 NULL Call"), std::string::npos) << k[4].info;
     flow.expectReplayEqualsLoad();
 }
 

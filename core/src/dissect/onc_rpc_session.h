@@ -82,6 +82,10 @@ struct RpcMapping {
     std::string host;                                  // IPv4 / IPv6 text of the address the answer named, "" if it named none
 };
 
+/// The sorted pair of endpoints ("ip:port|ip:port") of a conversation, the same for both directions; `fromLow` tells whether the first
+/// endpoint given (the sender) is the lower one.
+std::string rpcConversationKey(const std::string &ipA, uint16_t portA, const std::string &ipB, uint16_t portB, bool &fromLow);
+
 class RpcTable {
 public:
     /// Load pass: a fragment (TCP) or datagram of the stream `stream` (one direction of a connection, "" for a datagram). `seq` is the

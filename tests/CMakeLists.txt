@@ -117,6 +117,7 @@ add_executable(imshark_tests
     test_dcerpc_ports.cpp
     test_dcerpc_pipe.cpp
     test_rpc_session.cpp
+    test_rpc_flows.cpp
     test_nfs.cpp
     test_postgres.cpp
     test_mysql.cpp

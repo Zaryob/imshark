@@ -14,6 +14,7 @@ namespace dissect {
         d.pendingBytes = 0;
         d.protocol = nullptr;
         d.plain = false;
+        d.midMessage = false;
     }
 
     // Appends the new bytes of an in-order or overlapping segment and then every waiting segment that became contiguous.
@@ -110,7 +111,8 @@ namespace dissect {
             if (takeOver) {
                 if (const StreamProtocol *other = takeOver(d.buf.data(), d.buf.size(), d.bufStart)) d.protocol = other;
             }
-            const StreamFrame f = d.protocol->frame(d.buf.data(), d.buf.size());
+            const StreamFramer &framer = d.midMessage && d.protocol->frameContinuation ? d.protocol->frameContinuation : d.protocol->frame;
+            const StreamFrame f = framer(d.buf.data(), d.buf.size());
             size_t take = 0;
             if (f.kind == StreamFrame::Kind::Complete && f.length > 0 && f.length <= d.buf.size()) {
                 take = f.length;
@@ -118,6 +120,7 @@ namespace dissect {
                 take = d.buf.size();
             } else if (f.kind == StreamFrame::Kind::Reject) {
                 d.protocol = nullptr;                             // these bytes are not (or no longer) this protocol
+                d.midMessage = false;
                 if (!reselected && !d.buf.empty()) {              // another protocol may take over right here (a TLS handshake after STARTTLS)
                     reselected = true;
                     continue;
@@ -133,6 +136,7 @@ namespace dissect {
             }
 
             reselected = false;
+            d.midMessage = f.kind == StreamFrame::Kind::Complete && f.continues;
             StreamPdu pdu;
             pdu.data = d.buf.substr(0, take);
             pdu.startSeq = d.bufStart;

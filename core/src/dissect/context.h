@@ -100,6 +100,7 @@ namespace dissect {
             UntilClose,  // the message runs until the sender closes the connection (FIN/RST)
         } kind = Kind::Reject;
         size_t length = 0;
+        bool continues = false;   // Complete: the message goes on in the bytes that follow (an ONC RPC fragment that is not the last)
     };
     using StreamFramer = std::function<StreamFrame(const char *data, size_t available)>;
 
@@ -113,5 +114,8 @@ namespace dissect {
         std::string name;
         StreamFramer frame;
         Dissector dissect;   // decodes ONE complete message
+        /// Optional: frames the bytes right after a message that said it `continues`; the bytes of such a continuation do not have
+        /// to look like the start of a message (ONC RPC record fragments).
+        StreamFramer frameContinuation = nullptr;
     };
 } // namespace dissect
