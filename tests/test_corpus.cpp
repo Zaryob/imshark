@@ -97,6 +97,13 @@ namespace {
             if (fact.has("reassembled_in")) EXPECT_EQ(p.reassembled_in, static_cast<uint32_t>(fact.num("reassembled_in")));
             if (fact.has("fcs_length")) EXPECT_EQ(p.fcs_length, static_cast<uint8_t>(fact.num("fcs_length")));
             if (fact.has("time_relative")) EXPECT_NEAR(p.time, fact.num("time_relative"), 1e-6);
+            if (fact.has("tree_contains")) {   // a field of the details tree (rebuilt from the file) starts with this text
+                packet::PacketInfo details;
+                ASSERT_TRUE(core::buildPacketDetails(path, p, details, &packets, &fp.captureInfo()));
+                bool found = false;
+                for (const auto &f: details.fields) found = found || findField(f, fact.str("tree_contains")) != nullptr;
+                EXPECT_TRUE(found) << "no field starting with: " << fact.str("tree_contains");
+            }
         }
 
         // the whole pipeline on every packet
