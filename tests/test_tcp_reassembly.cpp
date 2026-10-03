@@ -7,6 +7,7 @@
 #include <random>
 
 #include <core.h>
+#include <dissect/x509.h>
 #include <filter/filter.h>
 
 #include "support.h"
@@ -388,6 +389,7 @@ namespace {
     // client -> server on port 80 ("0050"), server -> client replies
     std::vector<char> toServer(uint32_t seq, const std::string &data) { return seg(seq, data, "0050"); }
     std::vector<char> fromServer(uint32_t seq, const std::string &data) { return reply(seq, data, "0050"); }
+    std::vector<char> fromServer443(uint32_t seq, const std::string &data) { return reply(seq, data, "01bb"); }
 
     struct HttpCapture {
         std::string path;
@@ -527,4 +529,119 @@ TEST(HttpStream, RandomSegmentationNeverChangesTheDecodedMessages) {
             if (cap.packets[i].protocol == "HTTP") ASSERT_EQ(cap.details(i).info, cap.packets[i].info) << round << " #" << i + 1;
         }
     }
+}
+
+// ---- TLS -----------------------------------------------------------------------------------------------------------
+namespace {
+    std::string der(unsigned tag, const std::string &body) {
+        std::string out(1, static_cast<char>(tag));
+        if (body.size() < 128) out += static_cast<char>(body.size());
+        else if (body.size() < 256) { out += static_cast<char>(0x81); out += static_cast<char>(body.size()); }
+        else { out += static_cast<char>(0x82); out += static_cast<char>(body.size() >> 8); out += static_cast<char>(body.size() & 0xff); }
+        return out + body;
+    }
+    std::string rdn(const std::string &oidTail, const std::string &value) {
+        return der(0x31, der(0x30, der(0x06, std::string("\x55\x04", 2) + oidTail) + der(0x13, value)));
+    }
+
+    // a structurally valid certificate (the signature is not checked by the dissector)
+    std::string certificate(const std::string &cn, const std::vector<std::string> &sans, size_t padding = 0) {
+        const std::string name = der(0x30, rdn(std::string("\x06", 1), "US") + rdn(std::string("\x0a", 1), "Example Org") + rdn(std::string("\x03", 1), cn));
+        const std::string issuer = der(0x30, rdn(std::string("\x03", 1), "Example CA"));
+        std::string general;
+        for (const auto &s: sans) general += der(0x82, s);
+        const std::string san = der(0x30, der(0x06, std::string("\x55\x1d\x11", 3)) + der(0x04, der(0x30, general)));
+        const std::string tbs = der(0x30, der(0xa0, der(0x02, "\x02")) + der(0x02, std::string("\x01\x23\x45", 3)) + der(0x30, der(0x06, "\x2a")) + issuer +
+                                              der(0x30, der(0x17, "260102030405Z") + der(0x17, "270102030405Z")) + name + der(0x30, der(0x30, der(0x06, "\x2a")) + der(0x03, std::string("\x00\x01", 2))) +
+                                              der(0xa3, der(0x30, san)) + (padding ? der(0x04, std::string(padding, 'p')) : ""));
+        return der(0x30, tbs + der(0x30, der(0x06, "\x2a")) + der(0x03, std::string("\x00\x01", 2)));
+    }
+
+    std::string be24(size_t v) { return std::string{char(v >> 16), char((v >> 8) & 0xff), char(v & 0xff)}; }
+    std::string tlsRecord(unsigned type, const std::string &body) {
+        return std::string{char(type), 3, 3, char(body.size() >> 8), char(body.size() & 0xff)} + body;
+    }
+    // a Certificate handshake message (TLS 1.2 layout) with the given chain
+    std::string certificateMessage(const std::vector<std::string> &chain) {
+        std::string list;
+        for (const auto &c: chain) list += be24(c.size()) + c;
+        const std::string body = be24(list.size()) + list;
+        return std::string{char(11)} + be24(body.size()) + body;
+    }
+}
+
+TEST(TlsStream, CertificateSpanningRecordsAndSegmentsIsReassembled) {
+    const std::string leaf = certificate("www.example.org", {"www.example.org", "example.org"}, 17000);   // > one record with the chain
+    const std::string message = certificateMessage({leaf, certificate("Example CA", {})});
+    ASSERT_GT(message.size(), 16384u) << "the message must need two records";
+    const std::string records = tlsRecord(22, message.substr(0, 16000)) + tlsRecord(22, message.substr(16000));
+    std::vector<std::vector<char>> frames = {syn("01bb")};
+    uint32_t seq = 1000;
+    for (size_t pos = 0; pos < records.size(); pos += 1400) {
+        frames.push_back(fromServer443(seq, records.substr(pos, 1400)));
+        seq += static_cast<uint32_t>(std::min<size_t>(1400, records.size() - pos));
+    }
+    core::FileProcessor fp(builtin());
+    std::vector<packet::PacketInfo> packets;
+    std::string msg;
+    const std::string path = support::writeTemp("tlsstream.pcap", support::pcapBytes(frames));
+    ASSERT_TRUE(fp.processPcapFile(path, packets, msg)) << msg;
+    const auto &last = packets.back();
+    EXPECT_EQ(last.protocol, "TLS");
+    EXPECT_EQ(last.tcp_pdu_state, 2);
+    EXPECT_EQ(last.info, "Certificate");
+    EXPECT_EQ(last.app_text2, "www.example.org");
+    EXPECT_TRUE(filter::Filter::compile("tls.handshake.certificate_subject == \"www.example.org\" && tls.handshake.type == 11").filter.matches(last));
+    EXPECT_EQ(packets[1].tcp_pdu_state, 4);
+    EXPECT_EQ(packets[1].protocol, "TLS");
+
+    packet::PacketInfo d;
+    ASSERT_TRUE(core::buildPacketDetails(path, last, d, &packets, &fp.captureInfo(), &builtin()));
+    EXPECT_EQ(d.info, last.info);
+    EXPECT_NE(find(d.fields, "Certificate: www.example.org"), nullptr);
+    EXPECT_NE(find(d.fields, "Subject: C=US, O=Example Org, CN=www.example.org"), nullptr);
+    EXPECT_NE(find(d.fields, "Issuer: CN=Example CA"), nullptr);
+    EXPECT_NE(find(d.fields, "Not Before: 2026-01-02 03:04:05 UTC"), nullptr);
+    EXPECT_NE(find(d.fields, "Not After: 2027-01-02 03:04:05 UTC"), nullptr);
+    EXPECT_NE(find(d.fields, "Subject Alternative Names: www.example.org, example.org"), nullptr);
+    EXPECT_NE(find(d.fields, "Certificate: Example CA"), nullptr);
+    EXPECT_NE(find(d.fields, "[Handshake message spans 2 records]"), nullptr);
+    std::remove(path.c_str());
+}
+
+TEST(TlsStream, SeveralRecordsInOneSegmentAndEncryptedRecordsStayRecords) {
+    const std::string hello = tlsRecord(22, std::string{2, 0, 0, 0});               // not meaningful, but a framed handshake record
+    const std::string data = tlsRecord(23, std::string(300, 'e'));
+    core::FileProcessor fp(builtin());
+    std::vector<packet::PacketInfo> packets;
+    std::string msg;
+    const std::string stream = data + data + tlsRecord(21, std::string("\x02\x28", 2));
+    const std::string path = support::writeTemp("tlsstream2.pcap", support::pcapBytes({syn("01bb"), fromServer443(1000, stream.substr(0, 400)), fromServer443(1400, stream.substr(400))}));
+    ASSERT_TRUE(fp.processPcapFile(path, packets, msg)) << msg;
+    EXPECT_EQ(packets[1].protocol, "TLS");
+    EXPECT_EQ(packets[1].info.rfind("Application Data", 0), 0u) << packets[1].info;
+    EXPECT_EQ(packets[2].protocol, "TLS");
+    EXPECT_NE(packets[2].info.find("Alert"), std::string::npos) << packets[2].info;
+    packet::PacketInfo d;
+    ASSERT_TRUE(core::buildPacketDetails(path, packets[2], d, &packets, &fp.captureInfo(), &builtin()));
+    EXPECT_EQ(d.info, packets[2].info);
+    EXPECT_NE(find(d.fields, "Description: handshake_failure (40)"), nullptr);
+    std::remove(path.c_str());
+    (void) hello;
+}
+
+TEST(TlsStream, CertificateParserSurvivesDamage) {
+    std::mt19937 rng(5);
+    const std::string cert = certificate("host.test", {"a.test", "b.test"});
+    for (int i = 0; i < 4000; ++i) {
+        std::string d = cert;
+        d.resize(rng() % (d.size() + 1));
+        for (unsigned k = rng() % 4; k > 0 && !d.empty(); --k) d[rng() % d.size()] = static_cast<char>(rng());
+        dissect::parseCertificate(reinterpret_cast<const unsigned char *>(d.data()), d.size());
+    }
+    const auto ok = dissect::parseCertificate(reinterpret_cast<const unsigned char *>(cert.data()), cert.size());
+    EXPECT_TRUE(ok.ok);
+    EXPECT_EQ(ok.commonName, "host.test");
+    EXPECT_EQ(ok.serial, "012345");
+    EXPECT_EQ(ok.dnsNames.size(), 2u);
 }

@@ -1,11 +1,15 @@
-// TLS / SSL records, recognised by the record header (any port). Handshake messages are decoded far enough
-// to show the message type, the client's server name (SNI), versions and the chosen cipher suite; encrypted
-// content is only counted.
+// TLS / SSL records, recognised by the record header (any port). Records are framed for TCP reassembly, so a record
+// (or a handshake message that spans several records, such as a long Certificate) is decoded as a whole. Handshake
+// messages are decoded to the message type, hello fields and extensions, and the certificates of a Certificate message;
+// encrypted content is only counted.
 #include "protocols.h"
 
 #include "util.h"
+#include "x509.h"
 
 #include <algorithm>
+#include <string>
+#include <vector>
 
 using packet::Field;
 
@@ -73,6 +77,70 @@ namespace {
         }
     }
 
+    const char *alertName(uint8_t d) {
+        switch (d) {
+            case 0: return "close_notify";
+            case 10: return "unexpected_message";
+            case 20: return "bad_record_mac";
+            case 40: return "handshake_failure";
+            case 42: return "bad_certificate";
+            case 43: return "unsupported_certificate";
+            case 44: return "certificate_revoked";
+            case 45: return "certificate_expired";
+            case 46: return "certificate_unknown";
+            case 47: return "illegal_parameter";
+            case 48: return "unknown_ca";
+            case 49: return "access_denied";
+            case 50: return "decode_error";
+            case 51: return "decrypt_error";
+            case 70: return "protocol_version";
+            case 71: return "insufficient_security";
+            case 80: return "internal_error";
+            case 86: return "inappropriate_fallback";
+            case 90: return "user_canceled";
+            case 100: return "no_renegotiation";
+            case 109: return "missing_extension";
+            case 112: return "unrecognized_name";
+            case 120: return "no_application_protocol";
+            default: return nullptr;
+        }
+    }
+
+    std::string groupName(uint16_t g) {
+        switch (g) {
+            case 23: return "secp256r1";
+            case 24: return "secp384r1";
+            case 25: return "secp521r1";
+            case 29: return "x25519";
+            case 30: return "x448";
+            case 256: return "ffdhe2048";
+            case 257: return "ffdhe3072";
+            case 4588: return "X25519MLKEM768";
+            case 25497: return "X25519Kyber768Draft00";
+            default: return (g & 0x0f0f) == 0x0a0a ? "GREASE" : std::to_string(g);
+        }
+    }
+
+    std::string signatureName(uint16_t a) {
+        switch (a) {
+            case 0x0401: return "rsa_pkcs1_sha256";
+            case 0x0501: return "rsa_pkcs1_sha384";
+            case 0x0601: return "rsa_pkcs1_sha512";
+            case 0x0201: return "rsa_pkcs1_sha1";
+            case 0x0403: return "ecdsa_secp256r1_sha256";
+            case 0x0503: return "ecdsa_secp384r1_sha384";
+            case 0x0603: return "ecdsa_secp521r1_sha512";
+            case 0x0203: return "ecdsa_sha1";
+            case 0x0804: return "rsa_pss_rsae_sha256";
+            case 0x0805: return "rsa_pss_rsae_sha384";
+            case 0x0806: return "rsa_pss_rsae_sha512";
+            case 0x0807: return "ed25519";
+            case 0x0808: return "ed448";
+            case 0x0809: return "rsa_pss_pss_sha256";
+            default: return hexString(a, 4);
+        }
+    }
+
     // A record header looks plausible: content type 20..24, version 3.0 - 3.4, sane length
     bool plausibleRecord(const char *d, size_t n) {
         if (n < 5) return false;
@@ -82,17 +150,63 @@ namespace {
         return type >= 20 && type <= 24 && major == 3 && minor <= 4 && len > 0 && len <= 16384 + 2048;
     }
 
+    constexpr size_t kMaxHandshake = 1u << 20;   // a handshake message longer than this is not waited for
+
+    // Handshake payload that has been put together from one or more records, and where each part sits in the frame.
+    struct Joined {
+        std::string bytes;
+        std::vector<std::pair<size_t, size_t>> parts;   // {position in `bytes`, offset in the frame}
+
+        void append(const char *p, size_t n, size_t frameOffset) {
+            parts.push_back({bytes.size(), frameOffset});
+            bytes.append(p, n);
+        }
+        // Offset in the frame of byte `pos` (clamped into the part it falls in).
+        size_t frame(size_t pos) const {
+            size_t best = 0;
+            for (size_t i = 0; i < parts.size(); ++i) if (parts[i].first <= pos) best = i;
+            return parts.empty() ? 0 : parts[best].second + (pos - parts[best].first);
+        }
+        // How many bytes starting at `pos` stay inside one part of the frame
+        size_t contiguous(size_t pos, size_t length) const {
+            size_t end = bytes.size();
+            for (size_t i = 0; i < parts.size(); ++i) if (parts[i].first > pos) { end = parts[i].first; break; }
+            return std::min(length, end - pos);
+        }
+    };
+
+    // True if the handshake messages in `bytes` end exactly at the end (or one is too large to wait for).
+    bool handshakeAligned(const std::string &bytes) {
+        size_t q = 0;
+        while (q < bytes.size()) {
+            if (bytes.size() - q < 4) return false;
+            const size_t len = (static_cast<size_t>(static_cast<uint8_t>(bytes[q + 1])) << 16) | be16(bytes.data() + q + 2);
+            if (len > kMaxHandshake) return true;
+            if (q + 4 + len > bytes.size()) return false;
+            q += 4 + len;
+        }
+        return true;
+    }
+
     struct Hello {
         std::string serverName;
         std::string alpn;
+        std::string subject;             // common name of the first certificate seen
         uint16_t supportedVersion = 0;   // highest from the supported_versions extension
         uint16_t cipher = 0;             // ServerHello's chosen suite
         uint16_t version = 0;            // legacy version field
     };
 
-    // Walks the extensions block [p, p+n); fills `h` and (when `tree`) adds nodes
-    void parseExtensions(Context &ctx, const char *base, const char *p, size_t n, bool client, Hello &h, Field *tree) {
-        const size_t o = ctx.offsetOf(base);
+    std::string join(const std::vector<std::string> &items, size_t limit = 24) {
+        std::string out;
+        for (size_t i = 0; i < items.size() && i < limit; ++i) out += (i ? ", " : "") + items[i];
+        if (items.size() > limit) out += ", ...";
+        return out;
+    }
+
+    // Walks the extensions block bytes[at, at+n); fills `h` and (when `tree`) adds nodes
+    void parseExtensions(const Joined &j, size_t at, size_t n, bool client, Hello &h, Field *tree) {
+        const char *p = j.bytes.data() + at;
         size_t i = 0;
         while (n - i >= 4) {
             const uint16_t type = be16(p + i), len = be16(p + i + 2);
@@ -100,19 +214,27 @@ namespace {
             if (n - body < len) break;
             const char *d = p + body;
             std::string note;
+            std::vector<std::string> details;   // children of the extension node
             if (type == 0 && client && len >= 5) { // server_name: list length(2), name type(1), name length(2), name
                 const size_t nameLen = be16(d + 3);
                 if (5 + nameLen <= len && d[2] == 0) {
                     h.serverName.assign(d + 5, nameLen);
                     note = "server_name: " + h.serverName;
+                    details.push_back("Server Name: " + h.serverName);
                 }
             } else if (type == 43) { // supported_versions
+                std::vector<std::string> names;
                 if (client && len >= 3) {
-                    for (size_t k = 1; k + 1 < len; k += 2) h.supportedVersion = std::max<uint16_t>(h.supportedVersion, be16(d + k));
+                    for (size_t k = 1; k + 1 < len; k += 2) {
+                        h.supportedVersion = std::max<uint16_t>(h.supportedVersion, be16(d + k));
+                        names.push_back(versionName(be16(d + k)));
+                    }
                 } else if (!client && len == 2) {
                     h.supportedVersion = be16(d);
+                    names.push_back(versionName(be16(d)));
                 }
                 note = "supported_versions";
+                if (!names.empty()) details.push_back("Supported Versions: " + join(names));
             } else if (type == 16 && len >= 4) { // ALPN: list length(2), then length-prefixed protocols
                 std::string all;
                 for (size_t k = 2; k < len;) {
@@ -120,73 +242,204 @@ namespace {
                     if (k + 1 + pl > len) break;
                     if (!all.empty()) all += ", ";
                     all.append(d + k + 1, pl);
+                    details.push_back("ALPN Next Protocol: " + std::string(d + k + 1, pl));
                     k += 1 + pl;
                 }
                 if (h.alpn.empty()) h.alpn = all;
                 note = "application_layer_protocol_negotiation: " + all;
+            } else if (type == 10 && len >= 2) { // supported_groups
+                std::vector<std::string> names;
+                for (size_t k = 2; k + 1 < len; k += 2) names.push_back(groupName(be16(d + k)));
+                note = "supported_groups";
+                details.push_back("Supported Groups: " + join(names));
+            } else if (type == 13 && len >= 2) { // signature_algorithms
+                std::vector<std::string> names;
+                for (size_t k = 2; k + 1 < len; k += 2) names.push_back(signatureName(be16(d + k)));
+                note = "signature_algorithms";
+                details.push_back("Signature Algorithms: " + join(names));
+            } else if (type == 11 && len >= 1) { // ec_point_formats
+                note = "ec_point_formats";
+                details.push_back("EC point formats length: " + std::to_string(static_cast<uint8_t>(d[0])));
+            } else if (type == 51) { // key_share: client list or the server's selected group
+                note = "key_share";
+                std::vector<std::string> names;
+                if (client && len >= 2) {
+                    for (size_t k = 2; k + 4 <= len;) {
+                        const size_t kl = be16(d + k + 2);
+                        names.push_back(groupName(be16(d + k)));
+                        k += 4 + kl;
+                    }
+                } else if (!client && len >= 2) {
+                    names.push_back(groupName(be16(d)));
+                }
+                if (!names.empty()) details.push_back("Key Share Groups: " + join(names));
+            } else if (type == 45 && len >= 2) { // psk_key_exchange_modes
+                note = "psk_key_exchange_modes";
+                for (size_t k = 1; k < len; ++k) details.push_back(std::string("PSK Key Exchange Mode: ") + (d[k] == 1 ? "psk_dhe_ke" : d[k] == 0 ? "psk_ke" : "unknown") + " (" + std::to_string(static_cast<uint8_t>(d[k])) + ")");
+            } else if (type == 35) {
+                note = "session_ticket";
+                details.push_back("Session Ticket: " + std::to_string(len) + " bytes");
+            } else if (type == 65281) {
+                note = "renegotiation_info";
+            } else if (type == 23) {
+                note = "extended_master_secret";
+            } else if (type == 5) {
+                note = "status_request";
             } else {
-                static const struct { uint16_t t; const char *n; } names[] = {{10, "supported_groups"}, {11, "ec_point_formats"}, {13, "signature_algorithms"},
-                                                                          {23, "extended_master_secret"}, {35, "session_ticket"}, {51, "key_share"},
-                                                                          {45, "psk_key_exchange_modes"}, {65281, "renegotiation_info"}, {5, "status_request"}};
-                for (const auto &e: names) if (e.t == type) note = e.n;
-                if (note.empty()) note = "extension " + std::to_string(type);
+                note = "extension " + std::to_string(type);
             }
-            if (tree) tree->add("Extension: " + note, o + static_cast<size_t>(p - base) + i, 4 + len);
+            if (tree) {
+                Field &e = tree->add("Extension: " + note, j.frame(at + i), j.contiguous(at + i, 4 + len));
+                e.add("Type: " + std::to_string(type), j.frame(at + i), 2);
+                e.add("Length: " + std::to_string(len), j.frame(at + i + 2), 2);
+                for (const auto &t: details) e.add(t, j.frame(at + body), j.contiguous(at + body, len));
+            }
             i = body + len;
         }
     }
 
-    // One handshake message at [p, p+n) of the record; returns the info word for it
-    std::string handshake(Context &ctx, const char *base, const char *p, size_t n, Hello &hello, Field *tree) {
+    // Certificate message body [at, at+n): TLS 1.2 (list) or TLS 1.3 (request context + list with extensions)
+    void parseCertificates(const Joined &j, size_t at, size_t n, Hello &h, Field *tree) {
+        const char *b = j.bytes.data() + at;
+        size_t i = 0;
+        bool v13 = false;
+        auto listLenAt = [&](size_t k) { return n - k >= 3 ? (static_cast<size_t>(static_cast<uint8_t>(b[k])) << 16) | be16(b + k + 1) : size_t(0); };
+        if (n >= 3 && listLenAt(0) == n - 3) {
+            i = 3;
+        } else if (n >= 4) {
+            const size_t ctxLen = static_cast<uint8_t>(b[0]);
+            if (n >= 1 + ctxLen + 3 && listLenAt(1 + ctxLen) == n - 1 - ctxLen - 3) { v13 = true; i = 1 + ctxLen + 3; }
+            else i = 3;                                       // damaged or cut: read what is there as a TLS 1.2 list
+        } else {
+            return;
+        }
+        int index = 0;
+        while (n - i >= 3 && index < 16) {
+            const size_t len = (static_cast<size_t>(static_cast<uint8_t>(b[i])) << 16) | be16(b + i + 1);
+            const size_t take = std::min(len, n - i - 3);
+            const CertificateSummary c = parseCertificate(reinterpret_cast<const unsigned char *>(b + i + 3), take);
+            if (c.ok && h.subject.empty()) h.subject = c.commonName;
+            if (tree) {
+                const std::string title = "Certificate: " + (c.ok ? (c.commonName.empty() ? c.subject : c.commonName) : std::string("(") + std::to_string(len) + " bytes)");
+                Field &cert = tree->add(title, j.frame(at + i), j.contiguous(at + i, 3 + take));
+                cert.add("Certificate Length: " + std::to_string(len), j.frame(at + i), 3);
+                if (c.ok) {
+                    cert.add("Subject: " + c.subject, j.frame(at + i + 3), j.contiguous(at + i + 3, take));
+                    cert.add("Issuer: " + c.issuer, j.frame(at + i + 3), j.contiguous(at + i + 3, take));
+                    cert.add("Serial Number: 0x" + c.serial, j.frame(at + i + 3), j.contiguous(at + i + 3, take));
+                    cert.add("Not Before: " + c.notBefore, j.frame(at + i + 3), j.contiguous(at + i + 3, take));
+                    cert.add("Not After: " + c.notAfter, j.frame(at + i + 3), j.contiguous(at + i + 3, take));
+                    if (!c.dnsNames.empty()) cert.add("Subject Alternative Names: " + join(c.dnsNames, 12), j.frame(at + i + 3), j.contiguous(at + i + 3, take));
+                } else {
+                    cert.add("[Could not read the certificate]", j.frame(at + i + 3), j.contiguous(at + i + 3, take));
+                }
+            }
+            i += 3 + len;
+            if (len > n) break;
+            if (v13) {                                        // per-certificate extensions
+                if (n - std::min(n, i) < 2) break;
+                i += 2 + be16(b + i);
+            }
+            ++index;
+            if (i > n) break;
+        }
+    }
+
+    // One handshake message at bytes[pos, ...) of the joined payload; returns the info word for it
+    std::string handshake(const Joined &j, size_t pos, Hello &hello, Field *tree) {
+        const size_t n = j.bytes.size() - pos;
         if (n < 4) return "Handshake";
+        const char *p = j.bytes.data() + pos;
         const uint8_t type = static_cast<uint8_t>(p[0]);
         const size_t len = (static_cast<size_t>(static_cast<uint8_t>(p[1])) << 16) | be16(p + 2);
-        const size_t o = ctx.offsetOf(base) + static_cast<size_t>(p - base);
         std::string name = handshakeName(type);
 
         Field *hs = nullptr;
         if (tree) {
-            hs = &tree->add("Handshake Protocol: " + name, o, std::min(n, len + 4));
-            hs->add("Handshake Type: " + name + " (" + std::to_string(type) + ")", o, 1);
-            hs->add("Length: " + std::to_string(len), o + 1, 3);
+            hs = &tree->add("Handshake Protocol: " + name, j.frame(pos), j.contiguous(pos, std::min(n, len + 4)));
+            hs->add("Handshake Type: " + name + " (" + std::to_string(type) + ")", j.frame(pos), 1);
+            hs->add("Length: " + std::to_string(len), j.frame(pos + 1), 3);
         }
         const size_t avail = std::min(n - 4, len);
         const char *b = p + 4;
+        const size_t base = pos + 4;                        // position of b in the joined payload
 
         if ((type == 1 || type == 2) && avail >= 35) {
             const bool client = type == 1;
             hello.version = be16(b);
             size_t i = 2 + 32;                                  // version + random
             const size_t sidLen = static_cast<uint8_t>(b[i]);
-            i += 1 + sidLen;
             if (hs) {
-                hs->add("Version: " + versionName(hello.version) + " (" + hexString(hello.version, 4) + ")", o + 4, 2);
-                hs->add("Random", o + 6, 32);
+                hs->add("Version: " + versionName(hello.version) + " (" + hexString(hello.version, 4) + ")", j.frame(base), 2);
+                hs->add("Random", j.frame(base + 2), 32);
+                if (sidLen > 0 && i + 1 + sidLen <= avail) hs->add("Session ID Length: " + std::to_string(sidLen), j.frame(base + i), 1);
             }
+            i += 1 + sidLen;
             if (i <= avail) {
                 if (client && avail >= i + 2) {
                     const size_t suites = be16(b + i);
-                    if (hs) hs->add("Cipher Suites (" + std::to_string(suites / 2) + " suites)", o + 4 + i, 2 + std::min(suites, avail - i - 2));
+                    if (hs) {
+                        Field &cs = hs->add("Cipher Suites (" + std::to_string(suites / 2) + " suites)", j.frame(base + i), 2 + std::min(suites, avail - i - 2));
+                        for (size_t k = 0; k + 1 < suites && i + 2 + k + 2 <= avail && k / 2 < 64; k += 2) {
+                            const uint16_t c = be16(b + i + 2 + k);
+                            cs.add("Cipher Suite: " + cipherName(c) + " (" + hexString(c, 4) + ")", j.frame(base + i + 2 + k), 2);
+                        }
+                    }
                     i += 2 + suites;
-                    if (i < avail) i += 1 + static_cast<uint8_t>(b[i]);   // compression methods
+                    if (i < avail) {
+                        if (hs) hs->add("Compression Methods Length: " + std::to_string(static_cast<uint8_t>(b[i])), j.frame(base + i), 1);
+                        i += 1 + static_cast<uint8_t>(b[i]);   // compression methods
+                    }
                 } else if (!client && avail >= i + 3) {
                     hello.cipher = be16(b + i);
-                    if (hs) hs->add("Cipher Suite: " + cipherName(hello.cipher) + " (" + hexString(hello.cipher, 4) + ")", o + 4 + i, 2);
+                    if (hs) hs->add("Cipher Suite: " + cipherName(hello.cipher) + " (" + hexString(hello.cipher, 4) + ")", j.frame(base + i), 2);
                     i += 3;                                       // suite + compression method
                 }
                 if (i + 2 <= avail) {
                     const size_t extLen = be16(b + i);
                     i += 2;
-                    Field *ext = hs ? &hs->add("Extensions Length: " + std::to_string(extLen), o + 4 + i - 2, 2) : nullptr;
-                    (void)ext;
-                    parseExtensions(ctx, base, b + i, std::min(extLen, avail - i), client, hello, hs);
+                    if (hs) hs->add("Extensions Length: " + std::to_string(extLen), j.frame(base + i - 2), 2);
+                    parseExtensions(j, base + i, std::min(extLen, avail - i), client, hello, hs);
                 }
             }
             if (client && !hello.serverName.empty()) name += " (SNI=" + hello.serverName + ")";
+        } else if (type == 11) {
+            parseCertificates(j, base, avail, hello, hs);
+        } else if (type == 4 && avail >= 4 && hs) {
+            hs->add("Session Ticket Lifetime Hint: " + std::to_string(be32(b)) + " seconds", j.frame(base), 4);
         }
         return name;
     }
 } // namespace
+
+dissect::StreamFrame dissect::frameTls(const char *d, size_t n) {
+    // the first bytes decide: type, then major version, then minor version
+    if (n >= 1 && (static_cast<uint8_t>(d[0]) < 20 || static_cast<uint8_t>(d[0]) > 24)) return {StreamFrame::Kind::Reject, 0};
+    if (n >= 2 && static_cast<uint8_t>(d[1]) != 3) return {StreamFrame::Kind::Reject, 0};
+    if (n >= 3 && static_cast<uint8_t>(d[2]) > 4) return {StreamFrame::Kind::Reject, 0};
+    if (n < 5) return {StreamFrame::Kind::NeedMore, 0};
+    if (!plausibleRecord(d, n)) return {StreamFrame::Kind::Reject, 0};
+
+    // a message made of consecutive handshake records ends at the record where the handshake messages end
+    size_t pos = 0;
+    std::string handshakeBytes;
+    for (int records = 0; records < 64; ++records) {
+        if (n - pos < 5) return {StreamFrame::Kind::NeedMore, 0};
+        if (!plausibleRecord(d + pos, n - pos)) {
+            // after the first record: whatever follows is not another handshake record, so the message ends here
+            return pos == 0 ? StreamFrame{StreamFrame::Kind::Reject, 0} : StreamFrame{StreamFrame::Kind::Complete, pos};
+        }
+        const size_t len = be16(d + pos + 3);
+        const uint8_t type = static_cast<uint8_t>(d[pos]);
+        if (records > 0 && type != 22) return {StreamFrame::Kind::Complete, pos};
+        if (n - pos < 5 + len) return {StreamFrame::Kind::NeedMore, 0};
+        if (type != 22) return {StreamFrame::Kind::Complete, pos + 5 + len};
+        handshakeBytes.append(d + pos + 5, len);
+        pos += 5 + len;
+        if (handshakeAligned(handshakeBytes)) return {StreamFrame::Kind::Complete, pos};
+    }
+    return {StreamFrame::Kind::Complete, pos};
+}
 
 bool dissect::dissectTls(Context &ctx, const char *data, size_t length) {
     if (!plausibleRecord(data, length)) return false;
@@ -208,40 +461,65 @@ bool dissect::dissectTls(Context &ctx, const char *data, size_t length) {
         const uint16_t version = be16(data + pos + 1);
         const size_t recLen = be16(data + pos + 3);
         const size_t avail = std::min(recLen, length - pos - 5);
-        const bool partial = avail < recLen;
+        bool partial = avail < recLen;
 
-        Field *rec = nullptr;
-        if (layer) {
-            rec = &layer->add(versionName(version) + " Record Layer: " + contentTypeName(type), o + pos, 5 + avail);
-            rec->add(std::string("Content Type: ") + contentTypeName(type) + " (" + std::to_string(type) + ")", o + pos, 1);
-            rec->add("Version: " + versionName(version) + " (" + hexString(version, 4) + ")", o + pos + 1, 2);
-            rec->add("Length: " + std::to_string(recLen), o + pos + 3, 2);
-        }
+        auto addRecord = [&](size_t at, uint8_t t, uint16_t v, size_t l, size_t a) -> Field * {
+            if (!layer) return nullptr;
+            Field *r = &layer->add(versionName(v) + " Record Layer: " + contentTypeName(t), o + at, 5 + a);
+            r->add(std::string("Content Type: ") + contentTypeName(t) + " (" + std::to_string(t) + ")", o + at, 1);
+            r->add("Version: " + versionName(v) + " (" + hexString(v, 4) + ")", o + at + 1, 2);
+            r->add("Length: " + std::to_string(l), o + at + 3, 2);
+            return r;
+        };
+        Field *rec = addRecord(pos, type, version, recLen, avail);
+        size_t consumed = 5 + recLen;   // bytes of the frame this group of records covers
 
         std::string part;
         if (type == 22) {
-            // one record may hold several handshake messages
+            // the handshake messages of consecutive records are read as one stream: a message may span records
+            Joined joined;
+            joined.append(data + pos + 5, avail, o + pos + 5);
+            struct Follow { size_t at; uint16_t version; size_t length, avail; };
+            std::vector<Follow> follow;
+            size_t next = pos + consumed;
+            while (!partial && !handshakeAligned(joined.bytes) && length - next >= 5 && plausibleRecord(data + next, length - next) &&
+                   static_cast<uint8_t>(data[next]) == 22 && follow.size() < 63) {
+                const size_t l = be16(data + next + 3), a = std::min(l, length - next - 5);
+                joined.append(data + next + 5, a, o + next + 5);
+                follow.push_back({next, be16(data + next + 1), l, a});
+                if (a < l) partial = true;
+                next += 5 + l;
+            }
             size_t hp = 0;
             int messages = 0;
-            while (avail - hp >= 4 && messages < 8) {
-                const char *m = data + pos + 5 + hp;
+            while (joined.bytes.size() - hp >= 4 && messages < 8) {
+                const char *m = joined.bytes.data() + hp;
                 const size_t mlen = (static_cast<size_t>(static_cast<uint8_t>(m[1])) << 16) | be16(m + 2);
-                const std::string w = handshake(ctx, data, m, avail - hp, hello, rec);
+                const std::string w = handshake(joined, hp, hello, rec);
                 if (pack.app_type == 0) pack.app_type = static_cast<uint8_t>(m[0]);
                 part += (part.empty() ? "" : ", ") + w;
                 ++messages;
-                if (mlen >= avail - hp - 4) break; // the message fills (or overruns) the rest of the record
+                if (mlen >= joined.bytes.size() - hp - 4) break; // the message fills (or overruns) the rest of the payload
                 hp += 4 + mlen;
             }
             if (part.empty()) part = "Handshake";
             if (hello.cipher != 0) part += " (" + cipherName(hello.cipher) + ")";
+            if (!follow.empty()) {
+                if (rec) rec->add("[Handshake message spans " + std::to_string(follow.size() + 1) + " records]");
+                for (const auto &f: follow) addRecord(f.at, 22, f.version, f.length, f.avail);
+                consumed = next - pos;
+            }
         } else if (type == 23) {
             part = "Application Data";
             if (rec) rec->add("Encrypted Application Data (" + std::to_string(avail) + " bytes)", o + pos + 5, avail);
         } else if (type == 21 && avail >= 2) {
             part = "Alert";
-            if (rec) rec->add("Alert Message: level " + std::to_string(static_cast<uint8_t>(data[pos + 5])) + ", description " +
-                              std::to_string(static_cast<uint8_t>(data[pos + 6])), o + pos + 5, 2);
+            const uint8_t level = static_cast<uint8_t>(data[pos + 5]), description = static_cast<uint8_t>(data[pos + 6]);
+            if (rec) {
+                Field &a = rec->add("Alert Message: level " + std::to_string(level) + ", description " + std::to_string(description), o + pos + 5, 2);
+                a.add(std::string("Level: ") + (level == 1 ? "Warning" : level == 2 ? "Fatal" : "Unknown") + " (" + std::to_string(level) + ")", o + pos + 5, 1);
+                a.add(std::string("Description: ") + (alertName(description) ? alertName(description) : "Unknown") + " (" + std::to_string(description) + ")", o + pos + 6, 1);
+            }
         } else {
             part = contentTypeName(type);
         }
@@ -249,7 +527,8 @@ bool dissect::dissectTls(Context &ctx, const char *data, size_t length) {
         info += (info.empty() ? "" : ", ") + part;
 
         if (!hello.serverName.empty()) pack.app_text = hello.serverName;
-        pos += 5 + recLen;
+        if (!hello.subject.empty()) pack.app_text2 = hello.subject;
+        pos += consumed;
         ++records;
         if (partial) break;
     }
