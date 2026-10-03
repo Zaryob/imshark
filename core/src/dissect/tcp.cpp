@@ -20,8 +20,14 @@ namespace {
         return out;
     }
 
+    // Sequence numbers in a SACK block belong to the direction this segment acknowledges. `ackBase` converts a raw number into the
+    // relative one Wireshark shows (raw - base); it is negative when the connection is not tracked.
+    std::string sackEdge(uint32_t raw, int64_t ackBase) {
+        return std::to_string(ackBase >= 0 ? static_cast<uint32_t>(raw - static_cast<uint32_t>(ackBase)) : raw);
+    }
+
     // Renders TCP options (MSS, WS, SACK, TS, ...) as " MSS=1460 WS=7 ..."
-    std::string describeTcpOptions(const char *p, size_t len) {
+    std::string describeTcpOptions(const char *p, size_t len, int64_t ackBase) {
         using namespace dissect;
         std::string out;
         size_t i = 0;
@@ -34,9 +40,11 @@ namespace {
             if (optLen < 2 || optLen > len - i) break; // malformed option, stop decoding
             switch (kind) {
                 case 2: if (optLen == 4) out += " MSS=" + std::to_string(be16(p + i + 2)); break;
-                case 3: if (optLen == 3) out += " WS=" + std::to_string(static_cast<uint8_t>(p[i + 2])); break;
+                case 3: if (optLen == 3) out += " WS=" + std::to_string(1u << std::min<unsigned>(static_cast<uint8_t>(p[i + 2]), 31)); break;
                 case 4: out += " SACK_PERM"; break;
-                case 5: out += " SACK"; break;
+                case 5:
+                    for (size_t k = i + 2; k + 8 <= i + optLen; k += 8) out += " SLE=" + sackEdge(be32(p + k), ackBase) + " SRE=" + sackEdge(be32(p + k + 4), ackBase);
+                    break;
                 case 8:
                     if (optLen == 10)
                         out += " TSval=" + std::to_string(be32(p + i + 2)) + " TSecr=" + std::to_string(be32(p + i + 6));
@@ -46,6 +54,142 @@ namespace {
             i += optLen;
         }
         return out;
+    }
+
+    const char *mptcpSubtype(unsigned t) {
+        static const char *names[] = {"Multipath Capable", "Join Connection", "Data Sequence Signal", "Add Address", "Remove Address", "Change Subflow Priority",
+                                      "Fallback", "Fast Close", "Subflow Reset"};
+        return t < 9 ? names[t] : "Unknown";
+    }
+
+    std::string hexRun(const char *p, size_t n) {
+        static const char *digits = "0123456789abcdef";
+        std::string out;
+        for (size_t i = 0; i < n; ++i) { out += digits[static_cast<uint8_t>(p[i]) >> 4]; out += digits[static_cast<uint8_t>(p[i]) & 15]; }
+        return out;
+    }
+
+    uint64_t be64(const char *p) { return (static_cast<uint64_t>(dissect::be32(p)) << 32) | dissect::be32(p + 4); }
+
+    // Multipath TCP (RFC 8684): the subtype decides the layout
+    void addMptcp(Field &opt, size_t o, const char *d, size_t n) {
+        using namespace dissect;
+        if (n < 3) return;
+        const unsigned sub = static_cast<uint8_t>(d[2]) >> 4, low = static_cast<uint8_t>(d[2]) & 0x0f;
+        Field &m = opt.add(std::string("Multipath TCP: ") + mptcpSubtype(sub) + " (" + std::to_string(sub) + ")", o, n);
+        m.add("Subtype: " + std::string(mptcpSubtype(sub)) + " (" + std::to_string(sub) + ")", o + 2, 1);
+        switch (sub) {
+            case 0: // MP_CAPABLE: version, flags, then one or two 64-bit keys
+                m.add("Version: " + std::to_string(low), o + 2, 1);
+                if (n >= 4) {
+                    const unsigned f = static_cast<uint8_t>(d[3]);
+                    m.add(std::string("Flags: ") + ((f & 0x80) ? "checksum required, " : "") + ((f & 0x40) ? "extensibility, " : "") + ((f & 0x20) ? "no more subflows, " : "") + ((f & 0x01) ? "HMAC-SHA256" : "") + " " + hexString(f, 2), o + 3, 1);
+                }
+                if (n >= 12) m.add("Sender's Key: " + hexRun(d + 4, 8), o + 4, 8);
+                if (n >= 20) m.add("Receiver's Key: " + hexRun(d + 12, 8), o + 12, 8);
+                break;
+            case 1: // MP_JOIN: SYN (12), SYN/ACK (16), ACK (24)
+                m.add(std::string("Backup: ") + ((low & 1) ? "yes" : "no"), o + 2, 1);
+                if (n >= 4) m.add("Address ID: " + std::to_string(static_cast<uint8_t>(d[3])), o + 3, 1);
+                if (n == 12) { m.add("Receiver's Token: " + hexRun(d + 4, 4), o + 4, 4); m.add("Sender's Random Number: " + hexRun(d + 8, 4), o + 8, 4); }
+                else if (n == 16) { m.add("Sender's Truncated HMAC: " + hexRun(d + 4, 8), o + 4, 8); m.add("Sender's Random Number: " + hexRun(d + 12, 4), o + 12, 4); }
+                else if (n == 24) m.add("Sender's HMAC: " + hexRun(d + 4, 20), o + 4, 20);
+                break;
+            case 2: { // DSS: flags select which fields follow
+                if (n < 4) break;
+                const unsigned f = static_cast<uint8_t>(d[3]);
+                const bool dataFin = f & 0x10, dsn8 = f & 0x08, mapping = f & 0x04, ack8 = f & 0x02, ack = f & 0x01;
+                m.add(std::string("Flags:") + (dataFin ? " DATA_FIN" : "") + (dsn8 ? " 8-byte DSN" : "") + (mapping ? " mapping" : "") + (ack8 ? " 8-byte ACK" : "") + (ack ? " DATA_ACK" : "") + " " + hexString(f, 2), o + 3, 1);
+                size_t at = 4;
+                if (ack && at + (ack8 ? 8u : 4u) <= n) {
+                    m.add("Data ACK: " + std::to_string(ack8 ? be64(d + at) : be32(d + at)), o + at, ack8 ? 8 : 4);
+                    at += ack8 ? 8 : 4;
+                }
+                if (mapping && at + (dsn8 ? 8u : 4u) + 4 + 2 <= n) {
+                    m.add("Data Sequence Number: " + std::to_string(dsn8 ? be64(d + at) : be32(d + at)), o + at, dsn8 ? 8 : 4);
+                    at += dsn8 ? 8 : 4;
+                    m.add("Subflow Sequence Number: " + std::to_string(be32(d + at)), o + at, 4);
+                    m.add("Data-level Length: " + std::to_string(be16(d + at + 4)), o + at + 4, 2);
+                    at += 6;
+                    if (at + 2 <= n) m.add("Checksum: " + hexString(be16(d + at), 4), o + at, 2);
+                }
+                break;
+            }
+            case 3: { // ADD_ADDR: version, flags (E = echo), address id, address, optional port
+                m.add("Version: " + std::to_string(low), o + 2, 1);
+                if (n >= 4) m.add("Address ID: " + std::to_string(static_cast<uint8_t>(d[3])), o + 3, 1);
+                if (n >= 8) m.add("Address: " + ip4(d + 4), o + 4, 4);
+                if (n == 10 || n == 22) m.add("Port: " + std::to_string(be16(d + n - 2)), o + n - 2, 2);
+                if (n >= 20 && (n == 20 || n == 22)) m.add("Address: " + network::formatIPv6(d + 4), o + 4, 16);
+                break;
+            }
+            case 4:
+                for (size_t k = 3; k < n; ++k) m.add("Address ID: " + std::to_string(static_cast<uint8_t>(d[k])), o + k, 1);
+                break;
+            case 5:
+                m.add(std::string("Backup: ") + ((low & 1) ? "yes" : "no"), o + 2, 1);
+                if (n >= 4) m.add("Address ID: " + std::to_string(static_cast<uint8_t>(d[3])), o + 3, 1);
+                break;
+            case 6: case 7:
+                if (sub == 7 && n >= 12) m.add("Receiver's Key: " + hexRun(d + 4, 8), o + 4, 8);
+                if (sub == 6 && n >= 12) m.add("Data Sequence Number: " + std::to_string(be64(d + 4)), o + 4, 8);
+                break;
+            default: break;
+        }
+    }
+
+    // The option list as tree nodes: one node per option with its decoded fields
+    void addTcpOptionNodes(Field &options, size_t o, const char *p, size_t len, int64_t ackBase) {
+        using namespace dissect;
+        size_t i = 0;
+        int count = 0;
+        while (i < len && count++ < 40) {
+            const uint8_t kind = static_cast<uint8_t>(p[i]);
+            if (kind == 0) { options.add("TCP Option - End of Option List (EOL)", o + i, 1); break; }
+            if (kind == 1) { options.add("TCP Option - No-Operation (NOP)", o + i, 1); ++i; continue; }
+            if (i + 1 >= len) { options.add("[Malformed option: length byte missing]", o + i, 1); break; }
+            const size_t optLen = static_cast<uint8_t>(p[i + 1]);
+            if (optLen < 2 || optLen > len - i) { options.add("[Malformed option: length " + std::to_string(optLen) + " does not fit]", o + i, len - i); break; }
+            const char *d = p + i;
+            const size_t at = o + i;
+            switch (kind) {
+                case 2: {
+                    Field &f = options.add("TCP Option - Maximum segment size" + (optLen == 4 ? ": " + std::to_string(be16(d + 2)) + " bytes" : std::string()), at, optLen);
+                    if (optLen == 4) f.add("MSS Value: " + std::to_string(be16(d + 2)), at + 2, 2);
+                    break;
+                }
+                case 3: {
+                    Field &f = options.add("TCP Option - Window scale" + (optLen == 3 ? ": " + std::to_string(static_cast<uint8_t>(d[2])) + " (multiply by " + std::to_string(1u << std::min<unsigned>(static_cast<uint8_t>(d[2]), 31)) + ")" : std::string()), at, optLen);
+                    if (optLen == 3) f.add("Shift count: " + std::to_string(static_cast<uint8_t>(d[2])), at + 2, 1);
+                    break;
+                }
+                case 4: options.add("TCP Option - SACK permitted", at, optLen); break;
+                case 5: {
+                    Field &f = options.add("TCP Option - SACK: " + std::to_string((optLen - 2) / 8) + " block(s)", at, optLen);
+                    for (size_t k = 2; k + 8 <= optLen; k += 8) {
+                        const uint32_t left = be32(d + k), right = be32(d + k + 4);
+                        Field &b = f.add("SACK block " + std::to_string((k - 2) / 8 + 1) + ": " + sackEdge(left, ackBase) + "-" + sackEdge(right, ackBase) + " (" + std::to_string(static_cast<uint32_t>(right - left)) + " bytes)", at + k, 8);
+                        b.add("Left Edge = " + sackEdge(left, ackBase) + (ackBase >= 0 ? " (relative), " + std::to_string(left) + " (raw)" : " (raw)"), at + k, 4);
+                        b.add("Right Edge = " + sackEdge(right, ackBase) + (ackBase >= 0 ? " (relative), " + std::to_string(right) + " (raw)" : " (raw)"), at + k + 4, 4);
+                    }
+                    if ((optLen - 2) % 8 != 0) f.add("[Malformed SACK option: not a multiple of 8 bytes]", at + 2, optLen - 2);
+                    break;
+                }
+                case 8: {
+                    Field &f = options.add("TCP Option - Timestamps" + (optLen == 10 ? ": TSval " + std::to_string(be32(d + 2)) + ", TSecr " + std::to_string(be32(d + 6)) : std::string()), at, optLen);
+                    if (optLen == 10) { f.add("Timestamp value: " + std::to_string(be32(d + 2)), at + 2, 4); f.add("Timestamp echo reply: " + std::to_string(be32(d + 6)), at + 6, 4); }
+                    break;
+                }
+                case 19: options.add("TCP Option - MD5 signature", at, optLen); break;
+                case 28: options.add("TCP Option - User Timeout" + (optLen == 4 ? ": " + std::to_string(be16(d + 2) & 0x7fff) + ((be16(d + 2) & 0x8000) ? " minutes" : " seconds") : std::string()), at, optLen); break;
+                case 29: options.add("TCP Option - Authentication Option (TCP-AO)", at, optLen); break;
+                case 30: addMptcp(options, at, d, optLen); break;
+                case 34: options.add("TCP Option - Fast Open" + (optLen > 2 ? ": cookie " + std::to_string(optLen - 2) + " bytes" : std::string(": cookie request")), at, optLen); break;
+                case 253: case 254: options.add("TCP Option - Experimental (kind " + std::to_string(kind) + ")" + (optLen >= 4 ? ", ExID " + hexString(be16(d + 2), 4) : std::string()), at, optLen); break;
+                default: options.add("TCP Option - Kind " + std::to_string(kind) + " (" + std::to_string(optLen) + " bytes)", at, optLen);
+            }
+            i += optLen;
+        }
     }
 } // namespace
 
@@ -171,7 +315,9 @@ void dissect::dissectTcp(Context &ctx, const char *data, size_t length) {
     const uint16_t dstPort = network::ntoh16(tcpHeader.dest_port);
 
     const std::string flagNames = tcpFlagNames(tcpHeader.flags);
-    const std::string options = describeTcpOptions(data + sizeof(network::TCPHeader), headerLen - sizeof(network::TCPHeader));
+    // the base that turns raw numbers of the acknowledged direction into relative ones (raw ack - relative ack)
+    const int64_t ackBase = ack >= 0 ? static_cast<int64_t>(static_cast<uint32_t>(network::ntoh32(tcpHeader.ack_num) - static_cast<uint32_t>(ack))) : -1;
+    const std::string options = describeTcpOptions(data + sizeof(network::TCPHeader), headerLen - sizeof(network::TCPHeader), ackBase);
     // analysis notes go in front of the usual summary, like Wireshark's "[TCP Retransmission] ..."
     std::string notes;
     if (pack.tcp_analysis & network::kTcpLostSegment) notes += "[TCP Previous segment not captured] ";
@@ -210,8 +356,9 @@ void dissect::dissectTcp(Context &ctx, const char *data, size_t length) {
         l.add("Checksum: " + hexString(network::ntoh16(tcpHeader.checksum), 4), o + 16, 2);
         l.add("Urgent Pointer: " + std::to_string(network::ntoh16(tcpHeader.urgent_pointer)), o + 18, 2);
         if (headerLen > sizeof(network::TCPHeader)) {
-            l.add("Options:" + (options.empty() ? std::string(" (no decoded options)") : options), o + 20,
-                  headerLen - sizeof(network::TCPHeader));
+            Field &opts = l.add("Options:" + (options.empty() ? std::string(" (no decoded options)") : options), o + 20,
+                                headerLen - sizeof(network::TCPHeader));
+            addTcpOptionNodes(opts, o + 20, data + sizeof(network::TCPHeader), headerLen - sizeof(network::TCPHeader), ackBase);
         }
         if (pack.tcp_analysis != 0) {
             Field &a = l.add("[SEQ/ACK analysis]");

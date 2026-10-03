@@ -79,7 +79,7 @@ TEST(Parser, TcpOptionsAndFlags) {
                        "1f90 01bb 00000064 00000000 a002 7210 0000 0000"
                        "020405b4 01 030307 0402 080a 00000001 00000000"));
     EXPECT_EQ(p.protocol, "TCP");
-    EXPECT_EQ(p.info, "8080 -> 443 [SYN]  Seq=0 Win=29200 MSS=1460 WS=7 SACK_PERM TSval=1 TSecr=0");
+    EXPECT_EQ(p.info, "8080 -> 443 [SYN]  Seq=0 Win=29200 MSS=1460 WS=128 SACK_PERM TSval=1 TSecr=0");
     EXPECT_NE(findField(p, "Flags: 0x2, Don't fragment"), nullptr) << "DF bit";
     EXPECT_NE(findField(p, "Fragment Offset: 0"), nullptr);
 }
