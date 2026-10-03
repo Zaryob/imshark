@@ -2,7 +2,9 @@
 
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <memory>
+#include <string>
 #include <unordered_map>
 #include <vector>
 
@@ -45,6 +47,25 @@ namespace dissect {
         const Dissector *findTcpPort(uint16_t src, uint16_t dst) const { return findPort(tcpPorts_, src, dst); }
         const Dissector *findUdpPort(uint16_t src, uint16_t dst) const { return findPort(udpPorts_, src, dst); }
 
+        /// A UDP heuristic works like the TCP one: it inspects a datagram no port claimed and must validate the message
+        /// structure before it claims it (a wrong claim hides what the datagram really is).
+        void registerUdpHeuristic(Heuristic h) { udpHeuristics_.push_back(std::move(h)); }
+        const std::vector<Heuristic> &udpHeuristics() const { return udpHeuristics_; }
+
+        // ---- Decode As: choose the application protocol of a port by name --------------------------------------------
+        /// What a protocol offers to Decode As: a UDP dissector and/or a TCP one (a stream protocol is preferred for TCP).
+        struct Handlers {
+            Dissector udp;
+            Dissector tcp;
+            std::shared_ptr<StreamProtocol> stream;
+        };
+        void registerProtocolName(const std::string &name, Handlers h) { named_[name] = std::move(h); }
+        /// Names usable for the transport, sorted.
+        std::vector<std::string> protocolNames(bool tcp) const;
+        /// Makes `port` carry `protocol` (replacing whatever was registered for it). False if the protocol does not
+        /// exist for that transport; `error` then says why.
+        bool decodeAs(bool tcp, uint16_t port, const std::string &protocol, std::string *error = nullptr);
+
         /// Registry with all built-in dissectors.
         static const Registry &builtin();
 
@@ -66,6 +87,8 @@ namespace dissect {
         std::unordered_map<uint16_t, Dissector> tcpPorts_;
         std::unordered_map<uint16_t, Dissector> udpPorts_;
         std::vector<Heuristic> tcpHeuristics_;
+        std::vector<Heuristic> udpHeuristics_;
+        std::map<std::string, Handlers> named_;
         std::unordered_map<uint16_t, std::shared_ptr<StreamProtocol>> tcpStreams_;
         std::vector<std::shared_ptr<StreamProtocol>> streamHeuristics_;
     };

@@ -31,6 +31,7 @@ add_executable(imshark_tests
     test_tcp_reassembly.cpp
     test_tcp_options.cpp
     test_checksums.cpp
+    test_decode_as.cpp
     test_time_format.cpp
     test_utils.cpp
     test_ui_smoke.cpp

@@ -54,6 +54,11 @@ void dissect::dissectUdp(Context &ctx, const char *data, size_t length) {
 
     if (const Dissector *app = ctx.registry.findUdpPort(srcPort, dstPort)) {
         (*app)(ctx, payload, payloadLen);
+    } else if (payloadLen > 0 && [&] {
+        for (const auto &heuristic: ctx.registry.udpHeuristics()) if (heuristic(ctx, payload, payloadLen)) return true;
+        return false;
+    }()) {
+        // recognised by its content on a port nobody registered
     } else {
         pack.protocol = "UDP";
         pack.info = std::to_string(srcPort) + " -> " + std::to_string(dstPort) +

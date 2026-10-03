@@ -626,6 +626,59 @@ dissect::StreamFrame dissect::frameDnsTcp(const char *data, size_t length) {
     return {StreamFrame::Kind::Complete, declared + 2};
 }
 
+namespace {
+    // A message is DNS only if all of it parses: header sanity, then every question and record, ending exactly at its end.
+    bool looksLikeDns(const char *msg, size_t len) {
+        network::DNSHeader hdr;
+        if (!readStruct(msg, len, 0, hdr) || len > 4096) return false;
+        const uint16_t flags = network::ntoh16(hdr.flags);
+        const unsigned opcode = (flags >> 11) & 0xF, rcode = flags & 0xF;
+        if (opcode > 5 || opcode == 3 || (flags & 0x0040) || rcode > 10) return false;   // reserved opcode / Z bit / unknown rcode
+        const unsigned counts[4] = {network::ntoh16(hdr.questions), network::ntoh16(hdr.answer_rrs), network::ntoh16(hdr.authority_rrs), network::ntoh16(hdr.additional_rrs)};
+        if (counts[0] > 8 || counts[1] > 64 || counts[2] > 64 || counts[3] > 64) return false;
+        if (opcode == 0 && counts[0] == 0) return false;
+        if (counts[0] + counts[1] + counts[2] + counts[3] == 0) return false;
+        size_t off = sizeof(network::DNSHeader);
+        for (int section = 0; section < 4; ++section) {
+            for (unsigned i = 0; i < counts[section]; ++i) {
+                std::string name;
+                if (section == 0) {
+                    if (!readName(msg, len, off, name) || len < off || len - off < 4) return false;
+                    const unsigned cls = be16(msg + off + 2) & 0x7FFF;
+                    if (cls != 1 && cls != 3 && cls != 4 && cls != 254 && cls != 255) return false;
+                    off += 4;
+                } else {
+                    Record r;
+                    if (!parseRecord(msg, len, off, r)) return false;
+                }
+            }
+        }
+        return off == len;
+    }
+} // namespace
+
+bool dissect::dissectDnsHeuristic(Context &ctx, const char *data, size_t length) {
+    if (!looksLikeDns(data, length)) return false;
+    dissectMessage(ctx, data, length, "DNS");
+    return true;
+}
+
+dissect::StreamFrame dissect::frameDnsTcpHeuristic(const char *data, size_t length) {
+    const StreamFrame f = frameDnsTcp(data, length);
+    if (f.kind == StreamFrame::Kind::Reject) return f;
+    // the length alone is a weak signal: it must be a plausible DNS size, and the message after it must also begin like DNS
+    if (be16(data) > 4096) return {StreamFrame::Kind::Reject, 0};
+    if (length >= 4 && (be16(data + 2 + 0) & 0x0040)) return {StreamFrame::Kind::Reject, 0};   // flags are not available before 4 bytes
+    if (length >= 2 + sizeof(network::DNSHeader)) {
+        const uint16_t flags = be16(data + 2 + 2);
+        const unsigned opcode = (flags >> 11) & 0xF;
+        const unsigned questions = be16(data + 2 + 4);
+        if (opcode > 5 || opcode == 3 || (flags & 0x0040) || (flags & 0xF) > 10 || questions == 0 || questions > 8) return {StreamFrame::Kind::Reject, 0};
+        if (f.kind == StreamFrame::Kind::Complete && !looksLikeDns(data + 2, f.length - 2)) return {StreamFrame::Kind::Reject, 0};
+    }
+    return f;
+}
+
 void dissect::dissectDnsTcp(Context &ctx, const char *data, size_t length) {
     // DNS over TCP: every message is preceded by its length (RFC 1035 4.2.2). Whole messages come from the
     // stream reassembly; what is present gets decoded when that did not apply (a capture that starts mid-stream).
