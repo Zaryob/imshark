@@ -86,7 +86,7 @@ Hedef: geçerli paketleri sessizce atlamamak veya yanlış protokol başlığı 
 
 Kabul ölçütü: FCS'li Ethernet ve eski Packet Block paketleri kaybolmaz; IPv6 parçaları tamamlanmadan sahte TCP/UDP alanları üretmez; mevcut pcap/pcapng endian, zaman çözünürlüğü ve gzip desteği korunur. Referanslar: [pcap dosya yapısı](https://www.ietf.org/ietf-ftp/internet-drafts/draft-ietf-opsawg-pcap-09.html), [pcapng blokları](https://datatracker.ietf.org/doc/html/draft-ietf-opsawg-pcapng-06), [IPv6 / RFC 8200](https://www.rfc-editor.org/rfc/rfc8200.html).
 
-## v0.7.2 — Mesaj birleştirme ve mevcut protokollerin eksikleri
+## v0.7.2 — Mesaj birleştirme ve mevcut protokollerin eksikleri ✅ tamamlandı
 
 Hedef: bir protokolün adını göstermekten mesajı ve alanlarını doğru çözmeye geçmek.
 
@@ -125,30 +125,90 @@ Kabul ölçütü: `stp.pcap`, `telecomitalia-pppoe.pcap`, `mpls-basic.cap` ve t�
 
 ## v0.9 — Yaygın protokoller (küçük teslimler)
 
+Durum: v0.7.2 tamamlandı — TCP mesaj birleştirme, DNS/HTTP/TLS mesaj çözümü, Decode As, checksum doğrulaması, ICMP/NTP/DHCP/DNS ayrıntıları. v0.7.3 (kapsüllemeler) ve v0.8 (canlı yakalama) henüz yapılmadı; bu bölümdeki iki bağımlılık v0.7.3'ten gelir (aşağıda işaretli).
+
+### Ortak teslim kuralları (her madde için)
+1. **Bir madde = bir commit** (gerekirse altyapı ayrı commit). Commit'ten önce `ctest` + ASan/UBSan paketi temiz olmalı.
+2. **Üç tür test:** (a) gerçek örnek yakalama — manifestte kaynak URL + SHA-256 + beklenen sonuç, `IMSHARK_CORPUS_DIR` ile çalışır, yoksa atlanır; (b) sentetik, elle kurulmuş mesajlar (RFC örnekleri); (c) mutasyon-fuzz: bozuk/kırpık girdide çökmez ve her alan ofseti çerçeve içinde kalır.
+3. **Bağımsız doğrulama (oracle):** çıkan sayı/alan, kodun kendisinden değil ayrı bir yoldan doğrulanır (RFC test vektörleri, bağımsız Python hesabı veya `tools/compare_tshark.py`).
+4. **Durum bilgisi özette saklanır, Replay'de yeniden hesaplanmaz.** Bir dissector önceki paketlerdeki bir şeye bağlıysa (BGP AS4 modu, SMTP DATA durumu, FTP veri portu, TLS sürümü) bu karar **yükleme geçişinde** özete yazılır (`app_flags`/`app_type`); detay kurulurken yalnızca okunur. Aksi halde tek paketten kurulan detay yükleme sonucundan sapar.
+5. **`PacketInfo` bütçesi:** boyut şu an 328 bayt, test üst sınırı 336. Yeni alan eklemek yerine mevcut `app_type/app_flags/app_code/app_text/app_text2` kullanılır; büyük/çok değerli durum için oturum tabloları kullanılır.
+6. **Filtre alanları:** her protokol kendi alanlarını `core/src/filter/fields.cpp` tablosuna ekler.
+7. Her teslimde `docs/KNOWN_ISSUES.md` "işlevsel sınırlar" bölümü ve README özellik listesi güncellenir.
+
+### Sıra ve bağımlılıklar
+Önerilen sıra: **0.9.1 → 0.9.3-a/b → 0.9.2 → 0.9.3-c → 0.9.3-d.**
+- 0.9.1 yalnız mevcut altyapıyı kullanır ve hızlı değer verir.
+- 0.9.2, v0.7.3'ün link-katmanı kaydı ve 802.3/LLC/SNAP işine bağlıdır.
+- 0.9.3-a/b (oturum tabloları + HTTP/2), TLS şifre çözme (0.9.3-c) öncesi gereklidir.
+- DTLS (0.9.3-d), datagram birleştirme altyapısı ister.
+
 ### v0.9.1 — Özet dissector'larını alan düzeyine çıkar
 
-- [ ] SNMP: sınır denetimli ASN.1/BER, sürüm/community, PDU/request-id/error, OID/varbind; SNMPv3 USM başlığı ve şifreli içerik göstergesi. *(SNMPv3 şifre çözme kapsam dışı)* — **L**
-- [ ] BGP: mesaj sınırları, OPEN capabilities, UPDATE withdrawn routes/path attributes/NLRI, NOTIFICATION — **L**
-- [ ] Telnet IAC negotiation/subnegotiation ve SMTP komut/yanıt/çok satırlı yanıt/DATA durumları; STARTTLS geçişini v0.7.2 altyapısına bağla — **M**
-- [ ] FTP kontrol komutları ve veri bağlantısı eşleştirme; TFTP opcode/block/options; SSH banner ve açık key-exchange başlıkları. *(Şifreli SSH/SFTP içeriğini çözme ayrı iş)* — **L**
+- [ ] **0.9.1-a: Ortak bounds-checked okuyucu ve BER/ASN.1** — **M**
+  - `core/src/dissect/reader.h`: `ByteReader{data, size, pos}` — `u8/u16/u24/u32/u64` (big/little-endian), `skip`, `sub(len)`, taşmada hata durumuna geçer (`ok()` false).
+  - `core/src/dissect/asn1.h`: BER TLV okuyucu (`tag class/constructed/number`, kesin/belirsiz uzunluk, 4 bayta kadar), INTEGER (64-bit), OID → "1.3.6.1…", OCTET STRING, SEQUENCE yineleyici. `x509.cpp` bunun üzerine taşınır.
+  - Testler: BER/DER test vektörleri (RFC 3416, X.690), uzunluk taşması, iç içe derinlik sınırı (32).
+- [ ] **0.9.1-b: SNMP (v1, v2c, v3)** — **L**
+  - Sürümler v1, v2c, v3. Mesaj başlığı: version, community (v1/v2c) ya da `msgGlobalData` + USM `msgSecurityParameters` (engine ID/boots/time/user, auth/priv parametre uzunlukları) (v3); `scopedPDU` şifreliyse "şifreli — çözülmedi" göstergesi (şifre çözme kapsam dışı).
+  - PDU türleri: Get/GetNext/Response/Set/Trap v1/GetBulk/Inform/Trap v2/Report; request-id, error-status/index (adlarıyla), non-repeaters/max-repetitions; varbind listesi (OID + tür: INTEGER, OCTET STRING, OID, IpAddress, Counter32/64, Gauge32, TimeTicks, Null, noSuchObject/Instance/EndOfMibView).
+  - OID adı tablosu (RFC 1213/3418: sysDescr, sysUpTime, ifTable...), bilinmeyenler sayısal.
+  - Filtre: `snmp.version`, `snmp.community`, `snmp.pdu_type`, `snmp.request_id`, `snmp.error_status`, `snmp.oid`.
+- [ ] **0.9.1-c: BGP** — **L**
+  - Akış framer'ı: 16 bayt `0xff` işaretçisi + 2 bayt uzunluk (19–4096).
+  - Mesajlar: OPEN (sürüm, AS, hold time, router ID, capabilities: multiprotocol, route refresh, 4-octet AS, graceful restart, ADD-PATH), UPDATE (withdrawn routes, path attributes: ORIGIN, AS_PATH/AS4_PATH, NEXT_HOP, MED, LOCAL_PREF, ATOMIC_AGGREGATE, AGGREGATOR, COMMUNITIES, MP_REACH/MP_UNREACH_NLRI, NLRI), NOTIFICATION (hata kod/alt kod adları), KEEPALIVE, ROUTE-REFRESH.
+  - Durum: AS_PATH 2/4 bayt seçimi OPEN capability'sinden yükleme geçişinde `app_flags`'e yazılır; yoksa tahmin edilip "[AS size guessed]" işaretlenir.
+  - Filtre: `bgp.type`, `bgp.as`, `bgp.nlri`, `bgp.notification.code`.
+- [ ] **0.9.1-d: Telnet, SMTP, FTP, TFTP, SSH** — **L**
+  - Oturum tabloları (FTP/TFTP): yükleme geçişinde `SessionTables` doldurulur (`app_flags`), Replay oradan okur.
+  - Telnet: IAC komutları (WILL/WONT/DO/DONT/SB…SE), seçenek adları (ECHO, SGA, TERMINAL-TYPE, NAWS, LINEMODE…), alt-müzakere verisi.
+  - SMTP: komut/yanıt ayrımı, çok satırlı yanıtlar (`250-`/`250 `), STARTTLS sonrası TLS geçişi, DATA durumu (satır satır `.` ile bitiş; From/To/Subject ağaçta).
+  - FTP: komut/yanıt, `PASV`/`EPSV` ve `PORT`/`EPRT` veri bağlantısı oturum tablosu → "FTP-DATA" eşleştirmesi; Follow Stream desteği.
+  - TFTP: opcode (RRQ/WRQ/DATA/ACK/ERROR/OACK), dosya adı/mod/seçenekler, blok no; UDP dinamik port oturum tablosu.
+  - SSH: banner (`SSH-2.0-…`), `KEXINIT` (açık algoritmalar), anahtar değişimi mesajları (DH/ECDH), `NEWKEYS` sonrası "şifreli" işareti (şifre çözme kapsam dışı).
 
 Kabul ölçütü: SNMP/Telnet/SMTP/BGP yalnızca port etiketi ve ham veri göstermez; mesaj alanları filtrelenir ve detay ağacında görünür. Her protokol ayrı commit/test kümesiyle teslim edilir; TCP'ye dayananlar v0.7.2'nin mesaj birleştirmesini kullanır.
 
 ### v0.9.2 — Kablosuz çerçeveleri aç
 
-- [ ] LINKTYPE_IEEE802_11 (105), Radiotap (127) ve PPI (192): değişken başlık uzunluğu, present bitmap/TLV ve hizalama; link katmanından 802.11'e yönlendirme — **L**
-- [ ] 802.11 management/control/data, adres alanları/DS bayrakları, QoS ve information element'ler; şifresiz data → LLC/SNAP → IP — **L**
-- [ ] EAPOL/802.1X mesajları ve WPA handshake başlıkları; korumalı yükü açıkça göster. *(802.11 şifre çözme yapılmaz)* — **M**
+Ön koşul: v0.7.3 link katmanı kaydı (`Registry::registerLinkType`) ve 802.3/LLC/SNAP.
 
-Kabul ölçütü: `http_PPI.cap` içindeki 140 paketin tamamının `Unknown` kalması giderilir; her çerçeve kendi tipine göre çözülür, HTTP taşıyan şifresiz çerçevelerde iç katmanlara ulaşılır. Radiotap ve PPI için kırpık, bilinmeyen alanlı ve farklı hizalamalı örnekler doğrulanır.
+- [ ] **4.1: Radiotap (127) ve PPI (192)** — **L**
+  - Radiotap: `it_version`, `it_len`, `it_present` (genişletme bitleri), doğal hizalamalı alanlar (TSFT, flags, rate, channel, dBm signal/noise, antenna, MCS, A-MPDU, VHT, HE...). FCS present bayrağı sondaki 4 baytı ayırır.
+  - PPI: `pph_version/flags/len/dlt`, TLV alanları (802.11-Common=2, AMPDU...), dlt=105 → 802.11 yönlendirmesi.
+  - Filtre: `radiotap.channel.freq`, `radiotap.dbm_antsignal`, `radiotap.datarate`, `ppi.dlt`.
+- [ ] **4.2: IEEE 802.11 çerçeveleri (105)** — **L**
+  - Frame Control (tür/alt tür, ToDS/FromDS, Retry, PwrMgt, Protected, Order...), süre, DS bayraklarına göre adresler (RA/TA/DA/SA/BSSID), sequence control, QoS Control, HT Control.
+  - Yönetim: Beacon, Probe Req/Resp (timestamp, interval, capability, Information Elements: SSID, rates, DS, TIM, country, RSN, HT/VHT/HE...), Auth/Deauth, Assoc/Disassoc, Action.
+  - Kontrol: RTS, CTS, ACK, Block Ack. Data: Data/QoS Data/Null; Protected bayrağı varsa "korumalı veri (CCMP/TKIP/WEP IV)", şifresizse LLC/SNAP → IP/HTTP iç katmanlarına yönlendirme.
+  - Filtre: `wlan.fc.type`, `wlan.fc.subtype`, `wlan.sa/da/ra/ta/bssid`, `wlan.ssid`, `wlan.fc.protected`, `wlan.seq`.
+- [ ] **4.3: EAPOL / 802.1X ve WPA el sıkışması** — **M**
+  - EtherType 0x888E: sürüm, tür (Packet/Start/Logoff/Key), EAP (Identity, TLS, PEAP...).
+  - EAPOL-Key: descriptor tipi, Key Information bitleri, replay counter, nonce, IV, RSC, MIC, key data (RSN IE, PMKID KDE, GTK KDE). Info'da "Message 1 of 4" vb. sınıflandırma. (802.11 şifre çözme kapsam dışı).
+
+Kabul ölçütü: `http_PPI.cap` içindeki 140 paketin tamamının `Unknown` kalması giderilir; her çerçeve kendi tipine göre çözülür, HTTP taşıyan şifresiz çerçevelerde iç katmanlara ulaşılır.
 
 ### v0.9.3 — Modern uygulama mesajları ve TLS anahtarları
 
-- [ ] HTTP/2 açık metin frame/stream yönetimi ve HPACK; güncel standart örneklerini tarihî draft örneklerinden ayır — **L**
-- [ ] TLS anahtar günlüğü (SSLKEYLOGFILE) ve pcapng Decryption Secrets Block (DSB); TLS 1.2/1.3 için desteklenen cipher'ları aşamalı ekle, çözülmüş HTTP/1.x/HTTP/2 yükünü dissector'a aktar — **L**
-- [ ] DTLS record/handshake, message sequence ve fragment birleştirme; ilk teslimde açık alanları çöz, şifre çözmeyi destek matrisiyle genişlet — **L**
+- [ ] **5.1: Oturum tabloları (0.9.3-a)** — **M**
+  - `core::SessionTables`: yükleme sırasında `FileProcessor` tarafından doldurulan, yükleme bitince değişmez (immutable) hale gelen ve `buildPacketDetails`'e geçirilen tür-güvenli tablolar (TLS oturumu, HPACK durumu, FTP veri bağlantıları).
+  - Tablo başına bellek üst sınırı (ör. 64 MB), taşmada "durum kayıp" teşhisi.
+- [ ] **5.2: HTTP/2 açık metin ve HPACK (0.9.3-b)** — **L**
+  - Tanıma: `PRI * HTTP/2.0\r\n\r\nSM\r\n\r\n` ön eki, `Upgrade: h2c`, ALPN `h2`, Decode As. 9 baytlık çerçeve başlığı (uzunluk, tür, bayraklar, stream ID) akış framer'ı.
+  - Çerçeve türleri: DATA, HEADERS (+PRIORITY), PRIORITY, RST_STREAM, SETTINGS, PUSH_PROMISE, PING, GOAWAY, WINDOW_UPDATE, CONTINUATION. HEADERS/CONTINUATION blok birleştirme.
+  - HPACK (RFC 7541): statik tablo (61 giriş), Huffman kod çözücü (257 sembol), dinamik tablo (boyut güncellemesi, kovma). Bağlantı yönü başına sıralı durum; Replay'de blok taze çözücüden geçer.
+  - Filtre: `http2.type`, `http2.streamid`, `http2.flags`, `http2.headers.method/path/status/authority`, `http2.header.name/value`.
+- [ ] **5.3: TLS anahtar günlüğü ve şifre çözme (0.9.3-c)** — **L**
+  - Kripto: İsteğe bağlı CMake özelliği `IMSHARK_TLS_DECRYPT` ile OpenSSL 3 / libcrypto (AES-GCM, ChaCha20-Poly1305, HKDF/HMAC). Kapalıysa "şifre çözme bu derlemede yok" notu.
+  - Anahtar kaynakları: `SSLKEYLOGFILE` metni (CLIENT_RANDOM, TLS 1.3 secrets) ve pcapng Decryption Secrets Block (DSB, tip `0x544c534b`). UI'da keylog dosyası yolu ayarı.
+  - ClientHello random → oturum tablosu eşleme, kayıt sıra no sayımı, KeyUpdate takibi.
+  - Destek matrisi: TLS 1.2/1.3 × {AES-128/256-GCM, ChaCha20-Poly1305}. Çözülmüş yük sanal TCP akışı olarak HTTP/1.x veya HTTP/2 dissector'ına verilir; Follow Stream "TLS (çözülmüş)" sekmesi.
+  - Doğru/yanlış/eksik anahtar ayrımı: etiket doğrulanmadan açık metin gösterilmez.
+- [ ] **5.4: DTLS ve datagram birleştirme (0.9.3-d)** — **L**
+  - Datagram mesaj birleştirme altyapısı: UDP üzerinde `(bağlantı, epoch, message_seq)` parçalarını birleştiren sınırlı bellekli yapı (SCTP için de ortak).
+  - Kayıt başlığı (tür, sürüm, epoch, 48-bit sıra no, uzunluk), el sıkışma (msg_type, fragment_offset/length), HelloVerifyRequest + cookie, ClientHello/ServerHello/Certificate alanları. DTLS 1.2 AES-GCM şifre çözme.
 
-Kabul ölçütü: anahtar olmayan yakalamada şifreli veri açık metin gibi yorumlanmaz; doğru/yanlış/eksik anahtar örnekleri ayrılır. Kripto ve HPACK bağımlılıkları seçilip lisans/paketleme etkileri belgelenir; eski draft yakalamaları güncel uyumluluğun kanıtı sayılmaz.
+Kabul ölçütü: anahtar olmayan yakalamada şifreli veri açık metin gibi yorumlanmaz; doğru/yanlış/eksik anahtar örnekleri ayrılır. Kripto ve HPACK bağımlılıkları seçilip lisans/paketleme etkileri belgelenir.
 
 ## v1.0 — Yayın hazırlığı
 
@@ -164,17 +224,54 @@ Kabul ölçütü: anahtar olmayan yakalamada şifreli veri açık metin gibi yor
 
 ## v1.1+ — Seçmeli protokol ve yakalama genişlemeleri
 
-Öncelik: önce yaygın ağ/kurumsal kullanım, sonra cihaz ve uzmanlık protokolleri. Her aile ayrı bir sürüm/teslim olarak ele alınır; hepsinin tamamlanması v1.0 için koşul değildir.
+Öncelik: önce yaygın ağ/kurumsal kullanım, sonra cihaz ve uzmanlık protokolleri. Her aile ayrı bir sürüm/teslim olarak ele alınır; hiçbirinin tamamlanması v1.0 için koşul değildir.
 
-- [ ] Ağ/taşıma: IGMP, OSPF, SCTP chunk'ları ve birleştirme, UDP-Lite; DCCP daha sonra — **L** (aile başına)
-- [ ] IPsec: AH alanları, ESP başlığı/şifreli yük, IKEv1/v2 mesaj ve payload'ları; anahtarlı çözme ayrı destek matrisi — **L**
-- [ ] Kurumsal dosya/kimlik: sınır denetimli RPC/XDR/ASN.1 altyapısı üzerine SMB2/3, NFS, DCE/RPC, LDAP ve Kerberos; protokol sürümleri ve şifreli yükleri aşamalı ele al — **L** (protokol başına)
-- [ ] Veritabanları: PostgreSQL, MySQL, TDS; bağlantı kurma, sorgu/yanıt ve TLS geçişleri — **L** (protokol başına)
-- [ ] USB: raw/usbmon/USBPcap link type'ları, transfer/control/setup ve descriptor alanları; Darwin/usbdump gibi yakalama biçimleri ayrı okuyucu işi — **L**
-- [ ] Bluetooth HCI/H4/pseudo-header → ACL/L2CAP/ATT; IEEE 802.15.4 → 6LoWPAN/ZigBee için ayrı aşamalar — **L** (aile başına)
-- [ ] SIP/SDP, RTP/RTCP/RTSP temel mesaj/başlıkları; medya çözümü ve VoIP analizörleri kapsam dışı — **L**
-- [ ] Endüstriyel/telekom/otomotiv: EtherCAT, S7COMM, DNP3, IEC 60870-5-104, GSM/UMTS/SIGTRAN, CAN/otomotiv protokolleri; ihtiyaç ve gerçek corpus'a göre protokol seç — **L** (protokol başına)
-- [ ] Eski/üretici dosya okuyucuları: NetMon, snoop, ERF, iptrace; önce açık "desteklenmeyen dosya formatı" teşhisi, sonra talebe göre okuyucu — **L** (format başına)
+### İlkeler
+1. **Talebe ve gerçek örneğe göre seç:** En az iki gerçek yakalama örneği ve kamuya açık şartname olmadan başlanmaz.
+2. **Her aile bağımsız teslim:** Aileler birbirine yalnızca ortak altyapı üzerinden bağlıdır.
+3. **Altyapı önce:** İhtiyaç duyulan ortak altyapı işi ayrı commit ve testleriyle teslim edilir.
+4. **Şifreli içerik açıkça işaretlenir;** anahtarlı şifre çözme ayrı destek matrisiyle gelir.
+5. **Performans bütçesi:** 500 bin paketlik yükleme ve filtreleme ölçümü bozulmaz.
+
+### Ortak altyapı geriçizelgesi
+- **B1: Oturum tabloları** (`core::SessionTables`, v0.9.3-a) — Durumlu çözümde Replay eşitliği (TLS, SMB, SQL, SIP/RTP) — **M**
+- **B2: Datagram/mesaj birleştirme** — UDP üzerinde parça birleştirme, sınırlı bellek + zaman aşımı (SCTP, DTLS) — **M**
+- **B3: Bayt okuyucu + BER/ASN.1** (v0.9.1-a) ve **XDR okuyucu** (4 bayt hizalı, uzunluk önekli) (LDAP, Kerberos, RPC/NFS) — **M + S**
+- **B4: Dissector başına filtre alanı kaydı** — Alanların merkezi `fields.cpp` yerine dissector tarafından kaydedilmesi — **M**
+- **B5: Dosya okuyucu kaydı** — Sihirli sayıyla biçim tanıma, `CaptureReader` arayüzü, "desteklenmeyen biçim" teşhisi — **M**
+- **B6: Link katmanı kaydı** (v0.7.3) — USB, Bluetooth, 802.15.4, CAN link türleri — **M**
+- **B7: CRC-32C ve diğer sağlama toplamları** (`checksum.h` genişlemesi) — SCTP, DNP3 — **S**
+- **B8: İstatistik ad alanı genelleştirme** — USB cihaz/uç nokta, Bluetooth, WLAN, SCTP uç noktaları — **M**
+
+### Sürümler ve aile ayrıntıları
+
+- [ ] **v1.1 — Ağ ve taşıma:** IGMP (v1/v2/v3, MLD deseniyle grup/kaynak listeleri), OSPF (v2/v3 ortak başlık, Hello, DD, LSA türleri 1-5/7, Fletcher checksum), SCTP (CRC-32C, chunk'lar, DATA parça birleştirme B2, çoklu akış, payload protocol ID), UDP-Lite (checksum kapsamı). (Ön koşul: B2, B4, B7) — **L**
+- [ ] **v1.2 — IPsec:** AH (IPv4/IPv6 SPI, sıra no, iç protokol), ESP (SPI, sıra no, ESP-NULL yük sezgisi veya şifreli göstergesi), IKEv1/IKEv2 (ISAKMP başlığı, SA/KE/ID/CERT/AUTH payload zinciri, 500/4500 NAT-T, IKE parçalama). (Ön koşul: B4) — **L**
+- [ ] **v1.3 — Kurumsal dosya ve kimlik (LDAP → Kerberos → SMB2/3 → DCE/RPC → NFS):**
+  - LDAP (B3 BER): Bind/Search/Modify, filtre ağacı, StartTLS geçişi.
+  - Kerberos (B3 DER): AS/TGS/AP istek/yanıt, KRB-ERROR, PA-DATA, TCP/UDP.
+  - SMB2/3: NetBIOS çerçeveleme, Negotiate, Session Setup (SPNEGO/NTLMSSP), Tree Connect, Create/Read/Write/Close, imzalı/şifreli bayrakları; oturum tablosu (B1) ile paylaşım ve dosya adı eşleme.
+  - DCE/RPC: CO/CL PDU, UUID tablosu, opnum, parça birleştirme (SMB named pipe taşıması).
+  - NFS (B3 XDR): ONC RPC, portmapper, NFSv3/v4 COMPOUND. (Ön koşul: B1, B3) — **L (protokol başına)**
+- [ ] **v1.4 — Veritabanları (PostgreSQL → MySQL → TDS):**
+  - PostgreSQL: başlangıç mesajı, SSLRequest → TLS, auth türleri, sorgu mesajları (Q, P/B/D/E/S, RowDescription, DataRow...).
+  - MySQL: sunucu el sıkışması, auth plugin, SSLRequest → TLS, komutlar (COM_QUERY...), sonuç kümesi.
+  - TDS (SQL Server): Pre-Login (TLS-in-TDS), Login7, SQL Batch, token akışı (COLMETADATA, ROW, DONE...). Parolalar varsayılan olarak maskelenir. (Ön koşul: B1) — **L (protokol başına)**
+- [ ] **v1.5 — USB:** `LINKTYPE_USB_LINUX` (189), `USB_LINUX_MMAPPED` (220), `USBPCAP` (249); URB id, yön, transfer türleri, setup paketi, standart tanımlayıcılar (device, config, interface, endpoint, HID). Cihaz/uç nokta istatistikleri (B8). (Ön koşul: B6, B8) — **L**
+- [ ] **v1.6 — Bluetooth ve 802.15.4:** HCI H4 (187), pseudo-header (201), Linux monitor (254), USB-HCI; L2CAP (parça birleştirme), ATT/GATT, SDP; IEEE 802.15.4 (195/215), 6LoWPAN (IPHC sıkıştırması, FRAG1/FRAGN birleştirmesi B2), Zigbee NWK/APS. (Ön koşul: B6, v1.5) — **L**
+- [ ] **v1.7 — SIP/SDP, RTP/RTCP, RTSP:** SIP (metin ayrıştırma, Content-Length framer'ı, başlıklar, SDP gövdesi, Call-ID oturum tablosu), RTP/RTCP (başlık alanları, SDP portlarından dinamik RTP tanıma B1, RTCP SR/RR), RTSP. Medya çözümü ve VoIP grafikleri kapsam dışı. (Ön koşul: B1) — **L**
+- [ ] **v1.8 — Endüstriyel, telekom, otomotiv (talebe göre):** Modbus/TCP, IEC 60870-5-104, DNP3 (CRC-16), S7COMM, EtherCAT, CAN/SocketCAN (227), GSM/UMTS/SIGTRAN (SCTP üstünde). — **L (protokol başına)**
+- [ ] **v1.9 — Eski ve üretici dosya biçimleri:** B5 dosya biçimi sihirli sayı tanıma ve teşhis mesajı ("Desteklenmeyen dosya biçimi: X"); NetMon (.cap), Sun snoop, ERF (Endace), AIX iptrace için `CaptureReader` okuyucuları. — **L (biçim başına)**
+
+### Teslim kontrol listesi
+- [ ] Şartname bağlantısı ve sürüm (`docs/PROTOCOLS.md`); bilinen sapmalar.
+- [ ] Gerçek örnekler manifestte (URL + SHA-256 + beklenen sayılar + `tree_contains` olguları).
+- [ ] Sentetik testler: RFC örnekleri, sınır değerler, birleştirme senaryoları.
+- [ ] Mutasyon-fuzz + ASan/UBSan; tüm alan ofsetleri çerçeve içinde.
+- [ ] Replay eşitliği testi (durumlu protokollerde özellik testi).
+- [ ] Filtre alanları, Info metni, protokol hiyerarşisi, Decode As adı.
+- [ ] `KNOWN_ISSUES.md` ve README güncellendi; 500 bin paket bellek/hız ölçümü korundu.
+- [ ] Şifreli/korumalı içerik açıkça etiketli; asla açık metin gibi yorumlanmıyor.
 
 ## SampleCaptures incelemesinin başlangıç ölçümü
 
@@ -183,9 +280,9 @@ Mevcut parser ile indirilebilen **10 gerçek dosya** çalıştırıldı; bu sonu
 | Örnek | Mevcut sonuç | Planlanan aşama |
 |---|---|---|
 | `dhcp.pcap`, `dhcp-nanosecond.pcap` | Her birinde 4 DHCP paketi tanındı; tüm alanların eksiksizliğini kanıtlamaz | v0.7.1 regresyon |
-| `NTP_sync.pcap` | 30 NTP + 2 DNS tanındı | v0.7.2 alan kapsamı |
-| `dns_port.pcap` | 2 DNS paketi UDP olarak kaldı | v0.7.2 tanıma/Decode As |
-| `PRIV_bootp-both_overload.pcap`, `PRIV_bootp-both_overload_empty-no_end.pcap` | DHCP tanındı; option 52 bilinmiyor, `sname`/`file` seçenekleri çözülmedi | v0.7.2 DHCP |
+| `NTP_sync.pcap` | 30 NTP + 2 DNS tanındı; checksum'lar doğrulanır (hepsi geçerli) | tamamlandı (v0.7.2) |
+| `dns_port.pcap` | 2 DNS paketi, içerikle tanınır (portu standart değil) | tamamlandı (v0.7.2) |
+| `PRIV_bootp-both_overload.pcap`, `PRIV_bootp-both_overload_empty-no_end.pcap` | DHCP; option 52 ve `sname`/`file` seçenekleri çözülüyor | tamamlandı (v0.7.2) |
 | `ipv4frags.pcap` | 3 paket: 2 ICMP, 1 IPv4; tamamlanan datagram ICMP olarak çözüldü | v0.7.1 regresyon |
 | `http.cap` | 43 paket: 7 HTTP, 2 DNS, 34 TCP (çok segmentli yanıtların ilk segmentleri artık HTTP olarak çözülür) | tamamlandı |
 | `http_PPI.cap` | 140 paketin tamamı `Unknown`, link type 192 | v0.9.2 PPI/802.11 |

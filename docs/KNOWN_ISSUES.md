@@ -2,7 +2,7 @@
 
 Statik kod incelemesiyle tespit edilmiştir (derleme/çalıştırma ile ayrıca doğrulanmadı). Önem: **K** = kritik (çökme/güvenlik/yanlış veri), **O** = orta, **D** = düşük.
 
-## Güncel durum (v0.7.1)
+## Güncel durum (v0.7.2)
 
 İlk analizdeki #1–#24 giderildi. Aşağıdakiler **hâlâ açık** olanlardır; ilgili ROADMAP sürümü parantez içinde.
 
@@ -17,7 +17,7 @@ Statik kod incelemesiyle tespit edilmiştir (derleme/çalıştırma ile ayrıca 
 - Dışa aktarma mikro-saniye çözünürlüğündedir (nanosaniye yakalamada son 3 hane kaybolur). IP adresleri sayısal değil metin olarak sıralanır. ImGui pencere yerleşimi kalıcı değil.
 
 **Bellek / performans**
-- Paket özeti 312 bayt, `info` metni paket başına ~63 bayt yığın tutar: 500 bin paket ≈ 190 MB, yükleme < 1 sn.
+- Paket özeti 328 bayt (testlerde üst sınır 336), `info` metni paket başına ~63 bayt yığın tutar: 500 bin paket ≈ 190 MB, yükleme < 1 sn.
 
 **Doğrulama boşlukları**
 - Arayüz hiç ekran görüntüsüyle incelenmedi; menü, sağ tık ve sürükle-bırak etkileşimleri otomatik test edilmiyor (`chrome.cpp` kapsamı ≈ %50).
@@ -25,7 +25,7 @@ Statik kod incelemesiyle tespit edilmiştir (derleme/çalıştırma ile ayrıca 
 - Gerçek yakalama corpus'u yalnızca `IMSHARK_CORPUS_DIR` ile çalışır; CI'da yalnızca sentetik dosyalar koşar.
 
 **Güvence (neyin nasıl doğrulandığı)**
-- 263 test çekirdek dahil ASan+UBSan altında geçer (bir dönem sanitizer çekirdeği kapsamıyordu: CMake seçenek sırası; düzeltildi ve yapılandırma artık denetliyor). Arka plan iş parçacıkları için ThreadSanitizer temiz.
+- 344 test çekirdek dahil ASan+UBSan altında geçer (bir dönem sanitizer çekirdeği kapsamıyordu: CMake seçenek sırası; düzeltildi ve yapılandırma artık denetliyor). Arka plan iş parçacıkları için ThreadSanitizer temiz.
 - Satır kapsamı ≈ %92 (`tools/coverage.sh`).
 
 ## Güvenlik ve sağlamlık
