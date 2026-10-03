@@ -2,6 +2,7 @@
 
 #include "registry.h"
 #include "util.h"
+#include "checksum.h"
 
 #include <network/l3_network/ip6_header.h>
 #include <network/l3_network/ip_header.h>
@@ -97,6 +98,7 @@ namespace {
         nctx.completedTcp = ctx.completedTcp;
         nctx.tcpPdu = ctx.tcpPdu;
         nctx.tcpPduPackets = ctx.tcpPduPackets;
+        nctx.addrs = ctx.addrs;
         nested.ip_protocol = wholeProtocol;
         if (v6) {
             ipv6Chain(nctx, whole.data(), whole.size(), wholeProtocol, nullptr, /*allowFragment=*/false);
@@ -128,6 +130,7 @@ namespace {
         pack.app_text2 = nested.app_text2;
         pack.payload_offset = nested.payload_offset; // relative to the reassembled data, not to this frame (ip_frag == 2)
         pack.payload_length = nested.payload_length;
+        setTransportChecksumState(pack, transportChecksumState(nested));
 
         if (ctx.wantFields()) {
             std::string from;
@@ -266,6 +269,12 @@ void dissect::dissectIPv4(Context &ctx, const char *base, size_t len) {
 
     const size_t o = ctx.offsetOf(base);
     const size_t totalLen = network::ntoh16(ipHeader.tot_length);
+    const ChecksumResult headerSum = checkIpv4Header(base, ipHeaderLen);
+    setIpChecksumState(pack, headerSum.state);
+    ctx.addrs.valid = true;
+    ctx.addrs.length = 4;
+    std::memcpy(ctx.addrs.src, &ipHeader.src_addr, 4);
+    std::memcpy(ctx.addrs.dst, &ipHeader.dst_addr, 4);
     if (ctx.wantFields()) {
         Field &l = ctx.addLayer("Internet Protocol Version 4, Src: " + pack.source + ", Dst: " + pack.destination, o, ipHeaderLen);
         l.add("Version: " + std::to_string(ipHeader.version), o, 1);
@@ -280,7 +289,10 @@ void dissect::dissectIPv4(Context &ctx, const char *base, size_t len) {
         l.add("Fragment Offset: " + std::to_string(ipHeader.fragmentOffset() * 8), o + 6, 2);
         l.add("Time to Live: " + std::to_string(ipHeader.ttl), o + 8, 1);
         l.add("Protocol: " + std::to_string(ipHeader.protocol), o + 9, 1);
-        l.add("Header Checksum: " + hexString(network::ntoh16(ipHeader.check), 4), o + 10, 2);
+        Field &csum = l.add("Header Checksum: " + hexString(network::ntoh16(ipHeader.check), 4) + " [" + checksumStateText(headerSum.state) + "]", o + 10, 2);
+        csum.add(std::string("[Header checksum status: ") + checksumStateText(headerSum.state) + "]", o + 10, 2);
+        if (headerSum.state == kChecksumBad) csum.add("[Expected checksum: " + hexString(headerSum.expected, 4) + "]", o + 10, 2);
+        if (headerSum.state == kChecksumUnverified) csum.add("[Zero checksum: probably left empty by checksum offload]", o + 10, 2);
         l.add("Source Address: " + pack.source, o + 12, 4);
         l.add("Destination Address: " + pack.destination, o + 16, 4);
         if (ipHeaderLen > sizeof(network::IPHeader)) l.add("Options", o + 20, ipHeaderLen - sizeof(network::IPHeader));
@@ -311,6 +323,11 @@ void dissect::dissectIPv6(Context &ctx, const char *base, size_t len) {
         return;
     }
 
+    ctx.addrs.valid = true;
+    ctx.addrs.length = 16;
+    std::memcpy(ctx.addrs.src, &ipv6Header.src_addr, 16);
+    std::memcpy(ctx.addrs.dst, &ipv6Header.dst_addr, 16);
+    setIpChecksumState(pack, kChecksumNone);
     pack.source = network::getIPv6AddressString(ipv6Header.src_addr);
     pack.destination = network::getIPv6AddressString(ipv6Header.dst_addr);
     pack.protocol = "IPv6";

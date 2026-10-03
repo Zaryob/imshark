@@ -20,6 +20,7 @@
 #include "json_lite.h"
 #include "sha256.h"
 #include "support.h"
+#include <dissect/checksum.h>
 
 namespace {
     const std::string kCorpusDir = std::string(IMSHARK_TEST_DATA_DIR) + "/../corpus/";
@@ -84,6 +85,24 @@ namespace {
         for (const auto &l: e.at("link_types").items) expectedLinks.insert(static_cast<uint32_t>(l.number));
         EXPECT_EQ(linkTypes, expectedLinks);
         EXPECT_EQ(malformed, static_cast<int>(e.num("malformed")));
+
+        // checksum verification, compared with an independent computation (see the manifest note)
+        if (e.has("checksums")) {
+            std::map<std::string, int> got;
+            for (const auto &p: packets) {
+                if (p.ip_version == 4) {
+                    const uint8_t s = dissect::ipChecksumState(p);
+                    got[s == dissect::kChecksumGood ? "ip_good" : s == dissect::kChecksumBad ? "ip_bad" : "ip_unverified"]++;
+                }
+                if ((p.ip_protocol == 1 || p.ip_protocol == 6 || p.ip_protocol == 17) && p.ip_frag != 1) {   // a fragment has no transport header to check
+                    const uint8_t s = dissect::transportChecksumState(p);
+                    if (s != dissect::kChecksumNone || p.ip_protocol != 17) got[s == dissect::kChecksumGood ? "l4_good" : s == dissect::kChecksumBad ? "l4_bad" : "l4_unverified"]++;
+                }
+            }
+            std::map<std::string, int> want;
+            for (const auto &kv: e.at("checksums").members) want[kv.first] = static_cast<int>(kv.second.number);
+            EXPECT_EQ(got, want);
+        }
 
         // individual facts
         for (const auto &fact: e.at("facts").items) {

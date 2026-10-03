@@ -172,6 +172,9 @@ TEST(Stats, ExpertInfoCountsWhatTheFiltersFind) {
     }
 
     std::vector<uint32_t> udpOnly = {4, 5, 12, 13};
-    EXPECT_TRUE(stats::expertInfo(s.packets, &udpOnly).empty());
+    for (const auto &item: stats::expertInfo(s.packets, &udpOnly)) {
+        // the generated sample has all-zero checksums: IPv4 ones are unverified/unused, IPv6 UDP with a zero checksum is invalid
+        if (item.summary.find("hecksum") == std::string::npos) ADD_FAILURE() << item.summary << ": nothing else is noteworthy in the UDP packets";
+    }
     EXPECT_TRUE(stats::expertInfo({}, nullptr).empty());
 }

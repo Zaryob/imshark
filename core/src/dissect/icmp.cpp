@@ -2,6 +2,7 @@
 #include "protocols.h"
 
 #include "util.h"
+#include "checksum.h"
 
 #include <string>
 #include <vector>
@@ -334,6 +335,8 @@ void dissect::dissectIcmp(Context &ctx, const char *data, size_t length, bool v6
         return;
     }
     pack.protocol = v6 ? "ICMPv6" : "ICMP";
+    const ChecksumResult sum = checkTransport(ctx, v6 ? 58 : 1, data, length, pack.length, 2);   // pack.length: the ICMP message length from the IP layer
+    setTransportChecksumState(pack, sum.state);
     pack.app_type = icmp.type;
     pack.app_code = icmp.code;
 
@@ -367,7 +370,9 @@ void dissect::dissectIcmp(Context &ctx, const char *data, size_t length, bool v6
     Field &l = ctx.addLayer(v6 ? "Internet Control Message Protocol v6" : "Internet Control Message Protocol", o, length);
     l.add("Type: " + std::to_string(type) + " (" + typeName(type, v6) + ")", o, 1);
     l.add("Code: " + std::to_string(code) + (codeText.empty() ? "" : " (" + codeText + ")"), o + 1, 1);
-    l.add("Checksum: " + hexString(network::ntoh16(icmp.checksum), 4), o + 2, 2);
+    Field &csum = l.add("Checksum: " + hexString(network::ntoh16(icmp.checksum), 4) + " [" + checksumStateText(sum.state) + "]", o + 2, 2);
+    csum.add(std::string("[Checksum Status: ") + checksumStateText(sum.state) + "]", o + 2, 2);
+    if (sum.state == kChecksumBad) csum.add("[Expected checksum: " + hexString(sum.expected, 4) + "]", o + 2, 2);
     if (echo) {
         l.add("Identifier: " + hexString(network::ntoh16(icmp.identifier), 4) + " (" + std::to_string(network::ntoh16(icmp.identifier)) + ")", o + 4, 2);
         l.add("Sequence Number: " + std::to_string(network::ntoh16(icmp.sequence)), o + 6, 2);

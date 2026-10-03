@@ -148,6 +148,10 @@ namespace stats {
         struct Def { Severity severity; const char *summary; const char *filter; };
         static const Def defs[] = {
             {Severity::Error, "Malformed packet", "malformed"},
+            {Severity::Error, "IPv4: bad header checksum", "ip.checksum.status == 0"},
+            {Severity::Error, "TCP: bad checksum", "tcp.checksum.status == 0"},
+            {Severity::Error, "UDP: bad checksum", "udp.checksum.status == 0"},
+            {Severity::Error, "ICMP: bad checksum", "icmp.checksum.status == 0 || icmpv6.checksum.status == 0"},
             {Severity::Warn, "TCP: previous segment not captured", "tcp.analysis.lost_segment"},
             {Severity::Warn, "TCP: retransmission", "tcp.analysis.retransmission"},
             {Severity::Warn, "TCP: out-of-order segment", "tcp.analysis.out_of_order"},
@@ -156,6 +160,8 @@ namespace stats {
             {Severity::Note, "TCP: duplicate ACK", "tcp.analysis.duplicate_ack"},
             {Severity::Note, "TCP: keep-alive", "tcp.analysis.keep_alive"},
             {Severity::Note, "TCP: window update", "tcp.analysis.window_update"},
+            {Severity::Chat, "Checksum not verified (capture cut short, or checksum offload)",
+             "ip.checksum.status == 2 || tcp.checksum.status == 2 || udp.checksum.status == 2 || icmp.checksum.status == 2 || icmpv6.checksum.status == 2"},
             {Severity::Chat, "TCP: connection request (SYN)", "tcp.flags.syn && !tcp.flags.ack"},
             {Severity::Chat, "TCP: connection finished (FIN)", "tcp.flags.fin"},
         };

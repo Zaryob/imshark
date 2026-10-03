@@ -1,6 +1,7 @@
 #include "protocols.h"
 
 #include "tcp_streams.h"
+#include "checksum.h"
 
 #include "registry.h"
 #include "util.h"
@@ -288,6 +289,8 @@ void dissect::dissectTcp(Context &ctx, const char *data, size_t length) {
     }
 
     const size_t o = ctx.offsetOf(data);
+    const ChecksumResult sum = checkTransport(ctx, 6, data, length, pack.length, 16);   // pack.length: the TCP segment length from the IP header
+    setTransportChecksumState(pack, sum.state);
     pack.length = pack.length >= headerLen ? pack.length - headerLen : 0;
     const char *payload = data + headerLen;
     pack.tcp_len = pack.length;
@@ -353,7 +356,10 @@ void dissect::dissectTcp(Context &ctx, const char *data, size_t length) {
             f.add(std::string(name) + ": " + ((tcpHeader.flags & bit) ? "Set" : "Not set"), o + 13, 1);
         }
         l.add("Window: " + std::to_string(window), o + 14, 2);
-        l.add("Checksum: " + hexString(network::ntoh16(tcpHeader.checksum), 4), o + 16, 2);
+        Field &csum = l.add("Checksum: " + hexString(network::ntoh16(tcpHeader.checksum), 4) + " [" + checksumStateText(sum.state) + "]", o + 16, 2);
+        csum.add(std::string("[Checksum Status: ") + checksumStateText(sum.state) + "]", o + 16, 2);
+        if (sum.state == kChecksumBad) csum.add("[Expected checksum: " + hexString(sum.expected, 4) + "]", o + 16, 2);
+        if (sum.state == kChecksumUnverified) csum.add(length < pack.length + headerLen ? "[The capture ends before the segment does: cannot verify]" : "[Checksum offload: the field holds a partial sum]", o + 16, 2);
         l.add("Urgent Pointer: " + std::to_string(network::ntoh16(tcpHeader.urgent_pointer)), o + 18, 2);
         if (headerLen > sizeof(network::TCPHeader)) {
             Field &opts = l.add("Options:" + (options.empty() ? std::string(" (no decoded options)") : options), o + 20,

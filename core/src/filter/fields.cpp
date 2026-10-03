@@ -2,6 +2,8 @@
 
 #include <algorithm>
 
+#include <dissect/checksum.h>
+
 namespace filter {
     namespace {
         using packet::PacketInfo;
@@ -17,6 +19,9 @@ namespace filter {
         void proto(const PacketInfo &p, const Context &, Values &out) { if (Present(p)) out.addU(1); }
 
         bool isProtocol(const PacketInfo &p, const char *name) { return p.protocol == name; }
+
+        // Wireshark's numbering of *.checksum.status: 0 = bad, 1 = good, 2 = unverified, 3 = not present
+        uint32_t checksumStatusNumber(uint8_t state) { return state == dissect::kChecksumBad ? 0 : state == dissect::kChecksumGood ? 1 : state == dissect::kChecksumUnverified ? 2 : 3; }
 
         std::string_view httpMethodName(uint16_t code) {
             static const char *names[] = {"", "GET", "POST", "PUT", "DELETE", "HEAD", "OPTIONS", "PATCH", "CONNECT", "TRACE"};
@@ -105,6 +110,11 @@ namespace filter {
                 {"tcp.analysis.zero_window", FieldType::Boolean, tcpAnalysis<16>, "Zero receive window advertised"},
                 {"tcp.analysis.keep_alive", FieldType::Boolean, tcpAnalysis<32>, "TCP keep-alive"},
                 {"tcp.analysis.window_update", FieldType::Boolean, tcpAnalysis<64>, "TCP window update"},
+                {"ip.checksum.status", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.ip_version == 4) o.addU(checksumStatusNumber(dissect::ipChecksumState(p))); }, "IPv4 header checksum: 0 = bad, 1 = good, 2 = unverified (offload or truncated), 3 = not present"},
+                {"tcp.checksum.status", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.ip_protocol == 6 && p.src_port != 0) o.addU(checksumStatusNumber(dissect::transportChecksumState(p))); }, "TCP checksum: 0 = bad, 1 = good, 2 = unverified (offload or truncated)"},
+                {"udp.checksum.status", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.ip_protocol == 17 && p.src_port != 0) o.addU(checksumStatusNumber(dissect::transportChecksumState(p))); }, "UDP checksum: 0 = bad, 1 = good, 2 = unverified, 3 = not present (zero over IPv4)"},
+                {"icmp.checksum.status", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.ip_protocol == 1 && p.ip_frag != 1) o.addU(checksumStatusNumber(dissect::transportChecksumState(p))); }, "ICMP checksum: 0 = bad, 1 = good, 2 = unverified"},
+                {"icmpv6.checksum.status", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.ip_protocol == 58 && p.ip_frag != 1) o.addU(checksumStatusNumber(dissect::transportChecksumState(p))); }, "ICMPv6 checksum: 0 = bad, 1 = good, 2 = unverified"},
                 {"tcp.segment", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (hasTcp(p)) o.addU(p.tcp_pdu_state == 1 || p.tcp_pdu_state == 4); }, "Segment of a TCP message that is reassembled in a later packet"},
                 {"tcp.reassembled", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (hasTcp(p)) o.addU(p.tcp_pdu_state == 2); }, "Packet that completes a reassembled TCP message"},
                 {"tcp.reassembled_in", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (hasTcp(p) && (p.tcp_pdu_state == 1 || p.tcp_pdu_state == 4) && p.tcp_reassembled_in) o.addU(p.tcp_reassembled_in); }, "Number of the packet that completes the message this segment belongs to"},

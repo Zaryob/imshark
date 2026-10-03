@@ -331,6 +331,7 @@
         "DHCP": 4
       },
       "malformed": 0,
+      "checksums": {"ip_good": 2, "ip_unverified": 2, "l4_good": 4},
       "facts": [
         {
           "packet": 1,
@@ -355,6 +356,7 @@
         "DHCP": 4
       },
       "malformed": 0,
+      "checksums": {"ip_good": 2, "ip_unverified": 2, "l4_good": 4},
       "facts": [],
       "expectation": "packet count counted independently; protocol histogram is a snapshot of ImShark's output",
       "sha256": "9373e166ae72064cda66fd70e1139cb4807f410c9eb4f865df719181e7e05023",
@@ -375,6 +377,7 @@
         "NTP": 30
       },
       "malformed": 0,
+      "checksums": {"ip_good": 32, "l4_good": 32},
       "facts": [
         {
           "packet": 1,
@@ -400,6 +403,7 @@
         "IPv4": 1
       },
       "malformed": 0,
+      "checksums": {"ip_good": 3, "l4_good": 2},
       "facts": [
         {
           "packet": 1,
@@ -434,6 +438,7 @@
         "TCP": 34
       },
       "malformed": 0,
+      "checksums": {"ip_good": 43, "l4_good": 43},
       "facts": [
         {
           "packet": 4,
@@ -462,6 +467,7 @@
         "UDP": 2
       },
       "malformed": 0,
+      "checksums": {"ip_good": 2, "l4_good": 2},
       "facts": [],
       "expectation": "packet count counted independently; protocol histogram is a snapshot of ImShark's output",
       "known_limitation": "DNS on a non-standard port is not recognised yet (v0.7.2 Decode As)",
@@ -482,6 +488,7 @@
         "DHCP": 1
       },
       "malformed": 0,
+      "checksums": {"ip_good": 1, "l4_good": 1},
       "facts": [
           {
             "packet": 1,
@@ -514,6 +521,7 @@
         "DHCP": 1
       },
       "malformed": 0,
+      "checksums": {"ip_good": 1, "l4_good": 1},
       "facts": [
           {
             "packet": 1,
