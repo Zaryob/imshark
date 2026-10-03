@@ -354,3 +354,135 @@ TEST(Dhcp, ServerNameAndBootFileAreShownWhenNotOverloaded) {
     const auto bare = dhcp(dhcpFixed(1, 1));
     EXPECT_NE(find(bare.fields, "Server host name not given"), nullptr);
 }
+
+TEST(IcmpBodies, V4FieldsOfTheLessCommonMessages) {
+    const auto frag = support::parse(ipv4Packet(1, "0a000063", "0a000002", "03 04 0000 0000 05dc" + std::string("4500001c00000000 4011 0000 0a000002 08080808 c350 0035 0008 0000")));
+    EXPECT_NE(frag.info.find("next-hop mtu 1500"), std::string::npos) << frag.info;
+    EXPECT_NE(find(frag.fields, "MTU of next hop: 1500"), nullptr);
+
+    const auto redirect = support::parse(ipv4Packet(1, "0a000063", "0a000002", "05 01 0000 0a000009" + std::string("4500001c00000000 4011 0000 0a000002 08080808 c350 0035 0008 0000")));
+    EXPECT_NE(find(redirect.fields, "Gateway address: 10.0.0.9"), nullptr);
+    EXPECT_NE(redirect.info.find("[orig: 10.0.0.2 -> 8.8.8.8 UDP"), std::string::npos) << redirect.info;
+
+    const auto pointer = support::parse(ipv4Packet(1, "0a000063", "0a000002", "0c 00 0000 14000000"));
+    EXPECT_NE(find(pointer.fields, "Pointer: 20"), nullptr);
+
+    const auto timestamp = support::parse(ipv4Packet(1, "0a000001", "0a000002", "0d 00 0000 1234 0001 00000064 00000000 00000000"));
+    EXPECT_NE(find(timestamp.fields, "Originate timestamp: 100 ms since midnight UTC"), nullptr);
+
+    const auto mask = support::parse(ipv4Packet(1, "0a000001", "0a000002", "11 00 0000 1234 0001 ffffff00"));
+    EXPECT_NE(find(mask.fields, "Address mask: 255.255.255.0"), nullptr);
+
+    const auto advert = support::parse(ipv4Packet(1, "0a000001", "e0000001", "09 00 0000 01 02 0708 0a000001 00000000"));
+    EXPECT_NE(find(advert.fields, "Router address: 10.0.0.1, preference 0"), nullptr);
+    EXPECT_NE(find(advert.fields, "Lifetime: 1800 seconds"), nullptr);
+}
+
+TEST(IcmpBodies, RouterAdvertisementWithOptions) {
+    const std::string options =
+        "01 01 001122334455"                                                            // source link-layer address
+        "03 04 40 c0 00278d00 00093a80 00000000 20010db8000100000000000000000000"       // prefix 2001:db8:1::/64, L + A
+        "05 01 0000 000005dc"                                                            // MTU 1500
+        "19 03 0000 00000e10 20010db8000000000000000000000053";                         // RDNSS
+    const auto p = support::parse(ipv6Packet(58, "86 00 0000 40 c8 0708 00000000 00000000" + options));
+    EXPECT_EQ(p.protocol, "ICMPv6");
+    EXPECT_NE(find(p.fields, "Cur hop limit: 64"), nullptr);
+    EXPECT_NE(find(p.fields, "Flags: 0xc8, Managed address configuration, Other configuration, Preference high"), nullptr);
+    EXPECT_NE(find(p.fields, "Router lifetime: 1800 seconds"), nullptr);
+    EXPECT_NE(find(p.fields, "ICMPv6 Option (1) Source link-layer address: 00:11:22:33:44:55"), nullptr);
+    EXPECT_NE(find(p.fields, "ICMPv6 Option (3) Prefix information: 2001:db8:1::/64"), nullptr);
+    EXPECT_NE(find(p.fields, "Flags: L (on-link) A (autonomous) 0xc0"), nullptr);
+    EXPECT_NE(find(p.fields, "Valid lifetime: 2592000 seconds"), nullptr);
+    EXPECT_NE(find(p.fields, "ICMPv6 Option (5) MTU: 1500"), nullptr);
+    EXPECT_NE(find(p.fields, "ICMPv6 Option (25) Recursive DNS server: 2001:db8::53"), nullptr);
+    expectRangesInside(p, 14 + 40 + 16 + options.size() / 2 - std::count(options.begin(), options.end(), ' ') / 2);
+}
+
+TEST(IcmpBodies, NeighbourAdvertisementFlagsAndBadOptions) {
+    const auto na = support::parse(ipv6Packet(58, "88 00 0000 e0000000 20010db8000000000000000000000001 02 01 aabbccddeeff"));
+    EXPECT_NE(find(na.fields, "Flags: 0xe0, Router, Solicited, Override"), nullptr);
+    EXPECT_NE(find(na.fields, "ICMPv6 Option (2) Target link-layer address: aa:bb:cc:dd:ee:ff"), nullptr);
+
+    const auto zero = support::parse(ipv6Packet(58, "87 00 0000 00000000 20010db8000000000000000000000001 01 00 000000000000"));
+    EXPECT_NE(find(zero.fields, "[Malformed option: length 0]"), nullptr) << "a zero-length option must not loop";
+
+    const auto cut = support::parse(ipv6Packet(58, "87 00 0000 00000000 20010db8000000000000000000000001 01 02 001122"));
+    EXPECT_NE(find(cut.fields, "[Option continues past the end of the message]"), nullptr);
+}
+
+TEST(IcmpBodies, PacketTooBigQuotesTheIpv6Packet) {
+    const std::string inner = "60000000 0008 11 40 20010db8000000000000000000000001 20010db8000000000000000000000002 c350 0035 0008 0000";
+    const auto p = support::parse(ipv6Packet(58, "02 00 0000 00000500" + inner));
+    EXPECT_NE(p.info.find("Packet too big"), std::string::npos);
+    EXPECT_NE(p.info.find("mtu 1280"), std::string::npos) << p.info;
+    EXPECT_NE(p.info.find("[orig: 2001:db8::1 -> 2001:db8::2 UDP ports 50000 -> 53]"), std::string::npos) << p.info;
+    EXPECT_NE(find(p.fields, "MTU: 1280"), nullptr);
+}
+
+TEST(IcmpBodies, MulticastListenerMessages) {
+    const auto query = support::parse(ipv6Packet(58, "82 00 0000 2710 0000 ff020000000000000000000000000001 02 7d 0001 20010db8000000000000000000000009"));
+    EXPECT_NE(find(query.fields, "Maximum response delay: 10000 ms"), nullptr);
+    EXPECT_NE(find(query.fields, "Multicast address: ff02::1"), nullptr);
+    EXPECT_NE(find(query.fields, "Flags: S=0, QRV=2"), nullptr);
+    EXPECT_NE(find(query.fields, "Source address: 2001:db8::9"), nullptr);
+
+    const auto report = support::parse(ipv6Packet(58, "8f 00 0000 0000 0001 04 00 0001 ff020000000000000000000000000016 20010db8000000000000000000000009"));
+    EXPECT_NE(find(report.fields, "Multicast Address Record: CHANGE_TO_EXCLUDE_MODE ff02::16"), nullptr);
+    EXPECT_NE(find(report.fields, "Source address: 2001:db8::9"), nullptr);
+}
+
+TEST(IcmpBodies, SurviveRandomCorruption) {
+    std::mt19937 rng(23);
+    std::vector<std::vector<char>> seeds = {
+        ipv6Packet(58, "86 00 0000 40 c8 0708 00000000 00000000 01 01 001122334455 03 04 40 c0 00278d00 00093a80 00000000 20010db8000100000000000000000000"),
+        ipv6Packet(58, "8f 00 0000 0000 0001 04 00 0001 ff020000000000000000000000000016 20010db8000000000000000000000009"),
+        ipv6Packet(58, "82 00 0000 2710 0000 ff020000000000000000000000000001 02 7d 0001 20010db8000000000000000000000009"),
+        ipv4Packet(1, "0a000001", "e0000001", "09 00 0000 01 02 0708 0a000001 00000000"),
+        ipv4Packet(1, "0a000001", "0a000002", "0d 00 0000 1234 0001 00000064 00000000 00000000"),
+    };
+    for (int i = 0; i < 8000; ++i) {
+        auto frame = seeds[rng() % seeds.size()];
+        frame.resize(14 + rng() % (frame.size() - 13));
+        for (unsigned k = rng() % 5; k > 0 && frame.size() > 14; --k) frame[14 + rng() % (frame.size() - 14)] = static_cast<char>(rng());
+        packet::PacketParser parser;
+        packet::PacketInfo info(1);
+        parser.parsePacket(info, frame, dissect::ParseMode::Full);
+        std::function<void(const packet::Field &)> check = [&](const packet::Field &f) {
+            EXPECT_LE(size_t(f.offset) + f.length, frame.size()) << f.text;
+            for (const auto &c: f.children) check(c);
+        };
+        for (const auto &l: info.fields) check(l);
+    }
+}
+
+TEST(Ipv6Extensions, OptionsRoutingAndAuthenticationHeaders) {
+    // hop-by-hop: next = ICMPv6, length 0 (8 bytes): router alert (MLD), PadN(0)
+    const auto hbh = support::parse(ipv6Packet(0, "3a 00 0502 0000 0100" "80 00 0000 abcd 0007"));
+    EXPECT_EQ(hbh.protocol, "ICMPv6");
+    EXPECT_NE(find(hbh.fields, "Hop-by-Hop Options (8 bytes)"), nullptr);
+    EXPECT_NE(find(hbh.fields, "Router Alert: MLD"), nullptr);
+    EXPECT_NE(find(hbh.fields, "PadN (0 bytes)"), nullptr);
+    EXPECT_NE(find(hbh.fields, "Type: 5 (skip if unrecognised)"), nullptr);
+
+    // destination options with an unknown option that must be discarded (type 0x80 -> top bits 10)
+    const auto dst = support::parse(ipv6Packet(60, "3a 00 8002 0000 0100" "80 00 0000 abcd 0007"));
+    EXPECT_NE(find(dst.fields, "Destination Options (8 bytes)"), nullptr);
+    EXPECT_NE(find(dst.fields, "Type: 128 (discard and send ICMP if unrecognised)"), nullptr);
+
+    // routing header type 4 (segment routing) with two segments
+    const auto srh = support::parse(ipv6Packet(43, "3a 04 04 01 01 00 0000" "20010db8000000000000000000000001" "20010db8000000000000000000000002" "80 00 0000 abcd 0007"));
+    EXPECT_NE(find(srh.fields, "Routing Header (40 bytes)"), nullptr);
+    EXPECT_NE(find(srh.fields, "Routing Type: Segment Routing (4)"), nullptr);
+    EXPECT_NE(find(srh.fields, "Segments Left: 1"), nullptr);
+    EXPECT_NE(find(srh.fields, "Segment List[1]: 2001:db8::2"), nullptr);
+
+    // authentication header: length 4 -> 24 bytes
+    const auto ah = support::parse(ipv6Packet(51, "3a 04 0000 00001000 00000005" "aabbccdd11223344" "80 00 0000 abcd 0007"));
+    EXPECT_NE(find(ah.fields, "Authentication Header (24 bytes)"), nullptr);
+    EXPECT_NE(find(ah.fields, "SPI: 0x00001000"), nullptr);
+    EXPECT_NE(find(ah.fields, "Integrity Check Value: 12 bytes"), nullptr);
+
+    // damaged: an option longer than its header
+    const auto bad = support::parse(ipv6Packet(0, "3a 00 0509 0000 0100" "80 00 0000 abcd 0007"));
+    EXPECT_NE(find(bad.fields, "[Option continues past the end of the header]"), nullptr);
+}
