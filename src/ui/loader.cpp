@@ -17,6 +17,7 @@ namespace ui {
     /// One background load. Owned by AppState::loadJob; destroying it cancels and joins the thread.
     struct LoadJob {
         std::string path;
+        std::shared_ptr<const dissect::Registry> registry;   // Decode As rules in effect (null = built-in)
         core::LoadControl control;
         std::chrono::steady_clock::time_point started = std::chrono::steady_clock::now();
 
@@ -62,7 +63,7 @@ namespace {
     }
 
     void runJob(ui::LoadJob &job) {
-        core::FileProcessor processor;
+        core::FileProcessor processor(job.registry ? *job.registry : dissect::Registry::builtin());
         if (!std::filesystem::is_regular_file(core::pathFromUtf8(job.path))) {
             job.message = "Not a regular file: " + job.path;
             job.finished = true;
@@ -114,6 +115,7 @@ void ui::startLoad(AppState &state, const std::string &path) {
 
     auto job = std::make_shared<LoadJob>();
     job->path = absoluteUtf8(path);
+    job->registry = state.registry;
     job->thread = std::thread([raw = job.get()] { runJob(*raw); });
     state.loadJob = std::move(job);
 }

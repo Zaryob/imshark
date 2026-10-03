@@ -66,6 +66,8 @@ void ui::drawMenuAndDialogs(AppState &state) {
             const bool isStream = sel && sel->ip_version != 0 && (sel->ip_protocol == 6 || sel->ip_protocol == 17);
             if (ImGui::MenuItem("Follow TCP Stream", nullptr, false, isStream && sel->ip_protocol == 6)) startFollow(state, state.selectedPacket);
             if (ImGui::MenuItem("Follow UDP Stream", nullptr, false, isStream && sel->ip_protocol == 17)) startFollow(state, state.selectedPacket);
+            ImGui::Separator();
+            if (ImGui::MenuItem("Decode As...")) state.decodeAs.open = true;
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("Statistics")) {

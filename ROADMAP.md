@@ -95,7 +95,7 @@ Hedef: bir protokolün adını göstermekten mesajı ve alanlarını doğru çö
 - [x] DNS/TCP uzunluk öneki ve mesaj gövdesi segmentlere bölündüğünde birleştir; aynı TCP yükündeki birden fazla DNS mesajını ayrı çöz — **M**
 - [x] HTTP/1.x mesaj sınırları: bölünmüş başlık/gövde, Content-Length, chunked aktarım ve aynı akıştaki ardışık mesajlar; gzip gövdeyi çöz, çözülmüş boyutu sınırla — **L**
 - [x] TLS record ve handshake mesajlarını TCP segmentleri ve record'lar arasında birleştir; Client/ServerHello, extension ve açık Certificate alanlarını genişlet. *(Şifre çözme ayrı aşama)* — **L**
-- [ ] Protokol seçimini port + içerik + oturum durumu ile yap; kullanıcıya TCP/UDP için Decode As eşlemesi sun. Standart dışı portta DNS tanıma ve SMTP STARTTLS sonrası TLS'ye geçiş; yanlış pozitiflere karşı mesaj yapısını doğrula — **M**
+- [x] Protokol seçimini port + içerik + oturum durumu ile yap; kullanıcıya TCP/UDP için Decode As eşlemesi sun. Standart dışı portta DNS tanıma ve SMTP STARTTLS sonrası TLS'ye geçiş; yanlış pozitiflere karşı mesaj yapısını doğrula — **M**
 - [x] DNS RDATA kapsamı: SOA'nın kalan zaman alanları, EDNS seçenekleri/extended RCODE, DS/DNSKEY/RRSIG/NSEC ve SVCB/HTTPS; desteklenmeyen kayıtları ham veri olarak açıkça göster — **M**
 - [x] DHCP option overload (52): `sname`/`file` alanlarını tara; pad/end bulunmayan ve kırpık seçenekleri işle. Uzun seçenek birleştirme, relay alt seçenekleri ve authentication seçeneğini çöz — **M**
 - [x] ICMP/ICMPv6 mesaj gövdeleri: MTU/pointer, alıntılanan IPv6 paketleri, router/neighbor discovery bayrakları ve seçenekleri, multicast listener mesajları; IPv6 uzantı başlıklarının TLV alanları — **M**

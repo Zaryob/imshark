@@ -47,6 +47,13 @@ namespace ui {
     void recompileColorRules(AppState &state);
     void drawColorRulesWindow(AppState &state);
 
+    // decode_as.cpp
+    /// A registry made of the built-in dissectors plus `rules`; null with `error` set if a rule cannot be applied.
+    std::shared_ptr<const dissect::Registry> buildRegistry(const std::vector<DecodeAsRule> &rules, std::string &error);
+    /// Makes `rules` the Decode As rules and reloads the open capture with them. False (state unchanged) if a rule is invalid.
+    bool applyDecodeAs(AppState &state, const std::vector<DecodeAsRule> &rules);
+    void drawDecodeAsWindow(AppState &state);
+
     // stats_windows.cpp
     void drawStatsWindows(AppState &state);
 

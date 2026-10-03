@@ -7,6 +7,7 @@
 #include <filter/filter.h>
 #include <packet/packet_info.h>
 #include <capture_info.h>
+#include <dissect/registry.h>
 #include <export/export.h>
 #include <stats/statistics.h>
 
@@ -123,6 +124,23 @@ namespace ui {
         std::shared_ptr<const Vector> data_;
     };
 
+    /// One Decode As rule: the application protocol to use for a TCP or UDP port.
+    struct DecodeAsRule {
+        bool tcp = true;
+        int port = 0;
+        std::string protocol;
+        bool operator==(const DecodeAsRule &o) const { return tcp == o.tcp && port == o.port && protocol == o.protocol; }
+    };
+
+    /// The Decode As window and the rules in effect.
+    struct DecodeAsState {
+        bool open = false;
+        bool wasOpen = false;                // to copy `rules` into `edit` when the window opens
+        std::vector<DecodeAsRule> rules;     // in effect (the capture was loaded with them)
+        std::vector<DecodeAsRule> edit;      // working copy in the window
+        std::string error;
+    };
+
     /// Everything the UI needs to remember between frames.
     struct AppState {
         PacketList packets;
@@ -168,6 +186,8 @@ namespace ui {
         StatsState stats;
         FollowState follow;
         ExportState exportDialog;
+        DecodeAsState decodeAs;
+        std::shared_ptr<const dissect::Registry> registry;   // dissectors with the Decode As rules; null = the built-in ones
         double captureStartEpoch = 0;       // UTC epoch seconds of the first packet
         core::CaptureInfo captureInfo;      // file level metadata of the open capture
         bool showCaptureInfo = false;       // the Capture File Properties window
