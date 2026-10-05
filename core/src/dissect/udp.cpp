@@ -1,6 +1,7 @@
 #include "protocols.h"
 
 #include "dcerpc.h"
+#include "nfs.h"
 #include "registry.h"
 #include "util.h"
 #include "checksum.h"
@@ -72,6 +73,11 @@ void dissect::dissectUdp(Context &ctx, const char *data, size_t length) {
             const uint32_t number = static_cast<uint32_t>(pack.number);
             if (ctx.sessions->dceRpcEndpoint(pack.destination, dstPort, true, number) || ctx.sessions->dceRpcEndpoint(pack.source, srcPort, true, number)) {
                 dissectDceRpcDatagram(ctx, payload, payloadLen);
+                if (!pack.protocol.empty()) return true;
+            }
+            // a port the portmapper announced for a UDP program: ONC RPC (the registry's own ports were looked up first)
+            if (ctx.sessions->rpcProgram(pack.destination, dstPort, true, number) || ctx.sessions->rpcProgram(pack.source, srcPort, true, number)) {
+                dissectNfs(ctx, payload, payloadLen);
                 if (!pack.protocol.empty()) return true;
             }
         }

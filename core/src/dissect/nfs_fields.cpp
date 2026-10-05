@@ -10,7 +10,7 @@
 namespace filter {
     namespace {
         using packet::PacketInfo;
-        constexpr uint16_t kReply = 1, kDenied = 2, kMatched = 4, kRepeat = 8, kReassembled = 16, kFragment = 32;
+        constexpr uint16_t kReply = 1, kDenied = 2, kMatched = 4, kRepeat = 8, kReassembled = 16, kFragment = 32, kResult = 64;
         inline bool isReply(const PacketInfo &p) { return (p.app_flags & kReply) != 0; }
         inline bool isNfs(const PacketInfo &p) { return p.protocol == "NFS" || p.protocol == "NFSv4"; }
         // a call, or a reply that was matched with its call: both carry the program, version and procedure
@@ -27,7 +27,7 @@ namespace filter {
             {"rpc.program", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (hasProgram(p)) o.addU(std::strtoull(p.app_text.c_str(), nullptr, 10)); }, "ONC RPC program number of a call, or of the call a matched reply answers (100003 NFS, 100000 Portmap, 100005 Mount)"},
             {"rpc.programversion", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (hasProgram(p)) o.addU(version(p)); }, "ONC RPC program version of a call, or of the call a matched reply answers"},
             {"rpc.procedure", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (hasProgram(p)) o.addU(p.app_type); }, "ONC RPC procedure number of a call, or of the call a matched reply answers"},
-            {"rpc.state_accept", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isRpc(p) && isReply(p) && !(p.app_flags & kDenied)) o.addU(p.app_code); }, "ONC RPC accept status of an accepted reply (0 SUCCESS, 1 PROG_UNAVAIL, 2 PROG_MISMATCH, 3 PROC_UNAVAIL ...)"},
+            {"rpc.state_accept", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isRpc(p) && isReply(p) && !(p.app_flags & kDenied)) o.addU((p.app_flags & kResult) ? 0 : p.app_code); }, "ONC RPC accept status of an accepted reply (0 SUCCESS, 1 PROG_UNAVAIL, 2 PROG_MISMATCH, 3 PROC_UNAVAIL ...)"},
             {"rpc.reply_denied", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isRpc(p) && isReply(p)) o.addU((p.app_flags & kDenied) != 0); }, "ONC RPC reply that was denied (RPC_MISMATCH or AUTH_ERROR)"},
             {"rpc.matched", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (isRpc(p) && isReply(p)) o.addU((p.app_flags & kMatched) != 0); }, "ONC RPC reply whose call was seen earlier in the capture (xid, addresses and ports agree)"},
             {"rpc.retransmission", FieldType::Boolean, [](const PacketInfo &p, const Context &, Values &o) { if (hasProgram(p) && !isReply(p)) o.addU((p.app_flags & kRepeat) != 0); }, "ONC RPC call seen again (same xid, program, version and procedure)"},
@@ -39,6 +39,9 @@ namespace filter {
             {"nfs.version", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isNfs(p)) o.addU(version(p)); }, "NFS protocol version of a call or matched reply"},
             {"nfs.name", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (isNfs(p) && !isReply(p) && version(p) == 3 && !p.app_text2.empty()) o.addS(p.app_text2); }, "NFS file name of a LOOKUP / CREATE / MKDIR / REMOVE / RMDIR call"},
             {"portmap.proc", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.protocol == "Portmap") o.addU(p.app_type); }, "Portmap procedure of a call or matched reply (3 GETPORT)"},
+            {"portmap.port", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.protocol == "Portmap" && isReply(p) && (p.app_flags & kResult) && (p.app_type == 3 || p.app_type == 9)) o.addU(p.app_code); }, "TCP / UDP port a Portmap GETPORT or rpcbind GETADDR / GETVERSADDR reply announced (0: the program is not registered)"},
+            {"portmap.entries", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.protocol == "Portmap" && isReply(p) && (p.app_flags & kResult) && p.app_type == 4) o.addU(p.app_code); }, "Number of mappings a Portmap / rpcbind DUMP reply lists"},
+            {"mount.status", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.protocol == "Mount" && isReply(p) && (p.app_flags & kResult) && p.app_type == 1) o.addU(p.app_code); }, "Mount status of a MNT reply (0 OK, 2 NOENT, 13 ACCES ...)"},
             {"mount.path", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (p.protocol == "Mount" && !isReply(p) && !p.app_text2.empty()) o.addS(p.app_text2); }, "Mount directory path of a MNT / UMNT call"},
         });
     }

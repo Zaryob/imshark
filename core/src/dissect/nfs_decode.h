@@ -71,5 +71,8 @@ const char *portmapProcName(uint32_t vers, uint32_t proc);
 const char *mountProcName(uint32_t proc);
 void portmapCall(uint32_t vers, uint32_t proc, Cursor &a, Out &o, RpcMessage &msg);
 void mountCall(uint32_t proc, Cursor &a, Out &o);
+/// The results of a reply, given the call it answers (`call.prog`, `vers`, `proc` and the arguments the table kept).
+void portmapReply(const RpcNote &call, Cursor &a, Out &o);
+void mountReply(uint32_t vers, uint32_t proc, Cursor &a, Out &o);
 
 } // namespace dissect::rpcdec

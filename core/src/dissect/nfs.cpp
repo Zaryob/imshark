@@ -26,7 +26,7 @@ namespace {
 constexpr size_t kMaxRecord = 8u << 20;   // not more than the stream table buffers
 
 // PacketInfo::app_flags of an ONC RPC message (the version of the program is kept in bits 8..15)
-constexpr uint16_t kFlagReply = 1, kFlagDenied = 2, kFlagMatched = 4, kFlagRepeat = 8, kFlagReassembled = 16, kFlagFragment = 32;
+constexpr uint16_t kFlagReply = 1, kFlagDenied = 2, kFlagMatched = 4, kFlagRepeat = 8, kFlagReassembled = 16, kFlagFragment = 32, kFlagResult = 64;
 constexpr int kVersionShift = 8;
 
 const char *authFlavorName(uint32_t f) {
@@ -240,6 +240,13 @@ void decodeArguments(const uint8_t *bytes, size_t bodyLen, Decoded &d) {
     else if (d.prog == kRpcProgMount) rpcdec::mountCall(d.proc, a, d.out);
 }
 
+// the results of a reply to a call the table matched, by program
+void decodeResults(const uint8_t *bytes, size_t bodyLen, const RpcNote &call, size_t resultAt, Decoded &d) {
+    rpcdec::Cursor a(bytes + resultAt, bodyLen - resultAt, resultAt);
+    if (call.prog == kRpcProgPortmap) rpcdec::portmapReply(call, a, d.out);
+    else if (call.prog == kRpcProgMount) rpcdec::mountReply(call.vers, call.proc, a, d.out);
+}
+
 } // namespace
 
 namespace rpcdec {
@@ -353,6 +360,7 @@ void dissectNfs(Context &ctx, const char *data, size_t length) {
         decodeHeader(msg, msgLen, msgComplete, d);
     }
 
+    if (d.notAMessage && !tcp) return;   // a datagram is not a record fragment: not RPC (UDP names it)
     if (d.notAMessage) {
         // not the first fragment of a record: its bytes are the middle of a message
         pack.protocol = "RPC";
@@ -398,7 +406,16 @@ void dissectNfs(Context &ctx, const char *data, size_t length) {
             pack.app_type = static_cast<uint16_t>(msgNote->proc);
             pack.app_text = std::to_string(msgNote->prog);
             pack.app_flags = static_cast<uint16_t>(d.flags | kFlagMatched | (std::min<uint32_t>(msgNote->vers, 255) << kVersionShift) | ((msgNote->flags & RpcNote::kDuplicateReply) ? kFlagRepeat : 0));
-            d.summary = pr.name + " v" + std::to_string(msgNote->vers) + " " + pr.proc + " Reply (XID: " + hexString(d.xid, 8) + ")" + d.tail;
+            if (d.resultAt) decodeResults(msg, msgLen, *msgNote, d.resultAt, d);
+            if (d.out.hasResult) {
+                pack.app_flags |= kFlagResult;
+                pack.app_code = static_cast<uint16_t>(std::min<uint32_t>(d.out.result, 0xFFFF));
+                if (loadPass && !d.out.mappings.empty()) sessions->learnRpcPorts(number, pack.source, d.out.mappings);
+            }
+            if (!d.out.ops.empty()) pack.app_text2 = d.out.ops;
+            // a decoded result says more than "Accepted SUCCESS"
+            const bool decoded = d.out.hasResult || !d.out.info.empty();
+            d.summary = pr.name + " v" + std::to_string(msgNote->vers) + " " + pr.proc + " Reply (XID: " + hexString(d.xid, 8) + ")" + (decoded ? std::string() : d.tail);
             d.layerName = "Remote Procedure Call (Reply " + pr.name + ")";
             if (msgNote->flags & RpcNote::kDuplicateReply) repeated = " [Duplicate reply]";
         } else if (msgNote->flags & RpcNote::kRetransmission) {

@@ -30,6 +30,8 @@
 // match every RPC reply, not only the protocol "RPC" (a matched reply is named after its program); nfs.name / mount.path are for calls
 // only and nfs.name for version 3 only (the NFSv4 operation numbers will share app_text2), so their counts are lower; nfs.version of a
 // reply reads the version bits. Descriptions of nfs, nfs.proc, nfs.version and portmap.proc say "or matched reply".
+// Added (v1.3, Portmap / Mount results): portmap.port, portmap.entries, mount.status (reply result in app_code, app_flags bit 6);
+// rpc.state_accept reads 0 for a reply that carries a decoded result.
 #include <gtest/gtest.h>
 
 #include <algorithm>

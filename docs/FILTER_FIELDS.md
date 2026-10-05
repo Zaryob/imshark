@@ -196,6 +196,7 @@ in the [User Guide](USER_GUIDE.md#display-filters). Names are lower case.
 | `malformed` | boolean | Packet that could not be fully decoded |
 | `mdns` | boolean | Multicast DNS |
 | `mount.path` | string | Mount directory path of a MNT / UMNT call |
+| `mount.status` | unsigned | Mount status of a MNT reply (0 OK, 2 NOENT, 13 ACCES ...) |
 | `mpls` | boolean | MultiProtocol Label Switching |
 | `mpls.bottom_of_stack` | boolean | MPLS Bottom of Stack flag (outermost label) |
 | `mpls.exp` | unsigned | MPLS Experimental (TC) Bits |
@@ -240,6 +241,8 @@ in the [User Guide](USER_GUIDE.md#display-filters). Names are lower case.
 | `pgsql.ssl_request` | boolean | PostgreSQL SSLRequest |
 | `pgsql.type` | string | PostgreSQL message type letter (Q SimpleQuery, P Parse, R Authentication, Z ReadyForQuery, ...) |
 | `pgsql.user` | string | PostgreSQL user of a StartupMessage |
+| `portmap.entries` | unsigned | Number of mappings a Portmap / rpcbind DUMP reply lists |
+| `portmap.port` | unsigned | TCP / UDP port a Portmap GETPORT or rpcbind GETADDR / GETVERSADDR reply announced (0: the program is not registered) |
 | `portmap.proc` | unsigned | Portmap procedure of a call or matched reply (3 GETPORT) |
 | `ppi.dlt` | unsigned | PPI encapsulated Data Link Type |
 | `ppp` | boolean | Point-to-Point Protocol |
@@ -419,4 +422,4 @@ in the [User Guide](USER_GUIDE.md#display-filters). Names are lower case.
 | `wlan.ssid` | string | 802.11 SSID |
 | `wlan.ta` | string | 802.11 Transmitter MAC address |
 
-409 fields.
+412 fields.

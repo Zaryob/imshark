@@ -1,6 +1,7 @@
 #include "protocols.h"
 
 #include "dcerpc.h"
+#include "nfs.h"
 #include "tcp_streams.h"
 #include "checksum.h"
 
@@ -205,11 +206,20 @@ namespace {
         return ctx.sessions->dceRpcEndpoint(ctx.pack.destination, dstPort, false, number) || ctx.sessions->dceRpcEndpoint(ctx.pack.source, srcPort, false, number);
     }
 
-    // The stream protocol of the ports of a segment: the one the registry has for them, else DCE/RPC for a port the endpoint
-    // mapper announced earlier in the capture (decided while it loaded, the packet number keeps Replay of earlier packets as they were).
+    // True if the portmapper / rpcbind announced the server side of this segment (the port of a TCP program it mapped), as of this packet.
+    bool isMappedRpcEndpoint(const Context &ctx, uint16_t srcPort, uint16_t dstPort) {
+        if (!ctx.sessions) return false;
+        const uint32_t number = static_cast<uint32_t>(ctx.pack.number);
+        return ctx.sessions->rpcProgram(ctx.pack.destination, dstPort, false, number) || ctx.sessions->rpcProgram(ctx.pack.source, srcPort, false, number);
+    }
+
+    // The stream protocol of the ports of a segment: the one the registry has for them (a port the registry knows is never taken over),
+    // else DCE/RPC for a port the endpoint mapper announced earlier in the capture, else ONC RPC for a port the portmapper announced
+    // (decided while the capture loaded, the packet number keeps Replay of earlier packets as they were).
     const StreamProtocol *streamByPort(const Context &ctx, uint16_t srcPort, uint16_t dstPort) {
         if (const StreamProtocol *byPort = ctx.registry.findTcpStream(srcPort, dstPort)) return byPort;
-        return isMappedDceEndpoint(ctx, srcPort, dstPort) ? ctx.registry.findNamedStream("DCERPC") : nullptr;
+        if (isMappedDceEndpoint(ctx, srcPort, dstPort)) return ctx.registry.findNamedStream("DCERPC");
+        return isMappedRpcEndpoint(ctx, srcPort, dstPort) ? ctx.registry.findNamedStream("NFS") : nullptr;
     }
 
     const StreamProtocol *tlsStreamProtocol(const Context &ctx) {
@@ -574,6 +584,8 @@ void dissect::dissectTcp(Context &ctx, const char *data, size_t length) {
         (*app)(ctx, payload, payloadLen);
     } else if (payloadLen > 0 && isMappedDceEndpoint(ctx, srcPort, dstPort) && frameDceRpc(payload, payloadLen).kind != StreamFrame::Kind::Reject) {
         dissectDceRpc(ctx, payload, payloadLen);   // a port the endpoint mapper announced, not framed as a stream (no stream tables here)
+    } else if (payloadLen > 0 && isMappedRpcEndpoint(ctx, srcPort, dstPort) && frameRpc(payload, payloadLen).kind != StreamFrame::Kind::Reject) {
+        dissectNfs(ctx, payload, payloadLen);      // a port the portmapper announced, not framed as a stream
     } else if (payloadLen > 0) {
         for (const auto &heuristic: ctx.registry.tcpHeuristics()) {
             if (heuristic(ctx, payload, payloadLen)) break;
