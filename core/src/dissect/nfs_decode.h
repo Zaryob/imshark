@@ -64,6 +64,7 @@ const char *nfs3ProcName(uint32_t proc);
 const char *nfs4ProcName(uint32_t proc);
 const char *nfs4OpName(uint32_t op);
 void nfs3Call(uint32_t proc, Cursor &a, Out &o);
+void nfs3Reply(uint32_t proc, Cursor &a, Out &o);
 void nfs4Call(uint32_t proc, Cursor &a, Out &o);
 
 // ---- Portmap / rpcbind and Mount (rpc_programs.cpp) ------------------------------------------------------------------------------

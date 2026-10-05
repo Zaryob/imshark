@@ -204,6 +204,7 @@ mysql.version	string	MySQL server version of the initial handshake	47	47	061c1cd
 nfs	boolean	Network File System call or matched reply	297	297	93fece66d4752003
 nfs.name	string	NFS file name of a LOOKUP / CREATE / MKDIR / REMOVE / RMDIR call	3	3	3d4526fe59caa9a5
 nfs.proc	unsigned	NFS procedure of a call or matched reply (v3: 1 GETATTR, 3 LOOKUP, 6 READ, 7 WRITE; v4: 1 COMPOUND)	297	297	63fe22613a586fef
+nfs.status	unsigned	NFS status of a matched reply (v3 nfsstat3, v4 status of the COMPOUND: 0 OK, 2 NOENT, 13 ACCES, 70 STALE ...)	53	53	f97974ef0cba0921
 nfs.version	unsigned	NFS protocol version of a call or matched reply	297	297	925b9ecc4287718f
 ntp	boolean	NTP	172	172	8bbf68298bc550c3
 ntp.ctrl.opcode	unsigned	Opcode of an NTP control message (2 = read variables)	8	8	1c0e9d892bd8aaae

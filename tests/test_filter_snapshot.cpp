@@ -32,6 +32,7 @@
 // reply reads the version bits. Descriptions of nfs, nfs.proc, nfs.version and portmap.proc say "or matched reply".
 // Added (v1.3, Portmap / Mount results): portmap.port, portmap.entries, mount.status (reply result in app_code, app_flags bit 6);
 // rpc.state_accept reads 0 for a reply that carries a decoded result.
+// Added (v1.3, NFSv3 results): nfs.status (a matched reply's status in app_code, app_flags bit 6).
 #include <gtest/gtest.h>
 
 #include <algorithm>
