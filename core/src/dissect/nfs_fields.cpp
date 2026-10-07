@@ -2,7 +2,7 @@
 // list in filter/field_modules.cpp. The extractors read the summary facts the dissector stores in PacketInfo:
 //   app_stream = xid, app_text = program number (a call, or a reply matched with its call), app_type = procedure, app_code = program
 //   version of a call / accept or auth status of a reply, app_text2 = file name / path of a call (v3 name, Mount path) or the NFSv4
-//   operation numbers, app_flags: bit 0 reply, 1 denied, 2 matched with its call, 3 retransmitted call / duplicate reply, 4 record joined
+//   operation names, app_flags: bit 0 reply, 1 denied, 2 matched with its call, 3 retransmitted call / duplicate reply, 4 record joined
 //   from fragments, 5 fragment of a longer record, 8..15 program version.
 #include <filter/field_helpers.h>
 #include <filter/field_modules.h>
@@ -38,6 +38,7 @@ namespace filter {
             {"nfs.proc", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isNfs(p)) o.addU(p.app_type); }, "NFS procedure of a call or matched reply (v3: 1 GETATTR, 3 LOOKUP, 6 READ, 7 WRITE; v4: 1 COMPOUND)"},
             {"nfs.version", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isNfs(p)) o.addU(version(p)); }, "NFS protocol version of a call or matched reply"},
             {"nfs.name", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (isNfs(p) && !isReply(p) && version(p) == 3 && !p.app_text2.empty()) o.addS(p.app_text2); }, "NFS file name of a LOOKUP / CREATE / MKDIR / REMOVE / RMDIR call"},
+            {"nfs.operations", FieldType::String, [](const PacketInfo &p, const Context &, Values &o) { if (p.protocol == "NFSv4" && !p.app_text2.empty()) o.addS(p.app_text2); }, "Operations of an NFSv4 COMPOUND call, or of the results of its matched reply, comma separated in order (PUTFH,LOOKUP,GETATTR; the first 16); test one with matches \"\\bLOOKUP\\b\""},
             {"nfs.status", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (isNfs(p) && isReply(p) && (p.app_flags & kResult)) o.addU(p.app_code); }, "NFS status of a matched reply (v3 nfsstat3, v4 status of the COMPOUND: 0 OK, 2 NOENT, 13 ACCES, 70 STALE ...)"},
             {"portmap.proc", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.protocol == "Portmap") o.addU(p.app_type); }, "Portmap procedure of a call or matched reply (3 GETPORT)"},
             {"portmap.port", FieldType::Unsigned, [](const PacketInfo &p, const Context &, Values &o) { if (p.protocol == "Portmap" && isReply(p) && (p.app_flags & kResult) && (p.app_type == 3 || p.app_type == 9)) o.addU(p.app_code); }, "TCP / UDP port a Portmap GETPORT or rpcbind GETADDR / GETVERSADDR reply announced (0: the program is not registered)"},

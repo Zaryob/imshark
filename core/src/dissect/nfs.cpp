@@ -244,6 +244,7 @@ void decodeArguments(const uint8_t *bytes, size_t bodyLen, Decoded &d) {
 void decodeResults(const uint8_t *bytes, size_t bodyLen, const RpcNote &call, size_t resultAt, Decoded &d) {
     rpcdec::Cursor a(bytes + resultAt, bodyLen - resultAt, resultAt);
     if (call.prog == kRpcProgNfs && call.vers == 3) rpcdec::nfs3Reply(call.proc, a, d.out);
+    else if (call.prog == kRpcProgNfs && call.vers == 4) rpcdec::nfs4Reply(call.proc, a, d.out);
     else if (call.prog == kRpcProgPortmap) rpcdec::portmapReply(call, a, d.out);
     else if (call.prog == kRpcProgMount) rpcdec::mountReply(call.vers, call.proc, a, d.out);
 }

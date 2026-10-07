@@ -203,6 +203,7 @@ mysql.user	string	MySQL user name of the login request	62	62	63a88a586643c282
 mysql.version	string	MySQL server version of the initial handshake	47	47	061c1cda5571c6da
 nfs	boolean	Network File System call or matched reply	297	297	93fece66d4752003
 nfs.name	string	NFS file name of a LOOKUP / CREATE / MKDIR / REMOVE / RMDIR call	3	3	3d4526fe59caa9a5
+nfs.operations	string	Operations of an NFSv4 COMPOUND call, or of the results of its matched reply, comma separated in order (PUTFH,LOOKUP,GETATTR; the first 16); test one with matches "\bLOOKUP\b"	104	104	6d12c5986dec66fe
 nfs.proc	unsigned	NFS procedure of a call or matched reply (v3: 1 GETATTR, 3 LOOKUP, 6 READ, 7 WRITE; v4: 1 COMPOUND)	297	297	63fe22613a586fef
 nfs.status	unsigned	NFS status of a matched reply (v3 nfsstat3, v4 status of the COMPOUND: 0 OK, 2 NOENT, 13 ACCES, 70 STALE ...)	53	53	f97974ef0cba0921
 nfs.version	unsigned	NFS protocol version of a call or matched reply	297	297	925b9ecc4287718f

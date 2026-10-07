@@ -214,6 +214,7 @@ in the [User Guide](USER_GUIDE.md#display-filters). Names are lower case.
 | `mysql.version` | string | MySQL server version of the initial handshake |
 | `nfs` | boolean | Network File System call or matched reply |
 | `nfs.name` | string | NFS file name of a LOOKUP / CREATE / MKDIR / REMOVE / RMDIR call |
+| `nfs.operations` | string | Operations of an NFSv4 COMPOUND call, or of the results of its matched reply, comma separated in order (PUTFH,LOOKUP,GETATTR; the first 16); test one with matches "\bLOOKUP\b" |
 | `nfs.proc` | unsigned | NFS procedure of a call or matched reply (v3: 1 GETATTR, 3 LOOKUP, 6 READ, 7 WRITE; v4: 1 COMPOUND) |
 | `nfs.status` | unsigned | NFS status of a matched reply (v3 nfsstat3, v4 status of the COMPOUND: 0 OK, 2 NOENT, 13 ACCES, 70 STALE ...) |
 | `nfs.version` | unsigned | NFS protocol version of a call or matched reply |
@@ -423,4 +424,4 @@ in the [User Guide](USER_GUIDE.md#display-filters). Names are lower case.
 | `wlan.ssid` | string | 802.11 SSID |
 | `wlan.ta` | string | 802.11 Transmitter MAC address |
 
-413 fields.
+414 fields.

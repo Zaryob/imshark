@@ -25,7 +25,7 @@ struct Out {
     std::vector<Item> items;
     std::string info;                 // appended to the Info column after ", "
     std::string name;                 // a call: the file name / directory path it names (app_text2)
-    std::string ops;                  // NFSv4: the operation numbers of the compound, comma separated (app_text2)
+    std::string ops;                  // NFSv4: the operation names of the compound, comma separated (app_text2)
     bool hasResult = false;           // a reply: the status (NFS, Mount) or the port (GETPORT, GETADDR) it carries
     uint32_t result = 0;
     std::vector<RpcMapping> mappings; // a portmapper reply: the program ports it announced
@@ -66,6 +66,7 @@ const char *nfs4OpName(uint32_t op);
 void nfs3Call(uint32_t proc, Cursor &a, Out &o);
 void nfs3Reply(uint32_t proc, Cursor &a, Out &o);
 void nfs4Call(uint32_t proc, Cursor &a, Out &o);
+void nfs4Reply(uint32_t proc, Cursor &a, Out &o);
 
 // ---- Portmap / rpcbind and Mount (rpc_programs.cpp) ------------------------------------------------------------------------------
 const char *portmapProcName(uint32_t vers, uint32_t proc);

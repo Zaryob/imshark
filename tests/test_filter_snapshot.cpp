@@ -33,6 +33,7 @@
 // Added (v1.3, Portmap / Mount results): portmap.port, portmap.entries, mount.status (reply result in app_code, app_flags bit 6);
 // rpc.state_accept reads 0 for a reply that carries a decoded result.
 // Added (v1.3, NFSv3 results): nfs.status (a matched reply's status in app_code, app_flags bit 6).
+// Added (v1.3, NFSv4 COMPOUND): nfs.operations (the operation names in app_text2; nfs.name stays version 3 only, so the two never share it).
 #include <gtest/gtest.h>
 
 #include <algorithm>

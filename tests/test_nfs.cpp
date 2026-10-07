@@ -95,14 +95,15 @@ TEST(Nfs, Version3CallsNameTheirFileHandleNameOffsetAndCount) {
     flow.expectReplayEqualsLoad();
 }
 
-TEST(Nfs, Version4CompoundNamesTheFirstOperation) {
+// Changed with the full COMPOUND operation list (v1.3): the Info used to say "first=PUTROOTFH"; it now lists the operations that can be followed.
+TEST(Nfs, Version4CompoundListsTheOperations) {
     Flow flow(50000, 2049, "nfs_v4");
     flow.client(mark(kCompound)).client(mark(kCompound41));
     flow.load();
     const auto &k = flow.packets();
     EXPECT_EQ(k[0].protocol, "NFSv4");
-    EXPECT_EQ(k[0].info, "NFS v4 COMPOUND Call (XID: 0x1234567d), minor=0 ops=2 first=PUTROOTFH");
-    EXPECT_EQ(k[1].info, "NFS v4 COMPOUND Call (XID: 0x1234567e), minor=1 ops=3 first=SEQUENCE");
+    EXPECT_EQ(k[0].info, "NFS v4 COMPOUND Call (XID: 0x1234567d), minor=0 ops=2 [PUTROOTFH, GETFH]");
+    EXPECT_EQ(k[1].info, "NFS v4 COMPOUND Call (XID: 0x1234567e), minor=1 ops=3 [SEQUENCE, op 0, ...]");
     EXPECT_TRUE(matches("nfs && nfs.version == 4 && nfs.proc == 1", k[0]));
 }
 

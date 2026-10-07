@@ -120,6 +120,7 @@ add_executable(imshark_tests
     test_rpc_flows.cpp
     test_rpc_programs.cpp
     test_nfs3.cpp
+    test_nfs4.cpp
     test_nfs.cpp
     test_postgres.cpp
     test_mysql.cpp
