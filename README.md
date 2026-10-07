@@ -1,6 +1,6 @@
 # ImShark
 
-[![CI](https://github.com/Zaryob/imshark/actions/workflows/ci.yml/badge.svg)](https://github.com/Zaryob/imshark/actions/workflows/ci.yml)
+[![Release](https://github.com/Zaryob/imshark/actions/workflows/release.yml/badge.svg)](https://github.com/Zaryob/imshark/actions/workflows/release.yml)
 
 [Dear ImGui](https://github.com/ocornut/imgui) ile geliştirilmiş, Wireshark'tan esinlenen bir paket analizörü. Yakalama dosyalarını açar, protokolleri ayrıştırır ve paket listesini etkileşimli protokol ağacı ile hex/ASCII görünümüyle bir araya getirir. libpcap üzerinden canlı yakalama da desteklenir.
 
@@ -19,6 +19,12 @@
 - **Canlı yakalama:** arayüz seçimi, BPF filtresi, snaplen, promiscuous mode ve başlat/durdur/yeniden başlat.
 
 Ethernet, kablosuz, IP, DNS, HTTP, TLS, kurumsal ağ, veritabanı, USB ve Bluetooth protokolleri için ayrıntılı kapsam [destek matrisinde](docs/SUPPORT_MATRIX.md). Protokolün tanınması bütün alanlarının çözülmesi anlamına gelmez; [bilinen sınırlar](docs/KNOWN_ISSUES.md) hangi verilerin çözülemediğini açıklar.
+
+## İndir
+
+Hazır uygulama paketleri [GitHub Releases](https://github.com/Zaryob/imshark/releases) altında sürüm tag'ine göre yayımlanır: Linux x86_64 için AppImage, DEB ve tar.gz; macOS Apple Silicon için DMG; Windows x86_64 için ZIP. Her sürümde `SHA256SUMS.txt` bulunur. macOS paketi Developer ID ile imzalanmamıştır; Windows paketi dosya analizi içindir ve canlı yakalama içermez.
+
+Derleme ve yayın yalnızca `vMAJOR.MINOR.PATCH` tag'i pushlandığında çalışır. Paketler, platform testleri ve Linux Docker doğrulaması başarıyla tamamlandıktan sonra aynı tag'in release'ine eklenir.
 
 ## Hızlı başlangıç
 

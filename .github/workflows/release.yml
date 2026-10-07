@@ -5,25 +5,72 @@ on:
     tags: ['v*']
 
 permissions:
-  contents: write
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  release:
-    name: ${{ matrix.os }}
+  validate:
+    name: Validate release tag
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Check tag, manifest and release notes
+        id: version
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          python - <<'PY'
+          import json, os, re
+          from pathlib import Path
+
+          tag = os.environ['RELEASE_TAG']
+          if not re.fullmatch(r'v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)', tag):
+              raise SystemExit(f'Expected a stable SemVer tag vMAJOR.MINOR.PATCH, got {tag}')
+          version = tag[1:]
+          project = re.search(r'project\(imshark VERSION ([0-9.]+)\b', Path('CMakeLists.txt').read_text())
+          manifest = json.loads(Path('vcpkg.json').read_text())['version']
+          if not project or project[1] != version or manifest != version:
+              raise SystemExit(f'Tag {tag} must match CMakeLists.txt and vcpkg.json versions')
+          notes = Path('docs/releases') / f'{tag}.md'
+          if not notes.is_file() or not notes.read_text().strip():
+              raise SystemExit(f'Missing release notes: {notes}')
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as output:
+              output.write(f'version={version}\n')
+          PY
+
+  checks:
+    name: Regression checks
+    needs: validate
+    uses: ./.github/workflows/ci.yml
+
+  package:
+    name: Package / ${{ matrix.platform }} / ${{ matrix.arch }}
+    needs: validate
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
         include:
           - os: ubuntu-24.04
+            platform: linux
+            arch: x86_64
             assets: |
               build/*.tar.gz
               build/*.deb
               ImShark-*.AppImage
-          - os: macos-latest
+          - os: macos-15
+            platform: macos
+            arch: arm64
             assets: build/*.dmg
-          - os: windows-latest
+          - os: windows-2025
+            platform: windows
+            arch: x86_64
             assets: build/*.zip
     env:
       VCPKG_ROOT: ${{ github.workspace }}/.vcpkg
@@ -31,15 +78,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@v7
-      - name: Check the tag against the project version
-        shell: bash
-        run: |
-          project_version=$(sed -nE 's/^project\(imshark VERSION ([0-9]+(\.[0-9]+)*).*/\1/p' CMakeLists.txt)
-          tag_version="${GITHUB_REF_NAME#v}"
-          if [ "$project_version" != "$tag_version" ]; then
-            echo "Tag $GITHUB_REF_NAME does not match project version $project_version" >&2
-            exit 1
-          fi
       - name: Set up MSVC
         if: runner.os == 'Windows'
         uses: ilammy/msvc-dev-cmd@v1
@@ -62,26 +100,113 @@ jobs:
         if: runner.os == 'Linux'
         run: bash tools/linux_smoke.sh build
       - name: Package
-        run: cpack -C Release
+        run: cpack -C Release -D CPACK_PACKAGE_FILE_NAME=imshark-${{ needs.validate.outputs.version }}-${{ matrix.platform }}-${{ matrix.arch }}
         working-directory: build
       - name: Build AppImage (Linux)
         if: runner.os == 'Linux'
         env:
-          LINUXDEPLOY_URL: https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20240109-1/linuxdeploy-x86_64.AppImage
-          LINUXDEPLOY_PLUGIN_APPIMAGE_URL: https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/continuous/linuxdeploy-plugin-appimage-x86_64.AppImage
+          LINUXDEPLOY_URL: https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20251107-1/linuxdeploy-x86_64.AppImage
+          LINUXDEPLOY_PLUGIN_APPIMAGE_URL: https://github.com/linuxdeploy/linuxdeploy-plugin-appimage/releases/download/1-alpha-20250213-1/linuxdeploy-plugin-appimage-x86_64.AppImage
+          APPIMAGE_RUNTIME_URL: https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64
           APPIMAGE_EXTRACT_AND_RUN: 1
+          LINUXDEPLOY_OUTPUT_VERSION: ${{ needs.validate.outputs.version }}
         run: |
           set -euo pipefail
           mkdir -p "$RUNNER_TEMP/linuxdeploy"
           curl -fsSL -o "$RUNNER_TEMP/linuxdeploy/linuxdeploy" "$LINUXDEPLOY_URL"
           curl -fsSL -o "$RUNNER_TEMP/linuxdeploy/linuxdeploy-plugin-appimage" "$LINUXDEPLOY_PLUGIN_APPIMAGE_URL"
+          curl -fsSL -o "$RUNNER_TEMP/linuxdeploy/runtime-x86_64" "$APPIMAGE_RUNTIME_URL"
           chmod +x "$RUNNER_TEMP/linuxdeploy/linuxdeploy" "$RUNNER_TEMP/linuxdeploy/linuxdeploy-plugin-appimage"
-          sha256sum "$RUNNER_TEMP/linuxdeploy/linuxdeploy" "$RUNNER_TEMP/linuxdeploy/linuxdeploy-plugin-appimage"
+          (
+            cd "$RUNNER_TEMP/linuxdeploy"
+            echo 'c20cd71e3a4e3b80c3483cef793cda3f4e990aca14014d23c544ca3ce1270b4d  linuxdeploy' | sha256sum --check
+            echo '992d502a248e14ab185448ddf6f6e7d25558cb84d4623c354c3af350c25fccb3  linuxdeploy-plugin-appimage' | sha256sum --check
+            echo '2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d  runtime-x86_64' | sha256sum --check
+          )
           export PATH="$RUNNER_TEMP/linuxdeploy:$PATH"
-          VERSION="${GITHUB_REF_NAME#v}" LINUXDEPLOY=linuxdeploy bash tools/make_appimage.sh build
-      - name: Upload draft release assets
+          LDAI_RUNTIME_FILE="$RUNNER_TEMP/linuxdeploy/runtime-x86_64" LINUXDEPLOY=linuxdeploy bash tools/make_appimage.sh build
+      - name: Collect versioned application packages
+        shell: bash
+        env:
+          ASSET_PATTERNS: ${{ matrix.assets }}
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+          PACKAGE_PLATFORM: ${{ matrix.platform }}
+          PACKAGE_ARCH: ${{ matrix.arch }}
+        run: |
+          python - <<'PY'
+          import glob, os, shutil
+          from pathlib import Path
+
+          output = Path('release-assets')
+          output.mkdir()
+          stem = 'imshark-{RELEASE_VERSION}-{PACKAGE_PLATFORM}-{PACKAGE_ARCH}'.format(**os.environ)
+          for pattern in os.environ['ASSET_PATTERNS'].splitlines():
+              matches = glob.glob(pattern)
+              if len(matches) != 1:
+                  raise SystemExit(f'Expected one package for {pattern}, found {matches}')
+              source = Path(matches[0])
+              name = f'{stem}.AppImage' if source.suffix == '.AppImage' else source.name
+              shutil.copy2(source, output / name)
+          PY
+      - name: Save application packages for publication
+        uses: actions/upload-artifact@v7
+        with:
+          name: packages-${{ matrix.platform }}-${{ matrix.arch }}
+          path: release-assets/*
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    name: Publish tagged release
+    needs: [validate, checks, package]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+      - name: Download all application packages
+        uses: actions/download-artifact@v8
+        with:
+          pattern: packages-*
+          path: release-assets
+          merge-multiple: true
+      - name: Verify the asset set and write checksums
+        env:
+          RELEASE_VERSION: ${{ needs.validate.outputs.version }}
+        run: |
+          python - <<'PY'
+          import hashlib, os
+          from pathlib import Path
+
+          version = os.environ['RELEASE_VERSION']
+          expected = {
+              f'imshark-{version}-linux-x86_64.tar.gz',
+              f'imshark-{version}-linux-x86_64.deb',
+              f'imshark-{version}-linux-x86_64.AppImage',
+              f'imshark-{version}-macos-arm64.dmg',
+              f'imshark-{version}-windows-x86_64.zip',
+          }
+          directory = Path('release-assets')
+          actual = {path.name for path in directory.iterdir()}
+          if actual != expected:
+              raise SystemExit(f'Incorrect release assets: missing={expected - actual}, extra={actual - expected}')
+          with (directory / 'SHA256SUMS.txt').open('w') as output:
+              for name in sorted(expected):
+                  path = directory / name
+                  if not path.stat().st_size:
+                      raise SystemExit(f'Empty package: {name}')
+                  with path.open('rb') as package:
+                      digest = hashlib.file_digest(package, 'sha256').hexdigest()
+                  output.write(f'{digest}  {name}\n')
+          PY
+      - name: Publish application packages under this tag
         uses: softprops/action-gh-release@v3
         with:
-          draft: true
-          files: ${{ matrix.assets }}
+          tag_name: ${{ github.ref_name }}
+          name: ImShark ${{ github.ref_name }}
+          body_path: docs/releases/${{ github.ref_name }}.md
+          draft: false
+          prerelease: false
+          make_latest: true
+          files: release-assets/*
           fail_on_unmatched_files: true

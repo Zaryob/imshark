@@ -165,6 +165,33 @@ cd build
 cpack -C Release
 ```
 
-CMake configures a macOS `.dmg`, Linux `.tar.gz`/`.deb`, or Windows `.zip`. `tools/make_appimage.sh` uses a separately supplied `linuxdeploy` for Linux AppImages. The tag-triggered release workflow builds/tests packages and creates a draft release; a local build does not publish anything.
+CMake configures a macOS `.dmg`, Linux `.tar.gz`/`.deb`, or Windows `.zip`. `tools/make_appimage.sh` uses a separately supplied `linuxdeploy` for Linux AppImages. The tag-triggered release workflow builds/tests packages and publishes them together under the same GitHub Release after all checks pass; a local build does not publish anything.
 
 The install step copies dependency copyright notices, including transitive vcpkg dependencies. macOS keeps these notices inside the `.app` resources; Linux/Windows use `share/imshark/licenses`. The AppImage helper stages the same install tree. Windows packages include the runtime DLLs found by CMake; macOS installation uses `fixup_bundle` and ad hoc signing. Developer ID signing and notarization are not configured. Test the resulting package on a clean target system before publishing.
+
+
+## Tagged releases
+
+Only a pushed `vMAJOR.MINOR.PATCH` tag starts GitHub builds. Branch pushes and pull requests do not start builds; `ci.yml` is a reusable workflow called by `release.yml`. The validation job requires the tag's version to match both `project(imshark VERSION ...)` in `CMakeLists.txt` and `version` in `vcpkg.json`, and requires nonempty notes in `docs/releases/<tag>.md`. Invalid tags stop before compilation.
+
+For a new release, update both version declarations, write its release notes and commit the changes. Create an annotated tag on that commit and push the branch and that one tag atomically (replace the example version with the version you just committed):
+
+```sh
+git tag -a v0.8.0 -F docs/releases/v0.8.0.md
+git push --atomic origin master refs/tags/v0.8.0
+```
+
+Published version tags are immutable; corrections use a new patch version. Do not push every local tag with `--tags`.
+
+The workflow runs sanitizer and minimal configurations, verifies Linux in Docker, and tests each Release build. It then publishes these application assets in a single job, gated on all checks and packages:
+
+| Platform | Release assets |
+|---|---|
+| Linux x86_64 (Ubuntu 24.04 baseline) | `imshark-<version>-linux-x86_64.AppImage`, `.deb`, `.tar.gz` |
+| macOS Apple Silicon | `imshark-<version>-macos-arm64.dmg` |
+| Windows x86_64 (offline analysis) | `imshark-<version>-windows-x86_64.zip` |
+| All packages | `SHA256SUMS.txt` |
+
+The AppImage build tools have fixed versions and SHA-256 checks. Linux GUI screenshots/logs are retained separately as the workflow's `linux-gui-smoke` artifact. Native package archives remain available as workflow artifacts for 14 days, including when a different platform or regression check prevents publication.
+
+To verify a download, place `SHA256SUMS.txt` next to the packages and use `sha256sum --check --ignore-missing SHA256SUMS.txt` on Linux, `shasum -a 256 <file>` on macOS or `Get-FileHash <file> -Algorithm SHA256` in PowerShell, comparing the digest with the matching filename in `SHA256SUMS.txt`.

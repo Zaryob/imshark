@@ -1,10 +1,7 @@
 name: CI
 
 on:
-  push:
-    branches: [master]
-  pull_request:
-  workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -13,7 +10,7 @@ jobs:
   build-and-test:
     name: ${{ matrix.os }} / ${{ matrix.preset }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -24,12 +21,9 @@ jobs:
           - os: ubuntu-24.04
             preset: minimal
             sanitize: 'OFF'
-          - os: macos-latest
+          - os: macos-15
             preset: debug
             sanitize: 'ON'
-          - os: windows-latest
-            preset: default
-            sanitize: 'OFF'
     env:
       VCPKG_ROOT: ${{ github.workspace }}/.vcpkg
       VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/.vcpkg-cache,readwrite
@@ -58,7 +52,7 @@ jobs:
   linux-docker:
     name: Linux / Docker + software OpenGL
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7
       - name: Build Linux verification image
