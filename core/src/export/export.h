@@ -30,7 +30,8 @@ namespace exporter {
 
     /// Writes the packets in `indices` to `outPath` in `format`. Capture formats read the frames from
     /// `capturePath`; timestamps are `captureStartEpoch + packet.time` with microsecond resolution.
-    /// Classic pcap needs one link type for all packets (use pcapng otherwise). Returns false and sets
+    /// The destination must not be the input capture or an alias of it. Classic pcap needs one link type for
+    /// all packets (use pcapng otherwise). Returns false and sets
     /// `error` on failure; false without an error text if cancelled through `control`. `secrets` (pcapng only) are
     /// written as Decryption Secrets Blocks in front of the packets, so a decrypted TLS capture stays decryptable.
     bool exportPackets(const std::string &capturePath, const std::vector<packet::PacketInfo> &packets,

@@ -10,7 +10,8 @@ std::string ui::fieldValue(const packet::Field &field) {
 
 std::string ui::bytesToHex(const std::vector<char> &data, size_t offset, size_t length) {
     std::string out;
-    const size_t end = std::min(data.size(), offset + length);
+    if (offset >= data.size()) return out;
+    const size_t end = offset + std::min(length, data.size() - offset);
     for (size_t i = offset; i < end; ++i) {
         char buf[4];
         std::snprintf(buf, sizeof(buf), "%02x", static_cast<unsigned char>(data[i]));
@@ -22,7 +23,8 @@ std::string ui::bytesToHex(const std::vector<char> &data, size_t offset, size_t 
 
 std::string ui::bytesToAscii(const std::vector<char> &data, size_t offset, size_t length) {
     std::string out;
-    const size_t end = std::min(data.size(), offset + length);
+    if (offset >= data.size()) return out;
+    const size_t end = offset + std::min(length, data.size() - offset);
     for (size_t i = offset; i < end; ++i) {
         const auto c = static_cast<unsigned char>(data[i]);
         out += (c >= 32 && c < 127) ? static_cast<char>(c) : '.';
@@ -33,7 +35,7 @@ std::string ui::bytesToAscii(const std::vector<char> &data, size_t offset, size_
 std::string ui::hexDump(const std::vector<char> &data) {
     std::string out;
     for (size_t row = 0; row < data.size(); row += 16) {
-        char head[16];
+        char head[2 * sizeof(size_t) + 3];
         std::snprintf(head, sizeof(head), "%06zx  ", row);
         out += head;
         std::string hex = bytesToHex(data, row, 16);

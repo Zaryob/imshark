@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <set>
 
@@ -111,6 +112,29 @@ namespace exporter {
                        const std::string &outPath, std::string &error, core::ScanControl *control,
                        const std::vector<core::DecryptionSecrets> *secrets) {
         error.clear();
+        // Reject aliases too: opening a symlink or hard link would truncate the capture before it can be read.
+        std::error_code pathError;
+        if (std::filesystem::equivalent(core::pathFromUtf8(capturePath), core::pathFromUtf8(outPath), pathError)) {
+            error = "The export destination is the open capture file; choose a different file";
+            return false;
+        }
+
+        // Validate before opening the output so a rejected classic pcap export preserves an existing file.
+        std::vector<uint32_t> linkTypes;
+        uint32_t maxCaptured = 0;
+        if (isCaptureFormat(format)) {
+            for (uint32_t i: indices) {
+                if (i >= packets.size()) continue;
+                if (std::find(linkTypes.begin(), linkTypes.end(), packets[i].link_type) == linkTypes.end()) linkTypes.push_back(packets[i].link_type);
+                maxCaptured = std::max(maxCaptured, packets[i].captured_length);
+            }
+            if (linkTypes.empty()) linkTypes.push_back(1);
+            if (format == Format::Pcap && linkTypes.size() > 1) {
+                error = "The packets use different link types; save them as pcapng instead";
+                return false;
+            }
+        }
+
         std::ofstream out(core::pathFromUtf8(outPath), std::ios::binary | std::ios::trunc);
         if (!out) {
             error = "Cannot write to " + outPath;
@@ -125,19 +149,6 @@ namespace exporter {
             return true;
         }
 
-        // link types in use (an interface per link type in pcapng; classic pcap allows only one)
-        std::vector<uint32_t> linkTypes;
-        uint32_t maxCaptured = 0;
-        for (uint32_t i: indices) {
-            if (i >= packets.size()) continue;
-            if (std::find(linkTypes.begin(), linkTypes.end(), packets[i].link_type) == linkTypes.end()) linkTypes.push_back(packets[i].link_type);
-            maxCaptured = std::max(maxCaptured, packets[i].captured_length);
-        }
-        if (linkTypes.empty()) linkTypes.push_back(1);
-        if (format == Format::Pcap && linkTypes.size() > 1) {
-            error = "The packets use different link types; save them as pcapng instead";
-            return false;
-        }
         const uint32_t snaplen = std::max<uint32_t>(maxCaptured, 262144);
 
         std::string head;

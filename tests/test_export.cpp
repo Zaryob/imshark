@@ -162,8 +162,13 @@ TEST(ExportCapture, MixedLinkTypesNeedPcapng) {
     packets[2].link_type = 113;                           // pretend one packet came from another interface
     std::string error;
     const auto pcapPath = tempFile("mixed.pcap");
+    {
+        std::ofstream existing(pcapPath);
+        existing << "preserve this existing destination";
+    }
     EXPECT_FALSE(exporter::exportPackets(kSample, packets, {0, 2}, s.epoch, exporter::Format::Pcap, pcapPath, error));
     EXPECT_NE(error.find("link types"), std::string::npos);
+    EXPECT_EQ(slurp(pcapPath), "preserve this existing destination");
 
     const auto ngPath = tempFile("mixed.pcapng");
     ASSERT_TRUE(exporter::exportPackets(kSample, packets, {0, 2, 1}, s.epoch, exporter::Format::Pcapng, ngPath, error)) << error;
@@ -199,4 +204,40 @@ TEST(ExportCapture, FailuresAndCancellation) {
     const std::string table = slurp(csv);
     EXPECT_EQ(std::count(table.begin(), table.end(), '\n'), 3);
     std::remove(csv.c_str());
+}
+
+TEST(ExportCapture, CannotOverwriteTheSourceCaptureInAnyFormat) {
+    Sample sample;
+    const auto path = tempFile("source_guard.pcap");
+    std::filesystem::copy_file(kSample, path, std::filesystem::copy_options::overwrite_existing);
+    const auto original = slurp(path);
+    for (const auto format: {exporter::Format::Pcap, exporter::Format::Pcapng, exporter::Format::Csv, exporter::Format::Json}) {
+        SCOPED_TRACE(exporter::formatName(format));
+        std::string error;
+        EXPECT_FALSE(exporter::exportPackets(path, sample.packets, {0, 1}, sample.epoch, format, path, error));
+        EXPECT_NE(error.find("open capture"), std::string::npos);
+        EXPECT_EQ(slurp(path), original);
+    }
+    std::filesystem::remove(path);
+}
+
+TEST(ExportCapture, CannotOverwriteTheSourceThroughAHardLink) {
+    Sample sample;
+    const auto source = tempFile("source_link_guard.pcap");
+    const auto alias = tempFile("source_link_guard_alias.pcap");
+    std::filesystem::copy_file(kSample, source, std::filesystem::copy_options::overwrite_existing);
+    const auto original = slurp(source);
+    std::error_code linkError;
+    std::filesystem::create_hard_link(source, alias, linkError);
+    if (linkError) {
+        std::filesystem::remove(source);
+        GTEST_SKIP() << "Hard links unavailable: " << linkError.message();
+    }
+
+    std::string error;
+    EXPECT_FALSE(exporter::exportPackets(source, sample.packets, {0, 1}, sample.epoch, exporter::Format::Pcap, alias, error));
+    EXPECT_NE(error.find("open capture"), std::string::npos);
+    EXPECT_EQ(slurp(source), original);
+    std::filesystem::remove(alias);
+    std::filesystem::remove(source);
 }

@@ -24,7 +24,7 @@ std::vector<ui::FollowLine> ui::buildFollowLines(const stream::Stream &s, Follow
 
         if (view == FollowView::HexDump) {
             for (size_t pos = 0; pos < chunk.data.size(); pos += 16) {
-                char head[16];
+                char head[2 * sizeof(size_t) + 3];
                 std::snprintf(head, sizeof(head), "%08zx  ", pos);
                 std::string hex, ascii;
                 for (size_t i = pos; i < pos + 16; ++i) {

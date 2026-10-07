@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 
+#include <limits>
+
 #include <ui/clipboard.h>
 
 #include "support.h"
@@ -23,6 +25,11 @@ TEST(Clipboard, HexAndAscii) {
     EXPECT_EQ(ui::bytesToHex(data, 6, 100), "ff 20") << "ranges are clamped to the data";
     EXPECT_EQ(ui::bytesToHex(data, 50, 4), "") << "a range past the end is empty, not a crash";
     EXPECT_EQ(ui::bytesToAscii(data, 50, 4), "");
+    const auto maximum = std::numeric_limits<size_t>::max();
+    EXPECT_EQ(ui::bytesToHex(data, 6, maximum), "ff 20") << "clamping must not overflow offset + length";
+    EXPECT_EQ(ui::bytesToAscii(data, 6, maximum), ". ");
+    EXPECT_EQ(ui::bytesToHex(data, maximum, maximum), "");
+    EXPECT_EQ(ui::bytesToAscii(data, maximum, maximum), "");
 }
 
 TEST(Clipboard, HexDumpHasAlignedColumns) {
