@@ -1,20 +1,49 @@
 {
   "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
   "name": "imshark",
-  "version": "0.2.0",
-  "description": "Lightweight offline packet analyzer built with Dear ImGui",
+  "version": "0.8.0",
+  "description": "Cross-platform packet analyzer built with Dear ImGui",
+  "homepage": "https://github.com/Zaryob/imshark",
   "license": "GPL-3.0-only",
+  "builtin-baseline": "2750401336fb7c95f6619657a46a7e798661341c",
   "dependencies": [
-    "glfw3"
+    "glfw3",
+    {
+      "name": "imgui",
+      "version>=": "1.92.9",
+      "features": [
+        "glfw-binding",
+        "opengl3-binding"
+      ]
+    },
+    "imguifiledialog",
+    "opengl"
   ],
   "default-features": [
-    "tests"
+    "tests",
+    "tls-decrypt",
+    "live-capture"
   ],
   "features": {
     "tests": {
-      "description": "Build the unit tests",
+      "description": "Build the GoogleTest regression suite",
       "dependencies": [
         "gtest"
+      ]
+    },
+    "tls-decrypt": {
+      "description": "Enable TLS and DTLS decryption using OpenSSL 3",
+      "dependencies": [
+        "openssl"
+      ]
+    },
+    "live-capture": {
+      "description": "Enable libpcap live capture on Linux and macOS",
+      "dependencies": [
+        {
+          "name": "libpcap",
+          "platform": "!windows"
+        }
       ]
     }
   }

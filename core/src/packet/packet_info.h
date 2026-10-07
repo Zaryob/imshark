@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 
 #include <string>
@@ -47,7 +48,7 @@ namespace packet {
     /// demand for the selected packet (see core::buildPacketDetails).
     struct PacketInfo {
         // Members are ordered by size (8-byte scalars, strings/vectors, then 4, 2 and 1-byte fields) so the
-        // compiler adds no padding: the summary of every packet of a capture stays in memory.
+        // compiler minimizes padding: the summary of every packet of a capture stays in memory.
         double time = 0;
         // Relative TCP sequence/acknowledgment numbers, computed in capture order while loading
         // (-1 = not applicable); needed again when the field tree is rebuilt for a single packet.
@@ -166,5 +167,10 @@ namespace packet {
         explicit PacketInfo(int num) : number(num) {}
     };
 
-    static_assert(sizeof(PacketInfo) == 336, "PacketInfo must remain 336 bytes");
+    // Keep the same member budget across standard library ABIs: six strings and three vectors, plus
+    // 120 bytes for scalars, bitfields and alignment. Typical 64-bit release builds use 336 bytes with
+    // libc++ and 384 bytes with libstdc++; these objects are never serialized as an in-memory struct.
+    inline constexpr std::size_t kPacketInfoSizeBudget = 120 + 6 * sizeof(std::string) +
+        sizeof(std::vector<uint16_t>) + sizeof(std::vector<char>) + sizeof(std::vector<Field>);
+    static_assert(sizeof(PacketInfo) <= kPacketInfoSizeBudget, "PacketInfo grew beyond its ABI-adjusted member budget");
 } // namespace packet

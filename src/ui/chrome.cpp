@@ -6,6 +6,15 @@
 
 #include <ImGuiFileDialog.h>
 
+namespace {
+    void openCaptureDialog() {
+        IGFD::FileDialogConfig config;
+        config.path = ".";
+        config.flags = ImGuiFileDialogFlags_Modal;
+        ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", "Open capture file", ".pcapng,.pcap,.cap,.snoop,.erf,.iptrace,.gz,.*", config);
+    }
+} // namespace
+
 void ui::applyTheme(bool dark) {
     if (dark) ImGui::StyleColorsDark();
     else ImGui::StyleColorsLight();
@@ -42,14 +51,16 @@ void ui::drawMenuAndDialogs(AppState &state) {
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("File")) {
             if (ImGui::MenuItem("Open...", "Ctrl+O")) {
-                ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", "Choose File", ".pcapng,.pcap,.cap,.snoop,.erf,.iptrace,.gz,.*");
+                openCaptureDialog();
             }
             if (ImGui::BeginMenu("Open Recent", !state.settings.recentFiles.empty())) {
                 std::string chosen;
                 for (const auto &recent: state.settings.recentFiles) {
                     const std::string name = std::filesystem::path(recent).filename().string();
+                    ImGui::PushID(recent.c_str()); // captures in different directories may have the same filename
                     if (ImGui::MenuItem(name.c_str())) chosen = recent;
                     if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", recent.c_str());
+                    ImGui::PopID();
                 }
                 ImGui::Separator();
                 if (ImGui::MenuItem("Clear Recent")) {
@@ -124,7 +135,7 @@ void ui::drawMenuAndDialogs(AppState &state) {
     handleCaptureShortcuts(state);
 
     if (ImGui::GetIO().KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_O, false)) {
-        ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", "Choose File", ".pcapng,.pcap,.cap,.snoop,.erf,.iptrace,.gz,.*");
+        openCaptureDialog();
     }
 
     if (ImGuiFileDialog::Instance()->Display("ChooseFileDlgKey")) {

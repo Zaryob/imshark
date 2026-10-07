@@ -1,5 +1,32 @@
 cmake_minimum_required(VERSION 3.21)
 
+# Select the manifest toolchain before project(), where vcpkg resolves dependencies.
+if(NOT DEFINED CMAKE_TOOLCHAIN_FILE AND DEFINED ENV{VCPKG_ROOT})
+    set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake" CACHE FILEPATH "vcpkg toolchain")
+endif()
+if(NOT CMAKE_TOOLCHAIN_FILE)
+    message(FATAL_ERROR "Set VCPKG_ROOT to a bootstrapped vcpkg checkout and run cmake --preset default. See docs/BUILDING.md.")
+endif()
+option(IMSHARK_BUILD_TESTS "Build the GoogleTest regression suite" ON)
+option(IMSHARK_TLS_DECRYPT "Build TLS/DTLS decryption with OpenSSL 3" ON)
+set(_live_default ON)
+if(CMAKE_HOST_WIN32 OR CMAKE_SYSTEM_NAME STREQUAL "Windows")
+    set(_live_default OFF)
+endif()
+option(IMSHARK_LIVE_CAPTURE "Build live capture (Npcap SDK required on Windows)" ${_live_default})
+# Keep the manifest features aligned with the CMake options, including reconfiguration.
+set(VCPKG_MANIFEST_NO_DEFAULT_FEATURES ON)
+set(VCPKG_MANIFEST_FEATURES "")
+if(IMSHARK_BUILD_TESTS)
+    list(APPEND VCPKG_MANIFEST_FEATURES tests)
+endif()
+if(IMSHARK_TLS_DECRYPT)
+    list(APPEND VCPKG_MANIFEST_FEATURES tls-decrypt)
+endif()
+if(IMSHARK_LIVE_CAPTURE)
+    list(APPEND VCPKG_MANIFEST_FEATURES live-capture)
+endif()
+
 project(imshark VERSION 0.8.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
@@ -13,8 +40,7 @@ if(MSVC)
 endif()
 
 # Instrumentation options must be set before the subdirectories are added: add_compile_options() only affects
-# targets created after it, so putting them below would leave imshark_core (and ImGui) uninstrumented.
-option(IMSHARK_BUILD_TESTS "Build the unit tests (requires GoogleTest)" ON)
+# targets created after it, so putting them below would leave imshark_core and the UI uninstrumented.
 option(IMSHARK_SANITIZE "Build with AddressSanitizer and UndefinedBehaviorSanitizer" OFF)
 option(IMSHARK_BUILD_TOOLS "Build tools/imshark_dump (headless field dump used by tools/compare_tshark.py)" ON)
 option(IMSHARK_BUILD_BENCH "Build tools/bench_driver (headless load + filter benchmark, see tools/benchmark.py)" OFF)
@@ -35,7 +61,7 @@ elseif(IMSHARK_SANITIZE)
 endif()
 
 add_subdirectory(core)          # imshark_core: parsing library (no UI dependencies)
-add_subdirectory(third_party)   # imshark_imgui: Dear ImGui, backends, ImGuiFileDialog
+include(cmake/Dependencies.cmake) # ImGui, backends and file dialogs from vcpkg
 
 # Guard: a sanitizer / coverage build that silently skips the core would give false confidence.
 get_target_property(_core_options imshark_core COMPILE_OPTIONS)
@@ -126,17 +152,40 @@ endif()
 # The install rule must come after MACOSX_BUNDLE is set on the target: CMake decides RUNTIME vs BUNDLE when install()
 # is processed. On macOS BUNDLE DESTINATION puts imshark.app at the top of the package (otherwise the DragNDrop image
 # holds bin/imshark.app); elsewhere the executable goes to bin/.
-install(TARGETS imshark RUNTIME DESTINATION bin BUNDLE DESTINATION .)
+if(WIN32)
+    # Include app-local vcpkg DLLs in the ZIP alongside the executable.
+    install(TARGETS imshark
+        RUNTIME_DEPENDENCIES
+            DIRECTORIES "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin"
+            PRE_EXCLUDE_REGEXES "api-ms-.*" "ext-ms-.*"
+            POST_EXCLUDE_REGEXES ".*[Ww][Ii][Nn][Dd][Oo][Ww][Ss][/\\\\][Ss][Yy][Ss][Tt][Ee][Mm]32.*"
+        RUNTIME DESTINATION bin)
+    include(InstallRequiredSystemLibraries)
+else()
+    install(TARGETS imshark RUNTIME DESTINATION bin BUNDLE DESTINATION .)
+endif()
+if(APPLE)
+    set(_license_root "imshark.app/Contents/Resources")
+else()
+    set(_license_root "share/imshark")
+endif()
+install(FILES LICENSE DESTINATION "${_license_root}")
+# Include the full installed dependency closure (GLFW also links X11/Wayland libraries on Linux).
+file(GLOB _dependency_notices "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/share/*/copyright")
+foreach(_notice IN LISTS _dependency_notices)
+    get_filename_component(_port_share "${_notice}" DIRECTORY)
+    get_filename_component(_port "${_port_share}" NAME)
+    install(FILES "${_notice}" DESTINATION "${_license_root}/licenses" RENAME "${_port}.txt")
+endforeach()
 
 # macOS: make the installed bundle self-contained. fixup_bundle copies every non-system dylib the executable links
 # (GLFW, OpenSSL libcrypto, libpcap/zlib if they are not system ones) into Contents/Frameworks and rewrites the install
-# names, so the app no longer needs Homebrew on the target machine. Linux and Windows packages still rely on system
-# or vcpkg-provided libraries (the Linux AppImage job in release.yml bundles them with linuxdeploy).
+# names. Linux uses static vcpkg libraries plus OS graphics/runtime libraries; AppImage bundles the latter.
 if(APPLE)
     install(CODE "
         include(BundleUtilities)
         set(_app \"\$ENV{DESTDIR}\${CMAKE_INSTALL_PREFIX}/imshark.app\")
-        fixup_bundle(\"\${_app}\" \"\" \"/opt/homebrew/lib;/usr/local/lib\")
+        fixup_bundle(\"\${_app}\" \"\" \"${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/lib\")
         # install_name_tool invalidated the signatures, and Apple Silicon kills unsigned code: re-sign ad hoc.
         # This is NOT a Developer ID signature and the image is not notarized (Gatekeeper still warns on download).
         execute_process(COMMAND codesign --force --deep --sign - \"\${_app}\" RESULT_VARIABLE _sign_rc)
@@ -161,7 +210,9 @@ elseif(WIN32)
 else()
     set(CPACK_GENERATOR "TGZ;DEB")
     set(CPACK_DEBIAN_PACKAGE_MAINTAINER "imshark contributors")
-    set(CPACK_DEBIAN_PACKAGE_DEPENDS "libgl1, libglfw3")
+    set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
+    # GLFW opens these native desktop libraries with dlopen; shlibdeps cannot see them.
+    set(CPACK_DEBIAN_PACKAGE_DEPENDS "libgl1, libx11-6, libxrandr2, libxinerama1, libxcursor1, libxi6, libxrender1")
 endif()
 
 include(CPack)

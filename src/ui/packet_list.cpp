@@ -90,12 +90,14 @@ void ui::drawPacketList(AppState &state, float height) {
                           ImGuiTableFlags_Resizable | ImGuiTableFlags_Reorderable | ImGuiTableFlags_Hideable |
                               ImGuiTableFlags_Sortable | ImGuiTableFlags_ScrollY | ImGuiTableFlags_RowBg)) {
         ImGui::TableSetupScrollFreeze(0, 1);
-        ImGui::TableSetupColumn("No.", 0, 0.0f, static_cast<ImGuiID>(SortColumn::Number));
-        ImGui::TableSetupColumn("Time", 0, 0.0f, static_cast<ImGuiID>(SortColumn::Time));
-        ImGui::TableSetupColumn("Source", 0, 0.0f, static_cast<ImGuiID>(SortColumn::Source));
-        ImGui::TableSetupColumn("Destination", 0, 0.0f, static_cast<ImGuiID>(SortColumn::Destination));
-        ImGui::TableSetupColumn("Protocol", 0, 0.0f, static_cast<ImGuiID>(SortColumn::Protocol));
-        ImGui::TableSetupColumn("Length", 0, 0.0f, static_cast<ImGuiID>(SortColumn::Length));
+        // Reserve compact, font-scaled columns so packet summaries get the remaining space.
+        const float unit = ImGui::CalcTextSize("0").x;
+        ImGui::TableSetupColumn("No.", ImGuiTableColumnFlags_WidthFixed, 7 * unit, static_cast<ImGuiID>(SortColumn::Number));
+        ImGui::TableSetupColumn("Time", ImGuiTableColumnFlags_WidthFixed, 12 * unit, static_cast<ImGuiID>(SortColumn::Time));
+        ImGui::TableSetupColumn("Source", ImGuiTableColumnFlags_WidthFixed, 20 * unit, static_cast<ImGuiID>(SortColumn::Source));
+        ImGui::TableSetupColumn("Destination", ImGuiTableColumnFlags_WidthFixed, 20 * unit, static_cast<ImGuiID>(SortColumn::Destination));
+        ImGui::TableSetupColumn("Protocol", ImGuiTableColumnFlags_WidthFixed, 10 * unit, static_cast<ImGuiID>(SortColumn::Protocol));
+        ImGui::TableSetupColumn("Length", ImGuiTableColumnFlags_WidthFixed, 8 * unit, static_cast<ImGuiID>(SortColumn::Length));
         ImGui::TableSetupColumn("Info", ImGuiTableColumnFlags_WidthStretch, 0.0f, static_cast<ImGuiID>(SortColumn::Info));
         ImGui::TableHeadersRow();
 
@@ -135,7 +137,7 @@ void ui::drawPacketList(AppState &state, float height) {
         clipper.Begin(static_cast<int>(state.order.size()));
         if (state.scrollToSelection && state.selectedPacket >= 0) {
             const auto it = std::find(state.order.begin(), state.order.end(), static_cast<uint32_t>(state.selectedPacket));
-            if (it != state.order.end()) clipper.IncludeRangeByIndices(static_cast<int>(it - state.order.begin()), static_cast<int>(it - state.order.begin()) + 1);
+            if (it != state.order.end()) clipper.IncludeItemByIndex(static_cast<int>(it - state.order.begin()));
         }
         while (clipper.Step()) {
             for (int row = clipper.DisplayStart; row < clipper.DisplayEnd; ++row) {
