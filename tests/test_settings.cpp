@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 
@@ -134,5 +135,37 @@ TEST(Settings, CaptureOptionsRoundTripAndDefaults) {
         f << "capture_snaplen=10\ncapture_snaplen=abc\ncapture_snaplen=999999999\n";
     }
     EXPECT_EQ(ui::loadSettings(path).captureSnaplen, 262144u);
+    std::filesystem::remove_all(std::filesystem::path(path).parent_path());
+}
+
+TEST(Settings, NumericValuesMustBeComplete) {
+    const auto path = tempPath("numeric_suffix");
+    std::filesystem::create_directories(std::filesystem::path(path).parent_path());
+    {
+        std::ofstream file(path);
+        file << "list_height=450px\ncapture_snaplen=1500bytes\ncapture_snaplen=-18446744073709550116\n";
+    }
+    const auto settings = ui::loadSettings(path);
+    const ui::Settings defaults;
+    EXPECT_FLOAT_EQ(settings.listHeight, defaults.listHeight);
+    EXPECT_EQ(settings.captureSnaplen, defaults.captureSnaplen);
+    std::filesystem::remove_all(std::filesystem::path(path).parent_path());
+}
+
+TEST(Settings, HistoryCannotInjectOtherSettings) {
+    const auto path = tempPath("history_lines");
+    ui::Settings settings;
+    settings.recentFiles = {"/a.pcap\ntheme=light"};
+    settings.filterHistory = {"tcp\rcapture_snaplen=64"};
+    ASSERT_TRUE(ui::saveSettings(settings, path));
+    const auto loaded = ui::loadSettings(path);
+    EXPECT_TRUE(loaded.darkTheme);
+    EXPECT_EQ(loaded.captureSnaplen, ui::Settings::kMaxSnaplen);
+    EXPECT_EQ(loaded.recentFiles, std::vector<std::string>{"/a.pcap theme=light"});
+    EXPECT_EQ(loaded.filterHistory, std::vector<std::string>{"tcp capture_snaplen=64"});
+
+    settings.filterHistory.clear();
+    ui::addFilterHistory(settings, "tcp\rudp");
+    EXPECT_TRUE(settings.filterHistory.empty());
     std::filesystem::remove_all(std::filesystem::path(path).parent_path());
 }

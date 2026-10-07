@@ -41,8 +41,7 @@ void ui::saveSettingsIfDirty(AppState &state) {
         state.settingsDirty = true;
     }
     if (!state.settingsDirty) return;
-    saveSettings(state.settings, state.settingsPath);
-    state.settingsDirty = false;
+    if (saveSettings(state.settings, state.settingsPath)) state.settingsDirty = false;
 }
 
 float ui::statusBarHeight() { return ImGui::GetFrameHeight() + 2 * ImGui::GetStyle().WindowPadding.y; }

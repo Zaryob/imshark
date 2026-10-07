@@ -1303,3 +1303,48 @@ TEST_F(UiSmoke, LastCaptureOptionsArePersistedAndRestoredIntoTheDialog) {
     EXPECT_EQ(again.live.options.filter, "tcp port 443") << "the dialog keeps the remembered options";
     std::filesystem::remove_all(std::filesystem::path(path).parent_path());
 }
+
+TEST_F(UiSmoke, FilesystemErrorsDoNotTerminateTheLoader) {
+    ui::AppState state;
+    load(state);
+    ASSERT_EQ(state.packets.size(), 16u);
+    const auto originalFile = state.currentFile;
+    state.selectedPacket = 2;
+
+    const auto dir = std::filesystem::temp_directory_path() / "imshark_ui_symlink_loop";
+    std::filesystem::create_directories(dir);
+    const auto path = dir / "loop.pcap";
+    std::error_code error;
+    std::filesystem::create_symlink("loop.pcap", path, error);
+    if (error) {
+        std::filesystem::remove_all(dir);
+        GTEST_SKIP() << "Symlinks unavailable: " << error.message();
+    }
+
+    ui::loadCapture(state, path.string());
+    EXPECT_TRUE(state.loadFailed);
+    EXPECT_FALSE(state.loadMessage.empty());
+    EXPECT_TRUE(state.openLoadError);
+    EXPECT_EQ(state.currentFile, originalFile);
+    EXPECT_EQ(state.packets.size(), 16u);
+    EXPECT_EQ(state.selectedPacket, 2);
+    frames(state);
+    std::filesystem::remove_all(dir);
+}
+
+TEST_F(UiSmoke, FailedSettingsSaveRemainsDirtyUntilItCanBeWritten) {
+    ui::AppState state;
+    const auto dir = std::filesystem::temp_directory_path() / "imshark_ui_settings_retry";
+    std::filesystem::create_directories(dir);
+    state.settingsPath = dir.string(); // a directory cannot be opened as a settings file
+    state.settings.darkTheme = false;
+    state.settingsDirty = true;
+    ui::saveSettingsIfDirty(state);
+    EXPECT_TRUE(state.settingsDirty);
+
+    state.settingsPath = (dir / "settings.ini").string();
+    ui::saveSettingsIfDirty(state);
+    EXPECT_FALSE(state.settingsDirty);
+    EXPECT_FALSE(ui::loadSettings(state.settingsPath).darkTheme);
+    std::filesystem::remove_all(dir);
+}

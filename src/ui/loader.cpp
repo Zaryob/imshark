@@ -3,6 +3,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdint>
+#include <exception>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -117,7 +118,22 @@ void ui::startLoad(AppState &state, const std::string &path) {
     job->registry = state.registry;
     job->tlsKeys = state.tlsKeys;
     job->espNull = state.settings.espNullHeuristic;
-    job->thread = std::thread([raw = job.get()] { runJob(*raw); });
+    job->thread = std::thread([raw = job.get()] {
+        try {
+            runJob(*raw);
+        } catch (const std::exception &error) {
+            // Filesystem errors and parser failures must reach the error popup, never escape a worker thread.
+            raw->ok = false;
+            raw->message = error.what();
+            raw->decompressing = false;
+            raw->finished = true;
+        } catch (...) {
+            raw->ok = false;
+            raw->message = "Unexpected error while loading capture";
+            raw->decompressing = false;
+            raw->finished = true;
+        }
+    });
     state.loadJob = std::move(job);
 }
 

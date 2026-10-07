@@ -1,6 +1,7 @@
 #include "settings.h"
 
 #include <algorithm>
+#include <charconv>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -53,8 +54,9 @@ ui::Settings ui::loadSettings(const std::string &path) {
             settings.darkTheme = value != "light";
         } else if (key == "list_height") {
             try {
-                const float h = std::stof(value);
-                if (h >= 50.0f && h <= 5000.0f) settings.listHeight = h;
+                size_t consumed = 0;
+                const float h = std::stof(value, &consumed);
+                if (consumed == value.size() && h >= 50.0f && h <= 5000.0f) settings.listHeight = h;
             } catch (...) { /* damaged value: keep the default */ }
         } else if (key == "tls_keylog") {
             settings.tlsKeyLogFile = value;
@@ -65,10 +67,11 @@ ui::Settings ui::loadSettings(const std::string &path) {
         } else if (key == "capture_filter") {
             settings.captureFilter = value;
         } else if (key == "capture_snaplen") {
-            try {
-                const unsigned long n = std::stoul(value);
-                if (n >= Settings::kMinSnaplen && n <= Settings::kMaxSnaplen) settings.captureSnaplen = static_cast<uint32_t>(n);
-            } catch (...) { /* damaged value: keep the default */ }
+            uint32_t n = 0;
+            const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), n);
+            if (error == std::errc{} && end == value.data() + value.size() && n >= Settings::kMinSnaplen && n <= Settings::kMaxSnaplen) {
+                settings.captureSnaplen = n;
+            }
         } else if (key == "capture_promiscuous") {
             settings.capturePromiscuous = value != "0";
         } else if (key == "filter" && !value.empty() && settings.filterHistory.size() < Settings::kMaxFilterHistory) {
@@ -103,8 +106,9 @@ bool ui::saveSettings(const Settings &settings, const std::string &path) {
     out << "capture_snaplen=" << settings.captureSnaplen << "\n";
     out << "capture_promiscuous=" << (settings.capturePromiscuous ? 1 : 0) << "\n";
     for (const auto &rule: settings.colorRules) out << "colorrule=" << serializeColorRule(rule) << "\n";
-    for (const auto &recent: settings.recentFiles) out << "recent=" << recent << "\n";
-    for (const auto &f: settings.filterHistory) out << "filter=" << f << "\n";
+    for (const auto &recent: settings.recentFiles) out << "recent=" << oneLine(recent) << "\n";
+    for (const auto &f: settings.filterHistory) out << "filter=" << oneLine(f) << "\n";
+    out.close(); // report buffered write errors as well as failures opening the file
     return static_cast<bool>(out);
 }
 
@@ -116,7 +120,7 @@ void ui::addRecentFile(Settings &settings, const std::string &path) {
 }
 
 void ui::addFilterHistory(Settings &settings, const std::string &filterText) {
-    if (filterText.empty() || filterText.find('\n') != std::string::npos) return;
+    if (filterText.empty() || filterText.find_first_of("\r\n") != std::string::npos) return;
     auto &h = settings.filterHistory;
     h.erase(std::remove(h.begin(), h.end(), filterText), h.end());
     h.insert(h.begin(), filterText);
