@@ -126,7 +126,7 @@ void dissect::dissectPpi(Context &ctx, const char *data, size_t length) {
         ctx.pack.info = "Encapsulated DLT " + std::to_string(pph_dlt) + " (" + std::to_string(payloadLen) + " bytes)";
     }
 
-    if (fcsIncluded && ctx.wantFields() && length >= pph_len + 4) {
+    if (fcsIncluded && ctx.wantFields() && length >= static_cast<size_t>(pph_len) + 4) {
         ctx.addLayer("Frame Check Sequence: 4 bytes", baseOffset + length - 4, 4);
     }
 }

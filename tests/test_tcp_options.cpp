@@ -22,7 +22,7 @@ namespace {
     // TCP segment 10.0.0.1:50000 <-> 10.0.0.2:80 with raw option bytes (hex, a multiple of 4 bytes)
     std::vector<char> segment(bool fromClient, uint32_t seq, uint32_t ack, const std::string &flags, const std::string &options = "", const std::string &payload = "") {
         const size_t optBytes = options.size() / 2;
-        char total[8], off[4];
+        char total[2 * sizeof(size_t) + 1], off[2 * sizeof(size_t) + 2];
         std::snprintf(total, sizeof total, "%04zx", 40 + optBytes + payload.size());
         std::snprintf(off, sizeof off, "%zx0", 5 + optBytes / 4);
         const std::string src = fromClient ? "0a000001" : "0a000002", dst = fromClient ? "0a000002" : "0a000001";

@@ -203,7 +203,7 @@ void dissect::dissectRadiotap(Context &ctx, const char *data, size_t length) {
     // Delegate payload to IEEE 802.11 dissector
     dissectIeee80211(ctx, data + it_len, wlanLen);
 
-    if (fcsAtEnd && ctx.wantFields() && length >= it_len + 4) {
+    if (fcsAtEnd && ctx.wantFields() && length >= static_cast<size_t>(it_len) + 4) {
         ctx.addLayer("Frame Check Sequence: 4 bytes", baseOffset + length - 4, 4);
     }
 }

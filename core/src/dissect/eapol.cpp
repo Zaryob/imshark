@@ -228,7 +228,7 @@ void dissect::dissectEapol(Context &ctx, const char *data, size_t length) {
                 keyTree.add("Key MIC: " + bytesToHex(mic, 16), baseOffset + 81, 16);
                 keyTree.add("Key Data Length: " + std::to_string(keyDataLen), baseOffset + 97, 2);
 
-                if (keyDataLen > 0 && length >= 99 + keyDataLen) {
+                if (keyDataLen > 0 && length >= 99 + static_cast<size_t>(keyDataLen)) {
                     Field &dataTree = keyTree.add("Key Data (" + std::to_string(keyDataLen) + " bytes)", baseOffset + 99, keyDataLen);
                     if (encrypted) {
                         dataTree.add("Encrypted Data: " + bytesToHex(k + 95, keyDataLen), baseOffset + 99, keyDataLen);

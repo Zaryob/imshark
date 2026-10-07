@@ -75,9 +75,10 @@ namespace tls::crypto {
 
     std::optional<Bytes> hkdfExpandLabel(Hash hash, ByteView secret, std::string_view label, ByteView context, size_t length) {
         static constexpr std::string_view kPrefix = "tls13 ";
-        if (label.size() + kPrefix.size() > 255 || context.size() > 255 || length > 0xFFFF) return std::nullopt;
+        if (label.size() > 255 - kPrefix.size() || context.size() > 255 || length > 0xFFFF) return std::nullopt;
         // struct { uint16 length; opaque label<7..255> = "tls13 " + Label; opaque context<0..255>; } HkdfLabel
         Bytes info;
+        info.reserve(4 + kPrefix.size() + label.size() + context.size());
         info.push_back(static_cast<uint8_t>(length >> 8));
         info.push_back(static_cast<uint8_t>(length));
         info.push_back(static_cast<uint8_t>(kPrefix.size() + label.size()));

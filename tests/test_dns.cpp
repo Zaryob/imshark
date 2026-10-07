@@ -19,7 +19,7 @@ namespace {
             const size_t dot = name.find('.', start);
             const std::string label = name.substr(start, dot == std::string::npos ? std::string::npos : dot - start);
             if (!label.empty()) {
-                char len[4];
+                char len[2 * sizeof(size_t) + 1];
                 std::snprintf(len, sizeof len, "%02zx", label.size());
                 out += len + support::hexOf(label);
             }

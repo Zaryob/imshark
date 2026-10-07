@@ -64,9 +64,9 @@ TEST(Parser, DnsQueryAndCompressedAnswer) {
         "1234 8180 0001 0001 0000 0000 076578616d706c6503636f6d00 0001 0001"
         "c00c 0001 0001 0000012c 0004 5db8d822";
     const size_t udpLen = 8 + dns.size() / 2;
-    char lens[16];
+    char lens[2 * sizeof(size_t) + 1];
     snprintf(lens, sizeof lens, "%04zx", udpLen);
-    char total[16];
+    char total[2 * sizeof(size_t) + 1];
     snprintf(total, sizeof total, "%04zx", 20 + udpLen);
     auto p = parse(hex("001122334455 aabbccddeeff 0800 4500" + std::string(total) + "000000004011 0000 08080808 0a000001 0035 c350 " +
                        lens + " 0000 " + dns));

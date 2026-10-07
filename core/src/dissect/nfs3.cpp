@@ -90,9 +90,14 @@ std::string hex(uint64_t v) {
 std::string timeText(uint32_t sec, uint32_t nsec) {
     const time_t t = static_cast<time_t>(sec);
     struct tm tmv {};
-    char b[48];
-    if (!gmtime_r(&t, &tmv)) return std::to_string(sec) + "." + std::to_string(nsec);
-    std::snprintf(b, sizeof b, "%04d-%02d-%02d %02d:%02d:%02d.%09u UTC", tmv.tm_year + 1900, tmv.tm_mon + 1, tmv.tm_mday, tmv.tm_hour, tmv.tm_min, tmv.tm_sec, nsec);
+    char b[96];
+#ifdef _WIN32
+    const bool converted = gmtime_s(&tmv, &t) == 0;
+#else
+    const bool converted = gmtime_r(&t, &tmv) != nullptr;
+#endif
+    if (!converted) return std::to_string(sec) + "." + std::to_string(nsec);
+    std::snprintf(b, sizeof b, "%04lld-%02d-%02d %02d:%02d:%02d.%09u UTC", static_cast<long long>(tmv.tm_year) + 1900, tmv.tm_mon + 1, tmv.tm_mday, tmv.tm_hour, tmv.tm_min, tmv.tm_sec, nsec);
     return b;
 }
 
