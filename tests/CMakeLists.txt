@@ -138,3 +138,10 @@ gtest_discover_tests(imshark_tests DISCOVERY_MODE PRE_TEST)
 # `imshark --version` prints the project version and git describe without opening a window.
 add_test(NAME imshark_version COMMAND imshark --version)
 set_tests_properties(imshark_version PROPERTIES PASS_REGULAR_EXPRESSION "^imshark ${PROJECT_VERSION} \\(.+\\)")
+
+add_test(NAME imshark_help COMMAND imshark --help)
+set_tests_properties(imshark_help PROPERTIES PASS_REGULAR_EXPRESSION "Usage:")
+add_test(NAME imshark_invalid_option COMMAND imshark --not-an-option)
+set_tests_properties(imshark_invalid_option PROPERTIES WILL_FAIL TRUE)
+add_test(NAME imshark_extra_argument COMMAND imshark first.pcap second.pcap)
+set_tests_properties(imshark_extra_argument PROPERTIES WILL_FAIL TRUE)
