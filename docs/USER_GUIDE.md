@@ -1,17 +1,11 @@
 # ImShark User Guide
 
-ImShark is an offline packet analyzer with a Wireshark-like layout: a packet list on top, the protocol tree and a
+ImShark is a capture-file and live packet analyzer with a Wireshark-like layout: a packet list on top, the protocol tree and a
 hex/ASCII view below, a display-filter bar and a main menu. This guide describes what the application does today; every
 menu and shortcut named here is in the code (`src/ui/`). What is and is not decoded per protocol is in
 [SUPPORT_MATRIX.md](SUPPORT_MATRIX.md) and [KNOWN_ISSUES.md](KNOWN_ISSUES.md).
 
 On macOS the Command key takes the place of Ctrl in every shortcut below (Dear ImGui swaps the two on macOS).
-
-> Screenshots: **TODO.** They could not be captured non-interactively on the machine this guide was written on
-> (`screencapture` produced a black image because Screen Recording is not permitted for the terminal). The planned set,
-> to be saved as small PNGs under `docs/images/`: `main-window.png` (packet list, tree, hex view on
-> `tests/data/sample.pcap`), `filter-help.png` (Display Filter Reference), `follow-stream.png`, `statistics.png`,
-> `decode-as.png`, `preferences-tls.png`.
 
 ## Contents
 
@@ -60,8 +54,7 @@ Syntax:
 - Text values are quoted: `info contains "GET"`. IP addresses may be networks: `ip.addr == 10.0.0.0/8`,
   `ipv6.src == 2001:db8::/32`.
 - A bare protocol or flag name is true when it is present: `dns or arp`, `tcp.flags.syn && !tcp.flags.ack`, `malformed`.
-- Filters read what the packet **summary** holds, never the details tree. Not every protocol has fields yet (SIP, RTP, Modbus,
-  DNP3 and CAN have none; see KNOWN_ISSUES).
+- Filters read what the packet **summary** holds, never the details tree. Not every protocol has fields yet (SIP, RTP, Modbus and CAN have none; DNP3 exposes its protocol and CRC status fields; see KNOWN_ISSUES).
 
 Examples:
 
@@ -116,10 +109,10 @@ reported in the header line.
 
 ## Export
 
-**File > Export Packets...** writes **All packets**, **Displayed packets** (those passing the filter, in list order) or the
+**File > Export Packets...** writes **All packets**, **Displayed packets** (those passing the filter) or the
 **Selected packet** as **pcapng**, classic **pcap** (original frames and timestamps; microsecond resolution), **CSV** or
 **JSON** (the packet list columns). Export runs in the background with Cancel; a cancelled export leaves no partial file.
-Follow Stream's **Save As...** writes the raw bytes of the stream.
+CSV/JSON tables follow the sorted packet list; capture files retain capture order. Follow Stream's **Save As...** writes the raw bytes of the stream. Pcapng exports preserve embedded TLS secrets, even when exporting a packet subset.
 
 ## Capture file properties
 

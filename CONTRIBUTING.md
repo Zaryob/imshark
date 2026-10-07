@@ -1,169 +1,80 @@
 # Contributing to ImShark
 
-First off, thank you for considering contributing to ImShark! ImShark is a lightweight, high-performance packet analysis tool, and community contributions are highly appreciated.
+For a bug report, include the operating system, `imshark --version`, reproduction steps and a small capture if it can be shared safely. State what you expected and what ImShark displayed. Never include private traffic or session keys in a public issue.
 
-## Types of Contributions
+## Development setup
 
-1. **Bug Reports:** If you find a bug, please open an issue. Provide the OS, ImShark version, a description of the bug, and ideally a small PCAP file that reproduces the issue.
-2. **Pull Requests (Features & Fixes):** Enhancements to the core parser, UI improvements, or bug fixes.
-3. **Protocol Additions:** Adding new dissectors for network protocols. Please refer to [docs/DISSECTORS.md](docs/DISSECTORS.md) for a comprehensive guide on writing dissectors.
+Follow [docs/BUILDING.md](docs/BUILDING.md) for the compiler, vcpkg and platform prerequisites. All default-build C/C++ libraries come from the pinned vcpkg manifest; optional Windows live capture additionally requires the Npcap SDK and runtime. A normal development build is:
 
-## Development Environment Setup
-
-ImShark is written in C++20 and built with CMake (3.21 or newer). It uses Dear ImGui (vendored in `third_party/`) with
-GLFW/OpenGL3 for the window, GoogleTest for the tests, and, optionally, libpcap (live capture) and OpenSSL 3 (TLS
-decryption). When an optional library is missing the build still succeeds and the feature reports that it is not
-available in this build. These are the packages the CI workflow installs.
-
-### macOS
-```bash
-brew install cmake pkg-config glfw googletest openssl@3
-```
-(libpcap comes with the macOS SDK; `/opt/homebrew/opt/openssl@3` is found automatically.)
-
-### Linux (Ubuntu/Debian)
-```bash
-sudo apt-get update
-sudo apt-get install -y build-essential cmake pkg-config libglfw3-dev libgl1-mesa-dev libgtest-dev libpcap-dev libssl-dev
+```sh
+cmake --preset debug
+cmake --build --preset debug
+ctest --preset debug
 ```
 
-### Windows
-Install Visual Studio with the "Desktop development with C++" workload, CMake and [vcpkg](https://vcpkg.io/). GLFW and
-GoogleTest come from the vcpkg manifest (`vcpkg.json`):
-```bash
-cmake --preset vcpkg
-cmake --build --preset vcpkg --config Release
-```
-The CI builds Windows with `-DIMSHARK_LIVE_CAPTURE=OFF -DIMSHARK_TLS_DECRYPT=OFF` (no Npcap SDK or OpenSSL on the
-runner). The Windows build has not been exercised on real hardware by the maintainers.
+Run CTest serially and finish one preset's suite before starting another; some tests share temporary files across build directories. Parser and stateful protocol changes should also pass the GCC/Clang sanitizer configuration:
 
-## Building and Testing
-
-`CMakePresets.json` has two configure presets (both Release): `default` (system packages, build directory `build/`) and
-`vcpkg` (dependencies from vcpkg, needs `VCPKG_ROOT`, build directory `build-vcpkg/`):
-
-```bash
-cmake --preset default && cmake --build --preset default
+```sh
+cmake --preset debug -DIMSHARK_SANITIZE=ON
+cmake --build --preset debug
+ctest --preset debug
 ```
 
-For development a Debug build with the tests is usual:
+Use `cmake --preset minimal`, its build preset and its test preset to check the APIs with TLS decryption and live capture disabled. An enabled test dependency is required: an absent GoogleTest must not silently turn a successful configure into an untested build.
 
-```bash
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
-cmake --build build -j
-ctest --test-dir build --output-on-failure      # run serially: some tests share temporary files
+## Code and delivery rules
+
+Match the surrounding code and use the root `.clang-format` for changed C/C++ code when available. Keep unrelated reformatting out of a functional change. CMake source lists are explicit; register new files in `core/CMakeLists.txt` or `tests/CMakeLists.txt`.
+
+A protocol delivery should satisfy these rules:
+
+- Name the specification and supported version in [docs/PROTOCOLS.md](docs/PROTOCOLS.md); state unsupported or encrypted content honestly.
+- Read only within the provided buffer and keep every field's byte range valid. Build the field tree only when `ctx.wantFields()` is true.
+- Decide cross-packet state during the load pass; Replay reads the stored state and produces the same result. Bound state tables and report state loss.
+- Preserve `PacketInfo`'s ABI-adjusted size budget (`kPacketInfoSizeBudget`). Reuse existing summary fields or session tables rather than growing every packet.
+- Register filter fields in the protocol's `*_fields.cpp` module and update the explicit field-module lists. Filters must be gated on the relevant protocol.
+- Add independently checked message vectors, truncation/mutation sweeps and Replay tests for stateful behavior. Real-capture hooks are optional when captures are unavailable; a skipped hook is not real-capture verification.
+- Update the support matrix, specifications, user-facing limits and any changed user workflow. The README contains an overview; detailed protocol changes belong in the reference documents.
+
+[docs/DISSECTORS.md](docs/DISSECTORS.md) provides the complete API guide and a test-compiled worked example. Keep that guide's marked example blocks synchronized with `tests/test_dissector_guide.cpp`.
+
+## Generated documentation and snapshots
+
+`docs/FILTER_FIELDS.md` is generated from the built-in field table and checked by the `Docs` tests. Regenerate after an intentional field change:
+
+```sh
+IMSHARK_UPDATE_DOCS=1 ctest --test-dir build-debug -R Docs --output-on-failure
 ```
 
-Before you commit parser or dissector changes, also run the suite under AddressSanitizer and UndefinedBehaviorSanitizer.
-The mutation and truncation sweeps in the tests only prove memory safety when they run instrumented:
+The field snapshot also records types, descriptions and values on fixed packets. Run the affected test with `IMSHARK_UPDATE_SNAPSHOT=1` only for an intentional change, then inspect and commit the snapshot diff. Do not regenerate snapshots merely to hide a regression.
 
-```bash
-cmake -S . -B build-asan -DCMAKE_BUILD_TYPE=Debug -DIMSHARK_SANITIZE=ON
-cmake --build build-asan -j
-ctest --test-dir build-asan --output-on-failure
-```
+## Regression corpus
 
-Source based code coverage (needs clang and `llvm-cov`; it configures its own `build-cov/`):
+`tests/corpus/` contains small synthetic captures and `manifest.json` with source, SHA-256 and expected results. `python3 tools/make_corpus.py` regenerates the synthetic corpus and manifest deterministically; `--real-dir DIR` records optional real captures you already have.
 
-```bash
-tools/coverage.sh           # per-file summary table
-tools/coverage.sh --html    # also writes build-cov/coverage-html/index.html
-```
-
-### Corpus rules
-
-`tests/corpus/` holds small **synthetic** captures made by `tools/make_corpus.py` (their expectations are written there by
-construction, not copied from ImShark's output) and `manifest.json`, which describes every file with its source, SHA-256,
-format, link types, packet count and expected protocols. Rules:
-
-- Do not commit real captures or large files; the repository keeps only the small synthetic ones. A real capture is
-  described in the manifest as kind `real` with its source URL and SHA-256, and found at test time through
-  `IMSHARK_CORPUS_DIR`. The tests never download anything.
-- Check the licence of a real capture before you name it in the manifest, and never add a capture that contains private
-  traffic.
-- Regenerate the manifest with the script (`python3 tools/make_corpus.py`, add `--real-dir DIR` to record real captures
-  you have) rather than editing it by hand, and check in the result together with the change that needs it.
-
-Real sample captures are optional: set `IMSHARK_CORPUS_DIR` to a directory holding the files listed in
-`tests/corpus/manifest.json` (the tests never download anything and skip those checks when it is not set).
-`IMSHARK_BUILD_BENCH=ON` additionally builds the benchmark driver (`tools/benchmark.py`).
-
-## Code Style
-
-The repository has a `.clang-format` file in the root. Format the code you write with it when `clang-format` is
-available, but do not reformat whole existing files in an unrelated change; match the surrounding code (naming,
-comment density, one dissector per file, explicit source lists in `core/CMakeLists.txt` and `tests/CMakeLists.txt`).
-
-## Commit Messages
-
-Recent history uses one imperative sentence for the subject that says what the change does, followed by a tag in
-parentheses naming the ROADMAP item or kind of change, for example
-`Clamp SCTP chunk lengths to the packet and test the CRC independently (v1.1 fix)`. Older commits use
-`feat(scope): ...` / `docs: ...`. Either is fine; keep the first line short and imperative, and use the body for a
-bullet list of what changed and why. Split a delivery into small commits that each build and pass their tests.
-
-## Delivery rules for features and protocols
-
-`ROADMAP.md` ("Ortak teslim kuralları", in Turkish) is the binding list. In short: the three kinds of test; a number or
-field is verified by something other than the code under test (an RFC vector, an independent Python computation, the
-`openssl` command line); cross-packet state is decided in the load pass and only read in Replay; `sizeof(packet::PacketInfo)`
-stays within the 336-byte test bound; filter fields go into the protocol's field module (`core/src/dissect/<name>_fields.cpp`); and every delivery updates
-`docs/KNOWN_ISSUES.md`, the README feature list and `docs/SUPPORT_MATRIX.md`. Tick a ROADMAP item only when the code meets
-all of it, and say in an italic note what is still missing otherwise. `docs/USER_GUIDE.md` and its generated filter reference
-(`docs/FILTER_FIELDS.md`) are checked by tests: see the `Docs` tests in `tests/test_docs.cpp`.
-
-## Packaging and Releases
-
-`cpack -C Release` in the build directory produces the platform package: a `.dmg` on macOS (DragNDrop, `imshark.app` at
-the top of the image), `.tar.gz` and `.deb` on Linux, `.zip` on Windows. `.github/workflows/release.yml` runs the build,
-the tests and `cpack` for a pushed `v*` tag and attaches those files to the GitHub release; it refuses a tag that differs
-from the `project(imshark VERSION ...)` in `CMakeLists.txt`, builds an `ImShark-*.AppImage` on Linux (linuxdeploy fetched
-at run time, `tools/make_appimage.sh`) and creates the release as a draft. On macOS the install step runs `fixup_bundle`,
-so GLFW and OpenSSL are copied into `imshark.app/Contents/Frameworks` (check with `otool -L`), and the bundle is signed
-ad hoc. `imshark --version` prints the project version and `git describe` captured at configure time. Things that are
-**not** done: no Developer ID signing or notarization (Gatekeeper warns on a downloaded image), the Linux tar.gz/deb and
-the Windows zip do not bundle their libraries, and the workflow has not been run on GitHub yet (the AppImage job is
-untested). `tools/make_dmg.sh` makes a DMG by hand from the build tree (it does not bundle libraries).
-
-## Benchmark
-
-`python3 tools/benchmark.py` builds `bench_driver` (CMake option `IMSHARK_BUILD_BENCH`, off by default), generates a
-synthetic capture in a temporary directory, loads it the way the application does, runs one filter pass and prints
-load time, filter time and peak RSS; the capture is deleted afterwards. Never commit capture files. The measured
-numbers and the machine they were taken on are in `ROADMAP.md` (v1.0, performance reference).
+Real captures stay outside the repository. Set `IMSHARK_CORPUS_DIR` to the directory holding the real files listed in the manifest; tests skip those checks otherwise and never download traffic. Check each capture's licence and privacy before adding a manifest entry. Expectations should come from the specification or an independent tool, rather than copying ImShark's output.
 
 ## Comparing with tshark
 
-`tools/compare_tshark.py` compares ImShark's decoding of captures with Wireshark's `tshark` on a pinned field set:
-packet loss (frame count and numbers), misclassification (tshark's `_ws.col.protocol` against ImShark's protocol) and
-field mismatches (frame length, MAC/IP addresses, ports, `dns.qry.name`/`type`, `http.host`, `http.request.method`, TLS
-SNI, DHCP host name). The ImShark side is `imshark_dump` (`tools/imshark_dump.cpp`, built by default; CMake option
-`IMSHARK_BUILD_TOOLS`), which prints the display filter fields of every packet as JSON. Everything that can change
-tshark's decoding (version prefix, `-o` preferences, Decode As, disabled heuristics, field list, protocol aliases) and
-the known `Unknown`/encrypted/intentionally malformed samples (reported in a separate section, not counted) are in
-`tools/compare_tshark.json`. To compare the whole regression corpus on a machine that has tshark 4.x:
+`imshark_dump` prints packet filter fields as JSON. `tools/compare_tshark.py` compares packet counts, protocol classifications and selected fields against tshark using the pinned version/preferences/aliases in `tools/compare_tshark.json`:
 
-    cmake -S . -B build && cmake --build build --target imshark_dump
-    python3 tools/compare_tshark.py --imshark-dump build/imshark_dump tests/corpus "$IMSHARK_CORPUS_DIR"
+```sh
+cmake --build --preset debug --target imshark_dump
+python3 tools/compare_tshark.py --imshark-dump build-debug/imshark_dump tests/corpus
+```
 
-Add `--save-tshark-json DIR` to keep tshark's raw output (a recorded `DIR/<capture name>.json` can later be compared
-without tshark through `--tshark-json-dir DIR`; `tests/data/tshark` holds small hand-written ones). Exit codes: 0 equal,
-1 differences, 2 usage error, 3 no `imshark_dump`, 4 tshark version differs from the pin, 77 tshark not installed.
-ctest runs `compare_tshark_fixtures` (the comparator against the recorded fixtures, `tests/test_compare_tshark.py`) and
-`compare_tshark_corpus` (the command above on `tests/corpus`; skipped through code 77 without tshark; label `tshark`).
-The Decode As entries of the config are passed to tshark only: `imshark_dump` has no Decode As option, so leave the list
-empty unless ImShark's defaults already agree.
+Add a real-capture directory as another positional argument when available. `--save-tshark-json DIR` retains raw tshark output; `--tshark-json-dir DIR` reuses a recording. The checked-in `tests/data/tshark` comparator fixtures are hand-written, so passing them validates the comparator rather than proving agreement with Wireshark.
 
-## Pre-Pull Request Checklist
+Exit codes: `0` equal, `1` differences, `2` usage error, `3` missing dump tool, `4` tshark version mismatch, `77` tshark unavailable. CTest includes comparator fixtures and an optional corpus comparison. Decode As settings in the comparator configuration are passed only to tshark; the dump tool has no matching option.
 
-Before submitting a Pull Request, please ensure you have completed the following:
+## Coverage and performance
 
-- [ ] The project builds on your machine and all tests pass (`ctest`).
-- [ ] The tests also pass with `-DIMSHARK_SANITIZE=ON`.
-- [ ] A new feature or protocol has tests of the three kinds described in [docs/DISSECTORS.md](docs/DISSECTORS.md)
-      (optional real captures, hand-built messages with an independent oracle, truncation/mutation sweep).
-- [ ] `docs/KNOWN_ISSUES.md`, `docs/SUPPORT_MATRIX.md`, `docs/PROTOCOLS.md` and the README feature list say what the code
-      does and does not do.
-- [ ] You read the "Ortak teslim kuralları" (common delivery rules) in `ROADMAP.md`.
+With Clang, `llvm-cov` and `llvm-profdata`, `tools/coverage.sh` prints a source coverage summary; `--html` also writes `build-cov/coverage-html/index.html`. Record the tested revision and excluded files when reporting coverage.
 
-Thank you for contributing!
+`python3 tools/benchmark.py --profile mixed --packets 500000` builds `bench_driver`, creates a temporary synthetic capture, measures load time, one filter pass and peak RSS, then deletes the capture. `--size-mb 1024` selects an approximately 1 GiB workload. Record the hardware, compiler, configuration, workload and cache conditions; synthetic traffic does not establish throughput for every dissector. Never commit large benchmark captures.
+
+## Commits and releases
+
+Use a short imperative subject describing the resulting change. Split independent changes into reviewable commits with relevant validation. Before submitting, run the normal tests and the sanitizer tests appropriate to the change and review documentation/snapshot diffs.
+
+Local packaging and release limitations are in [docs/BUILDING.md](docs/BUILDING.md#packaging). Release tags must match the CMake project version. A version bump, tag or push is a separate release decision.
