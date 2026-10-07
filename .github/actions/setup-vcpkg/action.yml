@@ -1,0 +1,32 @@
+name: Set up manifest-pinned vcpkg
+description: Check out the manifest baseline and reuse compiled dependency packages.
+
+runs:
+  using: composite
+  steps:
+    - name: Read the pinned registry baseline
+      id: manifest
+      shell: bash
+      run: |
+        baseline=$(python -c 'import json; print(json.load(open("vcpkg.json"))["builtin-baseline"])')
+        echo "baseline=$baseline" >> "$GITHUB_OUTPUT"
+        mkdir -p .vcpkg-cache
+    - name: Check out vcpkg
+      uses: actions/checkout@v7
+      with:
+        repository: microsoft/vcpkg
+        ref: ${{ steps.manifest.outputs.baseline }}
+        path: .vcpkg
+    - name: Cache vcpkg binary packages
+      uses: actions/cache@v6
+      with:
+        path: .vcpkg-cache
+        key: vcpkg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'vcpkg-ports/**') }}
+    - name: Bootstrap vcpkg (Unix)
+      if: runner.os != 'Windows'
+      shell: bash
+      run: .vcpkg/bootstrap-vcpkg.sh -disableMetrics
+    - name: Bootstrap vcpkg (Windows)
+      if: runner.os == 'Windows'
+      shell: pwsh
+      run: .vcpkg/bootstrap-vcpkg.bat -disableMetrics

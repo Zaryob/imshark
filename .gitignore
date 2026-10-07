@@ -13,3 +13,12 @@ build-cov/
 .omc/
 .codegraph/
 tests/data/bench_*.pcap
+
+.vcpkg*/
+artifacts/
+AppDir/
+*.AppImage
+CMakeUserPresets.json
+
+__pycache__/
+*.py[cod]

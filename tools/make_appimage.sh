@@ -29,7 +29,8 @@ rm -rf "$APP_DIR"
 mkdir -p "$APP_DIR/usr/bin" "$APP_DIR/usr/share/applications" "$APP_DIR/usr/share/icons/hicolor/256x256/apps"
 ICON="$APP_DIR/usr/share/icons/hicolor/256x256/apps/imshark.png"
 
-cp "$BUILD_DIR/imshark" "$APP_DIR/usr/bin/"
+# Use the install rules so the AppImage includes dependency copyright notices and future resources.
+DESTDIR="$(pwd)/$APP_DIR" cmake --install "$BUILD_DIR" --prefix /usr
 
 cat > "$APP_DIR/usr/share/applications/imshark.desktop" <<DESKTOP
 [Desktop Entry]

@@ -16,7 +16,7 @@ LLVM_PROFILE_FILE="build-cov/tests-%p.profraw" ./build-cov/tests/imshark_tests >
 "$LLVM_PROFDATA" merge -sparse build-cov/tests-*.profraw -o build-cov/tests.profdata
 
 # only our own sources: not tests, ImGui, GoogleTest or system headers
-IGNORE='(third_party|/tests/|/usr/|/opt/|Xcode)'
+IGNORE='(vcpkg_installed|/\.cache/|/tests/|/usr/|/opt/|Xcode)'
 "$LLVM_COV" report ./build-cov/tests/imshark_tests -instr-profile=build-cov/tests.profdata \
     -ignore-filename-regex="$IGNORE" -use-color=false
 

@@ -1,21 +1,9 @@
-# Release workflow. It runs when a tag matching v* is pushed (the workflow itself never creates a tag) and attaches
-# the CPack packages of each platform to the GitHub release of that tag:
-#   Linux   build/*.tar.gz, build/*.deb      (CPack TGZ;DEB)
-#           ImShark-*.AppImage               (tools/make_appimage.sh with linuxdeploy, fetched by the job at run time)
-#   macOS   build/*.dmg                      (CPack DragNDrop; imshark.app at the top of the image, GLFW and OpenSSL
-#                                             copied in by fixup_bundle, ad-hoc signed)
-#   Windows build/*.zip                      (CPack ZIP)
-# Release notes and draft status: the release is created as a DRAFT so the maintainer reviews and publishes it.
-# Not produced here: Developer ID signing / notarization (macOS) and Windows code signing. The workflow has not
-# been run on GitHub yet, so the AppImage job in particular is untested.
 name: Release
 
 on:
   push:
-    tags:
-      - 'v*'
+    tags: ['v*']
 
-# softprops/action-gh-release creates the release and uploads assets with GITHUB_TOKEN: it needs write access.
 permissions:
   contents: write
 
@@ -23,77 +11,60 @@ jobs:
   release:
     name: ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: ubuntu-latest
+          - os: ubuntu-24.04
             assets: |
               build/*.tar.gz
               build/*.deb
               ImShark-*.AppImage
           - os: macos-latest
-            assets: |
-              build/*.dmg
+            assets: build/*.dmg
           - os: windows-latest
-            assets: |
-              build/*.zip
+            assets: build/*.zip
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}/.vcpkg
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/.vcpkg-cache,readwrite
 
     steps:
-      - uses: actions/checkout@v4
-
-      # The package file names carry the CMake project version, so the tag has to agree with it.
+      - uses: actions/checkout@v7
       - name: Check the tag against the project version
         shell: bash
         run: |
           project_version=$(sed -nE 's/^project\(imshark VERSION ([0-9]+(\.[0-9]+)*).*/\1/p' CMakeLists.txt)
           tag_version="${GITHUB_REF_NAME#v}"
           if [ "$project_version" != "$tag_version" ]; then
-            echo "Tag $GITHUB_REF_NAME does not match project(imshark VERSION $project_version) in CMakeLists.txt" >&2
+            echo "Tag $GITHUB_REF_NAME does not match project version $project_version" >&2
             exit 1
           fi
-
-      - name: Install dependencies (Linux)
+      - name: Set up MSVC
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@v1
+      - name: Install platform build tools (Linux)
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake pkg-config libglfw3-dev libgl1-mesa-dev libgtest-dev libpcap-dev libssl-dev
-
-      - name: Install dependencies (macOS)
+          sudo apt-get install -y autoconf autoconf-archive automake bison flex libgl1-mesa-dev libglu1-mesa-dev libltdl-dev libtool libwayland-dev libx11-dev libxcursor-dev libxi-dev libxinerama-dev libxrandr-dev mesa-utils ninja-build openbox pkg-config wayland-protocols wmctrl xauth xdotool xvfb
+      - name: Install platform build tools (macOS)
         if: runner.os == 'macOS'
-        run: brew install glfw googletest pkg-config openssl@3
-
-      - name: Configure (non-Windows)
-        if: runner.os != 'Windows'
-        run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DIMSHARK_BUILD_TESTS=ON
-
-      # Same configuration as ci.yml: GLFW and GoogleTest come from the vcpkg manifest; live capture and TLS
-      # decryption are the "not available" stubs.
-      - name: Configure (Windows)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: |
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release `
-            -DIMSHARK_LIVE_CAPTURE=OFF -DIMSHARK_TLS_DECRYPT=OFF `
-            "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
-
+        run: brew install autoconf autoconf-archive automake libtool ninja pkg-config
+      - uses: ./.github/actions/setup-vcpkg
+      - name: Configure
+        run: cmake --preset default
       - name: Build
-        run: cmake --build build --config Release --parallel
-
+        run: cmake --build --preset default --parallel 2
       - name: Test
-        run: ctest --test-dir build -C Release --output-on-failure
-
+        run: ctest --preset default --parallel 1 --output-on-failure
+      - name: Verify Linux desktop startup
+        if: runner.os == 'Linux'
+        run: bash tools/linux_smoke.sh build
       - name: Package
         run: cpack -C Release
         working-directory: build
-
-      # linuxdeploy and its AppImage output plugin are third-party binaries, fetched only here, in CI. linuxdeploy is
-      # pinned to a release tag; the plugin only publishes a rolling "continuous" release, so it cannot be pinned
-      # (the sha256 sums are printed into the log for auditing). `linuxdeploy --output appimage` runs
-      # linuxdeploy-plugin-appimage, which it looks up as an executable named linuxdeploy-plugin-appimage on PATH.
-      # APPIMAGE_EXTRACT_AND_RUN=1 makes AppImages unpack themselves instead of mounting via FUSE (absent on runners);
-      # it is inherited by the plugin. `set -e` (the default bash -e of Actions) plus curl -f keep any failure loud.
-      - name: Build the AppImage (Linux)
+      - name: Build AppImage (Linux)
         if: runner.os == 'Linux'
         env:
           LINUXDEPLOY_URL: https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20240109-1/linuxdeploy-x86_64.AppImage
@@ -108,10 +79,8 @@ jobs:
           sha256sum "$RUNNER_TEMP/linuxdeploy/linuxdeploy" "$RUNNER_TEMP/linuxdeploy/linuxdeploy-plugin-appimage"
           export PATH="$RUNNER_TEMP/linuxdeploy:$PATH"
           VERSION="${GITHUB_REF_NAME#v}" LINUXDEPLOY=linuxdeploy bash tools/make_appimage.sh build
-          ls -l ImShark-*.AppImage
-
-      - name: Upload release assets
-        uses: softprops/action-gh-release@v2
+      - name: Upload draft release assets
+        uses: softprops/action-gh-release@v3
         with:
           draft: true
           files: ${{ matrix.assets }}
