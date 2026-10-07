@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <random>
 #include <string>
+#include <string_view>
 #include <vector>
 
 #include <dissect/session.h>
@@ -25,8 +26,9 @@ namespace {
         std::string bytes;
         SctpFragment f;
     };
+    // Borrow caller-owned bytes; string literals must not become temporary std::strings.
     // fragment `i` of an ordered DATA message on `stream`/`ssn`, TSN `tsn0 + i`
-    SctpFragment dataFragment(uint32_t packet, uint16_t position, uint16_t stream, uint16_t ssn, uint32_t tsn, bool begin, bool end, const std::string &bytes,
+    SctpFragment dataFragment(uint32_t packet, uint16_t position, uint16_t stream, uint16_t ssn, uint32_t tsn, bool begin, bool end, std::string_view bytes,
                               bool unordered = false) {
         SctpFragment f;
         f.packet = packet;

@@ -1,6 +1,11 @@
 name: Set up manifest-pinned vcpkg
 description: Check out the manifest baseline and reuse compiled dependency packages.
 
+inputs:
+  cache-scope:
+    description: Build preset or feature configuration sharing the dependency cache.
+    default: default
+
 runs:
   using: composite
   steps:
@@ -10,6 +15,7 @@ runs:
       run: |
         baseline=$(python -c 'import json; print(json.load(open("vcpkg.json"))["builtin-baseline"])')
         echo "baseline=$baseline" >> "$GITHUB_OUTPUT"
+        printf 'image=%s-%s\n' "${ImageOS:-$RUNNER_OS}" "${ImageVersion:-local}" >> "$GITHUB_OUTPUT"
         mkdir -p .vcpkg-cache
     - name: Check out vcpkg
       uses: actions/checkout@v7
@@ -21,8 +27,9 @@ runs:
       uses: actions/cache@v6
       with:
         path: .vcpkg-cache
-        key: vcpkg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'vcpkg-ports/**') }}
+        key: vcpkg-${{ runner.os }}-${{ runner.arch }}-${{ steps.manifest.outputs.image }}-${{ inputs.cache-scope }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'vcpkg-ports/**') }}
         restore-keys: |
+          vcpkg-${{ runner.os }}-${{ runner.arch }}-${{ steps.manifest.outputs.image }}-${{ inputs.cache-scope }}-
           vcpkg-${{ runner.os }}-${{ runner.arch }}-
     - name: Bootstrap vcpkg (Unix)
       if: runner.os != 'Windows'
