@@ -22,6 +22,8 @@ runs:
       with:
         path: .vcpkg-cache
         key: vcpkg-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('vcpkg.json', 'vcpkg-configuration.json', 'vcpkg-ports/**') }}
+        restore-keys: |
+          vcpkg-${{ runner.os }}-${{ runner.arch }}-
     - name: Bootstrap vcpkg (Unix)
       if: runner.os != 'Windows'
       shell: bash

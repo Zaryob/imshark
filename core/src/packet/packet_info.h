@@ -102,10 +102,10 @@ namespace packet {
         uint16_t dst_port = 0;
         union {
             struct {
-                uint16_t wlan_fc = 0;        // IEEE 802.11 Frame Control word
-                uint16_t wlan_seq = 0;       // IEEE 802.11 sequence number
-                uint16_t radiotap_freq = 0;  // Channel frequency in MHz
-                uint16_t ppi_dlt = 0;        // PPI encapsulated DLT
+                uint16_t wlan_fc;            // IEEE 802.11 Frame Control word
+                uint16_t wlan_seq;           // IEEE 802.11 sequence number
+                uint16_t radiotap_freq;      // Channel frequency in MHz
+                uint16_t ppi_dlt;            // PPI encapsulated DLT
             };
             struct {
                 uint16_t eth_len;            // IEEE 802.3 Ethernet Length field
@@ -163,8 +163,9 @@ namespace packet {
         uint32_t ip_frag : 2 = 0;        // 0 = not fragmented, 1 = fragment that is not the last, 2 = last fragment
         uint32_t ip_version : 3 = 0;     // 4, 6 or 0 for non-IP frames
 
-        PacketInfo() = default;
-        explicit PacketInfo(int num) : number(num) {}
+        // MSVC rejects default member initializers inside an anonymous struct in a union.
+        PacketInfo() { wlan_fc = wlan_seq = radiotap_freq = ppi_dlt = 0; }
+        explicit PacketInfo(int num) : PacketInfo() { number = num; }
     };
 
     // Keep the same member budget across standard library ABIs: six strings and three vectors, plus
