@@ -13,6 +13,7 @@
 
 #include <core.h>
 #include <stats/statistics.h>
+#include <tls/crypto.h>
 
 namespace {
     std::string snapshotPath() { return std::string(IMSHARK_TEST_DATA_DIR) + "/stats.snapshot"; }
@@ -83,7 +84,25 @@ TEST(StatsSnapshot, EndpointsConversationsAndHierarchyAreUnchanged) {
     std::ostringstream ss;
     ss << in.rdbuf();
 
-    std::istringstream a(actual), e(ss.str());
+    // The oracle was recorded with TLS decryption enabled. A build without the
+    // crypto backend still checks every endpoint, conversation and outer layer;
+    // only descendants of a TLS hierarchy node cannot exist in that build.
+    std::string expected = ss.str();
+    if (!tls::crypto::available()) {
+        std::istringstream lines(expected);
+        std::ostringstream outer;
+        std::string text;
+        size_t tlsIndent = std::string::npos;
+        while (std::getline(lines, text)) {
+            const size_t indent = text.find_first_not_of(' ');
+            if (tlsIndent != std::string::npos && indent > tlsIndent && indent != std::string::npos) continue;
+            tlsIndent = text.find("Transport Layer Security ") == indent ? indent : std::string::npos;
+            outer << text << '\n';
+        }
+        expected = outer.str();
+    }
+
+    std::istringstream a(actual), e(expected);
     std::string la, le;
     int line = 0;
     while (true) {
