@@ -239,10 +239,13 @@ in the [User Guide](USER_GUIDE.md#display-filters). Names are lower case.
 | `pfc.class_enable` | unsigned | PFC Class Enable Vector |
 | `pgsql` | boolean | PostgreSQL frontend/backend protocol |
 | `pgsql.code` | string | PostgreSQL SQLSTATE of an ErrorResponse / NoticeResponse |
-| `pgsql.query` | string | PostgreSQL SQL text of a SimpleQuery or Parse message |
+| `pgsql.count` | unsigned | PostgreSQL number of columns (RowDescription, DataRow, COPY responses) or parameters (Bind, ParameterDescription) |
+| `pgsql.query` | string | PostgreSQL SQL text of a SimpleQuery or Parse message, and the query a Bind / Describe / Execute / Close resolves to through the statement name |
 | `pgsql.ssl_request` | boolean | PostgreSQL SSLRequest |
+| `pgsql.statement` | string | PostgreSQL prepared statement name of a Parse, Bind, Describe or Close message (an unnamed statement has none) |
 | `pgsql.type` | string | PostgreSQL message type letter (Q SimpleQuery, P Parse, R Authentication, Z ReadyForQuery, ...) |
 | `pgsql.user` | string | PostgreSQL user of a StartupMessage |
+| `pgsql.value` | string | PostgreSQL first values of a DataRow (up to 8, joined with ", ", typed by the RowDescription, NULL for null) |
 | `portmap.entries` | unsigned | Number of mappings a Portmap / rpcbind DUMP reply lists |
 | `portmap.port` | unsigned | TCP / UDP port a Portmap GETPORT or rpcbind GETADDR / GETVERSADDR reply announced (0: the program is not registered) |
 | `portmap.proc` | unsigned | Portmap procedure of a call or matched reply (3 GETPORT) |
@@ -424,4 +427,4 @@ in the [User Guide](USER_GUIDE.md#display-filters). Names are lower case.
 | `wlan.ssid` | string | 802.11 SSID |
 | `wlan.ta` | string | 802.11 Transmitter MAC address |
 
-414 fields.
+417 fields.

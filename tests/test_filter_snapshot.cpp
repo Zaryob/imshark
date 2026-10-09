@@ -33,6 +33,12 @@
 // Added (v1.3, Portmap / Mount results): portmap.port, portmap.entries, mount.status (reply result in app_code, app_flags bit 6);
 // rpc.state_accept reads 0 for a reply that carries a decoded result.
 // Added (v1.3, NFSv3 results): nfs.status (a matched reply's status in app_code, app_flags bit 6).
+// Added (v1.4, PostgreSQL values): pgsql.statement, pgsql.value, pgsql.count (statement names in app_text2, DataRow values in app_text, the
+// column / parameter count in app_stream; app_code bit 0 = sent by the server). pgsql.query now excludes server messages (it could not match
+// one before: they had no app_text). The synthetic generator gives every third PGSQL packet a message letter and direction bit (derived
+// from the index, the random stream is untouched), so pgsql.type / pgsql.code / the new fields have values; their lines changed accordingly. The
+// digests of eapol.type, lldp.capabilities, lldp.ttl and ppp.lcp.code changed too: those extractors read app_type / app_flags / app_code of
+// these synthetic packets without looking at the protocol.
 // Added (v1.3, NFSv4 COMPOUND): nfs.operations (the operation names in app_text2; nfs.name stays version 3 only, so the two never share it).
 #include <gtest/gtest.h>
 
@@ -128,6 +134,9 @@ namespace {
             p.ip_frag = r.next() % 3;
             const uint32_t versions[] = {0, 4, 4, 6, 6};
             p.ip_version = r.pick(versions);
+            // v1.4: every third PostgreSQL / MySQL packet carries a real message letter / command and direction bit (derived from the
+            // index, the random stream is not touched), so the fields that read them have values to digest
+            if (p.protocol == "PGSQL" && i % 3 == 0) { p.app_type = 6; p.app_flags = static_cast<uint16_t>("TDBPCEtGHWQdSX"[i % 14]); p.app_code = static_cast<uint16_t>(i % 2); }
             out.push_back(std::move(p));
         }
         return out;

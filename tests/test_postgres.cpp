@@ -72,6 +72,8 @@ TEST(Postgres, StartupMessageNamesTheUserAndTheDatabase) {
     EXPECT_NE(find(d.fields, "Parameter: application_name = psql"), nullptr);
 }
 
+// v1.4: RowDescription names its columns and DataRow shows its values typed by the description in effect (the column "?column?" is
+// int4 in text format here, the value "1"); the Info of both used to stop at the column count.
 TEST(Postgres, ASessionWithQueriesIsDecodedByDirection) {
     Flow flow(50000, 5432, "pg_session");
     flow.client(kStartup).server(kAuthMd5).client(kPass).server(kAuthOk + kParamStatus + kKeyData + kReady)
@@ -85,7 +87,7 @@ TEST(Postgres, ASessionWithQueriesIsDecodedByDirection) {
     EXPECT_EQ(k[4].info, "Query: SELECT 1");
     EXPECT_EQ(k[4].app_text, "SELECT 1");
     EXPECT_TRUE(matches("pgsql.type == \"Q\" && pgsql.query == \"SELECT 1\"", k[4]));
-    EXPECT_NE(k[5].info.find("RowDescription (1 columns), DataRow (1 columns), CommandComplete: SELECT 1, ReadyForQuery (idle)"), std::string::npos) << k[5].info;
+    EXPECT_NE(k[5].info.find("RowDescription (1 columns): ?column?, DataRow (1 columns): ?column?=1, CommandComplete: SELECT 1, ReadyForQuery (idle)"), std::string::npos) << k[5].info;
     EXPECT_TRUE(matches("pgsql.type == \"T\"", k[5]));
     EXPECT_NE(k[6].info.find("Parse: select $1::int, Execute: portal <unnamed>, Sync"), std::string::npos) << k[6].info;
     EXPECT_TRUE(matches("pgsql.query == \"select $1::int\"", k[6]));
@@ -193,7 +195,7 @@ TEST(Postgres, SplitAndPipelinedMessagesReassemble) {
     const auto &k = flow.packets();
     EXPECT_NE(k[0].info.find("[TCP segment of a reassembled PDU]"), std::string::npos) << k[0].info;
     EXPECT_EQ(k[1].info.rfind("Query: SELECT 1", 0), 0u) << k[1].info;
-    EXPECT_NE(k[3].info.find("RowDescription (1 columns), DataRow (1 columns)"), std::string::npos) << k[3].info;
+    EXPECT_NE(k[3].info.find("RowDescription (1 columns): ?column?, DataRow (1 columns): ?column?=1"), std::string::npos) << k[3].info;
     flow.expectReplayEqualsLoad();
 }
 
