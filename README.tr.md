@@ -40,7 +40,7 @@ Ethernet, kablosuz, IP, DNS, HTTP, TLS, kurumsal ağ, veritabanı, USB ve Blueto
 
 [GitHub Releases](https://github.com/Zaryob/imshark/releases) listesinde henüz yayımlanmış sürüm veya hazır binary yoktur; şimdilik aşağıdaki kaynak derleme adımlarını kullanın. Yayın iş akışı Linux x86_64 için AppImage, DEB ve tar.gz; macOS Apple Silicon için DMG; Windows x86_64 için ZIP ve `SHA256SUMS.txt` üretir ve paketleri yalnızca bütün platform doğrulamaları geçtiğinde yayımlar. macOS paketi Developer ID imzası/notarization içermez; Windows varsayılanı canlı yakalama içermez.
 
-Sürümler `v0.x.y` serisi üzerinden SemVer ile ilerler (`v0.8.x` → `v0.9.x` → `v0.10.x` ...); yayın iş akışı `vMAJOR.MINOR.PATCH` tag'iyle tetiklenir. `v0.9.0` yayın denemesi Windows (MSVC) test derlemesinde başarısız oldu; düzeltme ve Windows'u her PR'da derleyen CI [#4](https://github.com/Zaryob/imshark/pull/4) ile geliyor. Kalan yayın kontrolleri [yayın backlog'unda](https://github.com/Zaryob/imshark/issues/2) izleniyor; yerel test sonuçları [portföy doğrulama kaydında](docs/PORTFOLIO_VALIDATION.md).
+Sürümler `v0.x.y` serisi üzerinden SemVer ile ilerler (`v0.8.x` → `v0.9.x` → `v0.10.x` ...); yayın iş akışı `vMAJOR.MINOR.PATCH` tag'iyle tetiklenir. `v0.9.0` etiketi Windows (MSVC) test derlemesi yüzünden paket üretmedi; ilk yayımlanan 0.9 sürümü `v0.9.1`'dir. Kalan yayın kontrolleri [yayın backlog'unda](https://github.com/Zaryob/imshark/issues/2) izleniyor; yerel test sonuçları [portföy doğrulama kaydında](docs/PORTFOLIO_VALIDATION.md).
 
 ## Hızlı başlangıç
 
