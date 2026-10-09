@@ -1,7 +1,6 @@
-# syntax=docker/dockerfile:1
 # Build dependencies are managed by vcpkg. apt supplies the compiler, platform
 # headers, and display tools needed to exercise the desktop application.
-FROM ubuntu:24.04 AS toolchain
+FROM mirror.gcr.io/library/ubuntu:24.04 AS toolchain
 
 ENV DEBIAN_FRONTEND=noninteractive \
     VCPKG_ROOT=/opt/vcpkg \
@@ -53,7 +52,7 @@ RUN cmake --install build --prefix /opt/imshark \
     && cd build && cpack -G TGZ && cpack -G DEB
 
 # Validate the DEB in a fresh OS with no compiler, vcpkg checkout or build tree.
-FROM ubuntu:24.04 AS package-verify
+FROM mirror.gcr.io/library/ubuntu:24.04 AS package-verify
 ENV DEBIAN_FRONTEND=noninteractive LIBGL_ALWAYS_SOFTWARE=1 GALLIUM_DRIVER=llvmpipe
 COPY --from=build /workspace/build/*.deb /tmp/
 RUN apt-get update && apt-get install -y --no-install-recommends \

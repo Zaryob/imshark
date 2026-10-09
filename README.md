@@ -40,7 +40,7 @@ Detailed coverage for Ethernet, wireless, IP, DNS, HTTP, TLS, enterprise, databa
 
 There are no published releases or prebuilt binaries on [GitHub Releases](https://github.com/Zaryob/imshark/releases) yet; build from source with the steps below for now. The release workflow produces an AppImage, DEB and tar.gz for Linux x86_64, a DMG for macOS Apple Silicon, a ZIP for Windows x86_64 and `SHA256SUMS.txt`, and publishes them only when every platform check passes. The macOS package is not Developer ID signed or notarized; the default Windows build has no live capture.
 
-Versions follow SemVer in the `v0.x.y` series (`v0.8.x` → `v0.9.x` → `v0.10.x` ...); the release workflow is triggered by a `vMAJOR.MINOR.PATCH` tag. The `v0.9.0` tag produced no packages because of a Windows (MSVC) test build failure; `v0.9.1` is the first published 0.9 release. Remaining release checks are tracked in the [release backlog](https://github.com/Zaryob/imshark/issues/2); local test results are in the [portfolio validation record](docs/PORTFOLIO_VALIDATION.md).
+Versions follow SemVer in the `v0.x.y` series (`v0.8.x` → `v0.9.x` → `v0.10.x` ...); the release workflow is triggered by a `vMAJOR.MINOR.PATCH` tag. The `v0.9.0` tag produced no packages because of a Windows (MSVC) test build failure; `v0.9.1` stopped on Docker Hub outages in the Linux GUI check; `v0.9.2` is the first published 0.9 release. Remaining release checks are tracked in the [release backlog](https://github.com/Zaryob/imshark/issues/2); local test results are in the [portfolio validation record](docs/PORTFOLIO_VALIDATION.md).
 
 ## Quick start
 
