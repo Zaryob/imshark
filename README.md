@@ -22,9 +22,9 @@ Ethernet, kablosuz, IP, DNS, HTTP, TLS, kurumsal ağ, veritabanı, USB ve Blueto
 
 ## İndir
 
-Hazır uygulama paketleri [GitHub Releases](https://github.com/Zaryob/imshark/releases) altında sürüm tag'ine göre yayımlanır: Linux x86_64 için AppImage, DEB ve tar.gz; macOS Apple Silicon için DMG; Windows x86_64 için ZIP. Her sürümde `SHA256SUMS.txt` bulunur. macOS paketi Developer ID ile imzalanmamıştır; Windows paketi dosya analizi içindir ve canlı yakalama içermez.
+9 Ekim 2026 public envanter denetiminde [GitHub Releases](https://github.com/Zaryob/imshark/releases) listesinde yayımlanmış sürüm veya hazır binary bulunmuyordu. Şimdilik aşağıdaki kaynak derleme adımlarını kullanın. Depodaki paketleme süreci Linux x86_64 için AppImage, DEB ve tar.gz; macOS Apple Silicon için DMG; Windows x86_64 için ZIP ve `SHA256SUMS.txt` üretmeyi hedefler. Bunlar indirmeye hazır, doğrulanmış paketlerin mevcut olduğu anlamına gelmez. macOS paketleme adımı Developer ID imzası/notarization içermez; Windows varsayılanı canlı yakalama içermez.
 
-Derleme ve yayın yalnızca `vMAJOR.MINOR.PATCH` tag'i pushlandığında çalışır. Paketler, platform testleri ve Linux Docker doğrulaması başarıyla tamamlandıktan sonra aynı tag'in release'ine eklenir.
+Yayın iş akışı `vMAJOR.MINOR.PATCH` tag'iyle tetiklenir ve başarılı doğrulamalardan sonra paket yüklemeyi hedefler. [İncelenen yayın denemesi](https://github.com/Zaryob/imshark/actions/runs/37850000156) başarısızdı; Windows derleme ve Linux debug SCTP testi sorunları [yayın backlog'unda](https://github.com/Zaryob/imshark/issues/2) izleniyor. Yerel test sonuçları ve kapsamı [portföy doğrulama kaydında](docs/PORTFOLIO_VALIDATION.md).
 
 ## Hızlı başlangıç
 
