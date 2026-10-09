@@ -19,7 +19,7 @@ ctest --preset debug --parallel 1 --output-on-failure
 | Tam paketi seri tekrar | **1.267 geçti, 0 başarısız, 28 atlandı**; 302,62 saniye |
 | Karışık sentetik fixture ile benchmark aracının işlev kontrolü | 10.000 paket yüklendi, filtre 1.961 eşleşme buldu; başarılı çıkış |
 
-Paralel koşunun başarısızlıkları capture-reader, fragment, gzip ve stream fixture testlerindeydi. Bunların sabit geçici dosya adlarını paylaşması çakışma ihtimalini ortaya koyuyor; seri tekrarın geçmesi üretim kodunda 23 ayrı hata bulunduğu anlamına gelmez. Test izolasyonu ayrıca ele alınmalıdır. [Paralel özet](portfolio-evidence/parallel-summary.txt), [başarısızları seri tekrar](portfolio-evidence/serial-rerun.txt), [tam seri çıktı](portfolio-evidence/serial-tests.txt) gerçek sonuçları korur; yollar ve satır sonu boşlukları sadeleştirilmiştir.
+Paralel koşunun başarısızlıkları capture-reader, fragment, gzip ve stream fixture testlerindeydi. Bunların sabit geçici dosya adlarını paylaşması çakışma ihtimalini ortaya koyuyor; seri tekrarın geçmesi üretim kodunda 23 ayrı hata bulunduğu anlamına gelmez. Test izolasyonu ayrıca ele alınmalıdır. Test başına terminal çıktıları depoda tutulmaz; yukarıdaki komutlarla yerel loglar yeniden üretilebilir.
 
 Bu seri koşuda ASan/UBSan tanısı gözlenmedi. Bu, çalıştırılan girdilerle sınırlıdır. Atlanan 28 test; isteğe bağlı gerçek capture'lar, bu derlemede geçerli olmayan backend/stub kontrolleri, loopback live-capture testi ve `tshark` karşılaştırmasını içerir. `tshark` kurulu değildi; karşılaştırma başarısı iddia edilmez. Ayrı bir uzun süreli fuzzer, Windows runtime, imzalı macOS kurulum, gerçek ağ yakalama veya tüm protokollerin uygunluğu doğrulanmadı.
 
@@ -30,7 +30,7 @@ python3 tools/make_bench_pcap.py --profile mixed --packets 10000 --output /tmp/i
 build-debug/bench_driver /tmp/imshark-bench-smoke.pcap --filter 'udp && ip.addr == 8.8.8.8'
 ```
 
-Generator'ın `mixed` profili varsayılan seed 1 kullanır. Bu koşudaki dosya 6212628 bayt; SHA-256 `bd3960acc8a7cbec9ea80cd1bb082c884c5dcfa181e185b27ddad98dcdf73c03`. Capture dosyası commit edilmez. [Ham aracın çıktısı](portfolio-evidence/bench-smoke.txt) saklanır. Debug + sanitizer, küçük sentetik veri ve yoğun paylaşılan host nedeniyle bu süreler **ürün performansı/throughput benchmark'ı değildir**. Release karşılaştırmalarında derleme ayarlarını, fixture hash'ini, gerçek capture kapsamını, çoklu tekrarları ve ortamı ayrıca kaydedin. Mevcut `tools/benchmark.py` çalışma yolunu koruruz.
+Generator'ın `mixed` profili varsayılan seed 1 kullanır. Bu koşudaki dosya 6212628 bayt; SHA-256 `bd3960acc8a7cbec9ea80cd1bb082c884c5dcfa181e185b27ddad98dcdf73c03`. Capture dosyası commit edilmez. Benchmark aracının çıktısı terminalden alınır; ayrı bir `.txt` dosyası commit edilmez. Debug + sanitizer, küçük sentetik veri ve yoğun paylaşılan host nedeniyle bu süreler **ürün performansı/throughput benchmark'ı değildir**. Release karşılaştırmalarında derleme ayarlarını, fixture hash'ini, gerçek capture kapsamını, çoklu tekrarları ve ortamı ayrıca kaydedin. Mevcut `tools/benchmark.py` çalışma yolunu koruruz.
 
 ## Yayın engelleri
 
