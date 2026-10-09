@@ -61,6 +61,9 @@ namespace support {
                 ("imshark_test_" + std::to_string(pid) + "_" + std::to_string(seq.fetch_add(1)) + "_" + name)).string();
     }
 
+    /// A path in the platform's own spelling: the UI stores native paths, so on Windows a "C:/x/y" literal reads back with backslashes.
+    inline std::string nativePath(const std::string &path) { return std::filesystem::path(path).make_preferred().string(); }
+
     inline std::string writeTemp(const std::string &name, const std::vector<char> &bytes) {
         const auto path = tempPath(name);
         std::ofstream f(path, std::ios::binary);

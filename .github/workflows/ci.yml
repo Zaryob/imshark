@@ -1,10 +1,18 @@
 name: CI
 
 on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
   workflow_call:
 
 permissions:
   contents: read
+
+concurrency:
+  group: ci-${{ github.workflow_ref }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build-and-test:
@@ -24,6 +32,11 @@ jobs:
           - os: macos-15
             preset: debug
             sanitize: 'ON'
+          # Windows is otherwise only built by the release workflow, so MSVC-only
+          # compile errors reached tagged releases before anyone saw them.
+          - os: windows-2025
+            preset: default
+            sanitize: 'OFF'
     env:
       VCPKG_ROOT: ${{ github.workspace }}/.vcpkg
       VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/.vcpkg-cache,readwrite
@@ -47,9 +60,9 @@ jobs:
       - name: Configure
         run: cmake --preset ${{ matrix.preset }} -DIMSHARK_SANITIZE=${{ matrix.sanitize }}
       - name: Build
-        run: cmake --build --preset ${{ matrix.preset }} --parallel 2
+        run: cmake --build --preset ${{ matrix.preset }} --parallel 4
       - name: Test
-        run: ctest --preset ${{ matrix.preset }} --parallel 1 --output-on-failure
+        run: ctest --preset ${{ matrix.preset }} --parallel 4 --output-on-failure
 
   linux-docker:
     name: Linux / Docker + software OpenGL

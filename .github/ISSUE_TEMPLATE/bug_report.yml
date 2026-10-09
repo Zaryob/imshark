@@ -1,0 +1,56 @@
+name: Bug report / Hata bildirimi
+description: Report a crash, wrong decoding or other defect. (Hata, çökme veya yanlış ayrıştırma bildirin.)
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Please check [docs/KNOWN_ISSUES.md](https://github.com/Zaryob/imshark/blob/master/docs/KNOWN_ISSUES.md) first. Do not attach captures with private data; security problems go through the security policy.
+        Önce KNOWN_ISSUES.md dosyasına bakın. Özel veri içeren yakalama dosyaları eklemeyin.
+  - type: input
+    id: version
+    attributes:
+      label: ImShark version / Sürüm
+      description: Release tag or commit hash. (Sürüm etiketi veya commit.)
+      placeholder: v0.9.0
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: OS / platform (İşletim sistemi)
+      options: [Linux, macOS, Windows]
+    validations:
+      required: true
+  - type: input
+    id: os_version
+    attributes:
+      label: OS version and architecture / Sürüm ve mimari
+      placeholder: Ubuntu 24.04 x86_64
+  - type: textarea
+    id: capture
+    attributes:
+      label: Capture file notes / Yakalama dosyası notları
+      description: Format (pcap/pcapng), size, source, whether it can be shared, or "live capture". (Biçim, boyut, kaynak, paylaşılabilirlik.)
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce / Yeniden üretme adımları
+      placeholder: |
+        1. Open ...
+        2. Apply filter ...
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior / Beklenen davranış
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior / Gerçekleşen davranış
+      description: Include error messages, logs or screenshots. (Hata mesajı, log veya ekran görüntüsü ekleyin.)
+    validations:
+      required: true

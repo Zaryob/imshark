@@ -1,6 +1,11 @@
 # ImShark
 
-[![Release](https://github.com/Zaryob/imshark/actions/workflows/release.yml/badge.svg)](https://github.com/Zaryob/imshark/actions/workflows/release.yml)
+[![CI](https://github.com/Zaryob/imshark/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/Zaryob/imshark/actions/workflows/ci.yml)
+[![Release workflow](https://github.com/Zaryob/imshark/actions/workflows/release.yml/badge.svg)](https://github.com/Zaryob/imshark/actions/workflows/release.yml)
+[![Latest release](https://img.shields.io/github/v/release/Zaryob/imshark?include_prereleases&sort=semver)](https://github.com/Zaryob/imshark/releases)
+[![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-blue.svg)](LICENSE)
+[![C++20](https://img.shields.io/badge/C%2B%2B-20-00599C.svg)](CMakeLists.txt)
+![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey)
 
 [Dear ImGui](https://github.com/ocornut/imgui) ile geliştirilmiş, Wireshark'tan esinlenen bir paket analizörü. Yakalama dosyalarını açar, protokolleri ayrıştırır ve paket listesini etkileşimli protokol ağacı ile hex/ASCII görünümüyle bir araya getirir. libpcap üzerinden canlı yakalama da desteklenir.
 

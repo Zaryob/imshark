@@ -1,4 +1,14 @@
-tests/corpus/*.pcap binary
-tests/corpus/*.pcapng binary
-tests/data/*.pcap binary
-tests/data/*.gz binary
+# Text is checked out with LF everywhere: docs, snapshots and fixtures are compared byte for byte by the tests,
+# and a CRLF checkout on Windows made them differ.
+* text=auto eol=lf
+
+*.pcap binary
+*.pcapng binary
+*.cap binary
+*.gz binary
+*.bin binary
+*.erf binary
+*.snoop binary
+*.png binary
+*.ico binary
+*.icns binary

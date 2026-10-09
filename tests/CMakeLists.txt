@@ -65,6 +65,7 @@ add_executable(imshark_tests
     test_time_format.cpp
     test_utils.cpp
     test_ui_smoke.cpp
+    test_ui_interactions.cpp
     test_ui_tls.cpp
     test_wlan.cpp
     test_radiotap_ppi.cpp

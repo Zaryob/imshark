@@ -141,7 +141,7 @@ TEST_F(UiSmoke, BackgroundLoadPublishesWhenFinishedAndKeepsOldCaptureOnFailure) 
     EXPECT_TRUE(state.loadFailed);
     EXPECT_EQ(state.packets.size(), 16u);
     EXPECT_EQ(state.selectedPacket, 2);
-    EXPECT_EQ(state.currentFile, IMSHARK_TEST_DATA_DIR "/sample.pcap");
+    EXPECT_EQ(support::nativePath(state.currentFile), support::nativePath(IMSHARK_TEST_DATA_DIR "/sample.pcap"));
 }
 
 TEST_F(UiSmoke, CancelledLoadIsNotAnError) {
@@ -222,7 +222,7 @@ TEST_F(UiSmoke, SuccessfulLoadsAreRememberedAndPersisted) {
     ui::AppState again;
     ui::initSettings(again, path);
     ASSERT_EQ(again.settings.recentFiles.size(), 1u);
-    EXPECT_EQ(again.settings.recentFiles[0], IMSHARK_TEST_DATA_DIR "/sample.pcap");
+    EXPECT_EQ(support::nativePath(again.settings.recentFiles[0]), support::nativePath(IMSHARK_TEST_DATA_DIR "/sample.pcap"));
     EXPECT_FLOAT_EQ(again.listHeight, 333.0f);
     std::filesystem::remove_all(std::filesystem::path(path).parent_path());
 }
@@ -660,13 +660,13 @@ TEST_F(UiSmoke, GzippedCaptureIsOpenedThroughATemporaryCopy) {
         ui::loadCapture(state, gz);
         ASSERT_FALSE(state.loadFailed) << state.loadMessage;
         EXPECT_EQ(state.packets.size(), 16u);
-        EXPECT_EQ(state.displayName, gz) << "the user sees the file they opened";
+        EXPECT_EQ(support::nativePath(state.displayName), support::nativePath(gz)) << "the user sees the file they opened";
         EXPECT_NE(state.currentFile, gz);
         EXPECT_EQ(state.tempFile, state.currentFile);
         EXPECT_TRUE(std::filesystem::exists(state.tempFile));
         EXPECT_EQ(state.captureInfo.container, "gzip");
         EXPECT_GT(state.captureInfo.compressedSize, 0u);
-        EXPECT_EQ(state.settings.recentFiles.front(), gz) << "recent files remember the original, not the temp copy";
+        EXPECT_EQ(support::nativePath(state.settings.recentFiles.front()), support::nativePath(gz)) << "recent files remember the original, not the temp copy";
 
         // everything that reads frames works on the temporary copy
         state.selectedPacket = 9;
@@ -684,7 +684,7 @@ TEST_F(UiSmoke, GzippedCaptureIsOpenedThroughATemporaryCopy) {
         ui::loadCapture(state, IMSHARK_TEST_DATA_DIR "/sample.pcap");
         EXPECT_TRUE(state.tempFile.empty());
         EXPECT_FALSE(std::filesystem::exists(tempCopy));
-        EXPECT_EQ(state.displayName, IMSHARK_TEST_DATA_DIR "/sample.pcap");
+        EXPECT_EQ(support::nativePath(state.displayName), support::nativePath(IMSHARK_TEST_DATA_DIR "/sample.pcap"));
     }
 }
 
@@ -725,7 +725,7 @@ TEST_F(UiSmoke, ADamagedGzipFileFailsCleanlyAndKeepsTheOpenCapture) {
     EXPECT_NE(state.loadMessage.find("end of the compressed data"), std::string::npos) << state.loadMessage;
     EXPECT_EQ(state.packets.size(), 16u) << "the open capture is not destroyed";
     EXPECT_TRUE(state.tempFile.empty()) << "no stray temporary file";
-    EXPECT_EQ(state.displayName, IMSHARK_TEST_DATA_DIR "/sample.pcap");
+    EXPECT_EQ(support::nativePath(state.displayName), support::nativePath(IMSHARK_TEST_DATA_DIR "/sample.pcap"));
     frames(state);
     std::remove(broken.c_str());
 }
@@ -928,7 +928,7 @@ TEST_F(UiSmoke, FailedStartKeepsTheOpenCaptureAndRemembersTheOptions) {
     EXPECT_TRUE(state.live.openError);
     EXPECT_FALSE(state.live.session);
     EXPECT_EQ(state.packets.size(), 16u) << "the open capture stays";
-    EXPECT_EQ(state.currentFile, IMSHARK_TEST_DATA_DIR "/sample.pcap");
+    EXPECT_EQ(support::nativePath(state.currentFile), support::nativePath(IMSHARK_TEST_DATA_DIR "/sample.pcap"));
     EXPECT_EQ(state.settings.captureInterface, "imshark-no-such-interface0");
     EXPECT_EQ(state.settings.captureFilter, "udp port 53");
     EXPECT_EQ(state.settings.captureSnaplen, 1500u);
