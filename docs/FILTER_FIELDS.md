@@ -208,9 +208,11 @@ in the [User Guide](USER_GUIDE.md#display-filters). Names are lower case.
 | `mysql.error_code` | unsigned | MySQL error code of an ERR packet |
 | `mysql.from_server` | boolean | MySQL packet sent by the server |
 | `mysql.packet_number` | unsigned | MySQL packet (sequence) number |
-| `mysql.query` | string | MySQL SQL text of COM_QUERY / COM_STMT_PREPARE (or the schema of COM_INIT_DB) |
+| `mysql.query` | string | MySQL SQL text of COM_QUERY / COM_STMT_PREPARE (or the schema of COM_INIT_DB), and the query a prepared statement id resolves to in COM_STMT_EXECUTE / CLOSE / RESET / SEND_LONG_DATA and the PREPARE_OK response |
 | `mysql.ssl_request` | boolean | MySQL SSL request (TLS handshake follows) |
+| `mysql.statement_id` | unsigned | MySQL prepared statement id of COM_STMT_EXECUTE / SEND_LONG_DATA / CLOSE / RESET and of the PREPARE_OK response |
 | `mysql.user` | string | MySQL user name of the login request |
+| `mysql.value` | string | MySQL first values of a result row (up to 8, joined with ", "; text or binary protocol, typed by the column definitions, NULL for null) |
 | `mysql.version` | string | MySQL server version of the initial handshake |
 | `nfs` | boolean | Network File System call or matched reply |
 | `nfs.name` | string | NFS file name of a LOOKUP / CREATE / MKDIR / REMOVE / RMDIR call |
@@ -427,4 +429,4 @@ in the [User Guide](USER_GUIDE.md#display-filters). Names are lower case.
 | `wlan.ssid` | string | 802.11 SSID |
 | `wlan.ta` | string | 802.11 Transmitter MAC address |
 
-417 fields.
+419 fields.

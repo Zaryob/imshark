@@ -37,8 +37,11 @@
 // column / parameter count in app_stream; app_code bit 0 = sent by the server). pgsql.query now excludes server messages (it could not match
 // one before: they had no app_text). The synthetic generator gives every third PGSQL packet a message letter and direction bit (derived
 // from the index, the random stream is untouched), so pgsql.type / pgsql.code / the new fields have values; their lines changed accordingly. The
-// digests of eapol.type, lldp.capabilities, lldp.ttl and ppp.lcp.code changed too: those extractors read app_type / app_flags / app_code of
-// these synthetic packets without looking at the protocol.
+// digests of a few other fields (eapol.type, lldp.*, ppp.lcp.code, pppoe.ac_name, sctp.* ... see the snapshot diff of this change) changed too: those
+// extractors read app_type / app_flags / app_code / app_text of these synthetic packets without looking at the protocol.
+// Added (v1.4, MySQL values): mysql.value (row values in app_text, app_flags bit 7), mysql.statement_id (prepared statement id as decimal text in
+// app_text2: commands 0x17..0x1a, app_flags bit 5, and the PREPARE_OK response, bit 6). mysql.query now excludes rows. Every third synthetic MySQL
+// packet gets a command / flag combination derived from the index (the random stream is untouched).
 // Added (v1.3, NFSv4 COMPOUND): nfs.operations (the operation names in app_text2; nfs.name stays version 3 only, so the two never share it).
 #include <gtest/gtest.h>
 
@@ -137,6 +140,12 @@ namespace {
             // v1.4: every third PostgreSQL / MySQL packet carries a real message letter / command and direction bit (derived from the
             // index, the random stream is not touched), so the fields that read them have values to digest
             if (p.protocol == "PGSQL" && i % 3 == 0) { p.app_type = 6; p.app_flags = static_cast<uint16_t>("TDBPCEtGHWQdSX"[i % 14]); p.app_code = static_cast<uint16_t>(i % 2); }
+            if (p.protocol == "MySQL" && i % 3 == 0) {
+                static const uint16_t flagSets[] = {32, 33, 64, 128, 129, 32 | 8};
+                p.app_type = static_cast<uint16_t>(0x16 + (i / 3) % 5);
+                p.app_flags = flagSets[(i / 3) % 6];
+                p.app_text2 = i % 2 ? "7" : "12";
+            }
             out.push_back(std::move(p));
         }
         return out;

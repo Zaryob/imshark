@@ -53,7 +53,7 @@ eap.type	unsigned	EAP type (1 = Identity, 13 = TLS, 25 = PEAP, 43 = FAST)	152	15
 eapol	boolean	IEEE 802.1X / EAPOL packet	608	608	06383d40024c49c3
 eapol.keydes.msgnr	unsigned	WPA 4-way handshake message number (1, 2, 3, 4)	4	4	98657868dabfc2fc
 eapol.keydes.type	unsigned	EAPOL-Key descriptor type (1 = RC4, 2 = RSN, 254 = WPA)	4	4	9d083ecb0f90b00d
-eapol.type	unsigned	802.1X packet type (0 = EAP, 1 = Start, 2 = Logoff, 3 = Key)	608	608	98102d101c6fd7fa
+eapol.type	unsigned	802.1X packet type (0 = EAP, 1 = Start, 2 = Logoff, 3 = Key)	608	608	15587c3f1f941676
 esp	boolean	IPsec Encapsulating Security Payload	173	173	2b4ec097ca7fe903
 esp.null	boolean	ESP payload judged unencrypted by the ESP-NULL heuristic (a setting, off by default)	0	0	236e177ee4bbadc3
 esp.sequence	unsigned	ESP Sequence Number	0	0	236e177ee4bbadc3
@@ -176,9 +176,9 @@ llc.control	unsigned	LLC Control Field	758	758	d10381180acd7d6b
 llc.dsap	unsigned	LLC Destination Service Access Point (DSAP)	758	758	de41562e9a3af6ad
 llc.ssap	unsigned	LLC Source Service Access Point (SSAP)	758	758	b684736f18b280bf
 lldp	boolean	Link Layer Discovery Protocol	431	431	ee98762a3d8bed83
-lldp.capabilities	unsigned	LLDP System Capabilities (enabled bits)	431	431	acf0341a80b89227
+lldp.capabilities	unsigned	LLDP System Capabilities (enabled bits)	431	431	38fa86f7aaa1eaa4
 lldp.chassis_id	string	LLDP Chassis ID	343	343	5f8f5b04a9295d82
-lldp.port_id	string	LLDP Port ID	339	339	09d3ca3c82eb4571
+lldp.port_id	string	LLDP Port ID	339	339	6eff98afbf41b322
 lldp.ttl	unsigned	LLDP Time To Live in seconds	431	431	4308373043c82be3
 mac_control	boolean	Ethernet MAC Control	442	442	1336253c7c2b7043
 mac_control.opcode	unsigned	MAC Control opcode (0x0001 PAUSE, 0x0101 PFC)	442	442	41e14c02da937dd4
@@ -193,14 +193,16 @@ mpls.label	unsigned	MPLS Label Value (outermost label)	642	642	be36921394f4ee01
 mpls.label1	unsigned	MPLS Label Value (second label in the stack)	569	569	ec84c9f97464a74b
 mpls.ttl	unsigned	MPLS Time To Live	642	642	fbbc36da473daa21
 mysql	boolean	MySQL client/server protocol	170	170	a995db5792455c43
-mysql.command	unsigned	MySQL command of a client packet (3 COM_QUERY, 2 COM_INIT_DB, 1 COM_QUIT, 22 COM_STMT_PREPARE, ...)	42	42	2d13b3c5f0ac20d3
-mysql.error_code	unsigned	MySQL error code of an ERR packet	65	65	74bc99b43416334f
-mysql.from_server	boolean	MySQL packet sent by the server	170	170	4629f6233a23d7e3
+mysql.command	unsigned	MySQL command of a client packet (3 COM_QUERY, 2 COM_INIT_DB, 1 COM_QUIT, 22 COM_STMT_PREPARE, ...)	53	53	4fd57902692161a3
+mysql.error_code	unsigned	MySQL error code of an ERR packet	55	55	c37ce8ba1a949645
+mysql.from_server	boolean	MySQL packet sent by the server	170	170	dd11d7484a82cce3
 mysql.packet_number	unsigned	MySQL packet (sequence) number	170	170	a1bf0b45fed35f22
-mysql.query	string	MySQL SQL text of COM_QUERY / COM_STMT_PREPARE (or the schema of COM_INIT_DB)	136	136	9ad07a820cf4c48a
-mysql.ssl_request	boolean	MySQL SSL request (TLS handshake follows)	170	170	cfda4df9670878c2
-mysql.user	string	MySQL user name of the login request	62	62	63a88a586643c282
-mysql.version	string	MySQL server version of the initial handshake	47	47	061c1cda5571c6da
+mysql.query	string	MySQL SQL text of COM_QUERY / COM_STMT_PREPARE (or the schema of COM_INIT_DB), and the query a prepared statement id resolves to in COM_STMT_EXECUTE / CLOSE / RESET / SEND_LONG_DATA and the PREPARE_OK response	102	102	8608c44b8625da57
+mysql.ssl_request	boolean	MySQL SSL request (TLS handshake follows)	170	170	6cf541305db44982
+mysql.statement_id	unsigned	MySQL prepared statement id of COM_STMT_EXECUTE / SEND_LONG_DATA / CLOSE / RESET and of the PREPARE_OK response	57	57	ab0ce0a8157f39a4
+mysql.user	string	MySQL user name of the login request	52	52	1af107e12d4d5547
+mysql.value	string	MySQL first values of a result row (up to 8, joined with ", "; text or binary protocol, typed by the column definitions, NULL for null)	34	34	af0ad6d5fa1032c0
+mysql.version	string	MySQL server version of the initial handshake	35	35	06735a8a682ff18c
 nfs	boolean	Network File System call or matched reply	297	297	93fece66d4752003
 nfs.name	string	NFS file name of a LOOKUP / CREATE / MKDIR / REMOVE / RMDIR call	3	3	3d4526fe59caa9a5
 nfs.operations	string	Operations of an NFSv4 COMPOUND call, or of the results of its matched reply, comma separated in order (PUTFH,LOOKUP,GETATTR; the first 16); test one with matches "\bLOOKUP\b"	104	104	6d12c5986dec66fe
@@ -244,7 +246,7 @@ ppp.ipcp.code	unsigned	IPCP Code	403	403	a6a485cc11085b4e
 ppp.lcp.code	unsigned	LCP Code (1 = Config-Req, 2 = Config-Ack, etc.)	364	364	d9ffbeb4efcd72a2
 ppp.protocol	unsigned	PPP Protocol ID (0x0021 = IPv4, 0x0057 = IPv6, 0xc021 = LCP, 0x8021 = IPCP)	10858	10858	a02da6d55fb5304b
 pppoe	boolean	PPP-over-Ethernet (Discovery or Session)	1418	1418	8338f0a743e73c43
-pppoe.ac_name	string	PPPoE Access Concentrator (AC) Name tag	1143	1143	1b3d3c8cbe44c332
+pppoe.ac_name	string	PPPoE Access Concentrator (AC) Name tag	1145	1145	3f86e743f4b8486e
 pppoe.code	unsigned	PPPoE Code (0x00 = Session, 0x09 = PADI, 0x07 = PADO, 0x19 = PADR, 0x65 = PADS, 0xa7 = PADT)	1418	1418	b368df03e2de002e
 pppoe.service_name	string	PPPoE Service-Name tag	1137	1137	4e1c108008a4f33d
 pppoe.session_id	unsigned	PPPoE Session ID	1418	1418	b3ec4ab0171c6269
@@ -269,19 +271,19 @@ rpc.state_accept	unsigned	ONC RPC accept status of an accepted reply (0 SUCCESS,
 rpc.xid	unsigned	ONC RPC transaction id	751	751	b79a95905d6f3059
 sctp	boolean	Stream Control Transmission Protocol	1039	1039	f60a210b635d8983
 sctp.checksum.status	unsigned	SCTP CRC-32C: 0 = bad, 1 = good, 2 = unverified, 3 = not present	1039	1039	124a99bcf51ddc63
-sctp.chunk_type	unsigned	SCTP Chunk Type (of the first chunk)	1020	1020	20b481b8f456508f
-sctp.data	boolean	SCTP packet with a DATA or I-DATA chunk	427	427	0695bb439125c483
-sctp.data.fragment	boolean	The first data chunk carries only part of a user message	427	427	910851ee1a1e2783
-sctp.data.idata	boolean	The first data chunk is an I-DATA chunk	427	427	01ba11d4e5be7b42
-sctp.data.ppid	unsigned	Payload protocol identifier of the first DATA / I-DATA chunk (of the whole message when it was reassembled)	427	427	2b579304e66abb1a
-sctp.data.retransmission	boolean	The first data chunk is a fragment seen before	427	427	73f42b754eb14142
-sctp.data.sid	unsigned	Stream identifier of the first DATA / I-DATA chunk	427	427	9714da9b2dc5197f
+sctp.chunk_type	unsigned	SCTP Chunk Type (of the first chunk)	1020	1020	8764eb1e73d267eb
+sctp.data	boolean	SCTP packet with a DATA or I-DATA chunk	426	426	77aa791ef336a043
+sctp.data.fragment	boolean	The first data chunk carries only part of a user message	426	426	6ec136737d86a743
+sctp.data.idata	boolean	The first data chunk is an I-DATA chunk	426	426	f433160dd4442ca3
+sctp.data.ppid	unsigned	Payload protocol identifier of the first DATA / I-DATA chunk (of the whole message when it was reassembled)	426	426	90f735d59317cc1a
+sctp.data.retransmission	boolean	The first data chunk is a fragment seen before	426	426	680198802a6b6783
+sctp.data.sid	unsigned	Stream identifier of the first DATA / I-DATA chunk	426	426	60a0c806bdf90b2d
 sctp.data.ssn	unsigned	Stream sequence number (DATA) or message identifier (I-DATA) of the first DATA / I-DATA chunk	342	342	f3724b060b7b18e9
-sctp.data.tsn	unsigned	TSN of the first DATA / I-DATA chunk	427	427	0bf3df869b2b5b57
-sctp.data.unordered	boolean	The first data chunk has the U (unordered) flag	427	427	3ee321b4e5bdfb22
+sctp.data.tsn	unsigned	TSN of the first DATA / I-DATA chunk	426	426	e9cf0ea849925b1c
+sctp.data.unordered	boolean	The first data chunk has the U (unordered) flag	426	426	41b188892b051ec3
 sctp.dstport	unsigned	SCTP destination port	1039	1039	358fce4598d2dbc7
 sctp.port	unsigned	SCTP source or destination port	1039	2078	16fc56eb104bddb6
-sctp.reassembled	boolean	This packet's first data chunk completed a user message (reassembled SCTP message)	427	427	eeb5e66bf29f0ae3
+sctp.reassembled	boolean	This packet's first data chunk completed a user message (reassembled SCTP message)	426	426	4c5335c7b3aaaf02
 sctp.srcport	unsigned	SCTP source port	1039	1039	8adc9a6b65364bec
 sctp.vtag	unsigned	SCTP Verification Tag	1039	1039	35e0638b9443ac96
 smb2	boolean	SMB2 / SMB3	152	152	48516f558002a7c3
@@ -398,7 +400,7 @@ udp.srcport	unsigned	UDP source port	501	501	5af68320d7c9a3f0
 udplite	boolean	Lightweight User Datagram Protocol	1028	1028	fee1d347be5866c3
 usb	boolean	USB packet	3350	3350	a73bfdb9ef74cf43
 usb.device	string	USB device address (bus.device)	3274	5653	bbdab12370fab8a3
-usb.endpoint	unsigned	USB endpoint address of the transfer (bit 7 set = IN, e.g. 0x81 is endpoint 1 IN)	478	478	39a0a0c2b9be8b20
+usb.endpoint	unsigned	USB endpoint address of the transfer (bit 7 set = IN, e.g. 0x81 is endpoint 1 IN)	477	477	968bb36b6b3a6819
 vlan	boolean	802.1Q VLAN tagged	5626	5626	ffe1ce54ca9f5843
 vlan.id	unsigned	VLAN ID (outermost two tags)	5626	6450	d3dde21e03ca2be2
 wlan	boolean	IEEE 802.11 wireless frame	11574	11574	b49f2fc67eca8b43

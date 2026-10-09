@@ -112,6 +112,7 @@ add_executable(imshark_tests
     test_rpc_session.cpp
     test_db_session.cpp
     test_postgres_values.cpp
+    test_mysql_values.cpp
     test_rpc_flows.cpp
     test_rpc_programs.cpp
     test_nfs3.cpp

@@ -89,8 +89,9 @@ TEST(MySql, ServerAndClientPacketsAreToldApartByDirection) {
     EXPECT_FALSE(matches("mysql.command == 1", k[4]));
     EXPECT_EQ(k[5].info, "Column Definition: t.c");
     EXPECT_EQ(k[6].info, "Response EOF (Seq 3)");
-    EXPECT_EQ(k[7].info, "Result Row (Seq 4): abc") << "a row starting with 0x03 was shown as a query";
-    EXPECT_EQ(k[8].info, "Result Row (Seq 4)") << "a row of an empty value is not an OK";
+    // v1.4: a row is read with the column definitions of its result set, so the value carries its column name
+    EXPECT_EQ(k[7].info, "Result Row (Seq 4): c=abc") << "a row starting with 0x03 was shown as a query";
+    EXPECT_EQ(k[8].info, "Result Row (Seq 4): c=") << "a row of an empty value is not an OK";
     EXPECT_EQ(k[10].info, "Init DB: shop");
     EXPECT_EQ(k[11].info, "Response OK (Seq 1, affected rows 3)");
     EXPECT_EQ(k[12].info, "Prepare: SELECT ?");

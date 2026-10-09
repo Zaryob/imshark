@@ -12,6 +12,7 @@
 #include <vector>
 
 #include "db_session.h"
+#include "db_values.h"
 #include "reader.h"
 #include "util.h"
 
@@ -178,44 +179,16 @@ uint64_t bigEndian(const uint8_t *v, size_t n) {
     return r;
 }
 
-// shortest %g form that reads back as the same number
-std::string floatText(double d, bool single) {
-    if (std::isnan(d)) return "NaN";
-    if (std::isinf(d)) return d < 0 ? "-Infinity" : "Infinity";
-    char buf[40];
-    for (int precision = 1; precision <= 17; ++precision) {
-        std::snprintf(buf, sizeof buf, "%.*g", precision, d);
-        const double back = std::strtod(buf, nullptr);
-        if (single ? static_cast<float>(back) == static_cast<float>(d) : back == d) break;
-    }
-    return buf;
-}
-
-// days since 1970-01-01 -> civil date (proleptic Gregorian)
-void civilDate(int64_t z, int64_t &year, unsigned &month, unsigned &day) {
-    z += 719468;
-    const int64_t era = (z >= 0 ? z : z - 146096) / 146097;
-    const unsigned doe = static_cast<unsigned>(z - era * 146097);
-    const unsigned yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
-    const unsigned doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
-    const unsigned mp = (5 * doy + 2) / 153;
-    day = doy - (153 * mp + 2) / 5 + 1;
-    month = mp < 10 ? mp + 3 : mp - 9;
-    year = static_cast<int64_t>(yoe) + era * 400 + (month <= 2);
-}
-
-std::string two(unsigned v) { char b[8]; std::snprintf(b, sizeof b, "%02u", v); return b; }
-
 std::string dateText(int64_t daysSince2000) {
     int64_t y; unsigned m, d;
-    civilDate(daysSince2000 + 10957, y, m, d);   // 2000-01-01 is day 10957 after 1970-01-01
+    dbCivilDate(daysSince2000 + 10957, y, m, d);   // 2000-01-01 is day 10957 after 1970-01-01
     char b[48];
     std::snprintf(b, sizeof b, "%04lld-%02u-%02u", static_cast<long long>(y), m, d);
     return b;
 }
 
 std::string timeText(int64_t micros) {
-    std::string out = two(static_cast<unsigned>(micros / 3600000000LL)) + ":" + two(static_cast<unsigned>(micros / 60000000LL % 60)) + ":" + two(static_cast<unsigned>(micros / 1000000LL % 60));
+    std::string out = dbTwoDigits(static_cast<unsigned>(micros / 3600000000LL)) + ":" + dbTwoDigits(static_cast<unsigned>(micros / 60000000LL % 60)) + ":" + dbTwoDigits(static_cast<unsigned>(micros / 1000000LL % 60));
     if (micros % 1000000) { char b[16]; std::snprintf(b, sizeof b, ".%06u", static_cast<unsigned>(micros % 1000000)); std::string f = b; while (f.back() == '0') f.pop_back(); out += f; }
     return out;
 }
@@ -245,8 +218,8 @@ std::string binaryValue(const uint8_t *v, size_t n, uint32_t oid) {
         case 23: if (n == 4) return std::to_string(static_cast<int32_t>(bigEndian(v, 4))); break;
         case 26: if (n == 4) return std::to_string(bigEndian(v, 4)); break;
         case 20: if (n == 8) return std::to_string(static_cast<int64_t>(bigEndian(v, 8))); break;
-        case 700: if (n == 4) { const uint32_t u = static_cast<uint32_t>(bigEndian(v, 4)); float f; std::memcpy(&f, &u, 4); return floatText(f, true); } break;
-        case 701: if (n == 8) { const uint64_t u = bigEndian(v, 8); double d; std::memcpy(&d, &u, 8); return floatText(d, false); } break;
+        case 700: if (n == 4) { const uint32_t u = static_cast<uint32_t>(bigEndian(v, 4)); float f; std::memcpy(&f, &u, 4); return dbFloatText(f, true); } break;
+        case 701: if (n == 8) { const uint64_t u = bigEndian(v, 8); double d; std::memcpy(&d, &u, 8); return dbFloatText(d, false); } break;
         case 18: case 19: case 25: case 114: case 142: case 1042: case 1043: return textValue(v, n);
         case 3802: if (n >= 1 && v[0] == 1) return textValue(v + 1, n - 1); break;   // jsonb: version byte 1, then the text
         case 17: return hexValue(v, n);
