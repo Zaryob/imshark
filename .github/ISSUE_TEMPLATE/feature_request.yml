@@ -1,0 +1,31 @@
+name: Feature request / Özellik isteği
+description: Suggest an improvement or new capability. (Yeni özellik veya iyileştirme önerin.)
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or use case / Sorun veya kullanım senaryosu
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution / Önerilen çözüm
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered / Düşünülen alternatifler
+  - type: dropdown
+    id: os
+    attributes:
+      label: Relevant platforms / İlgili platformlar
+      multiple: true
+      options: [Linux, macOS, Windows]
+  - type: textarea
+    id: notes
+    attributes:
+      label: Capture file notes / Yakalama dosyası notları
+      description: Example captures, if shareable and licence-compatible. (Paylaşılabilir örnek yakalamalar.)

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Known issues / Bilinen sorunlar
+    url: https://github.com/Zaryob/imshark/blob/master/docs/KNOWN_ISSUES.md
+    about: Check whether your problem is already documented. / Sorununuz zaten belgelenmiş olabilir.
+  - name: Security vulnerability / Güvenlik açığı
+    url: https://github.com/Zaryob/imshark/security/policy
+    about: Report security problems privately, not in a public issue. / Güvenlik sorunlarını herkese açık issue yerine özel olarak bildirin.

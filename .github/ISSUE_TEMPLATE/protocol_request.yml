@@ -1,0 +1,46 @@
+name: Protocol request / Protokol isteği
+description: Request a new or improved protocol dissector. (Yeni veya geliştirilmiş protokol ayrıştırıcısı isteyin.)
+labels: [protocol]
+body:
+  - type: input
+    id: protocol
+    attributes:
+      label: Protocol name / Protokol adı
+    validations:
+      required: true
+  - type: input
+    id: spec
+    attributes:
+      label: Specification link / Spesifikasyon bağlantısı
+      description: RFC, standard or vendor document. (RFC, standart veya üretici belgesi.)
+      placeholder: https://
+    validations:
+      required: true
+  - type: textarea
+    id: transport
+    attributes:
+      label: Transport and ports / Taşıma katmanı ve portlar
+      description: e.g. TCP/UDP port, encapsulation, link type. (Örn. TCP/UDP portu, kapsülleme.)
+  - type: dropdown
+    id: sample_licence
+    attributes:
+      label: Sample capture licence / Örnek yakalama lisansı
+      description: Captures must contain no private data and be redistributable. (Özel veri içermemeli ve dağıtılabilir olmalı.)
+      options:
+        - Public domain / CC0
+        - Permissive open licence (CC-BY, MIT, BSD...)
+        - Copyleft licence (GPL-compatible)
+        - Not redistributable (cannot be added to the repo)
+        - No sample available
+    validations:
+      required: true
+  - type: input
+    id: sample_link
+    attributes:
+      label: Sample capture link / Örnek yakalama bağlantısı
+      description: Do not upload captures with private data. (Özel veri içeren dosya yüklemeyin.)
+  - type: textarea
+    id: notes
+    attributes:
+      label: Additional notes / Ek notlar
+      description: Fields you need, reference decoders (e.g. Wireshark dissector name). (İhtiyaç duyulan alanlar, referans ayrıştırıcılar.)
