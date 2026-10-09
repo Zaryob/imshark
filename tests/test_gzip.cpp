@@ -22,7 +22,7 @@ namespace {
 
     // decompresses the fixture to a temp file and returns the content; `error` receives failures
     bool gunzip(const std::string &compressedPath, std::string &content, std::string &error, core::LoadControl *control = nullptr) {
-        const auto out = (std::filesystem::temp_directory_path() / "imshark_gunzip_test.out").string();
+        const auto out = support::tempPath("gunzip_test.out");
         const bool ok = core::gunzipFile(compressedPath, out, error, control);
         content = ok ? slurp(out) : std::string();
         std::remove(out.c_str());
