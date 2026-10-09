@@ -694,7 +694,7 @@ TEST_F(UiInteract, DroppedMissingFileReportsAnErrorAndKeepsTheOpenCapture) {
     EXPECT_TRUE(popupOpen("Load problem")) << "the error popup is shown";
     EXPECT_EQ(state.packets.size(), 16u);
     EXPECT_EQ(state.selectedPacket, 4);
-    EXPECT_EQ(state.currentFile, IMSHARK_TEST_DATA_DIR "/sample.pcap");
+    EXPECT_EQ(support::nativePath(state.currentFile), support::nativePath(IMSHARK_TEST_DATA_DIR "/sample.pcap"));
 }
 
 TEST_F(UiInteract, DroppedNonCaptureFileReportsAnErrorAndKeepsTheOpenCapture) {
@@ -709,7 +709,7 @@ TEST_F(UiInteract, DroppedNonCaptureFileReportsAnErrorAndKeepsTheOpenCapture) {
     EXPECT_TRUE(state.loadFailed);
     EXPECT_TRUE(popupOpen("Load problem"));
     EXPECT_EQ(state.packets.size(), 16u);
-    EXPECT_EQ(state.currentFile, IMSHARK_TEST_DATA_DIR "/sample.pcap");
+    EXPECT_EQ(support::nativePath(state.currentFile), support::nativePath(IMSHARK_TEST_DATA_DIR "/sample.pcap"));
 }
 
 TEST_F(UiInteract, DroppedDirectoryReportsAnErrorAndKeepsTheOpenCapture) {
@@ -722,7 +722,7 @@ TEST_F(UiInteract, DroppedDirectoryReportsAnErrorAndKeepsTheOpenCapture) {
     pumpLoad(state);
     EXPECT_TRUE(state.loadFailed);
     EXPECT_EQ(state.packets.size(), 16u);
-    EXPECT_EQ(state.currentFile, IMSHARK_TEST_DATA_DIR "/sample.pcap");
+    EXPECT_EQ(support::nativePath(state.currentFile), support::nativePath(IMSHARK_TEST_DATA_DIR "/sample.pcap"));
 }
 
 TEST_F(UiInteract, DroppedFileDuringAnUnsavedLiveCaptureAsksFirst) {
