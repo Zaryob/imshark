@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cstdlib>
 #include <filesystem>
 #include <iostream>
@@ -11,6 +12,7 @@
 
 #include <filter/fields.h>
 
+#include "ui/theme.h"
 #include "ui/ui.h"
 #include "version.h"
 
@@ -72,20 +74,67 @@ int main(int argc, char **argv) {
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE); // 3.2+ only
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 
-    GLFWwindow *window = glfwCreateWindow(1280, 720, "ImShark", nullptr, nullptr);
+    // Size and position of the last session, moved into the work area of the monitor they were on
+    constexpr int kMinWidth = 640, kMinHeight = 400;
+    int windowWidth = 1280, windowHeight = 720, windowX = 0, windowY = 0;
+    bool placeWindow = false;
+    {
+        const ui::Settings saved = ui::loadSettings(ui::defaultSettingsPath());
+        int count = 0;
+        GLFWmonitor **monitors = glfwGetMonitors(&count);
+        GLFWmonitor *best = glfwGetPrimaryMonitor();
+        long long bestOverlap = -1;
+        for (int i = 0; saved.hasWindowPos && monitors && i < count; ++i) {
+            int mx, my, mw, mh;
+            glfwGetMonitorWorkarea(monitors[i], &mx, &my, &mw, &mh);
+            const long long ox = std::max(0, std::min(saved.windowX + saved.windowWidth, mx + mw) - std::max(saved.windowX, mx));
+            const long long oy = std::max(0, std::min(saved.windowY + saved.windowHeight, my + mh) - std::max(saved.windowY, my));
+            if (ox * oy > bestOverlap) {
+                bestOverlap = ox * oy;
+                best = monitors[i];
+            }
+        }
+        if (best) {
+            ui::WindowRect area;
+            glfwGetMonitorWorkarea(best, &area.x, &area.y, &area.w, &area.h);
+            ui::WindowRect rect;
+            if (ui::restoreWindowRect(saved, area, kMinWidth, kMinHeight, rect, placeWindow)) {
+                windowWidth = rect.w;
+                windowHeight = rect.h;
+                windowX = rect.x;
+                windowY = rect.y;
+            }
+        }
+    }
+
+    GLFWwindow *window = glfwCreateWindow(windowWidth, windowHeight, "ImShark", nullptr, nullptr);
     if (window == nullptr) {
         glfwTerminate();
         std::cerr << "Failed to create GLFW window" << std::endl;
         return EXIT_FAILURE;
     }
-    glfwSetWindowSizeLimits(window, 640, 400, GLFW_DONT_CARE, GLFW_DONT_CARE);
+    if (placeWindow) glfwSetWindowPos(window, windowX, windowY);
+    glfwSetWindowSizeLimits(window, kMinWidth, kMinHeight, GLFW_DONT_CARE, GLFW_DONT_CARE);
     glfwMakeContextCurrent(window);
     glfwSwapInterval(1); // Enable vsync
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
-    ImGui::StyleColorsDark();
     ImGui::GetIO().IniFilename = nullptr; // do not litter the working directory with imgui.ini
+    {
+        // Crisp text on scaled displays: the backend already covers the framebuffer scale (Retina), the window system
+        // scale on top of it (Windows/Linux) is applied through the style's font scale and sizes.
+        float contentScaleX = 1.0f, contentScaleY = 1.0f;
+        glfwGetWindowContentScale(window, &contentScaleX, &contentScaleY);
+        int logicalWidth = 0, framebufferWidth = 0, unused = 0;
+        glfwGetWindowSize(window, &logicalWidth, &unused);
+        glfwGetFramebufferSize(window, &framebufferWidth, &unused);
+        const float framebufferScale = logicalWidth > 0 ? static_cast<float>(framebufferWidth) / logicalWidth : 1.0f;
+        ui::setDpiScale(framebufferScale > 0.0f ? contentScaleX / framebufferScale : 1.0f);
+        ImFontConfig fontConfig;
+        fontConfig.SizePixels = 14.0f;
+        ImGui::GetIO().Fonts->AddFontDefaultVector(&fontConfig);
+    }
 
     if (!ImGui_ImplGlfw_InitForOpenGL(window, true)) {
         std::cerr << "Failed to initialize the ImGui GLFW backend" << std::endl;
@@ -155,6 +204,21 @@ int main(int argc, char **argv) {
         if (glfwGetWindowAttrib(window, GLFW_ICONIFIED)) glfwWaitEventsTimeout(0.1);
     }
 
+    // Remember the window geometry (not while minimized or maximized: those sizes are not the user's own)
+    if (!glfwGetWindowAttrib(window, GLFW_ICONIFIED) && !glfwGetWindowAttrib(window, GLFW_MAXIMIZED)) {
+        int w = 0, h = 0, x = 0, y = 0;
+        glfwGetWindowSize(window, &w, &h);
+        glfwGetWindowPos(window, &x, &y);
+        if (w > 0 && h > 0 && (w != state.settings.windowWidth || h != state.settings.windowHeight || !state.settings.hasWindowPos ||
+                               x != state.settings.windowX || y != state.settings.windowY)) {
+            state.settings.windowWidth = w;
+            state.settings.windowHeight = h;
+            state.settings.windowX = x;
+            state.settings.windowY = y;
+            state.settings.hasWindowPos = true;
+            state.settingsDirty = true;
+        }
+    }
     ui::saveSettingsIfDirty(state);
 
     ImGui_ImplOpenGL3_Shutdown();

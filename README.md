@@ -1,5 +1,7 @@
 # ImShark
 
+**English** | [Türkçe](README.tr.md)
+
 [![CI](https://github.com/Zaryob/imshark/actions/workflows/ci.yml/badge.svg?branch=master)](https://github.com/Zaryob/imshark/actions/workflows/ci.yml)
 [![Release workflow](https://github.com/Zaryob/imshark/actions/workflows/release.yml/badge.svg)](https://github.com/Zaryob/imshark/actions/workflows/release.yml)
 [![Latest release](https://img.shields.io/github/v/release/Zaryob/imshark?include_prereleases&sort=semver)](https://github.com/Zaryob/imshark/releases)
@@ -7,35 +9,44 @@
 [![C++20](https://img.shields.io/badge/C%2B%2B-20-00599C.svg)](CMakeLists.txt)
 ![Platforms](https://img.shields.io/badge/platforms-Linux%20%7C%20macOS%20%7C%20Windows-lightgrey)
 
-[Dear ImGui](https://github.com/ocornut/imgui) ile geliştirilmiş, Wireshark'tan esinlenen bir paket analizörü. Yakalama dosyalarını açar, protokolleri ayrıştırır ve paket listesini etkileşimli protokol ağacı ile hex/ASCII görünümüyle bir araya getirir. libpcap üzerinden canlı yakalama da desteklenir.
+A Wireshark-inspired packet analyzer built with [Dear ImGui](https://github.com/ocornut/imgui). It opens capture files, dissects protocols and combines the packet list with an interactive protocol tree and a hex/ASCII view. Live capture through libpcap is supported as well.
 
-![Linux üzerinde ImShark: paket listesi, protokol ağacı ve hex/ASCII görünümü](docs/images/imshark-linux.png)
+![ImShark on macOS: dark theme, a selected HTTP packet, protocol tree and hex view](docs/images/imshark-macos.png)
 
-*Ubuntu 24.04 Docker ortamında, Mesa yazılım OpenGL ile açılan gerçek uygulama. Görsel, depodaki sentetik `sample.pcap` dosyasından alınmıştır. [Tekrarlanabilir doğrulama](docs/VALIDATION.md).*
+*Native build on macOS (Apple Silicon); the image shows the synthetic `sample.pcap` from the repository.*
 
-## Neler yapar?
+<details><summary>Linux (Docker, software OpenGL) — before the UI refresh</summary>
 
-- **Yakalama dosyaları:** pcap ve pcapng; gzip sıkıştırılmış dosyalar; Sun snoop, NetMon 2.x, Endace ERF ve AIX iptrace 2.0 okuyucuları.
-- **Paket inceleme:** sıralanabilir ve renklendirilebilir liste, alanlarla eşleşen bayt vurgulama, metin/hex arama ve kopyalama.
-- **Görüntüleme filtreleri:** protokol ve alan sorguları, CIDR, kümeler ve düzenli ifadeler; yazarken doğrulama ve alan başvurusu.
-- **Akış ve istatistikler:** TCP/UDP Follow Stream, TCP ve IP yeniden birleştirme, konuşmalar, uç noktalar, protokol hiyerarşisi ve Expert Information.
-- **TLS/DTLS:** anahtar günlüğü veya pcapng gömülü anahtarlarıyla desteklenen TLS 1.2/1.3 ve DTLS 1.2 şifre takımlarını çözme.
-- **Dışa aktarma:** tüm, görüntülenen veya seçili paketleri pcap, pcapng, CSV ve JSON; akış verisini ham bayt olarak kaydetme.
-- **Canlı yakalama:** arayüz seçimi, BPF filtresi, snaplen, promiscuous mode ve başlat/durdur/yeniden başlat.
+![ImShark on Linux: packet list, protocol tree and hex/ASCII view](docs/images/imshark-linux.png)
 
-Ethernet, kablosuz, IP, DNS, HTTP, TLS, kurumsal ağ, veritabanı, USB ve Bluetooth protokolleri için ayrıntılı kapsam [destek matrisinde](docs/SUPPORT_MATRIX.md). Protokolün tanınması bütün alanlarının çözülmesi anlamına gelmez; [bilinen sınırlar](docs/KNOWN_ISSUES.md) hangi verilerin çözülemediğini açıklar.
+*The real application started in Ubuntu 24.04 Docker with Mesa software OpenGL. [Reproducible validation](docs/VALIDATION.md).*
 
-## İndir
+</details>
 
-9 Ekim 2026 public envanter denetiminde [GitHub Releases](https://github.com/Zaryob/imshark/releases) listesinde yayımlanmış sürüm veya hazır binary bulunmuyordu. Şimdilik aşağıdaki kaynak derleme adımlarını kullanın. Depodaki paketleme süreci Linux x86_64 için AppImage, DEB ve tar.gz; macOS Apple Silicon için DMG; Windows x86_64 için ZIP ve `SHA256SUMS.txt` üretmeyi hedefler. Bunlar indirmeye hazır, doğrulanmış paketlerin mevcut olduğu anlamına gelmez. macOS paketleme adımı Developer ID imzası/notarization içermez; Windows varsayılanı canlı yakalama içermez.
+## What it does
 
-Sürümleme henüz `v1.x` aşamasına geçmemiştir; sürümler `v0.x.y` serisi üzerinden SemVer ile ilerler (`v0.8.x` → `v0.9.x` → `v0.10.x` ...). Yayın iş akışı `vMAJOR.MINOR.PATCH` tag'iyle tetiklenir ve başarılı platform doğrulamalarından sonra paket yüklemeyi hedefler. [İncelenen yayın denemesi](https://github.com/Zaryob/imshark/actions/runs/37850000156) başarısızdı; Windows derleme ve Linux debug SCTP testi sorunları [yayın backlog'unda](https://github.com/Zaryob/imshark/issues/2) izleniyor. Yerel test sonuçları ve kapsamı [portföy doğrulama kaydında](docs/PORTFOLIO_VALIDATION.md).
+- **Capture files:** pcap and pcapng; gzip-compressed files; readers for Sun snoop, NetMon 2.x, Endace ERF and AIX iptrace 2.0.
+- **Packet inspection:** sortable, colorized list, byte highlighting for the selected field, text/hex search and copy.
+- **Display filters:** protocol and field queries, CIDR, sets and regular expressions; validation while typing and a field reference.
+- **Streams and statistics:** TCP/UDP Follow Stream, TCP and IP reassembly, conversations, endpoints, protocol hierarchy and Expert Information.
+- **TLS/DTLS:** decryption of supported TLS 1.2/1.3 and DTLS 1.2 cipher suites with a key log file or keys embedded in pcapng.
+- **Export:** all, displayed or selected packets as pcap, pcapng, CSV and JSON; stream data as raw bytes.
+- **Live capture:** interface selection, BPF filter, snaplen, promiscuous mode and start/stop/restart.
+- **Interface:** dark and light themes, a welcome screen with recent files, a toolbar and resizable panes; the window size and position are remembered.
 
-## Hızlı başlangıç
+Detailed coverage for Ethernet, wireless, IP, DNS, HTTP, TLS, enterprise, database, USB and Bluetooth protocols is in the [support matrix](docs/SUPPORT_MATRIX.md). Recognizing a protocol does not mean every field is decoded; the [known issues](docs/KNOWN_ISSUES.md) list what is not.
 
-Dear ImGui **[1.92.9b](https://github.com/ocornut/imgui/releases/tag/v1.92.9b)** ve GLFW/OpenGL3 backend’leri vcpkg üzerinden kurulur.
+## Download
 
-C++20 derleyici, CMake ≥ 3.21, Ninja, Git ve önyüklenmiş [vcpkg](https://github.com/microsoft/vcpkg) gerekir. `VCPKG_ROOT` vcpkg dizinini göstermelidir. Varsayılan derlemenin üçüncü taraf C/C++ kütüphaneleri sürümü sabitlenmiş vcpkg manifestinden kurulur; platform ön koşulları ve Windows'ta isteğe bağlı Npcap kurulumu için [derleme rehberine](docs/BUILDING.md) bakın.
+There are no published releases or prebuilt binaries on [GitHub Releases](https://github.com/Zaryob/imshark/releases) yet; build from source with the steps below for now. The release workflow produces an AppImage, DEB and tar.gz for Linux x86_64, a DMG for macOS Apple Silicon, a ZIP for Windows x86_64 and `SHA256SUMS.txt`, and publishes them only when every platform check passes. The macOS package is not Developer ID signed or notarized; the default Windows build has no live capture.
+
+Versions follow SemVer in the `v0.x.y` series (`v0.8.x` → `v0.9.x` → `v0.10.x` ...); the release workflow is triggered by a `vMAJOR.MINOR.PATCH` tag. The `v0.9.0` tag produced no packages because of a Windows (MSVC) test build failure; `v0.9.1` is the first published 0.9 release. Remaining release checks are tracked in the [release backlog](https://github.com/Zaryob/imshark/issues/2); local test results are in the [portfolio validation record](docs/PORTFOLIO_VALIDATION.md).
+
+## Quick start
+
+Dear ImGui **[1.92.9b](https://github.com/ocornut/imgui/releases/tag/v1.92.9b)** and its GLFW/OpenGL3 backends are installed through vcpkg.
+
+You need a C++20 compiler, CMake ≥ 3.21, Ninja, Git and a bootstrapped [vcpkg](https://github.com/microsoft/vcpkg), with `VCPKG_ROOT` pointing at it. The third-party C/C++ libraries of the default build come from the version-pinned vcpkg manifest; see the [build guide](docs/BUILDING.md) for platform prerequisites and the optional Npcap setup on Windows.
 
 ```sh
 cmake --preset default
@@ -43,7 +54,7 @@ cmake --build --preset default
 ctest --preset default
 ```
 
-Örnek yakalamayı açın:
+Open the sample capture:
 
 ```sh
 # Linux
@@ -56,11 +67,11 @@ ctest --preset default
 .\build\imshark.exe tests/data/sample.pcap
 ```
 
-`imshark --help` komut satırı seçeneklerini gösterir; `--version` ekran sunucusu olmadan çalışır.
+`imshark --help` lists the command-line options; `--version` works without a display server.
 
-Dosya seçici için **File > Open** (Ctrl+O; macOS'ta Cmd+O) kullanın veya bir dosyayı pencereye bırakın. Örnek dosyayı `python3 tools/make_sample_pcap.py` ile yeniden üretebilirsiniz.
+Use **File > Open** (Ctrl+O; Cmd+O on macOS) for the file picker, or drop a file on the window. `python3 tools/make_sample_pcap.py` regenerates the sample file.
 
-Örnek görüntüleme filtreleri:
+Example display filters:
 
 ```text
 tcp.port in {80 443} && !tcp.flags.rst
@@ -69,21 +80,23 @@ dns or arp
 tls.decrypted
 ```
 
-## Belgeler
+## Documentation
 
-| İhtiyacınız | Belge |
+| You need | Document |
 |---|---|
-| Platform ön koşulları, vcpkg, test ve Docker doğrulaması | [Derleme rehberi](docs/BUILDING.md) |
-| Çalıştırılan kontroller ve paket doğrulama kanıtı | [Doğrulama kaydı](docs/VALIDATION.md) |
-| Arayüz, filtreler, akışlar ve canlı yakalama | [Kullanım rehberi](docs/USER_GUIDE.md) |
-| Kabul edilen görüntüleme filtresi alanları | [Üretilen alan başvurusu](docs/FILTER_FIELDS.md) |
-| Dosya/link/protokol desteği | [Destek matrisi](docs/SUPPORT_MATRIX.md) |
-| Protokol belirtimleri ve uygulama dosyaları | [Protokol referansları](docs/PROTOCOLS.md) |
-| İşlevsel sınırlar ve doğrulama boşlukları | [Bilinen sorunlar](docs/KNOWN_ISSUES.md) |
-| Veri akışı ve modüller | [Mimari](docs/ARCHITECTURE.md) |
-| Geliştirme ve yeni dissector ekleme | [Katkı rehberi](CONTRIBUTING.md), [dissector rehberi](docs/DISSECTORS.md) |
-| Sonraki öncelikler | [Yol haritası](ROADMAP.md) |
+| Platform prerequisites, vcpkg, tests and Docker validation | [Build guide](docs/BUILDING.md) |
+| Checks that were run and package validation evidence | [Validation record](docs/VALIDATION.md) |
+| Interface, filters, streams and live capture | [User guide](docs/USER_GUIDE.md) |
+| Accepted display filter fields | [Generated field reference](docs/FILTER_FIELDS.md) |
+| File/link/protocol support | [Support matrix](docs/SUPPORT_MATRIX.md) |
+| Protocol specifications and implementation files | [Protocol references](docs/PROTOCOLS.md) |
+| Functional limits and validation gaps | [Known issues](docs/KNOWN_ISSUES.md) |
+| Data flow and modules | [Architecture](docs/ARCHITECTURE.md) |
+| Development and adding a dissector | [Contributing](CONTRIBUTING.md), [dissector guide](docs/DISSECTORS.md) |
+| Next priorities | [Roadmap](ROADMAP.md) |
 
-## Lisans
+The architecture notes, known issues, portfolio validation record and roadmap are written in Turkish.
 
-[GPL-3.0](LICENSE). vcpkg ile getirilen bağımlılıklar kendi lisanslarına tabidir. Paketleme adımı bu bağımlılıkların lisans bildirimlerini dağıtıma ekler.
+## License
+
+[GPL-3.0](LICENSE). Dependencies fetched through vcpkg are under their own licenses; the packaging step adds their license notices to the distribution.

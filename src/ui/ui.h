@@ -46,6 +46,26 @@ namespace ui {
     // chrome.cpp: menu bar, file dialog, status bar and the load error popup
     void drawMenuAndDialogs(AppState &state);
     void drawStatusBar(const AppState &state);
+    /// Opens the "Open capture file" dialog (File > Open, Ctrl+O, toolbar, welcome panel).
+    void openCaptureDialog();
+
+    /// The text of the status bar, by segment. Empty strings are not drawn.
+    struct StatusSegments {
+        std::string left;          // loading progress, live capture status or the file name
+        std::string leftTooltip;   // full path of the file
+        std::string displayed;     // "Displayed: X / Y"
+        std::string selected;      // "Selected: #N"
+        std::string filter;        // the applied display filter expression
+        std::string error;         // live capture error (red)
+        std::string message;       // load message (red for a failure, amber for a warning)
+    };
+    StatusSegments statusSegments(const AppState &state);
+
+    /// Which toolbar buttons are usable (the same rules as the menus).
+    struct ToolbarEnabled {
+        bool open, close, reload, start, stop, restart, find, statistics;
+    };
+    ToolbarEnabled toolbarEnabled(const AppState &state);
     void drawLoadErrorPopup(AppState &state);
     void drawLoadProgressPopup(AppState &state);
     float statusBarHeight();
@@ -163,4 +183,9 @@ namespace ui {
 
     // main_window.cpp
     void drawMainWindow(AppState &state);
+    /// The empty state: no capture open, none loading and no live session.
+    bool welcomeVisible(const AppState &state);
+    void drawWelcome(AppState &state);
+    void drawToolbar(AppState &state);
+    void drawOtherWindows(AppState &state);   // popup windows and dialogs drawn after the main window
 } // namespace ui

@@ -153,14 +153,18 @@ void ui::drawPacketList(AppState &state, float height) {
                     context.ipsec = state.ipsecHeaders();
                     rule = state.colors.match(packet, context);
                 }
-                if (rule) {
-                    const ImU32 bg = IM_COL32((rule->background >> 16) & 0xFF, (rule->background >> 8) & 0xFF, rule->background & 0xFF, 255);
+                const bool selected = state.selectedPacket == i;
+                const bool dark = state.settings.darkTheme;
+                // Rule colors are adapted to the theme at render time; the selected row always uses the selection colors.
+                const bool colored = rule != nullptr || selected;
+                if (colored) {
+                    const RowColors colors = selected ? selectedRowColors(dark) : rowColorsFor(*rule, dark);
+                    const ImU32 bg = IM_COL32((colors.background >> 16) & 0xFF, (colors.background >> 8) & 0xFF, colors.background & 0xFF, 255);
                     ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0, bg);
                     ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg1, bg);
-                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32((rule->foreground >> 16) & 0xFF, (rule->foreground >> 8) & 0xFF, rule->foreground & 0xFF, 255));
+                    ImGui::PushStyleColor(ImGuiCol_Text, IM_COL32((colors.foreground >> 16) & 0xFF, (colors.foreground >> 8) & 0xFF, colors.foreground & 0xFF, 255));
                 }
                 ImGui::TableSetColumnIndex(0);
-                const bool selected = state.selectedPacket == i;
                 if (ImGui::Selectable(std::to_string(packet.number).c_str(), selected, ImGuiSelectableFlags_SpanAllColumns)) {
                     state.selectPacket(i);
                 }
@@ -193,7 +197,7 @@ void ui::drawPacketList(AppState &state, float height) {
                 ImGui::Text("%u", packet.frame_length);
                 ImGui::TableSetColumnIndex(6);
                 ImGui::TextUnformatted(packet.info.c_str());
-                if (rule) ImGui::PopStyleColor();
+                if (colored) ImGui::PopStyleColor();
             }
         }
         state.scrollToSelection = false;

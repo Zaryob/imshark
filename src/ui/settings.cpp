@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <charconv>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -58,6 +59,23 @@ ui::Settings ui::loadSettings(const std::string &path) {
                 const float h = std::stof(value, &consumed);
                 if (consumed == value.size() && h >= 50.0f && h <= 5000.0f) settings.listHeight = h;
             } catch (...) { /* damaged value: keep the default */ }
+        } else if (key == "toolbar") {
+            settings.showToolbar = value != "0";
+        } else if (key == "window_size") {
+            int w = 0, h = 0;
+            char tail = 0;
+            if (std::sscanf(value.c_str(), "%dx%d%c", &w, &h, &tail) == 2 && w > 0 && h > 0 && w <= 100000 && h <= 100000) {
+                settings.windowWidth = w;
+                settings.windowHeight = h;
+            }
+        } else if (key == "window_pos") {
+            int x = 0, y = 0;
+            char tail = 0;
+            if (std::sscanf(value.c_str(), "%d,%d%c", &x, &y, &tail) == 2 && std::abs(x) <= 1000000 && std::abs(y) <= 1000000) {
+                settings.windowX = x;
+                settings.windowY = y;
+                settings.hasWindowPos = true;
+            }
         } else if (key == "tls_keylog") {
             settings.tlsKeyLogFile = value;
         } else if (key == "esp_null") {
@@ -94,6 +112,9 @@ bool ui::saveSettings(const Settings &settings, const std::string &path) {
     out << "time_format=" << timeFormatKey(settings.timeFormat) << "\n";
     out << "colorize=" << (settings.colorize ? 1 : 0) << "\n";
     out << "list_height=" << settings.listHeight << "\n";
+    out << "toolbar=" << (settings.showToolbar ? 1 : 0) << "\n";
+    if (settings.windowWidth > 0 && settings.windowHeight > 0) out << "window_size=" << settings.windowWidth << "x" << settings.windowHeight << "\n";
+    if (settings.hasWindowPos) out << "window_pos=" << settings.windowX << "," << settings.windowY << "\n";
     // one line per value: a line break in the filter text would corrupt the file
     auto oneLine = [](std::string text) {
         for (char &c: text) if (c == '\n' || c == '\r') c = ' ';
@@ -125,4 +146,19 @@ void ui::addFilterHistory(Settings &settings, const std::string &filterText) {
     h.erase(std::remove(h.begin(), h.end(), filterText), h.end());
     h.insert(h.begin(), filterText);
     if (h.size() > Settings::kMaxFilterHistory) h.resize(Settings::kMaxFilterHistory);
+}
+
+bool ui::restoreWindowRect(const Settings &settings, const WindowRect &workArea, int minW, int minH, WindowRect &out, bool &hasPos) {
+    hasPos = false;
+    if (settings.windowWidth <= 0 || settings.windowHeight <= 0 || workArea.w <= 0 || workArea.h <= 0) return false;
+    out.w = std::min(std::max(settings.windowWidth, minW), std::max(workArea.w, minW));
+    out.h = std::min(std::max(settings.windowHeight, minH), std::max(workArea.h, minH));
+    out.x = settings.windowX;
+    out.y = settings.windowY;
+    if (settings.hasWindowPos) {
+        hasPos = true;
+        out.x = std::max(workArea.x, std::min(out.x, workArea.x + workArea.w - out.w));
+        out.y = std::max(workArea.y, std::min(out.y, workArea.y + workArea.h - out.h));
+    }
+    return true;
 }

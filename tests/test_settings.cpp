@@ -169,3 +169,73 @@ TEST(Settings, HistoryCannotInjectOtherSettings) {
     EXPECT_TRUE(settings.filterHistory.empty());
     std::filesystem::remove_all(std::filesystem::path(path).parent_path());
 }
+
+TEST(Settings, ToolbarAndWindowGeometryRoundTrip) {
+    const auto path = tempPath("geometry");
+    const ui::Settings defaults;
+    EXPECT_TRUE(defaults.showToolbar);
+    EXPECT_FALSE(defaults.hasWindowPos);
+    EXPECT_EQ(defaults.windowWidth, 0);
+
+    ui::Settings s;
+    s.showToolbar = false;
+    s.windowWidth = 1500;
+    s.windowHeight = 900;
+    s.windowX = -1200; // a monitor to the left of the primary one
+    s.windowY = 40;
+    s.hasWindowPos = true;
+    ASSERT_TRUE(ui::saveSettings(s, path));
+    const auto loaded = ui::loadSettings(path);
+    EXPECT_FALSE(loaded.showToolbar);
+    EXPECT_EQ(loaded.windowWidth, 1500);
+    EXPECT_EQ(loaded.windowHeight, 900);
+    EXPECT_EQ(loaded.windowX, -1200);
+    EXPECT_EQ(loaded.windowY, 40);
+    EXPECT_TRUE(loaded.hasWindowPos);
+    std::filesystem::remove_all(std::filesystem::path(path).parent_path());
+}
+
+TEST(Settings, InvalidWindowGeometryIsIgnored) {
+    const auto path = tempPath("badgeometry");
+    std::filesystem::create_directories(std::filesystem::path(path).parent_path());
+    {
+        std::ofstream f(path);
+        f << "window_size=0x0\nwindow_size=abc\nwindow_size=-5x300\nwindow_pos=1;2\nwindow_pos=x,y\nwindow_size=800x600junk\n";
+    }
+    const auto s = ui::loadSettings(path);
+    EXPECT_EQ(s.windowWidth, 0);
+    EXPECT_EQ(s.windowHeight, 0);
+    EXPECT_FALSE(s.hasWindowPos);
+    std::filesystem::remove_all(std::filesystem::path(path).parent_path());
+}
+
+TEST(Settings, RestoredWindowIsClampedToTheWorkArea) {
+    const ui::WindowRect area{0, 25, 1920, 1055};
+    ui::Settings s;
+    ui::WindowRect out;
+    bool hasPos = true;
+    EXPECT_FALSE(ui::restoreWindowRect(s, area, 640, 400, out, hasPos)) << "nothing saved";
+    EXPECT_FALSE(hasPos);
+
+    s.windowWidth = 1000;
+    s.windowHeight = 700;
+    EXPECT_TRUE(ui::restoreWindowRect(s, area, 640, 400, out, hasPos));
+    EXPECT_FALSE(hasPos) << "size only";
+    EXPECT_EQ(out.w, 1000);
+    EXPECT_EQ(out.h, 700);
+
+    s.hasWindowPos = true;
+    s.windowX = 5000; // monitor that is gone
+    s.windowY = -300;
+    EXPECT_TRUE(ui::restoreWindowRect(s, area, 640, 400, out, hasPos));
+    EXPECT_TRUE(hasPos);
+    EXPECT_EQ(out.x, 920);
+    EXPECT_EQ(out.y, 25);
+
+    s.windowWidth = 9000; // larger than the screen
+    s.windowHeight = 10;  // smaller than the minimum
+    EXPECT_TRUE(ui::restoreWindowRect(s, area, 640, 400, out, hasPos));
+    EXPECT_EQ(out.w, 1920);
+    EXPECT_EQ(out.h, 400);
+    EXPECT_EQ(out.x, 0);
+}

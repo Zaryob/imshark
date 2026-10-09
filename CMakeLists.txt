@@ -27,7 +27,7 @@ if(IMSHARK_LIVE_CAPTURE)
     list(APPEND VCPKG_MANIFEST_FEATURES live-capture)
 endif()
 
-project(imshark VERSION 0.9.0 LANGUAGES CXX)
+project(imshark VERSION 0.9.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -94,6 +94,7 @@ add_library(imshark_ui STATIC
     src/ui/preferences.cpp
     src/ui/settings.cpp
     src/ui/stats_windows.cpp
+    src/ui/theme.cpp
     src/ui/time_format.cpp
 )
 target_include_directories(imshark_ui PUBLIC src)
@@ -144,7 +145,7 @@ if(APPLE)
         MACOSX_BUNDLE_BUNDLE_NAME "ImShark"
         MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
         MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
-        MACOSX_BUNDLE_IDENTIFIER "com.imshark.app"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "com.imshark.app"
         MACOSX_BUNDLE_COPYRIGHT "GPL-3.0"
     )
 endif()
