@@ -4,7 +4,7 @@ ImShark uses C++20, CMake 3.21 or newer, Ninja and vcpkg manifest mode. Set `VCP
 
 ## Platform prerequisites
 
-vcpkg builds the C/C++ libraries: Dear ImGui with the GLFW/OpenGL3 backends, ImGuiFileDialog, GLFW, GoogleTest, OpenSSL and libpcap on supported platforms. The operating system still supplies the compiler, window-system development headers and graphics driver.
+vcpkg builds the C/C++ libraries: Dear ImGui with the GLFW/OpenGL3 backends, ImGuiFileDialog, GLFW, GoogleTest, OpenSSL and libpcap on supported platforms, and provides stb for embedded PNG images. The operating system still supplies the compiler, window-system development headers and graphics driver.
 
 ### macOS
 

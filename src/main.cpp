@@ -15,8 +15,53 @@
 #include "ui/theme.h"
 #include "ui/ui.h"
 #include "version.h"
+#include "brand_assets.h"
+
+#define STB_IMAGE_IMPLEMENTATION
+#define STBI_ONLY_PNG
+#define STBI_NO_STDIO
+#include <stb_image.h>
 
 namespace {
+    GLuint loadLogoTexture() {
+        int width = 0, height = 0, channels = 0;
+        unsigned char *pixels = stbi_load_from_memory(brand::kLogoPng, static_cast<int>(sizeof(brand::kLogoPng)),
+                                                     &width, &height, &channels, STBI_rgb_alpha);
+        if (!pixels) {
+            std::cerr << "Cannot decode the embedded logo: " << stbi_failure_reason() << std::endl;
+            return 0;
+        }
+        GLint previousTexture = 0;
+        glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousTexture);
+        GLuint texture = 0;
+        glGenTextures(1, &texture);
+        glBindTexture(GL_TEXTURE_2D, texture);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+        glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previousTexture));
+        stbi_image_free(pixels);
+        return texture;
+    }
+
+    void setWindowIcon(GLFWwindow *window) {
+#ifndef __APPLE__
+        // macOS uses the .icns resource in the application bundle; GLFW supplies Windows/Linux title-bar icons.
+        int channels = 0;
+        GLFWimage icon{};
+        icon.pixels = stbi_load_from_memory(brand::kIconPng, static_cast<int>(sizeof(brand::kIconPng)),
+                                           &icon.width, &icon.height, &channels, STBI_rgb_alpha);
+        if (icon.pixels) {
+            glfwSetWindowIcon(window, 1, &icon);
+            stbi_image_free(icon.pixels);
+        }
+#else
+        (void) window;
+#endif
+    }
+
     std::string captureWindowTitle(const ui::AppState &state) {
         if (state.displayName.empty()) return "ImShark";
         std::string name = state.displayName;
@@ -113,6 +158,7 @@ int main(int argc, char **argv) {
         std::cerr << "Failed to create GLFW window" << std::endl;
         return EXIT_FAILURE;
     }
+    setWindowIcon(window);
     if (placeWindow) glfwSetWindowPos(window, windowX, windowY);
     glfwSetWindowSizeLimits(window, kMinWidth, kMinHeight, GLFW_DONT_CARE, GLFW_DONT_CARE);
     glfwMakeContextCurrent(window);
@@ -152,6 +198,8 @@ int main(int argc, char **argv) {
         return EXIT_FAILURE;
     }
 
+    const GLuint logoTexture = loadLogoTexture();
+    const ImTextureRef logo(static_cast<ImTextureID>(logoTexture));
     ui::AppState state;
     ui::initSettings(state, ui::defaultSettingsPath());
     ui::applyTheme(state.settings.darkTheme);
@@ -185,7 +233,7 @@ int main(int argc, char **argv) {
             glfwSetWindowTitle(window, windowTitle.c_str());
         }
         ui::drawMenuAndDialogs(state);
-        ui::drawMainWindow(state);
+        ui::drawMainWindow(state, logo);
         ui::drawStatusBar(state);
         ui::drawLoadErrorPopup(state);
         ui::drawLoadProgressPopup(state);
@@ -221,6 +269,7 @@ int main(int argc, char **argv) {
     }
     ui::saveSettingsIfDirty(state);
 
+    if (logoTexture) glDeleteTextures(1, &logoTexture);
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();

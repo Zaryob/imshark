@@ -115,7 +115,19 @@ if(GIT_FOUND AND EXISTS "${CMAKE_SOURCE_DIR}/.git")
 endif()
 configure_file(src/version.h.in "${CMAKE_BINARY_DIR}/generated/version.h" @ONLY)
 
+# Embed the PNGs so branding also works from an arbitrary working directory and in installed packages.
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/resources/welcome-logo.png"
+    "${CMAKE_CURRENT_SOURCE_DIR}/resources/imshark.png")
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/resources/welcome-logo.png" _logo_hex HEX)
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/resources/imshark.png" _icon_hex HEX)
+string(REGEX REPLACE "(..)" "0x\\1," IMSHARK_LOGO_BYTES "${_logo_hex}")
+string(REGEX REPLACE "(..)" "0x\\1," IMSHARK_ICON_BYTES "${_icon_hex}")
+configure_file(src/brand_assets.h.in "${CMAKE_BINARY_DIR}/generated/brand_assets.h" @ONLY)
+
 add_executable(imshark src/main.cpp)
+find_package(Stb REQUIRED)
+target_include_directories(imshark PRIVATE ${Stb_INCLUDE_DIR})
 target_include_directories(imshark PRIVATE "${CMAKE_BINARY_DIR}/generated")
 target_link_libraries(imshark PRIVATE imshark_ui)
 if(APPLE)
@@ -145,9 +157,16 @@ if(APPLE)
         MACOSX_BUNDLE_BUNDLE_NAME "ImShark"
         MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
         MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
-        MACOSX_BUNDLE_GUI_IDENTIFIER "com.imshark.app"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "io.github.zaryob.imshark"
+        MACOSX_BUNDLE_ICON_FILE "imshark.icns"
         MACOSX_BUNDLE_COPYRIGHT "GPL-3.0"
     )
+    target_sources(imshark PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/resources/imshark.icns")
+    set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/resources/imshark.icns" PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+elseif(WIN32)
+    enable_language(RC)
+    target_sources(imshark PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/resources/imshark.rc")
+    target_include_directories(imshark PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/resources")
 endif()
 
 # The install rule must come after MACOSX_BUNDLE is set on the target: CMake decides RUNTIME vs BUNDLE when install()
@@ -164,6 +183,10 @@ if(WIN32)
     include(InstallRequiredSystemLibraries)
 else()
     install(TARGETS imshark RUNTIME DESTINATION bin BUNDLE DESTINATION .)
+endif()
+if(UNIX AND NOT APPLE)
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/resources/imshark.desktop" DESTINATION share/applications)
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/resources/imshark.png" DESTINATION share/icons/hicolor/256x256/apps)
 endif()
 if(APPLE)
     set(_license_root "imshark.app/Contents/Resources")
