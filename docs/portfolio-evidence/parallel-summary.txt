@@ -1,0 +1,26 @@
+  25/1295 Test   #26: PcapngTimeOffset.IsAddedToTheTimestampsOfItsInterface ......................................***Failed    0.41 sec
+  26/1295 Test   #27: PcapngTimeOffset.NegativeOffsetsAndNoOffset ................................................***Failed    0.26 sec
+  27/1295 Test   #28: PcapngInterfaces.UndefinedInterfaceIsNotGuessedToBeEthernet ................................***Failed    0.23 sec
+  28/1295 Test   #29: PcapngInterfaces.SimplePacketBlocksWithoutAnyInterface .....................................***Failed    0.25 sec
+  29/1295 Test   #30: PcapngInterfaces.InterfacesAreScopedToTheirSection .........................................***Failed    0.41 sec
+  30/1295 Test   #31: PcapngInterfaces.FcsLengthOptionIsInBitsButSmallValuesAreReadAsBytes .......................***Failed    0.29 sec
+  31/1295 Test   #32: PcapngInterfaces.FcsLengthOptionIsUsedPerInterface .........................................***Failed    0.24 sec
+  36/1295 Test   #37: NetMonReader.ReadsFramesThroughTheFrameTableWithTheStartTime ...............................***Failed    0.18 sec
+  37/1295 Test   #38: NetMonReader.FrameTableOrderIsCaptureOrder .................................................***Failed    0.20 sec
+  38/1295 Test   #39: NetMonReader.MapsMacTypesToLinkTypes .......................................................***Failed    0.17 sec
+  41/1295 Test   #42: ErfReader.ReadsLittleEndianFixedPointTimeAndBigEndianHeaderFields ..........................***Failed    0.19 sec
+  42/1295 Test   #41: NetMonReader.TruncationAndMutationSweep ....................................................***Failed    0.33 sec
+  44/1295 Test   #44: ErfReader.MapsRecordTypesToLinkTypes .......................................................***Failed    0.44 sec
+  47/1295 Test   #48: IptraceReader.ReadsRecordsNanosecondsAndInterfaceTypes .....................................***Failed    0.28 sec
+  48/1295 Test   #49: IptraceReader.MapsInterfaceTypesToLinkTypes ................................................***Failed    0.20 sec
+  49/1295 Test   #50: IptraceReader.RefusesVersion1AndStopsAtDamagedRecords ......................................***Failed    0.35 sec
+  50/1295 Test   #51: IptraceReader.TruncationAndMutationSweep ...................................................***Failed    0.33 sec
+ 145/1295 Test  #145: Fragments.FiltersAndStatisticsUnderstandFragments ..........................................***Failed    0.17 sec
+ 169/1295 Test  #170: GzipMemory.DecodesEveryFixtureLikeTheFileVersion ...........................................***Failed    0.32 sec
+ 392/1295 Test  #393: Follow.CapturedHolesAreReportedAsMissingBytes ..............................................***Failed    0.36 sec
+ 393/1295 Test  #392: Follow.OverlappingRetransmissionOnlyAddsTheNewBytes ........................................***Failed    0.38 sec
+ 395/1295 Test  #395: Follow.OtherConnectionsAreNotMixedIn .......................................................***Failed    0.69 sec
+ 399/1295 Test  #399: Follow.ReorderedAndDuplicatedSegmentsReassembleToTheOriginal ...............................***Failed    0.70 sec
+98% tests passed, 23 tests failed out of 1295
+Total Test time (real) = 285.42 sec
+Errors while running CTest
