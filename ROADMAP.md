@@ -1,6 +1,6 @@
 # ImShark yol haritası
 
-Öncelik sırası doğruluk, doğrulanabilirlik ve kullanılabilirliktir. Bu dosya henüz tamamlanmamış işleri tutar; mevcut özelliklerin referansı [destek matrisi](docs/SUPPORT_MATRIX.md), işlevsel sınırların referansı [bilinen sorunlar](docs/KNOWN_ISSUES.md) dosyasıdır. Eski plan başlıkları yayın sürümü değildi; gerçek sürüm `CMakeLists.txt` içindeki `project(... VERSION ...)` değeridir.
+Öncelik sırası doğruluk, doğrulanabilirlik ve kullanılabilirliktir. Bu dosya henüz tamamlanmamış işleri tutar; mevcut özelliklerin referansı [destek matrisi](docs/SUPPORT_MATRIX.md), işlevsel sınırların referansı [bilinen sorunlar](docs/KNOWN_ISSUES.md) dosyasıdır. Sürümleme henüz `v1.x` aşamasına geçmemiştir; sürümler `v0.x.y` serisi üzerinden SemVer ile ilerler (`v0.8.x` → `v0.9.x` → `v0.10.x` ...). Eski taahhüt ve plan notlarındaki tarihsel başlıklar (`v1.1`–`v1.9` gibi) yayın sürümü değildi; gerçek sürüm `CMakeLists.txt` ve `vcpkg.json` içindeki `project(... VERSION ...)` değeridir. `v1.0.0` sürümü yol haritasındaki bağımsız doğrulama, üretici yakalama karşılaştırmaları ve çoklu platform paketleme denetimleri tamamlandığında hedeflenecektir.
 
 ## Doğruluk ve gerçek veri
 
