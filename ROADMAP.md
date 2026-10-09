@@ -33,6 +33,6 @@ Her başlık bağımsız bir çalışma olarak ele alınmalıdır. Protokol adı
 
 - [ ] Windows'ta temiz makinede dosya açma, dışa aktarma ve paket çalıştırma testi; isteğe bağlı Npcap yolunu gerçek aygıtla doğrula.
 - [ ] macOS Developer ID imzası ve noter onayı; Linux/Windows paketlerinin bağımlılık ve lisanslarını temiz makinelerde denetle.
-- [ ] Etiket tetiklemeli release iş akışının gerçek çalışmasını ve üretilen AppImage/DMG/ZIP paketlerini doğrula.
+- [x] Etiket tetiklemeli release iş akışının gerçek çalışmasını ve üretilen AppImage/DMG/ZIP paketlerini doğrula ([v0.9.2](https://github.com/Zaryob/imshark/releases/tag/v0.9.2): bütün platform kontrolleri geçti, SHA256SUMS ve DMG içindeki uygulama sürümü doğrulandı).
 
 Tam Wireshark eşdeğerliği, bütün SampleCaptures koleksiyonunu eksiksiz çözme ve medya çözümü şu anki hedefler arasında değildir. Yeni protokol sayısından önce mevcut çıktının doğruluğu gelir.
