@@ -118,6 +118,8 @@ namespace ui {
     void requestStartCapture(AppState &state);      // Capture > Start / Ctrl+E (opens the dialog if no interface is chosen)
     void requestRestartCapture(AppState &state);
     void requestOpen(AppState &state, const std::string &path);
+    /// Files dropped on the window (GLFW drop callback): the first one is opened like File > Open (same unsaved-capture question).
+    void openDroppedFiles(AppState &state, int count, const char **paths);
     void requestClose(AppState &state);
     void requestQuit(AppState &state);
     enum class UnsavedChoice { Export, Discard, Cancel };

@@ -27,7 +27,7 @@ Her başlık bağımsız bir çalışma olarak ele alınmalıdır. Protokol adı
 - [ ] IP adreslerini sayısal sırala; pencere boyutu/konumu ve Decode As kurallarını kalıcı yap.
 - [ ] Nanosaniyelik yakalamaların dışa aktarımında zaman hassasiyetini koru.
 - [ ] Yeni bağımlılık/dissector sürümlerinden sonra yükleme, filtre ve tepe bellek ölçümünü tekrarla; yöntemi ve ham çıktıyı kaydet.
-- [ ] Menü, sağ tık, sürükle-bırak ve dışa aktarma gibi etkileşimlere daha geniş GUI doğrulaması ekle.
+- [x] Menü, sağ tık, sürükle-bırak ve dışa aktarma gibi etkileşimlere daha geniş GUI doğrulaması ekle.
 
 ## Yayın doğrulaması
 

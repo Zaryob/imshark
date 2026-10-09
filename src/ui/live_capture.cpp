@@ -410,6 +410,9 @@ void ui::requestRestartCapture(AppState &state) {
 }
 
 void ui::requestOpen(AppState &state, const std::string &path) { request(state, {PendingAction::Open, path}); }
+void ui::openDroppedFiles(AppState &state, int count, const char **paths) {
+    if (count > 0 && paths && paths[0]) requestOpen(state, paths[0]);
+}
 void ui::requestClose(AppState &state) { request(state, {PendingAction::Close, {}}); }
 void ui::requestQuit(AppState &state) { request(state, {PendingAction::Quit, {}}); }
 

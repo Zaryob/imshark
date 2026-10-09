@@ -36,6 +36,8 @@ ctest --preset debug
 
 After the final UI/snapshot changes, the Debug ASan/UBSan build also passed all 60 selected `Docs`, `StatsSnapshot` and `UiSmoke` tests in 7.10 seconds. The minimal snapshot check compares every endpoint, conversation and outer protocol layer; descendants of TLS nodes are expected only when the cryptography backend is enabled.
 
+The `UiInteract` tests (`tests/test_ui_interactions.cpp`) drive the real ImGui widgets headless with synthetic mouse and key events: menu bar entries, right-click menus of the packet list, protocol tree and hex view (copy, Follow Stream), dropped files (capture, gzip, missing, non-capture, unsaved live capture) and exports in every range and format with the packet counts read back from the written files.
+
 The final NFS timestamp portability, packet-length comparisons, formatting buffers and HKDF-label changes also passed 211 selected regression tests (209 passed, 2 optional real-capture checks skipped): 6.00 seconds in Release and 41.94 seconds under ASan/UBSan.
 
 Each suite ran serially. The additional minimal-build skips cover decryption-dependent tests. The other skips cover unavailable real captures and tshark, the permission-dependent live loopback test, and fallback tests for disabled backends that do not apply when those backends are enabled. They are not evidence that those optional environments passed.

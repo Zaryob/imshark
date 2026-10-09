@@ -110,7 +110,7 @@ int main(int argc, char **argv) {
     // Dropping a file on the window opens it
     glfwSetWindowUserPointer(window, &state);
     glfwSetDropCallback(window, [](GLFWwindow *w, int count, const char **paths) {
-        if (count > 0) ui::requestOpen(*static_cast<ui::AppState *>(glfwGetWindowUserPointer(w)), paths[0]);
+        ui::openDroppedFiles(*static_cast<ui::AppState *>(glfwGetWindowUserPointer(w)), count, paths);
     });
     // Closing the window asks about an unsaved live capture first; the loop ends when state.quitRequested is set
     glfwSetWindowCloseCallback(window, [](GLFWwindow *w) {
