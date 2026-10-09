@@ -153,6 +153,10 @@ namespace ui {
     void drawCaptureMenu(AppState &state);
     void handleCaptureShortcuts(AppState &state);
     void drawCaptureDialogs(AppState &state);
+    /// Checks if the error message corresponds to an OS permission denial for packet capturing.
+    bool isCapturePermissionError(const std::string &error);
+    /// Requests temporary OS-level packet capture privileges with automatic watchdog cleanup on exit.
+    bool requestEphemeralCapturePrivileges(std::string &errorMessage);
 
     // capture_info_window.cpp
     void drawCaptureInfoWindow(AppState &state);

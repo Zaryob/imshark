@@ -3,7 +3,17 @@
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
+
+#if defined(_WIN32)
+#define WIN32_LEAN_AND_MEAN
+#include <windows.h>
+#include <shellapi.h>
+#else
+#include <climits>
+#include <unistd.h>
+#endif
 
 #include <imgui.h>
 
@@ -192,7 +202,16 @@ namespace {
         ImGui::SetNextWindowSize(ImVec2(820, 520), ImGuiCond_FirstUseEver);
         if (ImGui::Begin("Capture Interfaces", &d.open)) {
             if (!available) ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.45f, 1.0f), "%s", ui::captureUnavailableReason().c_str());
-            else if (!d.interfaces.error.empty()) ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.45f, 1.0f), "%s", d.interfaces.error.c_str());
+            else if (!d.interfaces.error.empty()) {
+                ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.45f, 1.0f), "%s", d.interfaces.error.c_str());
+                if (ui::isCapturePermissionError(d.interfaces.error)) {
+                    ImGui::SameLine();
+                    if (ImGui::SmallButton("Grant Privileges")) {
+                        std::string err;
+                        if (ui::requestEphemeralCapturePrivileges(err)) d.needsRefresh = true;
+                    }
+                }
+            }
             else ImGui::TextDisabled("Select an interface. Capturing needs privileges (macOS: access to /dev/bpf*, Linux: CAP_NET_RAW, Windows: Npcap).");
 
             const float footer = ImGui::GetFrameHeightWithSpacing() * 5.5f + ImGui::GetStyle().ItemSpacing.y * 4;
@@ -317,18 +336,122 @@ namespace {
             l.openError = false;
         }
         if (ImGui::BeginPopupModal("Capture problem", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
-            ImGui::TextWrapped("%s", l.errorIsStop ? "The capture stopped with an error. The packets captured so far are kept."
-                                                   : "The capture could not be started.");
-            ImGui::Separator();
-            ImGui::PushTextWrapPos(ImGui::GetFontSize() * 36.0f);
-            ImGui::TextWrapped("%s", l.error.c_str());
-            ImGui::PopTextWrapPos();
-            ImGui::Spacing();
-            if (ImGui::Button("OK", ImVec2(120, 0))) ImGui::CloseCurrentPopup();
+            const bool perm = !l.errorIsStop && ui::isCapturePermissionError(l.error);
+            if (perm) {
+                ImGui::TextColored(ImVec4(1.0f, 0.75f, 0.2f, 1.0f), "Privilege Elevation Required");
+                ImGui::Separator();
+                ImGui::PushTextWrapPos(ImGui::GetFontSize() * 32.0f);
+                ImGui::TextWrapped("Live packet capture requires elevated privileges (macOS: /dev/bpf*, Linux: CAP_NET_RAW, Windows: Npcap).");
+                ImGui::Spacing();
+                ImGui::TextWrapped("You can grant temporary privileges for this session only. All privileges will automatically expire and be revoked when ImShark closes.");
+                if (!l.elevationError.empty()) {
+                    ImGui::Spacing();
+                    ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "%s", l.elevationError.c_str());
+                }
+                ImGui::PopTextWrapPos();
+                ImGui::Spacing();
+                ImGui::Spacing();
+                if (ImGui::Button("Grant Temporary Privileges", ImVec2(200, 0))) {
+                    std::string err;
+                    if (ui::requestEphemeralCapturePrivileges(err)) {
+                        l.elevationError.clear();
+                        ImGui::CloseCurrentPopup();
+                        ui::startCapture(state, l.options);
+                    } else {
+                        l.elevationError = err.empty() ? "Authorization was denied." : err;
+                    }
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Cancel", ImVec2(140, 0))) {
+                    l.elevationError.clear();
+                    ImGui::CloseCurrentPopup();
+                }
+            } else {
+                ImGui::TextWrapped("%s", l.errorIsStop ? "The capture stopped with an error. The packets captured so far are kept."
+                                                       : "The capture could not be started.");
+                ImGui::Separator();
+                ImGui::PushTextWrapPos(ImGui::GetFontSize() * 36.0f);
+                ImGui::TextWrapped("%s", l.error.c_str());
+                ImGui::PopTextWrapPos();
+                ImGui::Spacing();
+                if (ImGui::Button("OK", ImVec2(120, 0))) ImGui::CloseCurrentPopup();
+            }
             ImGui::EndPopup();
         }
     }
 } // namespace
+
+bool ui::isCapturePermissionError(const std::string &err) {
+    return err.find("ermission") != std::string::npos ||
+           err.find("not permitted") != std::string::npos ||
+           err.find("/dev/bpf") != std::string::npos ||
+           err.find("CAP_NET_RAW") != std::string::npos;
+}
+
+bool ui::requestEphemeralCapturePrivileges(std::string &errorMessage) {
+#if defined(__APPLE__)
+    const pid_t pid = getpid();
+    // Ephemeral elevation on macOS:
+    // 1. Grants read/write to /dev/bpf*
+    // 2. Starts a root background watchdog loop tied to this ImShark PID.
+    // 3. When this PID exits (cleanly, by crash, or SIGKILL), the watchdog restores /dev/bpf* to 600.
+    const std::string inner = "chmod 666 /dev/bpf* && (while kill -0 " + std::to_string(pid) +
+                              " 2>/dev/null; do sleep 1; done; chmod 600 /dev/bpf*) >/dev/null 2>&1 &";
+    const std::string appleScript = "do shell script \"" + inner + "\" with administrator privileges";
+    const std::string cmd = "osascript -e '" + appleScript + "' 2>&1";
+    const int ret = std::system(cmd.c_str());
+    if (ret != 0) {
+        errorMessage = "Administrator authorization was denied or cancelled.";
+        return false;
+    }
+    return true;
+#elif defined(__linux__)
+    const pid_t pid = getpid();
+    char exePath[PATH_MAX] = {0};
+    const ssize_t len = readlink("/proc/self/exe", exePath, sizeof(exePath) - 1);
+    if (len <= 0) {
+        errorMessage = "Could not resolve executable path from /proc/self/exe";
+        return false;
+    }
+    exePath[len] = '\0';
+    // Ephemeral elevation on Linux via pkexec:
+    // 1. Gives CAP_NET_RAW and CAP_NET_ADMIN to this binary.
+    // 2. Starts a root watchdog that strips capabilities (setcap -r) as soon as this PID exits.
+    const std::string inner = "setcap cap_net_raw,cap_net_admin=eip \"" + std::string(exePath) +
+                              "\" && (while kill -0 " + std::to_string(pid) +
+                              " 2>/dev/null; do sleep 1; done; setcap -r \"" + std::string(exePath) + "\") >/dev/null 2>&1 &";
+    const std::string cmd = "pkexec bash -c '" + inner + "' 2>&1";
+    const int ret = std::system(cmd.c_str());
+    if (ret != 0) {
+        errorMessage = "pkexec authorization was denied or cancelled.";
+        return false;
+    }
+    return true;
+#elif defined(_WIN32)
+    char username[256] = {0};
+    DWORD userLen = sizeof(username);
+    GetUserNameA(username, &userLen);
+    const DWORD pid = GetCurrentProcessId();
+    const std::string params = "/c net localgroup npcap-users \"" + std::string(username) +
+                               "\" /add & powershell -WindowStyle Hidden -Command \""
+                               "while (Get-Process -Id " + std::to_string(pid) + " -ErrorAction SilentlyContinue) { Start-Sleep -Seconds 1 }; "
+                               "net localgroup npcap-users '" + std::string(username) + "' /delete\"";
+
+    SHELLEXECUTEINFOA sei = { sizeof(sei) };
+    sei.lpVerb = "runas";
+    sei.lpFile = "cmd.exe";
+    sei.lpParameters = params.c_str();
+    sei.nShow = SW_HIDE;
+    if (!ShellExecuteExA(&sei)) {
+        errorMessage = "Elevation request was denied or cancelled.";
+        return false;
+    }
+    return true;
+#else
+    errorMessage = "Privilege elevation is not supported on this platform.";
+    return false;
+#endif
+}
 
 bool ui::startCapture(AppState &state, const capture::CaptureOptions &options) {
     auto &l = state.live;

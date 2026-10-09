@@ -212,6 +212,7 @@ namespace ui {
         CaptureDialog dialog;
         PendingAction pending;                              // waiting for the unsaved-capture decision
         bool openConfirm = false;                           // show the unsaved-capture popup next frame
+        std::string elevationError;                         // error message from privilege elevation attempt, if any
 
         bool capturing() const { return device && processor && device->running(); }
     };

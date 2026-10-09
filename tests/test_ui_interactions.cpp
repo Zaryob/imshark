@@ -1242,3 +1242,26 @@ TEST_F(UiInteract, StatusBarOfALiveSessionKeepsTheCaptureText) {
     EXPECT_EQ(seg.left, "Capturing on fake0 - 0 packets, 0 dropped");
     EXPECT_EQ(seg.displayed, "Displayed: 0 / 0");
 }
+
+TEST_F(UiInteract, PermissionErrorDetectionRecognizesPlatformPermissionPatterns) {
+    EXPECT_TRUE(ui::isCapturePermissionError("Permission denied"));
+    EXPECT_TRUE(ui::isCapturePermissionError("en0: You don't have permission to capture on that device"));
+    EXPECT_TRUE(ui::isCapturePermissionError("socket: Operation not permitted"));
+    EXPECT_TRUE(ui::isCapturePermissionError("/dev/bpf0: Permission denied"));
+    EXPECT_TRUE(ui::isCapturePermissionError("capturing needs CAP_NET_RAW (Linux)"));
+    EXPECT_FALSE(ui::isCapturePermissionError("No capture interface selected"));
+    EXPECT_FALSE(ui::isCapturePermissionError("Cannot open en0: Device not configured"));
+}
+
+TEST_F(UiInteract, CaptureErrorPopupShowsPrivilegeElevationPromptOnPermissionError) {
+    ui::AppState state;
+    state.live.openError = true;
+    state.live.error = "Permission denied: capturing needs access to /dev/bpf*";
+    frames(state);
+    EXPECT_TRUE(popupOpen("Capture problem"));
+    ImGuiWindow *popup = windowNamed("Capture problem");
+    ASSERT_NE(popup, nullptr);
+    ImVec2 btnPos;
+    EXPECT_TRUE(locate(state, popup, "Grant Temporary Privileges", btnPos));
+    EXPECT_TRUE(locate(state, popup, "Cancel", btnPos));
+}
