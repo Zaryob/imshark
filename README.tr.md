@@ -38,9 +38,9 @@ Ethernet, kablosuz, IP, DNS, HTTP, TLS, kurumsal ağ, veritabanı, USB ve Blueto
 
 ## İndir
 
-[GitHub Releases](https://github.com/Zaryob/imshark/releases) listesinde henüz yayımlanmış sürüm veya hazır binary yoktur; şimdilik aşağıdaki kaynak derleme adımlarını kullanın. Yayın iş akışı Linux x86_64 için AppImage, DEB ve tar.gz; macOS Apple Silicon için DMG; Windows x86_64 için ZIP ve `SHA256SUMS.txt` üretir ve paketleri yalnızca bütün platform doğrulamaları geçtiğinde yayımlar. macOS paketi Developer ID imzası/notarization içermez; Windows varsayılanı canlı yakalama içermez.
+Son sürümü [GitHub Releases](https://github.com/Zaryob/imshark/releases/latest) sayfasından indirin: Linux x86_64 için AppImage, DEB ve tar.gz; macOS Apple Silicon için DMG; Windows x86_64 için ZIP. İndirdiğiniz dosyayı `SHA256SUMS.txt` ile doğrulayın. Yayın iş akışı paketleri yalnızca bütün platform kontrolleri geçtiğinde yayımlar. macOS uygulaması ad hoc imzalıdır, Developer ID imzası/notarization içermez (ilk açılışta Sistem Ayarları > Gizlilik ve Güvenlik > Yine de Aç ile izin verin); Windows derlemesinde canlı yakalama yoktur.
 
-Sürümler `v0.x.y` serisi üzerinden SemVer ile ilerler (`v0.8.x` → `v0.9.x` → `v0.10.x` ...); yayın iş akışı `vMAJOR.MINOR.PATCH` tag'iyle tetiklenir. `v0.9.0` etiketi Windows (MSVC) test derlemesi yüzünden paket üretmedi; `v0.9.1` Linux GUI kontrolünde Docker Hub kesintilerine takıldı; ilk yayımlanan 0.9 sürümü `v0.9.2`'dir. Kalan yayın kontrolleri [yayın backlog'unda](https://github.com/Zaryob/imshark/issues/2) izleniyor; yerel test sonuçları [portföy doğrulama kaydında](docs/PORTFOLIO_VALIDATION.md).
+Sürümler `v0.x.y` serisi üzerinden SemVer ile ilerler (`v0.8.x` → `v0.9.x` → `v0.10.x` ...); yayın iş akışı `vMAJOR.MINOR.PATCH` tag'iyle tetiklenir. `v0.9.0` etiketi Windows (MSVC) test derlemesi yüzünden paket üretmedi; `v0.9.1` Linux GUI kontrolünde Docker Hub kesintilerine takıldı; ilk yayımlanan sürüm [`v0.9.2`](https://github.com/Zaryob/imshark/releases/tag/v0.9.2)'dir. Kalan yayın kontrolleri [yayın backlog'unda](https://github.com/Zaryob/imshark/issues/2) izleniyor; yerel test sonuçları [portföy doğrulama kaydında](docs/PORTFOLIO_VALIDATION.md).
 
 ## Hızlı başlangıç
 
