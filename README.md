@@ -13,6 +13,10 @@
 
 *Ubuntu 24.04 Docker ortamında, Mesa yazılım OpenGL ile açılan gerçek uygulama. Görsel, depodaki sentetik `sample.pcap` dosyasından alınmıştır. [Tekrarlanabilir doğrulama](docs/VALIDATION.md).*
 
+![macOS üzerinde ImShark: koyu tema, seçili HTTP paketi, protokol ağacı ve hex görünümü](docs/images/imshark-macos.png)
+
+*macOS (Apple Silicon) üzerinde yerel derleme, aynı `sample.pcap` dosyası.*
+
 ## Neler yapar?
 
 - **Yakalama dosyaları:** pcap ve pcapng; gzip sıkıştırılmış dosyalar; Sun snoop, NetMon 2.x, Endace ERF ve AIX iptrace 2.0 okuyucuları.
