@@ -13,7 +13,7 @@
 ## Protokol kapsamını derinleştirme
 
 - [ ] NFSv4.1 pNFS aygıt/layout gövdeleri ve NFSv4.2 işlemleri; NFS/RPC eşlemesini gerçek üretici yakalamalarıyla doğrulama.
-- [ ] PostgreSQL Bind/DataRow/COPY, MySQL satır değerleri/ikili sonuçlar ve TDS sonuç token'ları.
+- [ ] TDS sonuç token'ları, COLMETADATA ve RPC parametreleri (PostgreSQL Bind/DataRow/COPY ve MySQL satır değerleri/hazırlanmış ifadeleri tamamlandı).
 - [ ] USB sınıfa özgü tanımlayıcı/yükler; Bluetooth L2CAP yeniden birleştirme ve GATT/SDP ayrıntıları.
 - [ ] 802.15.4 adres/güvenlik ayrıntıları; ayrı ihtiyaç doğarsa 6LoWPAN ve Zigbee.
 - [ ] SIP oturumları ve SDP'den RTP eşleme; RTCP SR/RR gövdeleri; Modbus yazmaçları ve DNP3 nesneleri.
