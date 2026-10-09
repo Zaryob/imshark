@@ -48,6 +48,7 @@ add_library(imshark_core STATIC
     src/dissect/nfs4.cpp
     src/dissect/rpc_programs.cpp
     src/dissect/onc_rpc_session.cpp
+    src/dissect/db_session.cpp
     src/dissect/postgres.cpp
     src/dissect/mysql.cpp
     src/dissect/tds.cpp

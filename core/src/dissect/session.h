@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <span>
 #include <string>
+#include <type_traits>
 #include <unordered_map>
 #include <unordered_set>
 #include <vector>
@@ -13,6 +14,7 @@
 #include <packet/ipsec_table.h>
 #include <tls/keylog.h>
 
+#include "db_session.h"
 #include "dcerpc_session.h"
 #include "onc_rpc_session.h"
 #include "dtls_decrypt.h"
@@ -73,6 +75,7 @@ public:
         smb2_.clear();
         dcerpc_.clear();
         rpc_.clear();
+        db_.clear();
         tlsCaptureKeys_.clear();   // the keys the user supplied (tlsExternalKeys) outlive a new capture
         tlsUpgrades_.clear();
         serverEndpoints_.clear();
@@ -505,6 +508,26 @@ public:
     const RpcMappedProgram *rpcProgram(const std::string &ip, uint16_t port, bool udp, uint32_t packet) const { return rpc_.program(ip, port, udp, packet); }
     const RpcTable &rpcTable() const { return rpc_; }
 
+    // ---- PostgreSQL / MySQL statements, column metadata and result set phases (see db_session.h) --------------------------
+    /// Load pass: runs `f(DbTable &, size_t maxMemory, bool &lost)`; a budget or bound that refused something marks the "db" table state
+    /// lost. Does nothing (returns a default value) when the tables are frozen.
+    template<typename F>
+    auto dbObserve(F &&f) {
+        using R = decltype(f(db_, maxMemoryPerTable_, std::declval<bool &>()));
+        bool lost = false;
+        if constexpr (std::is_void_v<R>) {
+            if (frozen_) return;
+            f(db_, maxMemoryPerTable_, lost);
+            if (lost) markStateLost("db");
+        } else {
+            if (frozen_) return R{};
+            R result = f(db_, maxMemoryPerTable_, lost);
+            if (lost) markStateLost("db");
+            return result;
+        }
+    }
+    const DbTable &dbTable() const { return db_; }
+
     // ---- TLS key material (see tls/keylog.h) ----------------------------------------------------
     /// Secrets the user supplied (key log file / text). They stay when clear() starts a new capture.
     tls::KeyStore &tlsExternalKeys() { return tlsExternalKeys_; }
@@ -602,7 +625,7 @@ public:
     void setEspNullHeuristic(bool on) { espNullHeuristic_ = on; }
     bool espNullHeuristic() const { return espNullHeuristic_; }
 
-    size_t totalMemoryUsage() const { return ftpMemory_ + tftpMemory_ + connectionMemory_ + usbMemory_ + btMemory_ + tls_.memory() + tlsDecrypt_.memory() + dtls_.memory() + smb2_.memory() + dcerpc_.memory() + rpc_.memory(); }
+    size_t totalMemoryUsage() const { return ftpMemory_ + tftpMemory_ + connectionMemory_ + usbMemory_ + btMemory_ + tls_.memory() + tlsDecrypt_.memory() + dtls_.memory() + smb2_.memory() + dcerpc_.memory() + rpc_.memory() + db_.memory(); }
 
 private:
     static std::string directionKey(const std::string &srcIp, uint16_t srcPort, const std::string &dstIp, uint16_t dstPort) {
@@ -647,6 +670,7 @@ private:
     Smb2Table smb2_;
     DceRpcTable dcerpc_;
     RpcTable rpc_;
+    DbTable db_;
     tls::KeyStore tlsExternalKeys_;
     tls::KeyStore tlsCaptureKeys_;
 };
