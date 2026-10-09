@@ -203,6 +203,20 @@ TEST(RpcTable, TheArgumentsOfACallComeBackWithItsReply) {
     EXPECT_EQ(n->netid, "tcp");
 }
 
+TEST(RpcTable, AProtectedCallMarksItsReplyAndItsRetransmission) {
+    Table x;
+    for (uint32_t i = 1; i <= 3; ++i) x.datagram(i);
+    RpcMessage m;
+    m.call = true; m.xid = 5; m.prog = 100003; m.vers = 3; m.proc = 1; m.wrapped = true;
+    EXPECT_NE(x.t.observeMessage("a|b", true, 1, -1, m, kBig, x.lost)->flags & RpcNote::kWrapped, 0);
+    EXPECT_NE(x.t.observeMessage("a|b", true, 2, -1, m, kBig, x.lost)->flags & RpcNote::kWrapped, 0) << "the retransmission";
+    RpcMessage r;
+    r.xid = 5;
+    const RpcNote *reply = x.t.observeMessage("a|b", false, 3, -1, r, kBig, x.lost);
+    EXPECT_NE(reply->flags & RpcNote::kMatched, 0);
+    EXPECT_NE(reply->flags & RpcNote::kWrapped, 0);
+}
+
 TEST(RpcTable, AskingTwiceAnswersTheSameWithoutChangingTheState) {
     Table x;
     x.datagram(1); x.datagram(2);

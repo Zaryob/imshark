@@ -24,6 +24,30 @@ namespace {
         "191a1b1c1d1e1f200000000a7265706f72742e7478740000");
     const std::string kFlowReplyOk = bytes("123456780000000100000000000000000000000000000000");
 
+    // RPCSEC_GSS credential (version 1, DATA, sequence 7, integrity, 12 byte handle) and a 22 byte checksum verifier (g12d/g5.py)
+    const std::string kGssCall = bytes("500000010000000000000002000186a300000003000000010000000600000020"
+        "000000010000000000000007000000010000000c111111111111111111111111"
+        "00000006000000163014aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000"
+        "000000200102030405060708090a0b0c0d0e0f101112131415161718191a1b1c"
+        "1d1e1f20");
+    const std::string kGssReply = bytes("50000001000000010000000000000006000000163014bbbbbbbbbbbbbbbbbbbb"
+        "bbbbbbbbbbbbbbbbbbbb000000000000");
+
+    // integrity protected GETATTR (service 2: the arguments are a databody and a checksum, not the plain arguments), its reply, and a context
+    // creation message (gss_proc INIT) (g12d/g6.py)
+    const std::string kGssIntegCall = bytes("500000020000000000000002000186a300000003000000010000000600000020"
+        "000000010000000000000007000000020000000c111111111111111111111111"
+        "00000006000000163014aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa0000"
+        "0000002800000007000000200102030405060708090a0b0c0d0e0f1011121314"
+        "15161718191a1b1c1d1e1f2000000010cccccccccccccccccccccccccccccccc");
+    const std::string kGssIntegReply = bytes("50000002000000010000000000000006000000163014bbbbbbbbbbbbbbbbbbbb"
+        "bbbbbbbbbbbbbbbbbbbb00000000000000000008000000070000000000000010"
+        "dddddddddddddddddddddddddddddddd");
+    const std::string kGssInitCall = bytes("500000030000000000000002000186a300000003000000000000000600000020"
+        "000000010000000100000000000000010000000c111111111111111111111111"
+        "0000000000000000000000206082010101010101010101010101010101010101"
+        "010101010101010101010101");
+
     std::string mark(const std::string &m, bool last = true) {
         const uint32_t v = (last ? 0x80000000u : 0u) | static_cast<uint32_t>(m.size());
         return std::string{static_cast<char>(v >> 24), static_cast<char>(v >> 16), static_cast<char>(v >> 8), static_cast<char>(v)} + m;
@@ -208,6 +232,32 @@ TEST(RpcFlows, ARecordOfSeveralFragmentsCanBeAReplyToo) {
     EXPECT_EQ(k[1].protocol, "RPC");
     EXPECT_EQ(k[2].protocol, "NFS");
     EXPECT_EQ(k[2].info, "NFS v3 GETATTR Reply (XID: 0x12345678) Accepted SUCCESS [Reassembled: 2 fragments, 24 bytes]");
+    flow.expectReplayEqualsLoad();
+}
+
+TEST(RpcFlows, ARpcsecGssExchangeIsLabelledNotInterpreted) {
+    Flow flow(50000, 2049, "rpc_gss");
+    flow.client(mark(kGssCall)).server(mark(kGssReply));
+    flow.load();
+    const auto &k = flow.packets();
+    EXPECT_EQ(k[0].info, "NFS v3 GETATTR Call (XID: 0x50000001), fh=0102030405060708...");
+    EXPECT_EQ(k[1].info, "NFS v3 GETATTR Reply (XID: 0x50000001) Accepted SUCCESS");
+    const auto d = flow.details(0);
+    EXPECT_NE(find(d.fields, "Credential: RPCSEC_GSS"), nullptr);
+    EXPECT_NE(find(d.fields, "Verifier: RPCSEC_GSS"), nullptr);
+    EXPECT_EQ(find(d.fields, "Credential: AUTH_SYS"), nullptr);
+    flow.expectReplayEqualsLoad();
+}
+
+TEST(RpcFlows, RpcsecGssProtectionAndContextMessagesAreNotReadAsPlainArguments) {
+    Flow flow(50000, 2049, "rpc_gss_protected");
+    flow.client(mark(kGssIntegCall)).server(mark(kGssIntegReply)).client(mark(kGssInitCall));
+    flow.load();
+    const auto &k = flow.packets();
+    EXPECT_EQ(k[0].info, "NFS v3 GETATTR Call (XID: 0x50000002) [RPCSEC_GSS protected, arguments not decoded]") << "read as plain arguments the databody length would pass for a file handle";
+    EXPECT_EQ(k[1].info, "NFS v3 GETATTR Reply (XID: 0x50000002) Accepted SUCCESS [RPCSEC_GSS protected, results not decoded]");
+    EXPECT_EQ(k[2].info, "NFS v3 NULL Call (XID: 0x50000003) [RPCSEC_GSS context message]");
+    EXPECT_EQ(find(flow.details(0).fields, "File Handle"), nullptr);
     flow.expectReplayEqualsLoad();
 }
 

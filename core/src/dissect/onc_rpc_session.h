@@ -38,6 +38,7 @@ struct RpcMessage {
     uint32_t prog = 0, vers = 0, proc = 0;            // a call
     uint32_t mapProg = 0, mapVers = 0, mapProt = 0;   // the arguments of a call that names a program (GETPORT, SET, UNSET, CALLIT, rpcbind)
     std::string netid;                                // rpcbind: the network id of the rpcb argument ("tcp", "udp", "tcp6", "udp6")
+    bool wrapped = false;                             // RPCSEC_GSS integrity / privacy (or a control message): the arguments and results are not the program's plain XDR
 };
 
 /// What the load pass learned for one fragment / datagram.
@@ -50,6 +51,7 @@ struct RpcNote {
         kRetransmission = 16,  // a call seen again (same xid, program, version and procedure)
         kDuplicateReply = 32,  // a second reply to the same call
         kDropped = 64,         // the open record this fragment would continue was dropped (a hole, a bound): it starts a new record
+        kWrapped = 128,        // a call (and the reply matched with it) whose arguments / results RPCSEC_GSS protects: not decoded
     };
     uint16_t flags = 0;
     uint16_t fragments = 0;       // kCompletes: how many fragments the record had
@@ -145,6 +147,7 @@ private:
         uint32_t replies = 0;
         uint32_t mapProg = 0, mapVers = 0, mapProt = 0;
         std::string netid;
+        bool wrapped = false;
         uint64_t order = 0;
         NoteKey note{0, 0};
     };

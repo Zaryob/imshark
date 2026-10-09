@@ -105,6 +105,7 @@ struct Decoded {
     bool notAMessage = false;         // not the first fragment of a record: its bytes are the middle of a message
     // positions (in the message body) where the program's arguments / results start; 0 if they are not readable
     size_t argsAt = 0, resultAt = 0;
+    bool gssControl = false, gssProtected = false;   // RPCSEC_GSS credential: a context control message / integrity or privacy protection
     bool accepted = false;
     std::string tail;                 // the part of a reply's summary that follows "(XID: ...)": " Accepted SUCCESS", " Denied ..."
 };
@@ -152,7 +153,17 @@ void decodeHeader(const uint8_t *bytes, size_t bodyLen, bool complete, Decoded &
             const uint32_t len = r.readUnsignedInt();
             if (!r.ok() || len > 400 || len > r.remaining()) { credOk = false; if (complete) d.malformed = "RPC credential / verifier length does not fit"; break; }
             const size_t bodyAt = r.pos();
-            if (which == 0 && flavor == 1 && len >= 20) { // AUTH_SYS: stamp, machinename, uid, gid, gids
+            if (which == 0 && flavor == 6 && len >= 16) {   // RPCSEC_GSS (RFC 2203): version, gss_proc, seq_num, service; the body is only labelled
+                XdrReader g(bytes + bodyAt, len);
+                g.readUnsignedInt();
+                const uint32_t gssProc = g.readUnsignedInt();
+                g.readUnsignedInt();
+                const uint32_t service = g.readUnsignedInt();
+                d.gssControl = gssProc != 0;
+                d.gssProtected = service == 2 || service == 3;
+                d.msg.wrapped = d.gssControl || d.gssProtected;
+                add("Credential: RPCSEC_GSS", at, 8 + len);
+            } else if (which == 0 && flavor == 1 && len >= 20) { // AUTH_SYS: stamp, machinename, uid, gid, gids
                 XdrReader c(bytes + bodyAt, len);
                 c.readUnsignedInt();
                 const std::string machine = c.readString(255);
@@ -384,7 +395,9 @@ void dissectNfs(Context &ctx, const char *data, size_t length) {
 
     // ---- the program's arguments, then what the table knows about the call or reply ------------------------------------------
     const bool wholeMessage = !middle;   // the first fragment of a longer record shows what it has but registers nothing
-    if (d.call && d.argsAt) {
+    if (d.call && d.argsAt && d.msg.wrapped) {
+        d.summary += d.gssControl ? " [RPCSEC_GSS context message]" : " [RPCSEC_GSS protected, arguments not decoded]";
+    } else if (d.call && d.argsAt) {
         decodeArguments(msg, msgLen, d);
         pack.app_text2 = d.out.name.empty() ? d.out.ops : d.out.name;
     }
@@ -408,7 +421,8 @@ void dissectNfs(Context &ctx, const char *data, size_t length) {
             pack.app_type = static_cast<uint16_t>(msgNote->proc);
             pack.app_text = std::to_string(msgNote->prog);
             pack.app_flags = static_cast<uint16_t>(d.flags | kFlagMatched | (std::min<uint32_t>(msgNote->vers, 255) << kVersionShift) | ((msgNote->flags & RpcNote::kDuplicateReply) ? kFlagRepeat : 0));
-            if (d.resultAt) decodeResults(msg, msgLen, *msgNote, d.resultAt, d);
+            const bool wrapped = (msgNote->flags & RpcNote::kWrapped) != 0;
+            if (d.resultAt && !wrapped) decodeResults(msg, msgLen, *msgNote, d.resultAt, d);
             if (d.out.hasResult) {
                 pack.app_flags |= kFlagResult;
                 pack.app_code = static_cast<uint16_t>(std::min<uint32_t>(d.out.result, 0xFFFF));
@@ -419,6 +433,7 @@ void dissectNfs(Context &ctx, const char *data, size_t length) {
             const bool decoded = d.out.hasResult || !d.out.info.empty();
             d.summary = pr.name + " v" + std::to_string(msgNote->vers) + " " + pr.proc + " Reply (XID: " + hexString(d.xid, 8) + ")" + (decoded ? std::string() : d.tail);
             d.layerName = "Remote Procedure Call (Reply " + pr.name + ")";
+            if (wrapped && d.accepted) d.summary += " [RPCSEC_GSS protected, results not decoded]";
             if (msgNote->flags & RpcNote::kDuplicateReply) repeated = " [Duplicate reply]";
         } else if (msgNote->flags & RpcNote::kRetransmission) {
             pack.app_flags = static_cast<uint16_t>(d.flags | kFlagRepeat);

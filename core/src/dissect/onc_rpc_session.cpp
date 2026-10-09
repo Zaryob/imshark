@@ -154,6 +154,7 @@ const RpcNote *RpcTable::observeMessage(const std::string &conversation, bool fr
         n.prog = c.prog; n.vers = c.vers; n.proc = c.proc;
         n.mapProg = c.mapProg; n.mapVers = c.mapVers; n.mapProt = c.mapProt;
         n.netid = c.netid;
+        if (c.wrapped) n.flags |= RpcNote::kWrapped;
     };
 
     auto it = calls_.find(ckey);
@@ -179,12 +180,13 @@ const RpcNote *RpcTable::observeMessage(const std::string &conversation, bool fr
         }
         Call c;
         c.packet = packet; c.prog = msg.prog; c.vers = msg.vers; c.proc = msg.proc; c.fromLow = fromLow;
-        c.mapProg = msg.mapProg; c.mapVers = msg.mapVers; c.mapProt = msg.mapProt; c.netid = msg.netid;
+        c.mapProg = msg.mapProg; c.mapVers = msg.mapVers; c.mapProt = msg.mapProt; c.netid = msg.netid; c.wrapped = msg.wrapped;
         c.order = ++callCounter_;
         c.note = NoteKey{packet, seq < 0 ? UINT32_MAX : static_cast<uint32_t>(seq)};
         const size_t cost = callCost(ckey, c);
         n.prog = msg.prog; n.vers = msg.vers; n.proc = msg.proc;
         n.mapProg = msg.mapProg; n.mapVers = msg.mapVers; n.mapProt = msg.mapProt; n.netid = msg.netid;
+        if (msg.wrapped) n.flags |= RpcNote::kWrapped;
         if (memory_ + cost > maxMemory) { lost = true; return &n; }
         memory_ += cost;
         callOrder_.emplace_back(ckey, c.order);
