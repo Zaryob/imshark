@@ -1,5 +1,7 @@
 #include "color_rules.h"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 
@@ -15,6 +17,53 @@ std::vector<ui::ColorRule> ui::defaultColorRules() {
         {true, "UDP", "udp", 0xDAEEFF, 0x12272E},
         {true, "TCP", "tcp", 0xE7E6FF, 0x12272E},
     };
+}
+
+namespace {
+    uint32_t mixColor(uint32_t from, uint32_t to, double amount) { // amount 0 = from, 1 = to
+        uint32_t out = 0;
+        for (int shift = 16; shift >= 0; shift -= 8) {
+            const double a = (from >> shift) & 0xFF, b = (to >> shift) & 0xFF;
+            out |= static_cast<uint32_t>(std::lround(a + (b - a) * amount)) << shift;
+        }
+        return out;
+    }
+
+    // Moves `fg` toward white (or black on a light background) until the text is readable on `bg`.
+    uint32_t readableOn(uint32_t fg, uint32_t bg) {
+        const uint32_t target = ui::relativeLuminance(bg) < 0.4 ? 0xFFFFFF : 0x000000;
+        for (int step = 0; step < 30 && ui::contrastRatio(fg, bg) < 4.5; ++step) fg = mixColor(fg, target, 0.15);
+        return fg;
+    }
+} // namespace
+
+double ui::relativeLuminance(uint32_t rgb) {
+    auto channel = [](uint32_t v) {
+        const double c = v / 255.0;
+        return c <= 0.03928 ? c / 12.92 : std::pow((c + 0.055) / 1.055, 2.4);
+    };
+    return 0.2126 * channel((rgb >> 16) & 0xFF) + 0.7152 * channel((rgb >> 8) & 0xFF) + 0.0722 * channel(rgb & 0xFF);
+}
+
+double ui::contrastRatio(uint32_t a, uint32_t b) {
+    const double la = relativeLuminance(a), lb = relativeLuminance(b);
+    return (std::max(la, lb) + 0.05) / (std::min(la, lb) + 0.05);
+}
+
+ui::RowColors ui::rowColorsFor(const ColorRule &rule, bool dark) {
+    RowColors colors{rule.background & 0xFFFFFF, rule.foreground & 0xFFFFFF};
+    if (!dark) return colors;
+    // Strong rules (reset, malformed...) are already dark and keep their identity; pastels become tints of the window.
+    if (relativeLuminance(colors.background) >= 0.12) {
+        colors.background = mixColor(kDarkWindowBg, colors.background, 0.30);
+        colors.foreground = 0xE6EBF0;
+    }
+    colors.foreground = readableOn(colors.foreground, colors.background);
+    return colors;
+}
+
+ui::RowColors ui::selectedRowColors(bool dark) {
+    return dark ? RowColors{0x1F5F78, 0xF4F8FB} : RowColors{0x0E7490, 0xFFFFFF};
 }
 
 ui::CompiledColorRules::CompiledColorRules(const std::vector<ColorRule> &rules) {

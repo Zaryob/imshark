@@ -22,6 +22,11 @@ namespace ui {
         std::vector<ColorRule> colorRules;     // user's rules; empty = use the built-in defaults
         float listHeight = 300.0f;             // height of the packet list (splitter position)
         std::string tlsKeyLogFile;             // TLS (Pre)-Master-Secret log file (SSLKEYLOGFILE format); empty = none
+        bool showToolbar = true;               // View > Toolbar
+        // Main window geometry (screen coordinates of the content area); 0 = never saved
+        int windowWidth = 0, windowHeight = 0;
+        int windowX = 0, windowY = 0;
+        bool hasWindowPos = false;
         bool espNullHeuristic = false;         // dissect ESP payloads that look unencrypted (ESP-NULL, a guess); off by default
 
         // Live capture (Capture > Interfaces): what the last capture used
@@ -31,6 +36,16 @@ namespace ui {
         uint32_t captureSnaplen = kMaxSnaplen;
         bool capturePromiscuous = true;
     };
+
+    /// A rectangle in screen coordinates (window geometry, monitor work area).
+    struct WindowRect {
+        int x = 0, y = 0, w = 0, h = 0;
+    };
+
+    /// The window geometry to create the main window with: the saved size (at least `minW` x `minH`, at most the work area)
+    /// and, if a position was saved, that position moved so that the window lies inside `workArea`. Returns false when no
+    /// valid size was saved (the caller keeps its default).
+    bool restoreWindowRect(const Settings &settings, const WindowRect &workArea, int minW, int minH, WindowRect &out, bool &hasPos);
 
     /// Per-user location of the settings file (platform config directory).
     std::string defaultSettingsPath();

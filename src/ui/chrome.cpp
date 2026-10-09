@@ -1,23 +1,26 @@
 #include "ui.h"
 
+#include <algorithm>
 #include <filesystem>
 
 #include <imgui.h>
 
 #include <ImGuiFileDialog.h>
 
-namespace {
-    void openCaptureDialog() {
-        IGFD::FileDialogConfig config;
-        config.path = ".";
-        config.flags = ImGuiFileDialogFlags_Modal;
-        ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", "Open capture file", ".pcapng,.pcap,.cap,.snoop,.erf,.iptrace,.gz,.*", config);
-    }
-} // namespace
+#include "theme.h"
+
+#include <capture/live_capture.h>
+#include <core.h>
+
+void ui::openCaptureDialog() {
+    IGFD::FileDialogConfig config;
+    config.path = ".";
+    config.flags = ImGuiFileDialogFlags_Modal;
+    ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", "Open capture file", ".pcapng,.pcap,.cap,.snoop,.erf,.iptrace,.gz,.*", config);
+}
 
 void ui::applyTheme(bool dark) {
-    if (dark) ImGui::StyleColorsDark();
-    else ImGui::StyleColorsLight();
+    applyThemeStyle(dark);
 }
 
 void ui::initSettings(AppState &state, const std::string &path) {
@@ -109,6 +112,10 @@ void ui::drawMenuAndDialogs(AppState &state) {
                 state.settingsDirty = true;
                 applyTheme(false);
             }
+            if (ImGui::MenuItem("Toolbar", nullptr, state.settings.showToolbar)) {
+                state.settings.showToolbar = !state.settings.showToolbar;
+                state.settingsDirty = true;
+            }
             ImGui::Separator();
             if (ImGui::BeginMenu("Time Display Format")) {
                 for (auto f: {TimeFormat::SinceCaptureStart, TimeFormat::SincePrevious, TimeFormat::UtcDateTime, TimeFormat::EpochSeconds}) {
@@ -145,6 +152,47 @@ void ui::drawMenuAndDialogs(AppState &state) {
     }
 }
 
+ui::StatusSegments ui::statusSegments(const AppState &state) {
+    StatusSegments seg;
+    if (state.loading()) {
+        seg.left = "Loading " + loadingPath(state) + " ...";
+    } else if (state.live.session) {
+        seg.left = captureStatusText(state);
+        const auto cut = seg.left.find("  |  Displayed:"); // shown in its own segment
+        if (cut != std::string::npos) seg.left.resize(cut);
+    } else if (state.currentFile.empty()) {
+        seg.left = "No file loaded. Use File > Open.";
+    } else {
+        const auto name = core::pathFromUtf8(state.displayName).filename().u8string();
+        seg.left.assign(name.begin(), name.end());
+        if (seg.left.empty()) seg.left = state.displayName;
+        seg.leftTooltip = state.displayName;
+    }
+    if (!state.loading() && (state.live.session || !state.currentFile.empty())) {
+        seg.displayed = "Displayed: " + std::to_string(state.displayedCount()) + " / " + std::to_string(state.packets.size());
+        if (const packet::PacketInfo *sel = state.currentPacket()) seg.selected = "Selected: #" + std::to_string(sel->number);
+        if (state.filter.active) seg.filter = state.filter.appliedText;
+    }
+    seg.error = state.live.error;
+    seg.message = state.loadMessage;
+    return seg;
+}
+
+ui::ToolbarEnabled ui::toolbarEnabled(const AppState &state) {
+    const auto &l = state.live;
+    const bool available = capture::liveCaptureAvailable();
+    ToolbarEnabled e;
+    e.open = true;
+    e.close = !state.currentFile.empty();
+    e.reload = !state.displayName.empty() && !l.session && !state.loading();
+    e.start = available && !l.capturing();
+    e.stop = available && l.capturing();
+    e.restart = available && l.session && !l.injected;
+    e.find = !state.packets.empty();
+    e.statistics = !state.packets.empty();
+    return e;
+}
+
 void ui::drawStatusBar(const AppState &state) {
     const ImVec2 display = ImGui::GetIO().DisplaySize;
     ImGui::SetNextWindowPos(ImVec2(0, display.y - statusBarHeight()));
@@ -152,27 +200,50 @@ void ui::drawStatusBar(const AppState &state) {
     const ImGuiWindowFlags flags = ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
                                    ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus;
     if (ImGui::Begin("##status", nullptr, flags)) {
-        if (state.loading()) {
-            ImGui::Text("Loading %s ...", loadingPath(state).c_str());
-        } else if (state.live.session) {
-            ImGui::TextUnformatted(captureStatusText(state).c_str());
-        } else if (state.currentFile.empty()) {
-            ImGui::TextUnformatted("No file loaded. Use File > Open.");
-        } else {
-            if (state.filter.active) {
-                ImGui::Text("%s  |  Displayed: %zu / %zu packets", state.displayName.c_str(), state.displayedCount(), state.packets.size());
-            } else {
-                ImGui::Text("%s  |  %zu packets", state.displayName.c_str(), state.packets.size());
+        const StatusSegments seg = statusSegments(state);
+        const ImVec4 red(1.0f, 0.4f, 0.4f, 1.0f);
+        const ImVec4 amber(1.0f, 0.8f, 0.3f, 1.0f);
+        auto separator = [] {
+            ImGui::SameLine();
+            ImGui::TextDisabled("|");
+            ImGui::SameLine();
+        };
+        ImGui::TextUnformatted(seg.left.c_str());
+        if (!seg.leftTooltip.empty() && ImGui::IsItemHovered()) ImGui::SetTooltip("%s", seg.leftTooltip.c_str());
+        if (!seg.displayed.empty()) {
+            separator();
+            ImGui::TextUnformatted(seg.displayed.c_str());
+        }
+        if (!seg.selected.empty()) {
+            separator();
+            ImGui::TextUnformatted(seg.selected.c_str());
+        }
+        if (!seg.filter.empty()) {
+            separator();
+            constexpr size_t kMaxFilterChars = 60;
+            std::string shown = seg.filter;
+            if (shown.size() > kMaxFilterChars) {
+                shown.resize(kMaxFilterChars);
+                while (!shown.empty() && (static_cast<unsigned char>(shown.back()) & 0xC0) == 0x80) shown.pop_back(); // keep UTF-8 intact
+                if (!shown.empty() && static_cast<unsigned char>(shown.back()) >= 0xC0) shown.pop_back();
+                shown += "...";
             }
+            ImGui::Text("Filter: %s", shown.c_str());
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", seg.filter.c_str());
         }
-        if (!state.live.error.empty()) {
-            ImGui::SameLine();
-            ImGui::TextColored(ImVec4(1.0f, 0.4f, 0.4f, 1.0f), "  |  %s", state.live.error.c_str());
-        }
-        if (!state.loadMessage.empty()) {
-            ImGui::SameLine();
-            ImGui::TextColored(state.loadFailed ? ImVec4(1.0f, 0.4f, 0.4f, 1.0f) : ImVec4(1.0f, 0.8f, 0.3f, 1.0f),
-                               "  |  %s", state.loadMessage.c_str());
+        // Problems on the right edge
+        const float gap = ImGui::GetStyle().ItemSpacing.x;
+        float width = 0;
+        if (!seg.error.empty()) width += ImGui::CalcTextSize(seg.error.c_str()).x;
+        if (!seg.message.empty()) width += ImGui::CalcTextSize(seg.message.c_str()).x;
+        if (!seg.error.empty() && !seg.message.empty()) width += 2 * gap + ImGui::CalcTextSize("|").x;
+        if (width > 0) {
+            ImGui::SameLine(std::max(ImGui::GetCursorPosX() + gap, ImGui::GetWindowContentRegionMax().x - width));
+            if (!seg.error.empty()) {
+                ImGui::TextColored(red, "%s", seg.error.c_str());
+                if (!seg.message.empty()) separator();
+            }
+            if (!seg.message.empty()) ImGui::TextColored(state.loadFailed ? red : amber, "%s", seg.message.c_str());
         }
     }
     ImGui::End();

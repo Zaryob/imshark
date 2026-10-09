@@ -18,6 +18,7 @@
 
 #include <ImGuiFileDialog.h>
 
+#include <capture/live_capture.h>
 #include <core.h>
 #include <ui/clipboard.h>
 #include <ui/time_format.h>
@@ -203,6 +204,41 @@ namespace {
                 }
             }
             return false;
+        }
+
+        /// Finds a button / row of the main window by hovering: a row of items (the toolbar) is swept across at the height
+        /// of its first line; the centred welcome panel is swept down at a few x positions around the window centre.
+        bool locateInMain(ui::AppState &state, const char *label, ImVec2 &out, bool toolbarRow, const char *pushed = nullptr) {
+            ImGuiWindow *w = windowNamed("ImShark");
+            if (!w) return false;
+            const std::vector<ImGuiID> ids = itemIds(w, label, pushed);
+            auto hit = [&](ImVec2 p) {
+                moveTo(state, p);
+                const ImGuiID hovered = ImGui::GetCurrentContext()->HoveredId;
+                if (hovered != 0 && std::find(ids.begin(), ids.end(), hovered) != ids.end()) {
+                    out = p;
+                    return true;
+                }
+                return false;
+            };
+            const ImRect r = w->Rect();
+            if (toolbarRow) {
+                const float y = r.Min.y + w->WindowPadding.y + ImGui::GetFrameHeight() * 0.5f;
+                for (float x = r.Min.x + 2; x < r.Max.x; x += 3.0f) if (hit(ImVec2(x, y))) return true;
+                return false;
+            }
+            const float cx = r.GetCenter().x;
+            for (float y = r.Min.y + 2; y < r.Max.y; y += 3.0f) {
+                for (float dx: {-120.0f, 20.0f}) if (hit(ImVec2(cx + dx, y))) return true;
+            }
+            return false;
+        }
+
+        bool clickInMain(ui::AppState &state, const char *label, bool toolbarRow, const char *pushed = nullptr) {
+            ImVec2 p;
+            if (!locateInMain(state, label, p, toolbarRow, pushed)) return false;
+            click(state, p);
+            return true;
         }
 
         bool clickInTopPopup(ui::AppState &state, const char *label, const char *pushed = nullptr) {
@@ -909,4 +945,179 @@ TEST_F(UiInteract, ExportDialogDoesNotOfferSaveForAnEmptySelection) {
     ImVec2 p;
     if (locate(state, topPopup(), "Save As...", p)) click(state, p);
     EXPECT_FALSE(ImGuiFileDialog::Instance()->IsOpened("ExportDlgKey"));
+}
+
+// ---- welcome panel, toolbar and status bar ----------------------------------------------------------------------
+
+TEST_F(UiInteract, WelcomePanelIsShownOnlyWithoutACapture) {
+    ui::AppState state;
+    frames(state);
+    EXPECT_TRUE(ui::welcomeVisible(state));
+    load(state);
+    EXPECT_FALSE(ui::welcomeVisible(state));
+    ui::closeCapture(state);
+    frames(state);
+    EXPECT_TRUE(ui::welcomeVisible(state));
+}
+
+TEST_F(UiInteract, WelcomeOpenButtonOpensTheFileDialog) {
+    ui::AppState state;
+    frames(state);
+    EXPECT_FALSE(ImGuiFileDialog::Instance()->IsOpened("ChooseFileDlgKey"));
+    ASSERT_TRUE(clickInMain(state, "Open capture...", false));
+    EXPECT_TRUE(ImGuiFileDialog::Instance()->IsOpened("ChooseFileDlgKey"));
+}
+
+TEST_F(UiInteract, WelcomeLiveCaptureButtonFollowsAvailability) {
+    ui::AppState state;
+    frames(state);
+    ImVec2 p;
+    if (!capture::liveCaptureAvailable()) {
+        EXPECT_FALSE(locateInMain(state, "Start live capture...", p, false)) << "not offered in a build without live capture";
+        return;
+    }
+    ASSERT_TRUE(clickInMain(state, "Start live capture...", false));
+    EXPECT_TRUE(state.live.dialog.open) << "no interface chosen yet: the interfaces dialog opens";
+}
+
+TEST_F(UiInteract, WelcomeRecentFileClickRequestsOpen) {
+    ui::AppState state;
+    TempDir dir("welcome_recent");
+    const std::string recent = dir.copyOfSample("welcome.pcap");
+    state.settings.recentFiles = {recent};
+    frames(state);
+    ASSERT_TRUE(clickInMain(state, "welcome.pcap", false, recent.c_str()));
+    pumpLoad(state);
+    EXPECT_EQ(state.displayName, recent);
+    EXPECT_EQ(state.packets.size(), 16u);
+}
+
+TEST_F(UiInteract, ToolbarEnabledStatesFollowTheCapture) {
+    ui::AppState state;
+    frames(state);
+    ui::ToolbarEnabled e = ui::toolbarEnabled(state);
+    EXPECT_TRUE(e.open);
+    EXPECT_FALSE(e.close);
+    EXPECT_FALSE(e.reload);
+    EXPECT_FALSE(e.stop);
+    EXPECT_FALSE(e.restart);
+    EXPECT_FALSE(e.find);
+    EXPECT_FALSE(e.statistics);
+    EXPECT_EQ(e.start, capture::liveCaptureAvailable());
+
+    load(state);
+    e = ui::toolbarEnabled(state);
+    EXPECT_TRUE(e.close);
+    EXPECT_TRUE(e.reload);
+    EXPECT_TRUE(e.find);
+    EXPECT_TRUE(e.statistics);
+    EXPECT_FALSE(e.restart) << "a file is not a capture session";
+}
+
+TEST_F(UiInteract, ToolbarEnabledStatesOfALiveSession) {
+    ui::AppState state;
+    ASSERT_TRUE(ui::startInjectedCapture(state, 1, 262144, "fake0"));
+    frames(state);
+    ui::ToolbarEnabled e = ui::toolbarEnabled(state);
+    EXPECT_TRUE(e.close);
+    EXPECT_FALSE(e.reload) << "a live capture cannot be loaded again";
+    EXPECT_FALSE(e.restart) << "an injected session has no device to restart";
+    if (capture::liveCaptureAvailable()) {
+        EXPECT_TRUE(e.stop);
+        EXPECT_FALSE(e.start);
+        ui::stopCapture(state);
+        e = ui::toolbarEnabled(state);
+        EXPECT_FALSE(e.stop);
+        EXPECT_TRUE(e.start);
+    }
+}
+
+TEST_F(UiInteract, ToolbarButtonsDoTheirJob) {
+    ui::AppState state;
+    load(state);
+    ASSERT_TRUE(clickInMain(state, "Find", true));
+    EXPECT_TRUE(state.find.open);
+
+    ASSERT_TRUE(clickInMain(state, "Statistics", true));
+    ASSERT_TRUE(clickInTopPopup(state, "Conversations"));
+    EXPECT_TRUE(state.stats.showConversations);
+    closePopups(state);
+
+    ASSERT_TRUE(clickInMain(state, "Reload", true));
+    pumpLoad(state);
+    EXPECT_EQ(state.packets.size(), 16u);
+
+    ASSERT_TRUE(clickInMain(state, "Close", true));
+    frames(state);
+    EXPECT_TRUE(state.currentFile.empty());
+    EXPECT_TRUE(state.packets.empty());
+
+    // disabled now: clicking Close, Find or Reload does nothing
+    ImVec2 p;
+    ASSERT_TRUE(locateInMain(state, "Find", p, true));
+    state.find.open = false;
+    click(state, p);
+    EXPECT_FALSE(state.find.open) << "Find is disabled without packets";
+
+    ASSERT_TRUE(clickInMain(state, "Open", true));
+    EXPECT_TRUE(ImGuiFileDialog::Instance()->IsOpened("ChooseFileDlgKey"));
+}
+
+TEST_F(UiInteract, ToolbarCanBeHiddenFromTheViewMenu) {
+    ui::AppState state;
+    frames(state);
+    ImVec2 p;
+    EXPECT_TRUE(locateInMain(state, "Open", p, true));
+    ASSERT_TRUE(clickMenu(state, {"View", "Toolbar"}));
+    EXPECT_FALSE(state.settings.showToolbar);
+    EXPECT_TRUE(state.settingsDirty);
+    frames(state);
+    EXPECT_FALSE(locateInMain(state, "Open", p, true));
+}
+
+TEST_F(UiInteract, StatusBarSegmentsDescribeTheCapture) {
+    ui::AppState state;
+    frames(state);
+    ui::StatusSegments seg = ui::statusSegments(state);
+    EXPECT_EQ(seg.left, "No file loaded. Use File > Open.");
+    EXPECT_TRUE(seg.displayed.empty());
+    EXPECT_TRUE(seg.selected.empty());
+
+    load(state);
+    seg = ui::statusSegments(state);
+    EXPECT_EQ(seg.left, "sample.pcap");
+    EXPECT_EQ(seg.leftTooltip, state.displayName);
+    EXPECT_EQ(seg.displayed, "Displayed: 16 / 16") << "shown without a filter too";
+    EXPECT_TRUE(seg.selected.empty());
+    EXPECT_TRUE(seg.filter.empty());
+
+    ASSERT_TRUE(ui::applyFilter(state, "tcp"));
+    frames(state);
+    ASSERT_FALSE(state.filter.visible.empty());
+    state.selectPacket(static_cast<int>(state.filter.visible.front()));
+    frames(state);
+    seg = ui::statusSegments(state);
+    EXPECT_EQ(seg.selected, "Selected: #" + std::to_string(state.currentPacket()->number));
+    EXPECT_EQ(seg.filter, "tcp");
+    EXPECT_EQ(seg.displayed, "Displayed: " + std::to_string(state.displayedCount()) + " / 16");
+}
+
+TEST_F(UiInteract, StatusBarKeepsLoadAndCaptureMessages) {
+    ui::AppState state;
+    state.loadMessage = "Truncated file";
+    state.loadFailed = false;
+    state.live.error = "no permission";
+    frames(state);
+    const ui::StatusSegments seg = ui::statusSegments(state);
+    EXPECT_EQ(seg.message, "Truncated file");
+    EXPECT_EQ(seg.error, "no permission");
+}
+
+TEST_F(UiInteract, StatusBarOfALiveSessionKeepsTheCaptureText) {
+    ui::AppState state;
+    ASSERT_TRUE(ui::startInjectedCapture(state, 1, 262144, "fake0"));
+    frames(state);
+    const ui::StatusSegments seg = ui::statusSegments(state);
+    EXPECT_EQ(seg.left, "Capturing on fake0 - 0 packets, 0 dropped");
+    EXPECT_EQ(seg.displayed, "Displayed: 0 / 0");
 }

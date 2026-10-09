@@ -87,3 +87,30 @@ TEST(ColorRules, TcpAnalysisProblemsGetTheirOwnColor) {
     retrans.tcp_analysis = 32; // keep-alive: not a problem either
     EXPECT_EQ(rules.match(retrans, {})->name, "TCP");
 }
+
+TEST(ColorRules, DarkThemeRowsKeepTheirHueAndStayReadable) {
+    for (const auto &rule: ui::defaultColorRules()) {
+        const auto dark = ui::rowColorsFor(rule, true);
+        EXPECT_GE(ui::contrastRatio(dark.foreground, dark.background), 4.5) << rule.name;
+        const auto light = ui::rowColorsFor(rule, false);
+        EXPECT_EQ(light.background, rule.background) << "the light theme draws the stored colors";
+        EXPECT_EQ(light.foreground, rule.foreground);
+    }
+    // pastel rules become dark tints instead of staying light
+    ui::ColorRule pastel{true, "p", "tcp", 0xE7E6FF, 0x12272E};
+    EXPECT_LT(ui::relativeLuminance(ui::rowColorsFor(pastel, true).background), 0.1);
+    // user rules with arbitrary colors are still made readable
+    for (uint32_t bg: {0x000000u, 0xFFFFFFu, 0x808080u, 0xFFFF00u, 0x00FF00u, 0xFF0000u}) {
+        for (uint32_t fg: {0x000000u, 0xFFFFFFu, 0x808080u}) {
+            const auto colors = ui::rowColorsFor({true, "x", "tcp", bg, fg}, true);
+            EXPECT_GE(ui::contrastRatio(colors.foreground, colors.background), 4.5) << std::hex << bg << " " << fg;
+        }
+    }
+}
+
+TEST(ColorRules, SelectedRowIsReadableInBothThemes) {
+    for (bool dark: {true, false}) {
+        const auto colors = ui::selectedRowColors(dark);
+        EXPECT_GE(ui::contrastRatio(colors.foreground, colors.background), 4.5);
+    }
+}

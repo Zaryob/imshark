@@ -94,6 +94,7 @@ add_library(imshark_ui STATIC
     src/ui/preferences.cpp
     src/ui/settings.cpp
     src/ui/stats_windows.cpp
+    src/ui/theme.cpp
     src/ui/time_format.cpp
 )
 target_include_directories(imshark_ui PUBLIC src)

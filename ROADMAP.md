@@ -24,7 +24,7 @@ Her başlık bağımsız bir çalışma olarak ele alınmalıdır. Protokol adı
 ## Kullanılabilirlik ve performans
 
 - [ ] Büyük yakalamalarda düzenli ifade filtrelerini UI iş parçacığından çıkar veya işi dilimle.
-- [ ] IP adreslerini sayısal sırala; pencere boyutu/konumu ve Decode As kurallarını kalıcı yap.
+- [ ] IP adreslerini sayısal sırala ve Decode As kurallarını kalıcı yap (pencere boyutu/konumu artık kalıcı).
 - [ ] Nanosaniyelik yakalamaların dışa aktarımında zaman hassasiyetini koru.
 - [ ] Yeni bağımlılık/dissector sürümlerinden sonra yükleme, filtre ve tepe bellek ölçümünü tekrarla; yöntemi ve ham çıktıyı kaydet.
 - [x] Menü, sağ tık, sürükle-bırak ve dışa aktarma gibi etkileşimlere daha geniş GUI doğrulaması ekle.

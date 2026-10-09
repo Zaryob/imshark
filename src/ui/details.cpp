@@ -1,5 +1,6 @@
 #include "ui.h"
 
+#include <algorithm>
 #include <cstdio>
 
 #include <imgui.h>
@@ -188,9 +189,16 @@ void ui::drawPacketDetails(AppState &state) {
     const bool ok = ensureDetail(state);
     const packet::PacketInfo &packet = state.detail;
 
+    // The hex view takes the rows it needs (up to 45%), the tree gets the rest: a short packet no longer leaves the
+    // tree a few lines tall above a half-empty hex view.
     const float available = ImGui::GetContentRegionAvail().y;
+    const ImGuiStyle &style = ImGui::GetStyle();
+    const float hexLines = static_cast<float>((packet.raw_data.size() + 15) / 16 + 1);
+    const float hexHeight = packet.raw_data.empty() ? 0.0f
+        : std::min(available * 0.45f, hexLines * ImGui::GetTextLineHeightWithSpacing() + 2 * style.WindowPadding.y + style.ItemSpacing.y);
+    const float treeHeight = packet.raw_data.empty() ? 0.0f : std::max(available * 0.3f, available - hexHeight - style.ItemSpacing.y);
 
-    ImGui::BeginChild("Packet Tree", ImVec2(0, available * 0.5f), true);
+    ImGui::BeginChild("Packet Tree", ImVec2(0, treeHeight), true);
     ImGui::TextWrapped("%s", packet.info.c_str());
     ImGui::Separator();
     if (!ok) {
