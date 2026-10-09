@@ -24,7 +24,7 @@ namespace {
         s += std::string("\x00\x00\x00", 3);
         return s;
     }
-    std::string eof(uint16_t status = 2) { return std::string("\xfe\x00\x00", 3) + static_cast<char>(status & 0xff) + static_cast<char>(status >> 8); }
+    std::string eofPacket(uint16_t status = 2) { return std::string("\xfe\x00\x00", 3) + static_cast<char>(status & 0xff) + static_cast<char>(status >> 8); }
     // OK terminator of CLIENT_DEPRECATE_EOF: 0xfe, affected rows 0, last insert id 0, status, warnings 0
     std::string okTerminator(uint16_t status) { return std::string("\xfe\x00\x00", 3) + static_cast<char>(status & 0xff) + static_cast<char>(status >> 8) + std::string("\x00\x00", 2); }
     std::string ok(uint16_t status = 2) { return std::string("\x00\x00\x00", 3) + static_cast<char>(status & 0xff) + static_cast<char>(status >> 8) + std::string("\x00\x00", 2); }
@@ -199,7 +199,7 @@ TEST(DbSessionMy, ATextResultSetIsFollowedColumnByColumnToItsEnd) {
     EXPECT_EQ(d0.index, 0u);
     const auto d1 = m.server(columnDefinition("t", "b", 253, 0, 0x2d));
     EXPECT_EQ(d1.index, 1u);
-    EXPECT_EQ(m.server(eof()).kind, MyPacket::Eof);
+    EXPECT_EQ(m.server(eofPacket()).kind, MyPacket::Eof);
     // a row whose first value is empty starts with 0x00 but it is a row, and a row may start with 0xfe only if it is >= 16 MB
     const std::string empty(1, '\0');
     const auto row0 = m.server(empty + textRow("x"));
@@ -210,7 +210,7 @@ TEST(DbSessionMy, ATextResultSetIsFollowedColumnByColumnToItsEnd) {
     EXPECT_EQ(row0.columns->my[0].type, 3);
     EXPECT_EQ(row0.columns->my[1].table, "t");
     EXPECT_EQ(m.server(textRow("1") + textRow("one")).kind, MyPacket::Row);
-    const auto end = m.server(eof());
+    const auto end = m.server(eofPacket());
     EXPECT_EQ(end.kind, MyPacket::RowsEnd);
     EXPECT_FALSE(end.more);
     EXPECT_EQ(m.server(ok()).kind, MyPacket::Unknown);   // idle: nothing in flight
@@ -224,17 +224,17 @@ TEST(DbSessionMy, ReplayRecoversTheKindOfEveryPacket) {
     m.t.myCommand(kConn, 0x03, "select a", kBudget, m.lost);
     m.server("\x01");                                   // packet 1
     m.server(columnDefinition("t", "a", 3));            // 2
-    m.server(eof());                                    // 3
+    m.server(eofPacket());                                    // 3
     m.server(textRow("1"));                             // 4
     m.server(textRow("2"));                             // 5
-    m.server(eof());                                    // 6
+    m.server(eofPacket());                                    // 6
     const MyPacket::Kind expect[] = {MyPacket::ColCount, MyPacket::ColDef, MyPacket::Eof, MyPacket::Row, MyPacket::Row, MyPacket::RowsEnd};
     for (uint32_t i = 0; i < 6; ++i) EXPECT_EQ(m.t.myPacketAt(kConn, i + 1, 0, false).kind, expect[i]) << "packet " << i + 1;
     EXPECT_EQ(m.t.myPacketAt(kConn, 5, 0, false).columns->my[0].name, "a");
     EXPECT_EQ(m.t.myPacketAt(kConn, 7, 0, false).kind, MyPacket::Unknown);   // after the end of the rows
     EXPECT_EQ(m.t.myPacketAt(kConn, 5, 0, true).kind, MyPacket::Unknown);    // the table lost its state
     // the same packets offered again change nothing
-    EXPECT_EQ(m.t.myServerPacket(kConn, 3, 0, eof(), kBudget, m.lost).kind, MyPacket::Eof);
+    EXPECT_EQ(m.t.myServerPacket(kConn, 3, 0, eofPacket(), kBudget, m.lost).kind, MyPacket::Eof);
 }
 
 TEST(DbSessionMy, DeprecateEofHasNoEofAfterTheColumnsAndEndsWithAnOkPacket) {
@@ -256,9 +256,9 @@ TEST(DbSessionMy, WithoutTheCapabilitiesAnEofAfterTheColumnsIsStillRecognised) {
     m.t.myCommand(kConn, 0x03, "select a", kBudget, m.lost);
     m.server("\x01");
     m.server(columnDefinition("t", "a", 3));
-    EXPECT_EQ(m.server(eof()).kind, MyPacket::Eof);
+    EXPECT_EQ(m.server(eofPacket()).kind, MyPacket::Eof);
     EXPECT_EQ(m.server(textRow("1")).kind, MyPacket::Row);
-    EXPECT_EQ(m.server(eof()).kind, MyPacket::RowsEnd);
+    EXPECT_EQ(m.server(eofPacket()).kind, MyPacket::RowsEnd);
 }
 
 TEST(DbSessionMy, MoreResultsKeepTheResponseOpen) {
@@ -268,16 +268,16 @@ TEST(DbSessionMy, MoreResultsKeepTheResponseOpen) {
     m.t.myCommand(kConn, 0x03, "call p()", kBudget, m.lost);
     m.server("\x01");
     m.server(columnDefinition("", "x", 3));
-    m.server(eof());
+    m.server(eofPacket());
     m.server(textRow("1"));
-    const auto end = m.server(eof(0x000a));   // SERVER_MORE_RESULTS_EXISTS (0x0008) | SERVER_STATUS_AUTOCOMMIT (0x0002)
+    const auto end = m.server(eofPacket(0x000a));   // SERVER_MORE_RESULTS_EXISTS (0x0008) | SERVER_STATUS_AUTOCOMMIT (0x0002)
     EXPECT_EQ(end.kind, MyPacket::RowsEnd);
     EXPECT_TRUE(end.more);
     EXPECT_EQ(m.server("\x01").kind, MyPacket::ColCount);   // the second result set
     m.server(columnDefinition("", "y", 253));
-    m.server(eof());
+    m.server(eofPacket());
     EXPECT_EQ(m.server(textRow("z")).columns->my[0].name, "y");
-    EXPECT_FALSE(m.server(eof(2)).more);
+    EXPECT_FALSE(m.server(eofPacket(2)).more);
     const auto final = m.server(ok());   // after the last result set the connection is idle again
     EXPECT_EQ(final.kind, MyPacket::Unknown);
 }
@@ -305,9 +305,9 @@ TEST(DbSessionMy, APrepareResponseMapsTheStatementIdToItsQuery) {
     EXPECT_EQ(prep.statement->sql(), "select ? + ?");
     EXPECT_EQ(m.server(columnDefinition("", "?", 8)).kind, MyPacket::PrepParamDef);
     EXPECT_EQ(m.server(columnDefinition("", "?", 8)).index, 1u);
-    EXPECT_EQ(m.server(eof()).kind, MyPacket::PrepEof);
+    EXPECT_EQ(m.server(eofPacket()).kind, MyPacket::PrepEof);
     EXPECT_EQ(m.server(columnDefinition("", "? + ?", 8)).kind, MyPacket::PrepColDef);
-    EXPECT_EQ(m.server(eof()).kind, MyPacket::PrepEof);
+    EXPECT_EQ(m.server(eofPacket()).kind, MyPacket::PrepEof);
     EXPECT_EQ(m.t.myStatement(kConn, 7)->sql(), "select ? + ?");
     EXPECT_EQ(m.t.myNote(1, 0)->id, 7u);   // Replay of the PREPARE_OK
 }
@@ -319,9 +319,9 @@ TEST(DbSessionMy, ExecutionsKeepTheLastParameterTypesAndCloseForgetsTheStatement
     m.t.myCommand(kConn, kMyStmtPrepare, "select ?", kBudget, m.lost);
     m.server(std::string("\x00\x09\x00\x00\x00\x01\x00\x01\x00\x00\x00\x00", 12));
     m.server(columnDefinition("", "?", 8));
-    m.server(eof());
+    m.server(eofPacket());
     m.server(columnDefinition("", "?", 8));
-    m.server(eof());
+    m.server(eofPacket());
     const std::vector<uint8_t> types = {0x08, 0x00};   // MYSQL_TYPE_LONGLONG, signed
     EXPECT_TRUE(m.t.myStatement(kConn, 9)->paramTypes.empty());
     const auto *e1 = m.t.myStatementCommand(kConn, 10, 0, 9, &types, false, kBudget, m.lost);
@@ -343,7 +343,7 @@ TEST(DbSessionMy, ABinaryResultSetIsMarkedBinary) {
     m.t.myCommand(kConn, kMyStmtExecute, "", kBudget, m.lost);
     EXPECT_TRUE(m.server("\x01").binary);
     m.server(columnDefinition("t", "a", 3));
-    m.server(eof());
+    m.server(eofPacket());
     const auto row = m.server(std::string("\x00\x00\x2a\x00\x00\x00", 6));
     EXPECT_EQ(row.kind, MyPacket::Row);
     EXPECT_TRUE(row.binary);
@@ -388,6 +388,6 @@ TEST(DbSessionMy, TheBudgetStopsNewStateAndNeverReadsPastIt) {
     t.myGreeting(kConn, 0, 3000, lost);
     t.myLogin(kConn, 0, 3000, lost);
     t.myCommand(kConn, 0x03, "select", 3000, lost);
-    for (uint32_t i = 0; i < 400; ++i) t.myServerPacket(kConn, i + 1, 0, i == 0 ? std::string("\x01") : eof(0x000a), 3000, lost);
+    for (uint32_t i = 0; i < 400; ++i) t.myServerPacket(kConn, i + 1, 0, i == 0 ? std::string("\x01") : eofPacket(0x000a), 3000, lost);
     EXPECT_LE(t.memory(), 3000u);
 }
