@@ -9,6 +9,12 @@
 #include <fstream>
 #include <string>
 #include <vector>
+#include <atomic>
+#if defined(_WIN32)
+#include <process.h>
+#else
+#include <unistd.h>
+#endif
 
 #include <packet/packet_parser.h>
 
@@ -44,8 +50,19 @@ namespace support {
         out.insert(out.end(), bytes, bytes + sizeof(T));
     }
 
+    inline std::string tempPath(const std::string &name) {
+        static std::atomic<uint64_t> seq{0};
+#if defined(_WIN32)
+        const auto pid = static_cast<unsigned long>(_getpid());
+#else
+        const auto pid = static_cast<unsigned long>(getpid());
+#endif
+        return (std::filesystem::temp_directory_path() /
+                ("imshark_test_" + std::to_string(pid) + "_" + std::to_string(seq.fetch_add(1)) + "_" + name)).string();
+    }
+
     inline std::string writeTemp(const std::string &name, const std::vector<char> &bytes) {
-        const auto path = (std::filesystem::temp_directory_path() / ("imshark_test_" + name)).string();
+        const auto path = tempPath(name);
         std::ofstream f(path, std::ios::binary);
         f.write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
         return path;

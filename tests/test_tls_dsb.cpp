@@ -185,7 +185,7 @@ TEST(TlsDsb, ExportWritesTheBlocksBackAsPcapng) {
     std::string message;
     ASSERT_TRUE(fp.processPcapFile(sample, packets, message)) << message;
     const std::vector<core::DecryptionSecrets> secrets = {{core::kSecretsTypeTlsKeyLog, text}};
-    const std::string out = (std::filesystem::temp_directory_path() / "imshark_test_dsb_export.pcapng").string();
+    const std::string out = support::tempPath("dsb_export.pcapng");
     std::string error;
     ASSERT_TRUE(exporter::exportPackets(sample, packets, {0, 1}, fp.captureStartEpoch(), exporter::Format::Pcapng, out, error, nullptr, &secrets)) << error;
     const std::string bytes = slurp(out);

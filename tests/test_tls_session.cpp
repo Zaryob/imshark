@@ -673,7 +673,7 @@ TEST(TlsSessionTable, TlsMemoryIsReleasedWithTheCapture) {
 TEST(TlsSession, TruncatedCapturesAtEveryLengthNeverCrash) {
     const std::vector<char> whole = slurpBytes(kDir + "tls13.pcapng");
     ASSERT_GT(whole.size(), 1000u);
-    const std::string path = (std::filesystem::temp_directory_path() / "imshark_test_tls_trunc.pcapng").string();
+    const std::string path = support::tempPath("tls_trunc.pcapng");
     size_t withSession = 0;
     for (size_t n = 0; n <= whole.size(); ++n) {
         {
@@ -699,7 +699,7 @@ TEST(TlsSession, TruncatedCapturesAtEveryLengthNeverCrash) {
 TEST(TlsSession, CutAndCorruptedTlsSegmentsNeverCrash) {
     const std::vector<char> whole = slurpBytes(kDir + "tls13.pcapng");
     std::mt19937 rng(0x7155);
-    const std::string path = (std::filesystem::temp_directory_path() / "imshark_test_tls_mut.pcapng").string();
+    const std::string path = support::tempPath("tls_mut.pcapng");
     for (int round = 0; round < 400; ++round) {
         std::vector<char> bytes = whole;
         const int flips = 1 + static_cast<int>(rng() % 6);
