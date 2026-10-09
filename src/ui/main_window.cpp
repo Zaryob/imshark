@@ -76,9 +76,7 @@ void ui::drawWelcome(AppState &state, ImTextureRef logo) {
     if (hasLogo) {
         const float logoWidth = logoHeight * 2.0f;
         ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (width - logoWidth) * 0.5f);
-        ImGui::PushStyleVar(ImGuiStyleVar_ImageRounding, 10.0f * dpiScale());
-        ImGui::ImageWithBg(logo, ImVec2(logoWidth, logoHeight), ImVec2(0, 0), ImVec2(1, 1), ImVec4(0.93f, 0.97f, 0.98f, 1.0f));
-        ImGui::PopStyleVar();
+        ImGui::Image(logo, ImVec2(logoWidth, logoHeight));
         ImGui::Spacing();
     } else {
         ImGui::SetWindowFontScale(2.0f);

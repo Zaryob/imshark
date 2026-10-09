@@ -1,6 +1,6 @@
 # ImShark branding
 
-`logo.png` is the supplied original artwork. `welcome-logo.png` is a 1024 × 512 copy embedded in the executable, so it does not depend on the launch directory. The welcome screen draws it on a light background for contrast in both themes.
+`logo.png` is the supplied original artwork. `welcome-logo.png` (dark lettering, for light mode) and `welcome-logo-light.png` (light lettering, for dark mode) are 1024 × 512 copies embedded in the executable, so they do not depend on the launch directory. The welcome screen renders them transparently matching the active theme.
 
 The platform icons use the same artwork on a light rounded square:
 

@@ -1,7 +1,8 @@
 #pragma once
 
-// Generated from resources/welcome-logo.png and resources/imshark.png by CMake.
+// Generated from resources/welcome-logo.png, resources/welcome-logo-light.png and resources/imshark.png by CMake.
 namespace brand {
     inline constexpr unsigned char kLogoPng[] = {@IMSHARK_LOGO_BYTES@};
+    inline constexpr unsigned char kLogoLightPng[] = {@IMSHARK_LOGO_LIGHT_BYTES@};
     inline constexpr unsigned char kIconPng[] = {@IMSHARK_ICON_BYTES@};
 }

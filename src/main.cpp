@@ -23,9 +23,9 @@
 #include <stb_image.h>
 
 namespace {
-    GLuint loadLogoTexture() {
+    GLuint loadTextureFromMemory(const unsigned char *data, size_t size) {
         int width = 0, height = 0, channels = 0;
-        unsigned char *pixels = stbi_load_from_memory(brand::kLogoPng, static_cast<int>(sizeof(brand::kLogoPng)),
+        unsigned char *pixels = stbi_load_from_memory(data, static_cast<int>(size),
                                                      &width, &height, &channels, STBI_rgb_alpha);
         if (!pixels) {
             std::cerr << "Cannot decode the embedded logo: " << stbi_failure_reason() << std::endl;
@@ -198,8 +198,8 @@ int main(int argc, char **argv) {
         return EXIT_FAILURE;
     }
 
-    const GLuint logoTexture = loadLogoTexture();
-    const ImTextureRef logo(static_cast<ImTextureID>(logoTexture));
+    const GLuint logoForLightMode = loadTextureFromMemory(brand::kLogoPng, sizeof(brand::kLogoPng));
+    const GLuint logoForDarkMode = loadTextureFromMemory(brand::kLogoLightPng, sizeof(brand::kLogoLightPng));
     ui::AppState state;
     ui::initSettings(state, ui::defaultSettingsPath());
     ui::applyTheme(state.settings.darkTheme);
@@ -233,7 +233,8 @@ int main(int argc, char **argv) {
             glfwSetWindowTitle(window, windowTitle.c_str());
         }
         ui::drawMenuAndDialogs(state);
-        ui::drawMainWindow(state, logo);
+        const GLuint currentLogoTexture = state.settings.darkTheme ? logoForDarkMode : logoForLightMode;
+        ui::drawMainWindow(state, ImTextureRef(static_cast<ImTextureID>(currentLogoTexture)));
         ui::drawStatusBar(state);
         ui::drawLoadErrorPopup(state);
         ui::drawLoadProgressPopup(state);
@@ -258,7 +259,7 @@ int main(int argc, char **argv) {
         glfwGetWindowSize(window, &w, &h);
         glfwGetWindowPos(window, &x, &y);
         if (w > 0 && h > 0 && (w != state.settings.windowWidth || h != state.settings.windowHeight || !state.settings.hasWindowPos ||
-                               x != state.settings.windowX || y != state.settings.windowY)) {
+                                x != state.settings.windowX || y != state.settings.windowY)) {
             state.settings.windowWidth = w;
             state.settings.windowHeight = h;
             state.settings.windowX = x;
@@ -269,7 +270,8 @@ int main(int argc, char **argv) {
     }
     ui::saveSettingsIfDirty(state);
 
-    if (logoTexture) glDeleteTextures(1, &logoTexture);
+    if (logoForLightMode) glDeleteTextures(1, &logoForLightMode);
+    if (logoForDarkMode) glDeleteTextures(1, &logoForDarkMode);
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();

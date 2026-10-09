@@ -118,10 +118,13 @@ configure_file(src/version.h.in "${CMAKE_BINARY_DIR}/generated/version.h" @ONLY)
 # Embed the PNGs so branding also works from an arbitrary working directory and in installed packages.
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/resources/welcome-logo.png"
+    "${CMAKE_CURRENT_SOURCE_DIR}/resources/welcome-logo-light.png"
     "${CMAKE_CURRENT_SOURCE_DIR}/resources/imshark.png")
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/resources/welcome-logo.png" _logo_hex HEX)
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/resources/welcome-logo-light.png" _logo_light_hex HEX)
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/resources/imshark.png" _icon_hex HEX)
 string(REGEX REPLACE "(..)" "0x\\1," IMSHARK_LOGO_BYTES "${_logo_hex}")
+string(REGEX REPLACE "(..)" "0x\\1," IMSHARK_LOGO_LIGHT_BYTES "${_logo_light_hex}")
 string(REGEX REPLACE "(..)" "0x\\1," IMSHARK_ICON_BYTES "${_icon_hex}")
 configure_file(src/brand_assets.h.in "${CMAKE_BINARY_DIR}/generated/brand_assets.h" @ONLY)
 

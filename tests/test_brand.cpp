@@ -22,6 +22,21 @@ TEST(BrandAssets, EmbeddedLogoIsAValidPngWithExpectedDimensions) {
     stbi_image_free(pixels);
 }
 
+TEST(BrandAssets, EmbeddedLightLogoIsAValidPngWithExpectedDimensions) {
+    ASSERT_GT(sizeof(brand::kLogoLightPng), 8u);
+    const unsigned char pngMagic[] = {0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'};
+    EXPECT_EQ(std::memcmp(brand::kLogoLightPng, pngMagic, sizeof(pngMagic)), 0);
+
+    int width = 0, height = 0, channels = 0;
+    unsigned char *pixels = stbi_load_from_memory(brand::kLogoLightPng, static_cast<int>(sizeof(brand::kLogoLightPng)),
+                                                  &width, &height, &channels, STBI_rgb_alpha);
+    ASSERT_NE(pixels, nullptr) << (stbi_failure_reason() ? stbi_failure_reason() : "unknown failure");
+    EXPECT_EQ(width, 1024);
+    EXPECT_EQ(height, 512);
+    EXPECT_EQ(channels, 4);
+    stbi_image_free(pixels);
+}
+
 TEST(BrandAssets, EmbeddedIconIsAValidPngWithExpectedDimensions) {
     ASSERT_GT(sizeof(brand::kIconPng), 8u);
     const unsigned char pngMagic[] = {0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n'};
