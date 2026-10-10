@@ -58,7 +58,7 @@ jobs:
         with:
           cache-scope: ${{ matrix.preset }}
       - name: Configure
-        run: cmake --preset ${{ matrix.preset }} -DIMSHARK_SANITIZE=${{ matrix.sanitize }}
+        run: cmake --preset ${{ matrix.preset }} -DIMSHARK_SANITIZE=${{ matrix.sanitize }} -DIMSHARK_WERROR=${{ runner.os == 'macOS' && 'ON' || 'OFF' }}
       - name: Build
         run: cmake --build --preset ${{ matrix.preset }} --parallel 4
       - name: Test
@@ -90,3 +90,29 @@ jobs:
             artifacts/linux
             artifacts/linux-package
           if-no-files-found: ignore
+
+  clang-tidy:
+    name: Static analysis / clang-tidy
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}/.vcpkg
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/.vcpkg-cache,readwrite
+      CC: clang
+      CXX: clang++
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install platform build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y autoconf autoconf-archive automake bison clang clang-tidy flex libgl1-mesa-dev libglu1-mesa-dev libltdl-dev libtool libwayland-dev libx11-dev libxcursor-dev libxi-dev libxinerama-dev libxrandr-dev ninja-build pkg-config wayland-protocols
+      - uses: ./.github/actions/setup-vcpkg
+        with:
+          cache-scope: clang-tidy
+      # Only configure: clang-tidy needs compile_commands.json and the configure-time generated headers, not objects.
+      - name: Configure
+        run: cmake --preset default -DCMAKE_BUILD_TYPE=Debug -DIMSHARK_BUILD_BENCH=ON
+      - name: clang-tidy
+        run: |
+          find core/src src tools tests -name '*.cpp' -print0 \
+            | xargs -0 -P "$(nproc)" -n 4 clang-tidy -p build --quiet --warnings-as-errors='*'
