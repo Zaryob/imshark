@@ -4,6 +4,8 @@
 //   version of a call / accept or auth status of a reply, app_text2 = file name / path of a call (v3 name, Mount path) or the NFSv4
 //   operation names, app_flags: bit 0 reply, 1 denied, 2 matched with its call, 3 retransmitted call / duplicate reply, 4 record joined
 //   from fragments, 5 fragment of a longer record, 8..15 program version.
+#include <cstdlib>
+
 #include <filter/field_helpers.h>
 #include <filter/field_modules.h>
 
