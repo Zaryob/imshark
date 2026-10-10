@@ -28,6 +28,10 @@ namespace capture {
         removeTemp();
     }
 
+    std::string LiveCapture::workerFifoPath() const {
+        return fifo_ ? fifo_->path() : std::string();
+    }
+
     std::string LiveCapture::lastError() const {
         std::lock_guard<std::mutex> lock(mutex_);
         return error_;
@@ -69,6 +73,9 @@ namespace capture {
             path_.clear();
             released_ = false;
         }
+        permissionDenied_ = false;
+        authorizing_ = false;
+        streaming_ = false;
         std::lock_guard<std::mutex> writer(writerMutex_);
         pending_.clear();
         fileSize_ = 0;
@@ -225,6 +232,15 @@ namespace capture {
             }
         }
         running_ = false;
+        authorizing_ = false;
+        if (worker_) {          // the reader thread is joined: the FIFO read end is closed, the helper sees EPIPE and ends
+            worker_->abandon();
+            worker_.reset();
+        }
+        if (fifo_) {
+            fifo_->remove();
+            fifo_.reset();
+        }
     }
 
     bool LiveCapture::beginInjected(uint32_t linkType, uint32_t snaplen) {

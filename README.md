@@ -87,6 +87,7 @@ tls.decrypted
 | Platform prerequisites, vcpkg, tests and Docker validation | [Build guide](docs/BUILDING.md) |
 | Checks that were run and package validation evidence | [Validation record](docs/VALIDATION.md) |
 | Interface, filters, streams and live capture | [User guide](docs/USER_GUIDE.md) |
+| Live capture privileges and the administrator helper | [Capture privileges](docs/CAPTURE_PRIVILEGES.md) (Turkish) |
 | Accepted display filter fields | [Generated field reference](docs/FILTER_FIELDS.md) |
 | File/link/protocol support | [Support matrix](docs/SUPPORT_MATRIX.md) |
 | Protocol specifications and implementation files | [Protocol references](docs/PROTOCOLS.md) |

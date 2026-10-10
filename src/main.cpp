@@ -4,12 +4,19 @@
 #include <iostream>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <GLFW/glfw3.h>
+
+// Windows only declares OpenGL 1.1 in its <GL/gl.h>; the value is fixed by the OpenGL 1.2 specification.
+#ifndef GL_CLAMP_TO_EDGE
+#define GL_CLAMP_TO_EDGE 0x812F
+#endif
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 
+#include <capture/capture_worker.h>
 #include <filter/fields.h>
 
 #include "ui/theme.h"
@@ -78,11 +85,19 @@ namespace {
                "\nOptions:\n"
                "  -h, --help     Show this help and exit\n"
                "  -V, --version  Show the version and exit\n"
+               "  --capture-worker ...  Internal: the capture helper started with administrator rights (see\n"
+               "                 docs/CAPTURE_PRIVILEGES.md); not meant to be run by hand\n"
                "  --             Treat the next argument as a capture file\n";
     }
 } // namespace
 
 int main(int argc, char **argv) {
+    // The privileged capture worker (started by the GUI through pkexec / osascript) must not initialise anything of the
+    // window system or the UI: it opens the device, drops its privileges and streams packets (docs/CAPTURE_PRIVILEGES.md).
+    if (argc > 1 && std::string_view(argv[1]) == "--capture-worker") {
+        return capture::worker::runCaptureWorker(std::vector<std::string>(argv + 2, argv + argc));
+    }
+
     // Handle command-line queries before touching the window system so they also work headless.
     const char *capturePath = nullptr;
     if (argc > 1) {
