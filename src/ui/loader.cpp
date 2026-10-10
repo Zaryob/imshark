@@ -13,6 +13,7 @@
 
 #include <core.h>
 #include <gzip.h>
+#include <temp_file.h>
 
 namespace ui {
     /// One background load. Owned by AppState::loadJob; destroying it cancels and joins the thread.
@@ -54,11 +55,7 @@ namespace ui {
 } // namespace ui
 
 namespace {
-    std::string makeTempPath() {
-        static std::atomic<unsigned> counter{0};
-        const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
-        return (std::filesystem::temp_directory_path() / ("imshark_" + std::to_string(stamp) + "_" + std::to_string(counter++) + ".cap")).string();
-    }
+    std::string makeTempPath() { return core::createTempFile(".cap"); }   // exclusive, 0600, in a private dir
 
     void runJob(ui::LoadJob &job) {
         core::FileProcessor processor(job.registry ? *job.registry : dissect::Registry::builtin());
@@ -190,6 +187,7 @@ void ui::loadCapture(AppState &state, const std::string &path) {
         pollLoad(state);
         if (state.loading()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
+    waitForFilter(state); // blocking helper: the displayed packets are final when it returns
 }
 
 // Progress popup: only shown for loads that take noticeable time, so small files do not flash a dialog.

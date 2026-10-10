@@ -63,6 +63,7 @@ Anahtar günlüğünü değiştirmek açık dosyayı yeniden yükler. Canlı yak
 - Düzenli ifade (`matches`) filtreleri UI iş parçacığında çalışır; büyük yakalamada gecikmeye yol açabilir. Filtreler özet alanlarını kullanır, ayrıntı ağacındaki her alan süzgeçlenemez.
 - IP adresleri metin olarak sıralanır. ImGui pencere yerleşimi ve Decode As kuralları oturumlar arasında saklanmaz.
 - Canlı yakalama tek arayüz/tek link türüdür ve geçici klasik pcap yazar; pcapng açıklama/ISB metaverisi yoktur. Yakalama sırasında arka plan işler başladıkları andaki paket listesinin görüntüsünü kullanır. Decode As için yakalamayı durdurup dışa aktarılan dosyayı açın.
+- Gzip yakalamalar en çok min(16 GiB, geçici klasördeki boş disk − 1 GiB) boyuta açılır; 1 GiB'tan sonra 1000:1'i aşan genişleme de reddedilir. Meşru ama çok sıkışan büyük bir dosya bu yüzden açılmayabilir; dosyayı harici bir araçla açıp doğrudan yükleyin. Çökmeyle sonlanan bir oturumun özel geçici klasörü silinmez.
 - 64 bit paket özeti libc++ ile 336, libstdc++/MSVC ile 384 bayttır; metinler, adres/oturum tabloları ve yeniden birleştirme tamponları bunun üstüne eklenir. Çok büyük yakalamalarda durum tabloları bütçe dolması nedeniyle eksik ilişkilendirme bildirebilir. Tek bir sentetik performans sonucu bütün protokollerin bellek/hız garantisi değildir.
 
 ## Doğrulamanın kapsamı

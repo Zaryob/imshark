@@ -7,6 +7,8 @@
 #include <filesystem>
 #include <system_error>
 
+#include <temp_file.h>
+
 namespace capture {
     namespace {
         void put16(std::string &out, uint16_t v) { for (int i = 0; i < 2; ++i) out += static_cast<char>((v >> (8 * i)) & 0xff); }
@@ -14,11 +16,7 @@ namespace capture {
 
         constexpr uint64_t kFileHeaderSize = 24, kRecordHeaderSize = 16;
 
-        std::string makeTempPath() {
-            static std::atomic<unsigned> counter{0};
-            const auto stamp = std::chrono::steady_clock::now().time_since_epoch().count();
-            return (std::filesystem::temp_directory_path() / ("imshark_live_" + std::to_string(stamp) + "_" + std::to_string(counter++) + ".pcap")).string();
-        }
+        std::string makeTempPath() { return core::createTempFile(".pcap"); }   // exclusive, 0600, in a private dir
     } // namespace
 
     LiveCapture::LiveCapture() = default;

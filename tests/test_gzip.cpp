@@ -179,3 +179,123 @@ TEST(GzipMemory, RejectsDamagedTruncatedAndOversizedData) {
     EXPECT_NE(error.find("larger"), std::string::npos) << error;
     EXPECT_TRUE(out.empty());
 }
+
+namespace {
+    // A valid gzip stream of 'a' x (1 + 258 * matches), built from one fixed-Huffman block: a literal followed by
+    // length-258 / distance-1 matches (~160:1). Lets the tests exercise the bomb limits without large fixtures.
+    std::string makeBomb(unsigned matches) {
+        std::string deflate;
+        uint32_t acc = 0;
+        int nbits = 0;
+        auto putBits = [&](uint32_t value, int n, bool msbFirst) {   // deflate packs Huffman codes MSB first, other fields LSB first
+            for (int i = 0; i < n; ++i) {
+                const uint32_t bit = msbFirst ? (value >> (n - 1 - i)) & 1 : (value >> i) & 1;
+                acc |= bit << nbits;
+                if (++nbits == 8) { deflate.push_back(static_cast<char>(acc)); acc = 0; nbits = 0; }
+            }
+        };
+        putBits(1, 1, false);                  // final block
+        putBits(1, 2, false);                  // fixed Huffman
+        putBits(0x30 + 'a', 8, true);          // literal 'a'
+        for (unsigned i = 0; i < matches; ++i) {
+            putBits(0xC5, 8, true);            // length symbol 285 (258)
+            putBits(0, 5, true);               // distance code 0 (1)
+        }
+        putBits(0, 7, true);                   // end of block (symbol 256)
+        if (nbits) deflate.push_back(static_cast<char>(acc));
+
+        const uint32_t size = 1 + 258 * matches;
+        uint32_t crc = 0xffffffffu;
+        for (uint32_t i = 0; i < size; ++i) {
+            crc ^= 'a';
+            for (int k = 0; k < 8; ++k) crc = (crc & 1) ? 0xEDB88320u ^ (crc >> 1) : crc >> 1;
+        }
+        crc = ~crc;
+        std::string out("\x1f\x8b\x08\x00\x00\x00\x00\x00\x00\x03", 10);
+        out += deflate;
+        for (int i = 0; i < 4; ++i) out.push_back(static_cast<char>((crc >> (8 * i)) & 0xff));
+        for (int i = 0; i < 4; ++i) out.push_back(static_cast<char>((size >> (8 * i)) & 0xff));
+        return out;
+    }
+
+    std::string writeBomb(const std::string &name, unsigned matches) {
+        const std::string bomb = makeBomb(matches);
+        return support::writeTemp(name, std::vector<char>(bomb.begin(), bomb.end()));
+    }
+
+    bool fileExists(const std::string &path) { return std::filesystem::exists(core::pathFromUtf8(path)); }
+} // namespace
+
+TEST(GzipLimits, TheGeneratedBombIsValidWhenTheLimitsAreLoose) {
+    const auto in = writeBomb("bomb_ok.gz", 100);
+    const auto out = support::tempPath("bomb_ok.out");
+    std::string error;
+    core::GunzipLimits limits;
+    limits.maxOutput = 1u << 20;
+    limits.maxRatio = 0;
+    ASSERT_TRUE(core::gunzipFile(in, out, error, nullptr, limits)) << error;
+    EXPECT_EQ(std::filesystem::file_size(core::pathFromUtf8(out)), 1u + 258u * 100u);
+    std::remove(in.c_str());
+    std::remove(out.c_str());
+}
+
+TEST(GzipLimits, OutputBeyondTheMaximumSizeFailsCleanlyAndLeavesNoFile) {
+    const auto in = writeBomb("bomb_size.gz", 1000);   // 258 KB of output
+    const auto out = support::tempPath("bomb_size.out");
+    std::string error;
+    core::GunzipLimits limits;
+    limits.maxOutput = 100000;
+    limits.maxRatio = 0;
+    EXPECT_FALSE(core::gunzipFile(in, out, error, nullptr, limits));
+    EXPECT_NE(error.find("would exceed"), std::string::npos) << error;
+    EXPECT_NE(error.find("refusing to continue"), std::string::npos) << error;
+    EXPECT_FALSE(fileExists(out)) << "the partial output is deleted";
+    std::remove(in.c_str());
+}
+
+TEST(GzipLimits, ExpansionRatioOnlyAppliesAboveTheSizeFloor) {
+    const auto in = writeBomb("bomb_ratio.gz", 2000);   // ~516 KB from ~3.3 KB: about 160:1
+    const auto out = support::tempPath("bomb_ratio.out");
+    std::string error;
+
+    core::GunzipLimits limits;
+    limits.maxOutput = 1ull << 30;
+    limits.maxRatio = 50;
+    limits.ratioFloor = 1ull << 30;   // never reached: a small file is fine however well it compresses
+    EXPECT_TRUE(core::gunzipFile(in, out, error, nullptr, limits)) << error;
+    std::remove(out.c_str());
+
+    limits.ratioFloor = 100000;       // reached after ~100 KB
+    EXPECT_FALSE(core::gunzipFile(in, out, error, nullptr, limits));
+    EXPECT_NE(error.find("50:1"), std::string::npos) << error;
+    EXPECT_NE(error.find("Refusing to continue"), std::string::npos) << error;
+    EXPECT_FALSE(fileExists(out));
+
+    limits.maxRatio = 1000;           // a ratio under the allowed maximum passes
+    EXPECT_TRUE(core::gunzipFile(in, out, error, nullptr, limits)) << error;
+    std::remove(out.c_str());
+    std::remove(in.c_str());
+}
+
+TEST(GzipLimits, NormalFixturesPassWithTheDefaultLimits) {
+    std::string content, error;
+    ASSERT_TRUE(gunzip(kDir + "big.gz", content, error)) << error;
+    EXPECT_GT(content.size(), 0u);
+    const auto out = support::tempPath("limit_default.out");
+    EXPECT_GT(core::defaultGunzipMaxOutput(out), 0u);
+    EXPECT_LE(core::defaultGunzipMaxOutput(out), core::kGunzipMaxOutput);
+}
+
+TEST(GzipLimits, CancellationStillWinsOverTheLimits) {
+    const auto in = writeBomb("bomb_cancel.gz", 1000);
+    const auto out = support::tempPath("bomb_cancel.out");
+    core::LoadControl control;
+    control.cancelRequested = true;
+    std::string error;
+    core::GunzipLimits limits;
+    limits.maxOutput = 100;
+    EXPECT_FALSE(core::gunzipFile(in, out, error, &control, limits));
+    EXPECT_TRUE(error.empty()) << "a cancel is not an error: " << error;
+    std::remove(in.c_str());
+    std::remove(out.c_str());
+}
