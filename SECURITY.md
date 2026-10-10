@@ -13,3 +13,5 @@ Please do not open a public issue. Report privately through GitHub Security Advi
 <https://github.com/Zaryob/imshark/security/advisories/new>
 
 Include the ImShark version, platform, a description of the impact and, if possible, a minimal capture file that reproduces the problem. Do not include captures containing private data. You will receive an acknowledgement as soon as possible, and fixes are coordinated with the reporter before public disclosure.
+
+What ImShark defends against, how, and what risk remains is described in the [threat model](docs/THREAT_MODEL.md).

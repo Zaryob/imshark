@@ -91,6 +91,7 @@ tls.decrypted
 | Dosya/link/protokol desteği | [Destek matrisi](docs/SUPPORT_MATRIX.md) |
 | Protokol belirtimleri ve uygulama dosyaları | [Protokol referansları](docs/PROTOCOLS.md) |
 | İşlevsel sınırlar ve doğrulama boşlukları | [Bilinen sorunlar](docs/KNOWN_ISSUES.md) |
+| 1.x boyunca neyin değişmeyeceği; saldırganlar, önlemler ve kalan riskler | [Uyumluluk sözü](docs/COMPATIBILITY.md), [tehdit modeli](docs/THREAT_MODEL.md) |
 | Veri akışı ve modüller | [Mimari](docs/ARCHITECTURE.md) |
 | Geliştirme ve yeni dissector ekleme | [Katkı rehberi](CONTRIBUTING.md), [dissector rehberi](docs/DISSECTORS.md) |
 | Sonraki öncelikler | [Yol haritası](ROADMAP.md) |

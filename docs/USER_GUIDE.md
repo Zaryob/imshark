@@ -97,8 +97,9 @@ click-to-insert and ready-made examples.
 Syntax:
 
 - Combine tests with `&&` `||` `!` (or `and` `or` `not`) and parentheses.
-- Comparisons: `==` `!=` `<` `>` `<=` `>=` (or `eq ne lt gt le ge`), `contains` (substring), `matches` (regular expression;
-  prefix `(?i)` to ignore case) and sets: `tcp.port in {80 443 8000..8100}`. `!=` is the exact negation of `==`.
+- Comparisons: `==` `!=` `<` `>` `<=` `>=` (or `eq ne lt gt le ge`), `contains` (substring), `matches` (PCRE2 regular expression, Perl-compatible
+  syntax like Wireshark; prefix `(?i)` to ignore case; inside the quotes write `\\d` for `\d`; a pattern that is too complex
+  to evaluate within fixed limits counts as no match and is reported in the status bar) and sets: `tcp.port in {80 443 8000..8100}`. `!=` is the exact negation of `==`.
 - Text values are quoted: `info contains "GET"`. IP addresses may be networks: `ip.addr == 10.0.0.0/8`,
   `ipv6.src == 2001:db8::/32`.
 - A bare protocol or flag name is true when it is present: `dns or arp`, `tcp.flags.syn && !tcp.flags.ack`, `malformed`.

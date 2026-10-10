@@ -4,8 +4,9 @@
 #include <cctype>
 #include <cerrno>
 #include <cstdlib>
-#include <regex>
+#include <atomic>
 
+#include "bounded_regex.h"
 #include "fields.h"
 
 namespace filter {
@@ -143,22 +144,21 @@ namespace filter {
             std::vector<URange> ranges;          // Unsigned / Boolean (Eq/Ne/In use all, ordering ops use the first)
             std::vector<double> doubles;         // Float
             std::vector<std::string> strings;    // String (Eq/Ne/In/Contains)
-            std::shared_ptr<std::regex> regex;   // String, Matches
+            BoundedRegex regex;                  // String, Matches
+            std::shared_ptr<std::atomic<uint64_t>> limitHits; // values the regex gave up on (shared with the Filter)
             std::vector<network::IpNetwork> nets; // addresses
 
-            // std::regex is a backtracking engine whose cost and (on some standard libraries) recursion depth grow with the
-            // input, so only the first kMaxRegexInput bytes of a value are searched. Summary texts and URIs are far
-            // shorter in practice; the bound keeps one evaluation from running away on a giant value. An engine failure
-            // (error_complexity / error_stack) counts as "no match" instead of escaping into a worker thread.
-            static constexpr size_t kMaxRegexInput = 4096;
-
+            // The engine is work bounded (see bounded_regex.h), so a value of any length can be searched. A value on
+            // which the bound is hit counts as "no match" and is tallied for the status bar.
             bool regexMatches(std::string_view text) const {
-                if (text.size() > kMaxRegexInput) text = text.substr(0, kMaxRegexInput);
-                try {
-                    return std::regex_search(text.data(), text.data() + text.size(), *regex);
-                } catch (const std::regex_error &) {
-                    return false;
+                switch (regex.search(text)) {
+                    case BoundedRegex::Outcome::Match: return true;
+                    case BoundedRegex::Outcome::LimitExceeded:
+                        if (limitHits) limitHits->fetch_add(1, std::memory_order_relaxed);
+                        return false;
+                    case BoundedRegex::Outcome::NoMatch: break;
                 }
+                return false;
             }
 
             template<typename T, typename Pred>
@@ -225,7 +225,8 @@ namespace filter {
         // ---------------------------------------------------------------------------------------------
         class Parser {
         public:
-            explicit Parser(std::vector<Token> tokens) : t_(std::move(tokens)) {}
+            Parser(std::vector<Token> tokens, std::shared_ptr<std::atomic<uint64_t>> limitHits)
+                : t_(std::move(tokens)), limitHits_(std::move(limitHits)) {}
 
             NodePtr parse() {
                 if (peek().kind == Tok::End) return nullptr; // empty expression
@@ -236,6 +237,7 @@ namespace filter {
 
         private:
             std::vector<Token> t_;
+            std::shared_ptr<std::atomic<uint64_t>> limitHits_;
             size_t i_ = 0;
 
             const Token &peek() const { return t_[i_]; }
@@ -365,14 +367,14 @@ namespace filter {
                 next();
                 addLiteral(*node, value, false);
                 if (op == Op::Matches) {
-                    try {
-                        std::string pattern = node->strings[0];
-                        auto flags = std::regex::ECMAScript;
-                        if (pattern.rfind("(?i)", 0) == 0) { pattern.erase(0, 4); flags |= std::regex::icase; }
-                        node->regex = std::make_shared<std::regex>(pattern, flags);
-                    } catch (const std::regex_error &e) {
-                        fail(std::string("Invalid regular expression: ") + e.what(), value.pos);
+                    auto compiled = BoundedRegex::compile(node->strings[0]);
+                    if (!compiled.ok) {
+                        // the offset is inside the unescaped text; +1 steps over the opening quote of a string token
+                        fail("Invalid regular expression: " + compiled.message + " (at offset " + std::to_string(compiled.offset) + " of the pattern)",
+                             value.pos + (value.kind == Tok::String ? 1 : 0) + compiled.offset);
                     }
+                    node->regex = std::move(compiled.regex);
+                    node->limitHits = limitHits_;
                 }
                 return node;
             }
@@ -447,7 +449,8 @@ namespace filter {
     Filter::Result Filter::compile(std::string_view text) {
         Result result;
         try {
-            Parser parser(tokenize(text));
+            result.filter.regexLimitHits_ = std::make_shared<std::atomic<uint64_t>>(0);
+            Parser parser(tokenize(text), result.filter.regexLimitHits_);
             result.filter.root_ = parser.parse();
             result.ok = true;
         } catch (const ParseError &e) {
@@ -459,6 +462,12 @@ namespace filter {
 
     bool Filter::matches(const packet::PacketInfo &packet, const Context &context) const {
         return root_ == nullptr || root_->eval(packet, context);
+    }
+
+    uint64_t Filter::regexLimitHits() const { return regexLimitHits_ ? regexLimitHits_->load(std::memory_order_relaxed) : 0; }
+
+    void Filter::resetRegexLimitHits() const {
+        if (regexLimitHits_) regexLimitHits_->store(0, std::memory_order_relaxed);
     }
 
     std::vector<FieldInfo> fieldInfos() {

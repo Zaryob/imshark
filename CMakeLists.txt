@@ -208,6 +208,8 @@ foreach(_notice IN LISTS _dependency_notices)
     endif()
     install(FILES "${_notice}" DESTINATION "${_license_root}/licenses" RENAME "${_port}.txt")
 endforeach()
+# The vcpkg pcre2 notice only points at the LICENCE file of the source tree, so the full text ships with the package.
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/resources/licenses/pcre2-LICENCE.md" DESTINATION "${_license_root}/licenses")
 
 # macOS: make the installed bundle self-contained. fixup_bundle copies every non-system dylib the executable links
 # (GLFW, OpenSSL libcrypto, libpcap/zlib if they are not system ones) into Contents/Frameworks and rewrites the install

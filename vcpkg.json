@@ -18,6 +18,10 @@
     },
     "imguifiledialog",
     "opengl",
+    {
+      "name": "pcre2",
+      "default-features": false
+    },
     "stb"
   ],
   "default-features": [

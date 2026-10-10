@@ -12,6 +12,8 @@
 // Examples:  tcp.port in {80 443} && !tcp.flags.rst     ip.addr == 10.0.0.0/8     dns or arp
 //            info contains "GET"     frame.len > 1000     ipv6.src == 2001:db8::/32
 
+#include <atomic>
+#include <cstdint>
 #include <memory>
 #include <optional>
 #include <string>
@@ -49,8 +51,14 @@ namespace filter {
         /// True for the empty expression.
         bool isEmpty() const { return root_ == nullptr; }
 
+        /// Number of values on which a `matches` regular expression hit its work limit (too complex) since compile or
+        /// the last reset; each counted as "no match". Shared by copies of the filter, safe to read while it is matching.
+        uint64_t regexLimitHits() const;
+        void resetRegexLimitHits() const;
+
     private:
         std::shared_ptr<const Node> root_;
+        std::shared_ptr<std::atomic<uint64_t>> regexLimitHits_;
     };
 
     struct Filter::Result {
