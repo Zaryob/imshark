@@ -19,7 +19,6 @@ namespace {
     constexpr size_t kChunk = 512;
     constexpr auto kFrameBudget = milliseconds(8);
     constexpr auto kStatsInterval = seconds(1);        // statistics windows are recomputed at most this often while capturing
-    constexpr auto kSortInterval = milliseconds(500);  // a sorted list is rebuilt at most this often while capturing
 
     // Separates the capture description from the counters. (ImGui's built-in font has no em dash.)
     constexpr const char *kDash = "-";
