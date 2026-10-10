@@ -118,6 +118,6 @@ bool ui::parseColorRule(const std::string &line, ColorRule &out) {
     if (!hexColor(parts[1], r.background) || !hexColor(parts[2], r.foreground)) return false;
     r.name = parts[3];
     r.expression = parts[4];
-    out = r;
+    out = std::move(r);
     return true;
 }

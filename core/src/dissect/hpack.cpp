@@ -8,7 +8,7 @@ namespace dissect {
 
 namespace {
 
-const HeaderField kStaticTable[62] = {
+const HeaderField kStaticTable[62] = {  // NOLINT(bugprone-throwing-static-initialization): fixed literals; failure is only out-of-memory at startup
     {"", ""},
     {":authority", ""},
     {":method", "GET"},

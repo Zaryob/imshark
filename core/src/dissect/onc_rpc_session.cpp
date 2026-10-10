@@ -81,7 +81,7 @@ const RpcNote *RpcTable::observeFragment(const std::string &stream, uint32_t pac
                 const size_t cost = kept + stream.capacity() + sizeof(Assembly) + 64;
                 if (reserve(cost)) {
                     Assembly a;
-                    a.bytes.assign(body.data(), kept);
+                    a.bytes.assign(body.substr(0, kept));
                     a.total = static_cast<uint32_t>(body.size());
                     a.fragments = 1;
                     a.nextSeq = endSeq;
@@ -108,7 +108,7 @@ const RpcNote *RpcTable::observeFragment(const std::string &stream, uint32_t pac
                 } else {
                     a.cost += kept;
                     a.lastStart = a.total;
-                    a.bytes.append(body.data(), kept);
+                    a.bytes.append(body.substr(0, kept));
                     a.total += static_cast<uint32_t>(body.size());
                     ++a.fragments;
                     a.nextSeq = endSeq;

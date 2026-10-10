@@ -202,7 +202,7 @@ namespace dissect {
         }
         // records recorded as decrypted are opened with the keys the load pass used, not whatever the store holds now
         const auto runtime = runtimes_.find(ref.session);
-        if (recorded && runtime != runtimes_.end() && runtime->second.keys) keys = &*runtime->second.keys;
+        if (recorded && runtime != runtimes_.end() && runtime->second.keys) keys = &*runtime->second.keys;  // NOLINT(bugprone-unchecked-optional-access): tested by the condition; the check loses it through the map iterator
         if (!recorded || !keys || !session.hasClientRandom) return;
 
         std::optional<tls::RecordDecryptor> decryptor;

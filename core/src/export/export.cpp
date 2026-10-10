@@ -193,7 +193,6 @@ namespace exporter {
         out.write(head.data(), static_cast<std::streamsize>(head.size()));
 
         std::string rec;
-        std::string error2;
         const bool completed = core::scanPackets(capturePath, packets, indices, [&](const packet::PacketInfo &p, const std::vector<char> &frame) {
             rec.clear();
             const uint64_t us = micros(p, captureStartEpoch);

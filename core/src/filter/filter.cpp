@@ -449,7 +449,7 @@ namespace filter {
     std::vector<FieldInfo> fieldInfos() {
         std::vector<FieldInfo> out;
         for (const auto &f: allFields()) {
-            const char *type = "";
+            const char *type = "";  // NOLINT(clang-analyzer-deadcode.DeadStores): safe default if a FieldType is added
             switch (f.type) {
                 case FieldType::Unsigned: type = "unsigned"; break;
                 case FieldType::Boolean: type = "boolean"; break;

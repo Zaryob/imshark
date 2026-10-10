@@ -116,7 +116,7 @@ void dissect::dissectRadiotap(Context &ctx, const char *data, size_t length) {
         if (cur + 1 <= it_len) {
             haveSignal = true;
             signalDbm = static_cast<int8_t>(data[cur++]);
-            ctx.pack.radiotap_signal = signalDbm;
+            ctx.pack.radiotap_signal = signalDbm;  // NOLINT(bugprone-signed-char-misuse,cert-str34-c): a signed dBm value
         }
     }
 
