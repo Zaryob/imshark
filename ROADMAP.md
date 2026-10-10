@@ -37,19 +37,20 @@ Her başlık bağımsız bir çalışma olarak ele alınmalıdır. Protokol adı
 
 ## 1.0 kapısı
 
-`v1.0.0` için engelleyici işler ve durumları. Durum, yalnızca `master` üzerinde gerçekten birleştirilmiş işi `tamamlandı` sayar; açık pull request'ler `PR açık` olarak işaretlidir.
+`v1.0.0` için engelleyici işler ve durumları. Kod tarafındaki bütün engeller `master` üzerinde birleştirildi; Windows temiz makine testi 1.0'da yapılmadı ve bilinen sınır olarak kaldı.
 
 | İş | Durum | Bağlantı |
 |---|---|---|
 | Güvenli yakalama yardımcısı (ayrıcalıklı süreç yalnızca aygıtı açar, sonra yetkilerini bırakır; sistem genelinde izin değişikliği yok) | tamamlandı | [#8](https://github.com/Zaryob/imshark/pull/8) |
-| Fuzzing (libFuzzer koşum takımları, CI'da çalıştırma, bulunan ayrıştırıcı hatalarının düzeltilmesi) | PR açık | [#13](https://github.com/Zaryob/imshark/pull/13) |
-| Statik analiz (CodeQL, clang-tidy, tek uyarı kümesi) | PR açık | [#12](https://github.com/Zaryob/imshark/pull/12) |
-| Ayar dosyası sürümü, uyumluluk sözü ve tehdit modeli | PR açık | [#10](https://github.com/Zaryob/imshark/pull/10) |
-| gzip açma sınırı ve güvenli geçici dosyalar | PR açık | [#9](https://github.com/Zaryob/imshark/pull/9) |
-| Arka planda görüntüleme filtresi ve nanosaniye hassasiyetiyle dışa aktarma | PR açık | [#11](https://github.com/Zaryob/imshark/pull/11) |
-| CHANGELOG, RELEASING, USER_GUIDE güncellemesi ve yayımlanmış paketlerin lisans denetimi | bu çalışma (PR henüz yok) | [CHANGELOG.md](CHANGELOG.md), [RELEASING.md](docs/RELEASING.md), [VALIDATION.md](docs/VALIDATION.md#third-party-licence-notices-in-the-published-packages) |
-| Windows temiz makine testi | açık; insan gerektirir | [kontrol listesi](docs/RELEASING.md#9-windows-clean-machine-checklist) |
+| Fuzzing (libFuzzer koşum takımları, CI'da çalıştırma, bulunan ayrıştırıcı hatalarının düzeltilmesi) | tamamlandı | [#13](https://github.com/Zaryob/imshark/pull/13) |
+| Statik analiz (CodeQL, clang-tidy, tek uyarı kümesi) | tamamlandı | [#12](https://github.com/Zaryob/imshark/pull/12) |
+| Ayar dosyası sürümü, uyumluluk sözü ve tehdit modeli | tamamlandı | [#10](https://github.com/Zaryob/imshark/pull/10) |
+| gzip açma sınırı ve güvenli geçici dosyalar | tamamlandı | [#9](https://github.com/Zaryob/imshark/pull/9) |
+| Arka planda görüntüleme filtresi ve nanosaniye hassasiyetiyle dışa aktarma | tamamlandı | [#11](https://github.com/Zaryob/imshark/pull/11) |
+| CHANGELOG, RELEASING, USER_GUIDE güncellemesi ve yayımlanmış paketlerin lisans denetimi | tamamlandı ([#14](https://github.com/Zaryob/imshark/pull/14)) | [CHANGELOG.md](CHANGELOG.md), [RELEASING.md](docs/RELEASING.md), [VALIDATION.md](docs/VALIDATION.md#third-party-licence-notices-in-the-published-packages) |
+| Windows temiz makine testi | açık; 1.0'da yapılmadı, insan gerektirir | [kontrol listesi](docs/RELEASING.md#9-windows-clean-machine-checklist) |
 | macOS ad hoc imza | bilinçli karar: 1.0 için Developer ID imzası ve noter onayı yok; kullanıcılar Gatekeeper'da "Open Anyway" adımını izler | [RELEASING.md](docs/RELEASING.md#7-macos-signing) |
+| Düzenli ifadelerin sınırlı PCRE2 ile değerlendirilmesi (fuzzing'in bulduğu ReDoS) | tamamlandı | [#15](https://github.com/Zaryob/imshark/pull/15) |
 
 Sürüm `1.0.0` etiketlenmeden önce bu tablodaki her satır `tamamlandı` olmalı ya da açıkça kabul edilmiş bir karar olmalıdır.
 

@@ -6,7 +6,9 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 Only the packages of **0.9.2** were ever published on GitHub Releases. Earlier tags exist in the repository but produced no packages; the entries below say why.
 
-## Unreleased (1.0.0)
+## [1.0.0] - 2026-10-10
+
+First stable release. [Release notes](docs/releases/v1.0.0.md); what 1.0 promises to keep stable is in [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
 
 ### Added
 - Capture helper: live capture runs through `imshark --capture-worker`, which starts only after an explicit **Authorize and capture** click, opens the device with elevated rights and drops privileges before touching any file, instead of opening system-wide permissions. Also adds the ImShark icons and welcome-screen logo ([#8](https://github.com/Zaryob/imshark/pull/8)).
@@ -14,14 +16,15 @@ Only the packages of **0.9.2** were ever published on GitHub Releases. Earlier t
 - Settings file format version, atomic saves, `docs/COMPATIBILITY.md` (the 1.0 stability promise) and `docs/THREAT_MODEL.md` ([#10](https://github.com/Zaryob/imshark/pull/10)).
 - CodeQL and clang-tidy in CI, one warning set for all targets and an `IMSHARK_WERROR` option ([#12](https://github.com/Zaryob/imshark/pull/12)).
 - libFuzzer harnesses with seed corpora, replayed as tests in every build and run in CI, plus `docs/FUZZING.md` ([#13](https://github.com/Zaryob/imshark/pull/13)).
-- `CHANGELOG.md`, `docs/RELEASING.md`, an updated user guide and a third-party licence audit of the 0.9.2 packages (`docs/VALIDATION.md`).
+- `CHANGELOG.md`, `docs/RELEASING.md`, an updated user guide, a third-party licence audit of the 0.9.2 packages (`docs/VALIDATION.md`) and the logo licence (CC0 1.0) ([#14](https://github.com/Zaryob/imshark/pull/14)).
 
 ### Changed
 - The macOS bundle identifier changes from `com.imshark.app` (0.9.1 and 0.9.2) to `io.github.zaryob.imshark` ([#8](https://github.com/Zaryob/imshark/pull/8)); macOS treats the 1.0 app as a different application for per-app permissions.
+- Regular expressions in display filters and coloring rules are evaluated with PCRE2 (Perl-compatible syntax, like Wireshark) under match, depth and heap limits instead of `std::regex`; a pattern that hits a limit counts as no match and is reported in the status bar ([#15](https://github.com/Zaryob/imshark/pull/15)).
 - Decompression of `.gz` captures has an output limit and an expansion-ratio guard, and temporary files are created exclusively with random names in a private directory ([#9](https://github.com/Zaryob/imshark/pull/9)).
 
 ### Fixed
-- A heavy regular expression in a display filter no longer terminates the application ([#11](https://github.com/Zaryob/imshark/pull/11)).
+- A heavy regular expression in a display filter no longer terminates the application ([#11](https://github.com/Zaryob/imshark/pull/11)) or runs for seconds through catastrophic backtracking ([#15](https://github.com/Zaryob/imshark/pull/15)).
 - Parser bugs found by fuzzing: a DNS-over-TCP over-read, a length underflow after the FCS, BGP and HTTP/2 nodes reaching past their payload, and quadratic growth of the info column ([#13](https://github.com/Zaryob/imshark/pull/13)).
 - Checked integer parsing for HTTP status and X.509 years and other findings from the new static analysis ([#12](https://github.com/Zaryob/imshark/pull/12)).
 
