@@ -83,3 +83,32 @@ The `package-verify` stage installed the generated DEB in a fresh Ubuntu 24.04 i
 [The README screenshot](images/imshark-linux.png) was captured from this clean package installation. Full local logs and smoke artifacts are kept in the ignored `.cache/` and `artifacts/linux{,-package}/` directories; CI uploads the smoke artifacts.
 
 This proves the aarch64 container build, package generation and clean Ubuntu package startup. Windows, Linux x86_64, AppImage execution, physical live-capture devices and hardware GPU rendering were not exercised locally.
+
+## Third-party licence notices in the published packages
+
+Audit of the assets of [v0.9.2](https://github.com/Zaryob/imshark/releases/tag/v0.9.2), 10 October 2026. All five assets were downloaded with `gh release download v0.9.2` and matched `SHA256SUMS.txt`. The notices a package ships are the `licenses/*.txt` files (and `LICENSE` for ImShark itself) that the install rules in `CMakeLists.txt` copy from the vcpkg `share/<port>/copyright` files.
+
+What the code actually uses at run time (`vcpkg.json`, `cmake/Dependencies.cmake`, `CMakeLists.txt`): Dear ImGui and ImGuiFileDialog (statically linked), GLFW, OpenGL (system), OpenSSL for TLS/DTLS decryption, libpcap for live capture on Linux and macOS. Gzip uses ImShark's own inflate implementation, so zlib is not a dependency. GoogleTest is linked only into the test executable. `stb` (header-only, public domain or MIT, used for `stb_image` in `src/main.cpp`) was added with the branding work after 0.9.2 and is not in any 0.9.2 binary.
+
+| Package | How it was inspected | Required notices present | Missing | Extra (not linked into the shipped binary) |
+|---|---|---|---|---|
+| macOS DMG (`imshark.app`) | Mounted read-only; `Contents/Resources/licenses`; `otool -L` (system frameworks only, no `Contents/Frameworks`, so everything else is static) | imgui, imguifiledialog, glfw3, openssl, libpcap, egl-registry, opengl-registry, `LICENSE` | none | gtest, vcpkg-cmake, vcpkg-cmake-config, vcpkg-cmake-get-vars |
+| Linux tar.gz | Extracted; `share/imshark/licenses`; `strings` shows libpcap 1.10.7 and OpenSSL 3.6.5 statically linked | imgui, imguifiledialog, glfw3, openssl, libpcap, egl-registry, opengl-registry, `LICENSE` | none | gtest, zlib, bzip2, liblzma, libxml2, libxslt, pthread-stubs, xcb-util-m4, vcpkg-cmake, vcpkg-cmake-config, vcpkg-cmake-get-vars, vcpkg-make, vcpkg-tool-meson |
+| Linux DEB | `ar x` and extraction of `data.tar.gz`; `usr/share/imshark/licenses` | Same set as the tar.gz | none | Same as the tar.gz |
+| Linux AppImage | **Not inspected**: `unsquashfs`, `7z` and `7zz` are not installed on the macOS audit machine and `--appimage-extract` does not run on macOS. `tools/make_appimage.sh` stages `cmake --install` into the AppDir, so the ImShark and vcpkg notices are expected to equal the tar.gz. | not verified | not verified | not verified |
+| Windows ZIP | Extracted; `share/imshark/licenses` and `bin/` | imgui, imguifiledialog, glfw3 (for `glfw3.dll`), openssl (for `libcrypto-3-x64.dll`), opengl, egl-registry, opengl-registry, `LICENSE` | none for vcpkg libraries | gtest, vcpkg-cmake, vcpkg-cmake-config, vcpkg-cmake-get-vars |
+
+Findings:
+
+1. **No required notice was missing from 0.9.2.** Every library linked into or shipped with the binaries has its notice.
+2. **Extra notices:** `gtest` is shipped in every package although GoogleTest is test-only, and the Linux packages carry build-tool and transitive ports (zlib, bzip2, liblzma, libxml2, libxslt, xcb helpers, `vcpkg-*`). They are harmless but misleading. The install rule globs every installed port, so the list is whatever vcpkg happened to install.
+3. **`stb` after 0.9.2:** the same glob picks up `share/stb/copyright`, so the next release ships `stb.txt` without a rule change.
+4. **Windows runtime:** the ZIP contains the Microsoft Visual C++ runtime DLLs (`vcruntime140*.dll`, `msvcp140*.dll`, `concrt140.dll`). They are redistributable under Microsoft's distributable-code terms and have no notice file in the package. They are not third-party open-source notices, but the maintainer should confirm that the terms are acceptable for a GPL-3.0 download.
+5. **Not shipped, correctly:** Npcap (its licence forbids redistribution without a separate agreement; the Windows package has no live capture), and system libraries on Linux (GL, X11).
+6. **Dear ImGui bundles** `stb_truetype`, `stb_rect_pack` and `stb_textedit` (public domain or MIT, each with its terms in its own header). The `imgui` notice does not repeat them; since they are public domain or MIT-alternative and the headers travel with the library source, this was left as is.
+7. **DEB:** the package has no `/usr/share/doc/imshark/copyright` file; the licence is under `/usr/share/imshark`. Debian policy expects the former; the project is not packaged for Debian proper, so this is only a note.
+8. **AppImage:** linuxdeploy copies system shared libraries into the image without their licence files. This was not checked here, and should be looked at when the AppImage can be extracted on Linux.
+
+### Fix applied after the audit
+
+The install rule in `CMakeLists.txt` now skips the `gtest` notice and the `vcpkg-*` build-script ports. Verified with `cmake --preset debug`, `cmake --build --preset debug` and `cmake --install build-debug --prefix <scratch>` on macOS arm64 (Debug, ASan/UBSan): `imshark.app/Contents/Resources/licenses` holds exactly `egl-registry`, `glfw3`, `imgui`, `imguifiledialog`, `libpcap`, `opengl-registry`, `openssl` and `stb`, `codesign --verify --deep --strict` passes and the installed binary runs `--version`. Before the change the same install also shipped `gtest`, `vcpkg-cmake`, `vcpkg-cmake-config` and `vcpkg-cmake-get-vars`, and `stb.txt` was already present. The Linux extras (zlib, bzip2, liblzma, libxml2, libxslt, xcb helpers) come from the Linux vcpkg dependency closure and could not be rebuilt here; check the Linux `licenses` directory of the next release candidate and decide whether to prune them.

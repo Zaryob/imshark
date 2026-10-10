@@ -260,6 +260,10 @@ file(GLOB _dependency_notices "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/sh
 foreach(_notice IN LISTS _dependency_notices)
     get_filename_component(_port_share "${_notice}" DIRECTORY)
     get_filename_component(_port "${_port_share}" NAME)
+    # GoogleTest is linked only into the test executable and the vcpkg-* ports are build scripts: neither is distributed.
+    if(_port STREQUAL "gtest" OR _port MATCHES "^vcpkg-")
+        continue()
+    endif()
     install(FILES "${_notice}" DESTINATION "${_license_root}/licenses" RENAME "${_port}.txt")
 endforeach()
 # The vcpkg pcre2 notice only points at the LICENCE file of the source tree, so the full text ships with the package.
