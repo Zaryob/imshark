@@ -164,7 +164,7 @@ namespace {
                 if (textEnd == pos) return Scan::Reject;
                 if (h.response) {
                     const char *sp = static_cast<const char *>(std::memchr(d, ' ', textEnd));
-                    h.status = sp ? static_cast<unsigned>(std::atoi(std::string(sp + 1, d + textEnd - sp - 1).c_str())) : 0;
+                    h.status = sp ? static_cast<unsigned>(std::strtol(std::string(sp + 1, d + textEnd - sp - 1).c_str(), nullptr, 10)) : 0;
                 } else {
                     h.head = std::memcmp(d, "HEAD ", 5) == 0;
                 }
@@ -283,7 +283,7 @@ bool dissect::dissectHttp(Context &ctx, const char *data, size_t length) {
         pack.app_type = method->code;
     } else {
         const size_t sp = first.find(' ');
-        if (sp != std::string::npos) status = static_cast<uint16_t>(std::atoi(first.c_str() + sp + 1));
+        if (sp != std::string::npos) status = static_cast<uint16_t>(std::strtol(first.c_str() + sp + 1, nullptr, 10));
         pack.app_code = status;
     }
 

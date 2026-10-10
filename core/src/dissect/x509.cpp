@@ -42,11 +42,11 @@ namespace dissect {
 
         // UTCTime YYMMDDHHMMSSZ or GeneralizedTime YYYYMMDDHHMMSSZ
         std::string describeTime(const BerTlv &t) {
-            const std::string s = t.asPrintable();
+            std::string s = t.asPrintable();
             size_t at = 0;
             std::string year;
             if (t.rawTag == 0x17 && s.size() >= 12) {
-                const int yy = std::atoi(s.substr(0, 2).c_str());
+                const int yy = static_cast<int>(std::strtol(s.substr(0, 2).c_str(), nullptr, 10));
                 year = std::to_string(yy < 50 ? 2000 + yy : 1900 + yy);
                 at = 2;
             } else if (t.rawTag == 0x18 && s.size() >= 14) {
