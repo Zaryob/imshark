@@ -9,7 +9,8 @@ On macOS the Command key takes the place of Ctrl in every shortcut below (Dear I
 
 ## Contents
 
-[Opening files](#opening-files) - [The main window](#the-main-window) - [Display filters](#display-filters) -
+[Opening files](#opening-files) - [Welcome screen](#welcome-screen) - [Toolbar](#toolbar) - [The main window](#the-main-window) -
+[Themes](#themes) - [Status bar](#status-bar) - [Display filters](#display-filters) -
 [Finding packets](#finding-packets) - [Coloring](#coloring) - [Statistics](#statistics) - [Follow stream](#follow-stream) -
 [Export](#export) - [Capture file properties](#capture-file-properties) - [Live capture](#live-capture) -
 [TLS key log](#tls-key-log) - [Decode As](#decode-as) - [Settings](#settings) - [Keyboard shortcuts](#keyboard-shortcuts)
@@ -27,17 +28,61 @@ On macOS the Command key takes the place of Ctrl in every shortcut below (Dear I
   truncated files load as far as they are readable, and problems are shown in the status bar.
 - **File > Close File** (Ctrl+W) closes the capture.
 
+## Welcome screen
+
+With no file open and no capture running, the main area shows the ImShark logo (dark or light lettering to match the
+theme) instead of an empty packet list:
+
+- **Open capture...** does the same as File > Open (Ctrl+O).
+- **Start live capture...** opens the capture interface chooser. It appears only in builds with live capture; the Windows
+  package does not have it.
+- A hint says that a `.pcap` or `.pcapng` file can be dropped anywhere on the window.
+- **Recent files** lists the last files you opened, newest first: the file name, its folder in grey and the full path in a
+  tooltip. Click an entry to open it. The list is the same as File > Open Recent.
+
+The welcome screen disappears as soon as a file loads or a capture starts, and returns when you close it.
+
+## Toolbar
+
+The toolbar under the menu bar has **Open**, **Close**, **Reload**, **Start**, **Stop**, **Restart**, **Find** and
+**Statistics**. Each button's tooltip names its keyboard shortcut. A button that does not apply (for example **Close**
+without a file, or **Start** while capturing) is greyed out but still shows its tooltip; the live capture buttons say why
+when the build has no live capture. **Statistics** opens a menu with the four statistics windows. Hide or show the toolbar
+with **View > Toolbar**; the choice is remembered.
+
 ## The main window
 
 - **Packet list** columns: No., Time, Source, Destination, Protocol, Length, Info. Click a header to sort; select with
   the mouse or with Up/Down, PgUp/PgDn, Home/End; right-click a row for Follow TCP/UDP Stream and Copy Row / Source /
-  Destination / Info. The splitter between list and details is draggable and remembered.
+  Destination / Info. Once a packet is selected, a splitter appears between the list and the details: drag it to resize the list. The height is remembered.
 - **Packet details**: the protocol tree of the selected packet. Selecting a field highlights its bytes; right-click for
   Copy, Copy Value and Copy Bytes as Hex / ASCII.
 - **Bytes** pane: hex and ASCII. Clicking a byte selects the most specific field containing it; the selection can be copied
   (Ctrl+C while hovering, or right-click: Copy Selection as Hex / ASCII, Copy All as Hex Dump).
 - The Time column format is set in **View > Time Display Format**: seconds since beginning of capture, since previous
-  packet, UTC date and time, or seconds since epoch. **View > Dark Theme / Light Theme** switches the theme.
+  packet, UTC date and time, or seconds since epoch.
+- The window's size and position are saved when they change and restored at the next start. A saved position that no longer
+  fits the screen (for example a disconnected monitor) is moved back onto the visible area, and the window cannot be made
+  smaller than 640 x 400.
+
+## Themes
+
+**View > Dark Theme** and **View > Light Theme** switch the look at once. Both use one accent color; the packet list's
+coloring rules are adapted to the theme so rows stay readable, and the selected row stands out in both. The choice is
+remembered. The welcome logo switches with the theme.
+
+## Status bar
+
+The status bar at the bottom of the window shows, from left to right, separated by `|`:
+
+- **State**: "No file loaded", the name of the open file (the full path is in the tooltip), "Loading <path> ..." while a
+  file loads, or during live capture "Capturing on <interface> - N packets, D dropped" (or "Live capture on <interface>
+  (stopped)").
+- **Displayed: shown / total**: packets passing the display filter out of all packets.
+- **Selected: #N**: the number of the selected packet.
+- **Filter: <expression>**: the applied display filter.
+- **Messages** at the right edge: errors (red) and notices such as damaged-file warnings (amber). Long text is shortened
+  with an ellipsis; hover for the full text.
 
 ## Display filters
 
@@ -129,8 +174,9 @@ window offers **Authorize and capture** (macOS and Linux): after you confirm the
 pkexec), a separate helper process opens the interface with administrator rights, drops them at once and streams the packets
 back through a private pipe for this one capture; **Cancel** starts nothing, and nothing on the system is changed (no
 permissions, capabilities or groups). **Show permanent setup...** lists commands for a permanent setup (macOS access_bpf
-group, Linux capabilities, Npcap) that you run yourself. Design, limits and cleanup: [CAPTURE_PRIVILEGES.md](CAPTURE_PRIVILEGES.md)
-(Turkish).
+group, Linux capabilities, Npcap) that you run yourself. While the system dialog is open, "Waiting for administrator
+authorization..." offers **Cancel**. The Windows package has no live capture and shows guidance only. Design, limits and
+cleanup: [CAPTURE_PRIVILEGES.md](CAPTURE_PRIVILEGES.md) (Turkish).
 
 - **Capture > Interfaces...** (Ctrl+K): choose the interface (name, description, addresses, flags), a BPF capture filter
   (validated while you type), the snap length and promiscuous mode. The last choices are saved.
@@ -163,8 +209,8 @@ edits). Protocols offered (a name appears for the transports it supports):
 
 Settings are saved automatically in `settings.ini` in the per-user configuration folder: `~/Library/Application
 Support/imshark/` on macOS, `$XDG_CONFIG_HOME/imshark/` (or `~/.config/imshark/`) on Linux, `%APPDATA%\imshark\` on Windows.
-They hold the recent files and filter history, theme, time format, colorize switch, coloring rules, the list height, the TLS
-key log path and the last live capture choices. A missing or damaged file gives the defaults; delete it to reset.
+They hold the recent files and filter history, theme, toolbar visibility, window size and position, time format, colorize
+switch, coloring rules, the list height, the TLS key log path and the last live capture choices. A missing or damaged file gives the defaults; delete it to reset.
 
 ## Keyboard shortcuts
 
