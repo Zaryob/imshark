@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
 
 #include <ui/settings.h>
 
@@ -238,4 +239,168 @@ TEST(Settings, RestoredWindowIsClampedToTheWorkArea) {
     EXPECT_EQ(out.w, 1920);
     EXPECT_EQ(out.h, 400);
     EXPECT_EQ(out.x, 0);
+}
+
+namespace {
+    std::string readAll(const std::filesystem::path &p) {
+        std::ifstream f(p, std::ios::binary);
+        return {std::istreambuf_iterator<char>(f), std::istreambuf_iterator<char>()};
+    }
+
+    void writeAll(const std::string &path, const std::string &content) {
+        std::filesystem::create_directories(std::filesystem::path(path).parent_path());
+        std::ofstream f(path, std::ios::binary | std::ios::trunc);
+        f << content;
+    }
+
+    std::vector<std::filesystem::path> backupsOf(const std::string &path) {
+        std::vector<std::filesystem::path> found;
+        const std::filesystem::path p(path);
+        for (const auto &e: std::filesystem::directory_iterator(p.parent_path())) {
+            if (e.path().filename().string().rfind(p.filename().string() + ".bak-", 0) == 0) found.push_back(e.path());
+        }
+        return found;
+    }
+
+    std::size_t fileCount(const std::string &path) {
+        return static_cast<std::size_t>(std::distance(std::filesystem::directory_iterator(std::filesystem::path(path).parent_path()),
+                                                      std::filesystem::directory_iterator()));
+    }
+} // namespace
+
+TEST(SettingsVersion, SaveWritesTheVersionAsTheFirstLineAndLoadReportsIt) {
+    const auto path = tempPath("version_roundtrip");
+    ASSERT_TRUE(ui::saveSettings(ui::Settings(), path));
+    const std::string text = readAll(path);
+    EXPECT_EQ(text.rfind("settings_version=" + std::to_string(ui::kSettingsVersion) + "\n", 0), 0u);
+    const auto loaded = ui::loadSettings(path);
+    EXPECT_EQ(loaded.loadedVersion, ui::kSettingsVersion);
+    EXPECT_FALSE(loaded.fromNewerVersion);
+    std::filesystem::remove_all(std::filesystem::path(path).parent_path());
+}
+
+TEST(SettingsVersion, LegacyFileWithoutVersionMigratesToCurrent) {
+    const auto path = tempPath("version_legacy");
+    writeAll(path, "theme=light\nlist_height=320\nrecent=/a.pcap\nfilter=tcp\n");
+    const auto legacy = ui::loadSettings(path);
+    EXPECT_EQ(legacy.loadedVersion, 0);
+    EXPECT_FALSE(legacy.fromNewerVersion);
+    EXPECT_FALSE(legacy.darkTheme);
+    EXPECT_FLOAT_EQ(legacy.listHeight, 320.0f);
+
+    ASSERT_TRUE(ui::saveSettings(legacy, path)); // the migration is the identity plus the version key
+    EXPECT_TRUE(backupsOf(path).empty()) << "a legacy file is valid, not corrupt";
+    const auto migrated = ui::loadSettings(path);
+    EXPECT_EQ(migrated.loadedVersion, ui::kSettingsVersion);
+    EXPECT_FALSE(migrated.darkTheme);
+    EXPECT_FLOAT_EQ(migrated.listHeight, 320.0f);
+    EXPECT_EQ(migrated.recentFiles, std::vector<std::string>{"/a.pcap"});
+    EXPECT_EQ(migrated.filterHistory, std::vector<std::string>{"tcp"});
+    std::filesystem::remove_all(std::filesystem::path(path).parent_path());
+}
+
+TEST(SettingsVersion, FutureVersionIsReadButNeverOverwritten) {
+    const auto path = tempPath("version_future");
+    const std::string original = "settings_version=99\ntheme=light\nnew_future_key=keep me\nlist_height=333\n";
+    writeAll(path, original);
+    const auto loaded = ui::loadSettings(path);
+    EXPECT_TRUE(loaded.fromNewerVersion);
+    EXPECT_EQ(loaded.loadedVersion, 99);
+    EXPECT_FALSE(loaded.darkTheme) << "known keys are still read";
+    EXPECT_FLOAT_EQ(loaded.listHeight, 333.0f);
+
+    ui::Settings changed = loaded;
+    changed.darkTheme = true;
+    EXPECT_TRUE(ui::saveSettings(changed, path)) << "reported as handled so the UI does not retry every frame";
+    EXPECT_EQ(readAll(path), original);
+    EXPECT_TRUE(backupsOf(path).empty());
+    std::filesystem::remove_all(std::filesystem::path(path).parent_path());
+}
+
+TEST(SettingsVersion, UnknownKeysAreDroppedOnSaveOfAnOlderOrCurrentFile) {
+    const auto path = tempPath("version_unknown_keys");
+    writeAll(path, "settings_version=1\ntheme=light\nmystery=1\n");
+    ASSERT_TRUE(ui::saveSettings(ui::loadSettings(path), path));
+    const std::string text = readAll(path);
+    EXPECT_EQ(text.find("mystery"), std::string::npos);
+    EXPECT_NE(text.find("theme=light"), std::string::npos);
+    std::filesystem::remove_all(std::filesystem::path(path).parent_path());
+}
+
+TEST(SettingsVersion, CorruptFileIsBackedUpBeforeItIsReplaced) {
+    const auto path = tempPath("version_corrupt");
+    const std::string garbage = std::string("\x01\x02 not a settings file\0\xff", 25);
+    writeAll(path, garbage);
+    const auto loaded = ui::loadSettings(path);
+    EXPECT_TRUE(loaded.darkTheme) << "defaults";
+    EXPECT_EQ(loaded.loadedVersion, 0);
+
+    ASSERT_TRUE(ui::saveSettings(loaded, path));
+    const auto backups = backupsOf(path);
+    ASSERT_EQ(backups.size(), 1u);
+    EXPECT_EQ(readAll(backups[0]), garbage);
+    EXPECT_EQ(ui::loadSettings(path).loadedVersion, ui::kSettingsVersion);
+
+    // a second save of the now-valid file makes no further backup
+    ASSERT_TRUE(ui::saveSettings(loaded, path));
+    EXPECT_EQ(backupsOf(path).size(), 1u);
+    std::filesystem::remove_all(std::filesystem::path(path).parent_path());
+}
+
+TEST(SettingsVersion, TextWithoutAnyKnownKeyAndMalformedVersionCountAsCorrupt) {
+    for (const std::string content: {std::string("hello world\nthis is prose\n"), std::string("settings_version=abc\ntheme=light\n")}) {
+        const auto path = tempPath("version_corrupt_text");
+        writeAll(path, content);
+        ASSERT_TRUE(ui::saveSettings(ui::Settings(), path));
+        const auto backups = backupsOf(path);
+        ASSERT_EQ(backups.size(), 1u) << content;
+        EXPECT_EQ(readAll(backups[0]), content);
+        std::filesystem::remove_all(std::filesystem::path(path).parent_path());
+    }
+}
+
+TEST(SettingsVersion, EmptyFileIsNotBackedUp) {
+    const auto path = tempPath("version_empty");
+    writeAll(path, "");
+    ASSERT_TRUE(ui::saveSettings(ui::Settings(), path));
+    EXPECT_TRUE(backupsOf(path).empty());
+    std::filesystem::remove_all(std::filesystem::path(path).parent_path());
+}
+
+TEST(SettingsVersion, SaveLeavesNoTemporaryFilesBehind) {
+    const auto path = tempPath("version_notemp");
+    ASSERT_TRUE(ui::saveSettings(ui::Settings(), path));
+    ASSERT_TRUE(ui::saveSettings(ui::Settings(), path));
+    EXPECT_EQ(fileCount(path), 1u);
+    std::filesystem::remove_all(std::filesystem::path(path).parent_path());
+}
+
+TEST(SettingsVersion, FailedSaveLeavesTheOldFileIntact) {
+    const auto path = tempPath("version_atomic");
+    ui::Settings first;
+    first.darkTheme = false;
+    ASSERT_TRUE(ui::saveSettings(first, path));
+    const std::string before = readAll(path);
+
+    // a directory in place of the file cannot be replaced
+    const auto dirPath = tempPath("version_atomic_dir");
+    std::filesystem::create_directories(dirPath);
+    EXPECT_FALSE(ui::saveSettings(first, dirPath));
+    std::filesystem::remove_all(std::filesystem::path(dirPath).parent_path());
+
+#ifndef _WIN32
+    // a read-only directory cannot take the temporary file, so the old file must survive untouched
+    namespace fs = std::filesystem;
+    const fs::path dir = fs::path(path).parent_path();
+    fs::permissions(dir, fs::perms::owner_read | fs::perms::owner_exec, fs::perm_options::replace);
+    ui::Settings second = first;
+    second.darkTheme = true;
+    const bool wrote = ui::saveSettings(second, path);
+    fs::permissions(dir, fs::perms::owner_all, fs::perm_options::replace);
+    if (wrote) GTEST_SKIP() << "directory permissions are not enforced here (running as root?)";
+    EXPECT_EQ(readAll(path), before);
+    EXPECT_FALSE(ui::loadSettings(path).darkTheme);
+    EXPECT_EQ(fileCount(path), 1u);
+#endif
+    std::filesystem::remove_all(std::filesystem::path(path).parent_path());
 }

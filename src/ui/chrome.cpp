@@ -35,6 +35,10 @@ void ui::initSettings(AppState &state, const std::string &path) {
     recompileColorRules(state);
     state.preferences.tlsKeyLogEdit = state.settings.tlsKeyLogFile;
     loadTlsKeyLog(state);
+    if (state.settings.fromNewerVersion) {
+        // shown once (the next capture load replaces the message); the file itself is never rewritten
+        state.loadMessage = "Settings were written by a newer ImShark and will not be modified.";
+    }
 }
 
 void ui::saveSettingsIfDirty(AppState &state) {
