@@ -36,6 +36,37 @@
       }
     },
     {
+      "name": "fuzz",
+      "displayName": "libFuzzer + ASan/UBSan harnesses (Clang with the libFuzzer runtime, see docs/FUZZING.md)",
+      "inherits": "default",
+      "binaryDir": "${sourceDir}/build-fuzz",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_C_COMPILER": "clang",
+        "CMAKE_CXX_COMPILER": "clang++",
+        "IMSHARK_FUZZ": "ON",
+        "IMSHARK_FUZZ_ENGINE": "LIBFUZZER",
+        "IMSHARK_BUILD_TESTS": "OFF",
+        "IMSHARK_BUILD_TOOLS": "OFF",
+        "IMSHARK_LIVE_CAPTURE": "OFF"
+      }
+    },
+    {
+      "name": "fuzz-macos",
+      "displayName": "fuzz with Homebrew LLVM (Apple Clang has no libFuzzer): brew install llvm",
+      "inherits": "fuzz",
+      "condition": {
+        "type": "equals",
+        "lhs": "${hostSystemName}",
+        "rhs": "Darwin"
+      },
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "/opt/homebrew/opt/llvm/bin/clang",
+        "CMAKE_CXX_COMPILER": "/opt/homebrew/opt/llvm/bin/clang++",
+        "CMAKE_EXE_LINKER_FLAGS": "-L/opt/homebrew/opt/llvm/lib/c++ -Wl,-rpath,/opt/homebrew/opt/llvm/lib/c++"
+      }
+    },
+    {
       "name": "vcpkg",
       "displayName": "Alias for default",
       "inherits": "default"
@@ -57,6 +88,20 @@
     {
       "name": "vcpkg",
       "configurePreset": "vcpkg"
+    },
+    {
+      "name": "fuzz",
+      "configurePreset": "fuzz",
+      "targets": [
+        "imshark_fuzzers"
+      ]
+    },
+    {
+      "name": "fuzz-macos",
+      "configurePreset": "fuzz-macos",
+      "targets": [
+        "imshark_fuzzers"
+      ]
     }
   ],
   "testPresets": [
@@ -86,6 +131,30 @@
       "configurePreset": "vcpkg",
       "output": {
         "outputOnFailure": true
+      }
+    },
+    {
+      "name": "fuzz",
+      "configurePreset": "fuzz",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "name": "^fuzz_replay_"
+        }
+      }
+    },
+    {
+      "name": "fuzz-macos",
+      "configurePreset": "fuzz-macos",
+      "output": {
+        "outputOnFailure": true
+      },
+      "filter": {
+        "include": {
+          "name": "^fuzz_replay_"
+        }
       }
     }
   ]

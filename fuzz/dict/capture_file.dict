@@ -1,0 +1,69 @@
+# Magic numbers, block types and options of the capture file formats ImShark reads (fuzz_capture_file).
+
+# classic pcap: microsecond / nanosecond magic, both byte orders, version 2.4, common link types
+pcap_le="\xD4\xC3\xB2\xA1"
+pcap_be="\xA1\xB2\xC3\xD4"
+pcap_nano_le="\x4D\x3C\xB2\xA1"
+pcap_nano_be="\xA1\xB2\x3C\x4D"
+pcap_version_le="\x02\x00\x04\x00"
+pcap_version_be="\x00\x02\x00\x04"
+link_ethernet_le="\x01\x00\x00\x00"
+link_raw_le="\x65\x00\x00\x00"
+link_sll_le="\x71\x00\x00\x00"
+link_80211_le="\x69\x00\x00\x00"
+
+# pcapng: byte order magic, version 1.0, block types (little endian)
+ng_shb="\x0A\x0D\x0D\x0A"
+ng_bom_le="\x4D\x3C\x2B\x1A"
+ng_bom_be="\x1A\x2B\x3C\x4D"
+ng_section_length_unknown="\xFF\xFF\xFF\xFF\xFF\xFF\xFF\xFF"
+ng_version="\x01\x00\x00\x00"
+ng_idb="\x01\x00\x00\x00"
+ng_pb_obsolete="\x02\x00\x00\x00"
+ng_spb="\x03\x00\x00\x00"
+ng_nrb="\x04\x00\x00\x00"
+ng_isb="\x05\x00\x00\x00"
+ng_epb="\x06\x00\x00\x00"
+ng_cb="\x07\x00\x00\x00"
+ng_dsb="\x0A\x00\x00\x00"
+ng_custom_copyable="\x15\x00\x00\x00"
+ng_custom_nocopy="\x15\x0B\x00\x00"
+ng_dsb_tls_keylog="TLSK"
+# pcapng options: end, comment, if_name, if_description, if_tsresol, if_tsoffset, if_fcslen, epb_flags
+ng_opt_end="\x00\x00\x00\x00"
+ng_opt_comment="\x01\x00"
+ng_opt_if_name="\x02\x00"
+ng_opt_if_descr="\x03\x00"
+ng_opt_if_tsresol="\x09\x00\x01\x00"
+ng_opt_if_fcslen="\x0D\x00\x01\x00"
+ng_opt_if_tsoffset="\x0E\x00\x08\x00"
+ng_opt_epb_flags="\x02\x00\x04\x00"
+ng_opt_nrb_dns4="\x01\x00"
+ng_opt_nrb_dns6="\x02\x00"
+
+# Microsoft Network Monitor 2.x
+netmon_magic="GMBU"
+netmon_version="\x00\x02"
+
+# Sun snoop version 2, datalink types (Ethernet, Token Ring)
+snoop_magic="snoop\x00\x00\x00"
+snoop_version="\x00\x00\x00\x02"
+snoop_ethernet="\x00\x00\x00\x04"
+snoop_tokenring="\x00\x00\x00\x05"
+
+# AIX iptrace
+iptrace_v1="iptrace 1.0"
+iptrace_v2="iptrace 2.0"
+
+# Endace ERF record types (ethernet, ipv4, ipv6, pos, atm, eth with extension header)
+erf_type_eth="\x00\x00\x00\x00\x00\x00\x00\x00\x02"
+erf_type_ipv4="\x15"
+erf_type_ipv6="\x16"
+erf_flags_truncated="\x08"
+
+# gzip wrapped capture
+gzip_magic="\x1F\x8B\x08\x00"
+gzip_fname="\x1F\x8B\x08\x08"
+gzip_extra="\x1F\x8B\x08\x04"
+gzip_comment="\x1F\x8B\x08\x10"
+gzip_hcrc="\x1F\x8B\x08\x02"
