@@ -7,6 +7,7 @@
 // which turn the driver into a small coverage-blind mutation fuzzer for machines without libFuzzer (see docs/FUZZING.md):
 //
 //   -mutate=N            after the replay, run N inputs made by random mutation of the corpus (default: none)
+//   -max_total_time=S    mutate for S seconds (alone or together with -mutate: whichever ends first)
 //   -seed=S              seed of the mutation random generator (default: 1); the run is fully reproducible
 //   -max_len=L           longest mutant in bytes (default: 65536)
 //   -dict=FILE           libFuzzer dictionary (name="value" lines) whose tokens the mutator inserts
@@ -17,6 +18,7 @@
 // the sanitizer or abort() as usual).
 
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -164,16 +166,19 @@ int main(int argc, char **argv) {
     std::vector<std::filesystem::path> inputs;
     bool ok = true;
     uint64_t mutations = 0, seed = 1, maxLen = 65536;
+    double maxSeconds = 0;
     std::string dictPath, artifactPrefix;
     for (int i = 1; i < argc; ++i) {
         const std::string arg = argv[i];
         if (arg.rfind("-mutate=", 0) == 0) mutations = std::strtoull(arg.c_str() + 8, nullptr, 10);
+        else if (arg.rfind("-max_total_time=", 0) == 0) maxSeconds = std::strtod(arg.c_str() + 16, nullptr);
         else if (arg.rfind("-seed=", 0) == 0) seed = std::strtoull(arg.c_str() + 6, nullptr, 10);
         else if (arg.rfind("-max_len=", 0) == 0) maxLen = std::strtoull(arg.c_str() + 9, nullptr, 10);
         else if (arg.rfind("-dict=", 0) == 0) dictPath = arg.substr(6);
         else if (arg.rfind("-artifact_prefix=", 0) == 0) artifactPrefix = arg.substr(17);
         else if (arg[0] != '-') collect(std::filesystem::path(arg), inputs, ok);
     }
+    const bool mutating = mutations > 0 || maxSeconds > 0;
     if (inputs.empty()) {
         std::fprintf(stderr, "usage: %s file-or-directory...\n", argc > 0 ? argv[0] : "fuzz-harness");
         return 1;
@@ -193,15 +198,19 @@ int main(int argc, char **argv) {
         Bytes bytes((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
         LLVMFuzzerTestOneInput(bytes.data(), bytes.size());
         ++executed;
-        if (mutations && bytes.size() <= maxLen) pool.push_back(std::move(bytes));
+        if (mutating && bytes.size() <= maxLen) pool.push_back(std::move(bytes));
     }
     std::printf("Executed %zu inputs\n", executed);
 
-    if (mutations && !pool.empty()) {
+    if (mutating && !pool.empty()) {
         const auto dict = dictPath.empty() ? std::vector<Bytes>() : loadDictionary(dictPath);
         const std::string lastInput = artifactPrefix + "last-input";
         Random rng{seed * 0x9E3779B97F4A7C15ull + 1};
-        for (uint64_t n = 0; n < mutations; ++n) {
+        const auto start = std::chrono::steady_clock::now();
+        uint64_t n = 0;
+        for (; mutations == 0 || n < mutations; ++n) {
+            if (maxSeconds > 0 && (n % 64 == 0) &&
+                std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count() >= maxSeconds) break;
             Bytes mutant = pool[rng.below(pool.size())];
             mutate(mutant, rng, pool, dict, static_cast<size_t>(maxLen));
             if (!writeFile(lastInput, mutant)) std::fprintf(stderr, "cannot write %s\n", lastInput.c_str());
@@ -211,7 +220,9 @@ int main(int argc, char **argv) {
         }
         std::error_code ec;
         std::filesystem::remove(std::filesystem::path(lastInput), ec);
-        std::printf("Executed %zu inputs (%llu mutated)\n", executed, static_cast<unsigned long long>(mutations));
+        const double seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count();
+        std::printf("Executed %zu inputs (%llu mutated in %.1f s, %.0f/s)\n", executed, static_cast<unsigned long long>(n), seconds,
+                    seconds > 0 ? static_cast<double>(n) / seconds : 0.0);
     }
     return ok ? 0 : 1;
 }
