@@ -27,6 +27,7 @@ namespace ui {
     struct SearchJob;  // background byte search in progress (find_bar.cpp)
     struct FollowJob;  // background stream reassembly in progress (follow_window.cpp)
     struct ExportJob;  // background export in progress (export_dialog.cpp)
+    struct FilterJob;  // background display filter evaluation in progress (filter_bar.cpp)
 
     /// The display filter bar: what is typed, what is applied, and which packets pass.
     struct FilterState {
@@ -38,6 +39,11 @@ namespace ui {
         filter::Filter applied;
         bool active = false;               // a non-empty filter is applied
         std::vector<uint32_t> visible;     // indices of packets that pass (valid when active)
+        // A new filter is evaluated on a worker thread. While it runs, `applied`/`appliedText`/`active`/`visible` still
+        // describe the previous result (it stays on screen); the job's result replaces them all at once when it finishes
+        // (pollFilter). A job that is cancelled but still running is parked in `retired` until it has ended.
+        std::shared_ptr<FilterJob> job;
+        std::vector<std::shared_ptr<FilterJob>> retired;
         bool focusRequested = false;       // put the keyboard cursor into the bar next frame
         bool showHelp = false;
         std::string helpSearch;            // search box of the reference window
