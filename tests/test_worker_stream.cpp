@@ -306,6 +306,8 @@ namespace {
         void SetUp() override {
             std::signal(SIGPIPE, SIG_IGN);
             if (!liveCaptureAvailable() || platformElevationMethod() == ElevationMethod::None) GTEST_SKIP() << "no helper capture in this build / platform";
+            // as root (e.g. the Docker test image) ImShark never asks for elevation, by design
+            if (::geteuid() == 0) GTEST_SKIP() << "running as root: the helper is never started";
         }
         static CaptureOptions options() {
             CaptureOptions o;

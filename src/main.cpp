@@ -7,6 +7,11 @@
 #include <vector>
 
 #include <GLFW/glfw3.h>
+
+// Windows only declares OpenGL 1.1 in its <GL/gl.h>; the value is fixed by the OpenGL 1.2 specification.
+#ifndef GL_CLAMP_TO_EDGE
+#define GL_CLAMP_TO_EDGE 0x812F
+#endif
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
