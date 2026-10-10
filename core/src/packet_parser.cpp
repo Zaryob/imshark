@@ -255,7 +255,9 @@ void packet::PacketParser::parsePacket(packet::PacketInfo &pack, const std::vect
 
     pack.ether_type = etherType;
     if (const dissect::Dissector *network = registry_->findEtherType(etherType)) {
-        (*network)(ctx, base + l3Offset, effectiveLen - l3Offset);
+        // the configured FCS can leave fewer bytes than the link header: the network layer then sees an empty payload
+        const size_t networkLen = effectiveLen > l3Offset ? effectiveLen - l3Offset : 0;
+        (*network)(ctx, base + std::min(l3Offset, len), networkLen);
         return;
     }
 

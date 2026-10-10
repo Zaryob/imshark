@@ -1,5 +1,7 @@
 #include "protocols.h"
 
+#include <algorithm>
+
 #include "hpack.h"
 #include "reader.h"
 #include "util.h"
@@ -240,7 +242,9 @@ void dissectHttp2(Context &ctx, const char *data, size_t length) {
                 if (frameNode) {
                     const size_t dataOffset = padded ? 10 : 9;
                     if (dataLen > 0) frameNode->add("Data (" + std::to_string(dataLen) + " bytes)", frameBase + dataOffset, dataLen);
-                    if (padLen > 0) frameNode->add("Padding (" + std::to_string(padLen) + " bytes)", frameBase + dataOffset + dataLen, padLen);
+                    // a Pad Length larger than what the payload holds (damaged frame) shows only the bytes that exist
+                    const size_t padShown = std::min<size_t>(padLen, payloadLen >= 1 + dataLen ? payloadLen - 1 - dataLen : 0);
+                    if (padShown > 0) frameNode->add("Padding (" + std::to_string(padLen) + " bytes)", frameBase + dataOffset + dataLen, padShown);
                 }
                 break;
             }

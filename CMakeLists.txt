@@ -53,6 +53,42 @@ if(IMSHARK_COVERAGE)
     add_link_options(-fprofile-instr-generate)
 endif()
 
+# Fuzzing (docs/FUZZING.md). The harnesses in fuzz/ are always built next to the tests and replay their seed corpus under
+# CTest. IMSHARK_FUZZ additionally instruments the whole build for coverage guided fuzzing with libFuzzer and
+# ASan/UBSan; it needs Clang with the libFuzzer runtime (Apple Clang has none: use Homebrew LLVM, see the fuzz-macos
+# preset). Without that engine the harnesses link the standalone driver fuzz/standalone_main.cpp, which only replays files.
+option(IMSHARK_FUZZ "Build the fuzz harnesses with libFuzzer, AddressSanitizer and UndefinedBehaviorSanitizer (Clang)" OFF)
+set(IMSHARK_FUZZ_ENGINE "AUTO" CACHE STRING "Engine for IMSHARK_FUZZ: AUTO (libFuzzer if the compiler has it), LIBFUZZER (required) or STANDALONE (replay driver)")
+set_property(CACHE IMSHARK_FUZZ_ENGINE PROPERTY STRINGS AUTO LIBFUZZER STANDALONE)
+set(IMSHARK_FUZZ_LIBFUZZER OFF)
+if(IMSHARK_FUZZ AND NOT IMSHARK_FUZZ_ENGINE STREQUAL "STANDALONE")
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        include(CheckCXXSourceCompiles)
+        set(CMAKE_REQUIRED_FLAGS "-fsanitize=fuzzer,address,undefined")
+        check_cxx_source_compiles("#include <cstddef>\n#include <cstdint>\nextern \"C\" int LLVMFuzzerTestOneInput(const uint8_t *, size_t) { return 0; }\n"
+                                  IMSHARK_HAVE_LIBFUZZER)
+        unset(CMAKE_REQUIRED_FLAGS)
+    endif()
+    if(IMSHARK_HAVE_LIBFUZZER)
+        set(IMSHARK_FUZZ_LIBFUZZER ON)
+    elseif(IMSHARK_FUZZ_ENGINE STREQUAL "LIBFUZZER")
+        message(FATAL_ERROR "IMSHARK_FUZZ_ENGINE=LIBFUZZER but ${CMAKE_CXX_COMPILER} (${CMAKE_CXX_COMPILER_ID}) cannot build with -fsanitize=fuzzer. "
+                            "Use Clang with the libFuzzer runtime (Apple Clang has none; see docs/FUZZING.md).")
+    else()
+        message(WARNING "IMSHARK_FUZZ is on but the compiler has no libFuzzer: the harnesses are built with the standalone replay driver")
+    endif()
+endif()
+if(IMSHARK_FUZZ_LIBFUZZER)
+    # fuzzer-no-link adds the coverage instrumentation the engine steers by; the engine itself is linked into the harnesses only.
+    # -O1 is what libFuzzer recommends; -fno-sanitize-recover makes undefined behaviour a crash the fuzzer can save.
+    add_compile_options(-fsanitize=fuzzer-no-link,address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=undefined -O1)
+    add_compile_definitions(FUZZING_BUILD_MODE_UNSAFE_FOR_PRODUCTION)
+    add_link_options(-fsanitize=address,undefined)
+    message(STATUS "Fuzzing: libFuzzer + ASan + UBSan")
+elseif(IMSHARK_FUZZ)
+    message(STATUS "Fuzzing: standalone replay driver")
+endif()
+
 if(IMSHARK_SANITIZE AND MSVC)
     message(WARNING "IMSHARK_SANITIZE is only supported with GCC/Clang - ignoring")
 elseif(IMSHARK_SANITIZE)
@@ -80,6 +116,9 @@ include(cmake/Dependencies.cmake) # ImGui, backends and file dialogs from vcpkg
 get_target_property(_core_options imshark_core COMPILE_OPTIONS)
 if(IMSHARK_SANITIZE AND NOT MSVC AND NOT "${_core_options}" MATCHES "fsanitize")
     message(FATAL_ERROR "IMSHARK_SANITIZE is on but imshark_core is not instrumented: keep the option block above add_subdirectory()")
+endif()
+if(IMSHARK_FUZZ_LIBFUZZER AND NOT "${_core_options}" MATCHES "fsanitize=fuzzer-no-link")
+    message(FATAL_ERROR "IMSHARK_FUZZ is on but imshark_core is not instrumented: keep the option block above add_subdirectory()")
 endif()
 if(IMSHARK_COVERAGE AND NOT "${_core_options}" MATCHES "fprofile-instr-generate")
     message(FATAL_ERROR "IMSHARK_COVERAGE is on but imshark_core is not instrumented: keep the option block above add_subdirectory()")
@@ -163,6 +202,12 @@ endif()
 if(IMSHARK_BUILD_TESTS)
     enable_testing()
     add_subdirectory(tests)
+endif()
+
+# Fuzz harnesses: compiled in every configuration with tests, and replayed over their seed corpus as CTest tests.
+if(IMSHARK_BUILD_TESTS OR IMSHARK_FUZZ)
+    enable_testing()
+    add_subdirectory(fuzz)
 endif()
 
 

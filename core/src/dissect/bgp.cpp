@@ -219,43 +219,46 @@ void dissectBgp(Context &ctx, const char *data, size_t length) {
         }
 
         // Optional parameters / Capabilities
-        ByteReader optReader = body.sub(std::min<size_t>(optLen, body.remaining()));
+        const size_t optAvail = std::min<size_t>(optLen, body.remaining());   // ranges below never leave the message
+        ByteReader optReader = body.sub(optAvail);
         if (openTree && optLen > 0) {
-            packet::Field &optTree = openTree->add("Optional Parameters (" + std::to_string(optLen) + " bytes)", baseOffset + 29, optLen);
+            packet::Field &optTree = openTree->add("Optional Parameters (" + std::to_string(optLen) + " bytes)", baseOffset + 29, optAvail);
             while (optReader.remaining() >= 2) {
                 const size_t paramOff = baseOffset + 29 + optReader.offset();
                 const uint8_t pType = optReader.u8();
                 const uint8_t pLen = optReader.u8();
-                ByteReader pVal = optReader.sub(pLen);
+                const size_t pAvail = std::min<size_t>(pLen, optReader.remaining());
+                ByteReader pVal = optReader.sub(pAvail);
                 if (pType == 2) { // Capabilities
-                    packet::Field &capParam = optTree.add("Capabilities (" + std::to_string(pLen) + " bytes)", paramOff, 2 + pLen);
+                    packet::Field &capParam = optTree.add("Capabilities (" + std::to_string(pLen) + " bytes)", paramOff, 2 + pAvail);
                     while (pVal.remaining() >= 2) {
                         const size_t cOff = paramOff + 2 + pVal.offset();
                         const uint8_t cCode = pVal.u8();
                         const uint8_t cLen = pVal.u8();
-                        ByteReader cVal = pVal.sub(cLen);
+                        const size_t cAvail = std::min<size_t>(cLen, pVal.remaining());
+                        ByteReader cVal = pVal.sub(cAvail);
                         if (cCode == 65 && cLen == 4) { // 4-octet AS
                             const uint32_t as4 = cVal.u32_be();
                             ctx.pack.app_flags |= 0x0001; // 4-octet AS capability görüldü!
                             ctx.pack.tcp_pdu_start = as4;
-                            capParam.add("Support for 4-octet AS number: " + std::to_string(as4), cOff, 2 + cLen);
+                            capParam.add("Support for 4-octet AS number: " + std::to_string(as4), cOff, 2 + cAvail);
                         } else if (cCode == 1 && cLen == 4) { // Multiprotocol
                             const uint16_t afi = cVal.u16_be();
                             cVal.skip(1); // res
                             const uint8_t safi = cVal.u8();
-                            capParam.add("Multiprotocol Extensions: AFI=" + std::to_string(afi) + ", SAFI=" + std::to_string(safi), cOff, 2 + cLen);
+                            capParam.add("Multiprotocol Extensions: AFI=" + std::to_string(afi) + ", SAFI=" + std::to_string(safi), cOff, 2 + cAvail);
                         } else if (cCode == 2) {
-                            capParam.add("Route Refresh Capability", cOff, 2 + cLen);
+                            capParam.add("Route Refresh Capability", cOff, 2 + cAvail);
                         } else if (cCode == 64) {
-                            capParam.add("Graceful Restart Capability", cOff, 2 + cLen);
+                            capParam.add("Graceful Restart Capability", cOff, 2 + cAvail);
                         } else if (cCode == 69) {
-                            capParam.add("ADD-PATH Capability", cOff, 2 + cLen);
+                            capParam.add("ADD-PATH Capability", cOff, 2 + cAvail);
                         } else {
-                            capParam.add("Capability: " + std::to_string(cCode) + " (" + std::to_string(cLen) + " bytes)", cOff, 2 + cLen);
+                            capParam.add("Capability: " + std::to_string(cCode) + " (" + std::to_string(cLen) + " bytes)", cOff, 2 + cAvail);
                         }
                     }
                 } else {
-                    optTree.add("Parameter: type " + std::to_string(pType) + " (" + std::to_string(pLen) + " bytes)", paramOff, 2 + pLen);
+                    optTree.add("Parameter: type " + std::to_string(pType) + " (" + std::to_string(pLen) + " bytes)", paramOff, 2 + pAvail);
                 }
             }
         }
@@ -284,7 +287,7 @@ void dissectBgp(Context &ctx, const char *data, size_t length) {
         packet::Field *updateTree = nullptr;
         if (ctx.wantFields() && bgpLayer) {
             updateTree = &bgpLayer->add("UPDATE Message", baseOffset + 19, bodyLen);
-            if (withdrawnLen > 0) {
+            if (withdrawnLen > 0 && withdrawnReader.ok()) {   // a length beyond the message has no bytes to show
                 packet::Field &wTree = updateTree->add("Withdrawn Routes (" + std::to_string(withdrawnLen) + " bytes): " +
                                                        std::to_string(withdrawnRoutes.size()) + " routes", baseOffset + 21, withdrawnLen);
                 for (const auto &w : withdrawnRoutes) wTree.add("Route: " + w, baseOffset + 21, 0);
@@ -292,7 +295,7 @@ void dissectBgp(Context &ctx, const char *data, size_t length) {
         }
 
         packet::Field *attrsTree = nullptr;
-        if (updateTree && attrLen > 0) {
+        if (updateTree && attrLen > 0 && attrReader.ok()) {
             attrsTree = &updateTree->add("Path Attributes (" + std::to_string(attrLen) + " bytes)", baseOffset + 23 + withdrawnLen, attrLen);
         }
 
@@ -310,6 +313,7 @@ void dissectBgp(Context &ctx, const char *data, size_t length) {
                 valLen = attrReader.u8();
             }
             ByteReader valReader = attrReader.sub(valLen);
+            if (!valReader.ok()) break;   // the attribute claims more bytes than the message holds: nothing of it to show
 
             switch (code) {
                 case 1: { // ORIGIN

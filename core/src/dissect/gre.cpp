@@ -68,7 +68,7 @@ namespace {
                 return;
             }
         }
-        ctx.addLayer("Data (" + std::to_string(rem) + " bytes)", baseOffset + hdr, rem);
+        if (ctx.wantFields()) ctx.addLayer("Data (" + std::to_string(rem) + " bytes)", baseOffset + hdr, rem);
     }
 } // namespace
 
@@ -188,9 +188,9 @@ namespace dissect {
                     return;
                 }
             }
-            ctx.addLayer("Data (" + std::to_string(rem) + " bytes)", baseOffset + offset, rem);
+            if (ctx.wantFields()) ctx.addLayer("Data (" + std::to_string(rem) + " bytes)", baseOffset + offset, rem);
         } else {
-            ctx.addLayer("Data (" + std::to_string(rem) + " bytes)", baseOffset + offset, rem);
+            if (ctx.wantFields()) ctx.addLayer("Data (" + std::to_string(rem) + " bytes)", baseOffset + offset, rem);
         }
     }
 } // namespace dissect

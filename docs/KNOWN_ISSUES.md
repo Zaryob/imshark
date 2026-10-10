@@ -68,7 +68,7 @@ Anahtar günlüğünü değiştirmek açık dosyayı yeniden yükler. Canlı yak
 
 ## Doğrulamanın kapsamı
 
-- Birim testleri bağımsız vektörler, kesme/bayt bozma taramaları, Replay eşitliği ve pencere açmayan ImGui testleri içerir. Ayrı bir libFuzzer harness'i yoktur; sanitizer sonucu yalnızca çalıştırılan girdiler için kanıttır.
+- Birim testleri bağımsız vektörler, kesme/bayt bozma taramaları, Replay eşitliği ve pencere açmayan ImGui testleri içerir. `fuzz/` altındaki libFuzzer harness'leri (yakalama dosyası, tek çerçeve, çerçeve dizisi, süzgeç, gzip) CI'da her itmede 60 saniye, haftalık 20 dakika çalışır ve tohum derlemi CTest ile yeniden oynatılır ([FUZZING.md](FUZZING.md)); temiz bir koşu yalnızca keşfedilen girdiler için kanıttır. Harness'ler arayüzü, canlı yakalamayı ve kullanıcı anahtarlı TLS çözmeyi kapsamaz.
 - Gerçek corpus dosyaları `IMSHARK_CORPUS_DIR` verilmediğinde atlanır. Birçok gelişmiş protokol ve eski dosya biçimi yalnızca sentetik girdilerle sınanmıştır; [katkı rehberi](../CONTRIBUTING.md#regression-corpus) bu ayrımı açıklar.
 - `tests/data/tshark` içindeki elle yazılmış JSON'lar karşılaştırma aracını sınar. Bunlar gerçek tshark kaydı veya Wireshark ile eşitlik kanıtı değildir.
 - Linux Docker duman testi bir yazılım OpenGL/Xvfb ortamını kullanır. Fiziksel ağ arayüzü, Npcap sürücüsü, gerçek masaüstü etkileşimleri ve hardware GPU doğrulamasının yerini tutmaz.

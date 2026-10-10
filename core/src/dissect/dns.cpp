@@ -666,7 +666,7 @@ bool dissect::dissectDnsHeuristic(Context &ctx, const char *data, size_t length)
 
 dissect::StreamFrame dissect::frameDnsTcpHeuristic(const char *data, size_t length) {
     const StreamFrame f = frameDnsTcp(data, length);
-    if (f.kind == StreamFrame::Kind::Reject) return f;
+    if (f.kind == StreamFrame::Kind::Reject || length < 2) return f;   // fewer than 2 bytes: the length field itself is still incomplete
     // the length alone is a weak signal: it must be a plausible DNS size, and the message after it must also begin like DNS
     if (be16(data) > 4096) return {StreamFrame::Kind::Reject, 0};
     if (length >= 4 && (be16(data + 2 + 0) & 0x0040)) return {StreamFrame::Kind::Reject, 0};   // flags are not available before 4 bytes

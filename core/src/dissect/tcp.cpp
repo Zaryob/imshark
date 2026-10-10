@@ -344,7 +344,8 @@ namespace {
             if (!protocol) break;
             const StreamFrame f = continues && protocol->frameContinuation ? protocol->frameContinuation(payload + at, payloadLen - at) : protocol->frame(payload + at, payloadLen - at);
             if (f.kind != StreamFrame::Kind::Complete || f.length == 0 || f.length > payloadLen - at) break;
-            const std::string before = pack.info;
+            const std::string before = std::move(pack.info);
+            pack.info.clear();   // a dissector that appends to the info would otherwise repeat everything built so far in each message
             ctx.tcpStreamSeq = static_cast<uint32_t>(payloadSeq + at);
             protocol->dissect(ctx, payload + at, f.length);
             ctx.tcpStreamSeq = -1;

@@ -44,6 +44,7 @@ COPY src/ ./src/
 COPY resources/ ./resources/
 COPY tests/ ./tests/
 COPY tools/ ./tools/
+COPY fuzz/ ./fuzz/
 RUN cmake --preset default -DVCPKG_INSTALLED_DIR=/workspace/vcpkg_installed \
     && cmake --build --preset default --parallel "$BUILD_JOBS"
 COPY docs/ ./docs/

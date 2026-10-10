@@ -1,8 +1,11 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <functional>
+#include <memory>
 #include <random>
 
+#include <dissect/protocols.h>
 #include <filter/filter.h>
 
 #include "support.h"
@@ -194,6 +197,17 @@ TEST(Dns, MalformedMessagesAreReportedNotCrashes) {
     // absurd counts with no data behind them
     const auto counts = viaUdp(message(1, 0x8180, 0xffff, 0xffff, 0xffff, 0xffff, ""));
     EXPECT_NE(counts.info.find("Malformed"), std::string::npos);
+}
+
+TEST(Dns, TcpHeuristicFramerDoesNotReadPastABufferShorterThanTheLengthField) {
+    // found by fuzz_packet: the segment held 0 or 1 payload bytes, and the plausibility check read the 2-byte length
+    // anyway (heap-buffer-overflow under ASan). Exact-size heap buffers make the sanitizer see every extra byte read.
+    for (size_t size = 0; size < 2; ++size) {
+        const std::unique_ptr<char[]> exact(new char[size]);
+        std::fill_n(exact.get(), size, '\x08');
+        const auto frame = dissect::frameDnsTcpHeuristic(exact.get(), size);
+        EXPECT_EQ(frame.kind, dissect::StreamFrame::Kind::NeedMore) << size;
+    }
 }
 
 TEST(Dns, RandomisedMessagesNeverCrash) {
