@@ -48,6 +48,7 @@ namespace {
             commit(state, filter, text, {});
             return;
         }
+        filter.resetRegexLimitHits(); // the status bar counts the values of this pass only
         auto job = std::make_shared<ui::FilterJob>();
         job->filter = filter;
         job->text = text;
@@ -246,7 +247,7 @@ void ui::drawFilterHelp(AppState &state) {
     ImGui::SetNextWindowSize(ImVec2(720, 520), ImGuiCond_FirstUseEver);
     if (ImGui::Begin("Display Filter Reference", &f.showHelp)) {
         ImGui::TextWrapped("Combine tests with && || ! (or and / or / not) and parentheses. Comparison operators: == != < > <= >= "
-                           "(eq ne lt gt le ge), contains, matches (regular expression, prefix (?i) to ignore case) and "
+                           "(eq ne lt gt le ge), contains, matches (PCRE2 regular expression, Perl-compatible like Wireshark; prefix (?i) to ignore case; a pattern too complex to evaluate counts as no match) and "
                            "'in {a b 10..20}'. Text values are quoted; IP addresses may be networks (10.0.0.0/8). "
                            "!= is the exact negation of ==.");
         ImGui::Spacing();
