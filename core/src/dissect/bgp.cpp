@@ -313,6 +313,7 @@ void dissectBgp(Context &ctx, const char *data, size_t length) {
                 valLen = attrReader.u8();
             }
             ByteReader valReader = attrReader.sub(valLen);
+            if (!valReader.ok()) break;   // the attribute claims more bytes than the message holds: nothing of it to show
 
             switch (code) {
                 case 1: { // ORIGIN

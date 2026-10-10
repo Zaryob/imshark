@@ -192,6 +192,8 @@ TEST(Bgp, UpdateLengthsLargerThanTheMessageAddNoFieldsOutsideTheFrame) {
     // even though the message holds fewer bytes; bgpPkt() checks that every node lies inside the frame
     bgpPkt(bgpHdr(23, 2) + "0100" "0000");   // withdrawn routes length 256, nothing follows
     bgpPkt(bgpHdr(23, 2) + "0000" "0100");   // path attributes length 256, nothing follows
+    bgpPkt(bgpHdr(28, 2) + "0000" "0005" "00ff80" "0000");   // an unknown attribute of 128 bytes with 2 bytes left
+    bgpPkt(bgpHdr(29, 2) + "0000" "0006" "10ffffff" "0000");   // extended length 65535 with 2 bytes left
 }
 
 TEST(Bgp, OpenOptionalParameterLengthsLargerThanTheMessageStayInsideTheFrame) {
