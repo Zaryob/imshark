@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cmath>
 #include <cstdint>
 #include <string>
 #include <filesystem>
@@ -86,6 +87,14 @@ namespace core {
         }
 
         double startEpoch() const { return set ? static_cast<double>(static_cast<int64_t>(baseSeconds)) + baseFraction : 0.0; }
+
+        /// The exact start as whole seconds plus nanoseconds (the fraction is rounded to the nearest nanosecond).
+        void startExact(int64_t &seconds, uint32_t &nanos) const {
+            seconds = set ? static_cast<int64_t>(baseSeconds) : 0;
+            const int64_t n = set ? std::llround(baseFraction * 1e9) : 0;
+            if (n >= 1000000000) { ++seconds; nanos = static_cast<uint32_t>(n - 1000000000); }
+            else nanos = static_cast<uint32_t>(n < 0 ? 0 : n);
+        }
     };
 
     class FileProcessor {
