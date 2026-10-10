@@ -196,7 +196,7 @@ namespace {
             // the two highest bits say what a node does with an option it does not know (RFC 8200 4.2)
             static const char *action[] = {"skip", "discard", "discard and send ICMP", "discard and send ICMP unless multicast"};
             Field &opt = f.add(text, o + i, 2 + take);
-            opt.add("Type: " + std::to_string(t) + " (" + action[t >> 6] + " if unrecognised" + ((t & 0x20) ? ", may change en route" : "") + ")", o + i, 1);
+            opt.add("Type: " + std::to_string(t) + " (" + action[(t >> 6) & 3] + " if unrecognised" + ((t & 0x20) ? ", may change en route" : "") + ")", o + i, 1);
             opt.add("Length: " + std::to_string(len), o + i + 1, 1);
             if (len > extLen - i - 2) { opt.add("[Option continues past the end of the header]", o + i, extLen - i); break; }
             i += 2 + len;

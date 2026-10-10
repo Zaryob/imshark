@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <utility>
 #include <vector>
 
 #include <dissect/registry.h>
@@ -31,14 +32,14 @@ namespace packet {
 
         /// (fragment packet number, packet number that completed its datagram) pairs found since the last
         /// call. The file reader uses them to annotate the earlier fragments.
-        std::vector<std::pair<uint32_t, uint32_t>> takeCompletedReassemblies() { return std::move(completed_); }
+        std::vector<std::pair<uint32_t, uint32_t>> takeCompletedReassemblies() { return std::exchange(completed_, {}); }
 
         /// (earlier segment packet number, packet number that completed its TCP message) pairs found since the last call.
-        std::vector<std::pair<uint32_t, uint32_t>> takeCompletedTcpPdus() { return std::move(completedTcp_); }
+        std::vector<std::pair<uint32_t, uint32_t>> takeCompletedTcpPdus() { return std::exchange(completedTcp_, {}); }
 
         /// (earlier packet number, packet number that completed its datagram message) pairs found since the last call (DTLS
         /// handshake fragments).
-        std::vector<std::pair<uint32_t, uint32_t>> takeCompletedDatagramMessages() { return std::move(completedDatagrams_); }
+        std::vector<std::pair<uint32_t, uint32_t>> takeCompletedDatagramMessages() { return std::exchange(completedDatagrams_, {}); }
 
         /// For Replay mode of a packet that completes a reassembled TCP message: the message bytes and the packets
         /// they came from (the pointers must stay valid during parsePacket).

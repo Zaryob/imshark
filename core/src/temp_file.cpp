@@ -95,7 +95,7 @@ namespace core {
         for (int attempt = 0; attempt < 100; ++attempt) {
             const auto path = pathFromUtf8(dir.path) / pathFromUtf8("imshark_" + randomHex() + suffix);
             const auto u8 = path.u8string();
-            const std::string utf8(u8.begin(), u8.end());
+            std::string utf8(u8.begin(), u8.end());
 #ifdef _WIN32
             HANDLE h = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_NEW, FILE_ATTRIBUTE_NORMAL, nullptr);
             if (h != INVALID_HANDLE_VALUE) { CloseHandle(h); return utf8; }

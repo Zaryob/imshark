@@ -366,7 +366,6 @@ void dissectNfs(Context &ctx, const char *data, size_t length) {
     }
 
     Decoded d;
-    std::string recordNote;
     if (continuation && (middle || !record)) {
         d.notAMessage = true;   // the middle of a record (or its end, which the table could not keep)
     } else {

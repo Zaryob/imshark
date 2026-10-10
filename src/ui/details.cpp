@@ -120,7 +120,7 @@ namespace {
                         for (const auto &layer: packet.fields) {
                             // skip the "Frame" summary, which covers every byte
                             if (&layer == &packet.fields.front()) continue;
-                            if ((field = deepestFieldAt(layer, index))) break;
+                            if ((field = deepestFieldAt(layer, index))) break;  // NOLINT(bugprone-assignment-in-if-condition): assign and test
                         }
                         if (field) {
                             selectField(state, *field);
@@ -193,7 +193,7 @@ void ui::drawPacketDetails(AppState &state) {
     // tree a few lines tall above a half-empty hex view.
     const float available = ImGui::GetContentRegionAvail().y;
     const ImGuiStyle &style = ImGui::GetStyle();
-    const float hexLines = static_cast<float>((packet.raw_data.size() + 15) / 16 + 1);
+    const float hexLines = static_cast<float>((packet.raw_data.size() + 15) / 16 + 1);  // NOLINT(bugprone-integer-division): whole lines rounded up
     const float hexHeight = packet.raw_data.empty() ? 0.0f
         : std::min(available * 0.45f, hexLines * ImGui::GetTextLineHeightWithSpacing() + 2 * style.WindowPadding.y + style.ItemSpacing.y);
     const float treeHeight = packet.raw_data.empty() ? 0.0f : std::max(available * 0.3f, available - hexHeight - style.ItemSpacing.y);

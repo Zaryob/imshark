@@ -19,7 +19,7 @@ uint16_t terminatorStatus(const uint8_t *p, size_t len) {
     if (len >= 5 && p[0] == 0xfe && len < 9) return static_cast<uint16_t>(p[3] | (p[4] << 8));
     ByteReader r(p + 1, len - 1);
     uint64_t skip = 0;
-    if (!myLengthEncoded(r, skip) || !myLengthEncoded(r, skip) || r.remaining() < 2) return 0;
+    if (!myLengthEncoded(r, skip) || !myLengthEncoded(r, skip) || r.remaining() < 2) return 0;  // NOLINT(misc-redundant-expression): two successive reads, not a repeated test
     return r.u16_le();
 }
 } // namespace

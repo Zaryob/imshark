@@ -120,7 +120,7 @@ std::string typeText(uint8_t t) {
     return n ? std::string(n) : "type " + std::to_string(t);
 }
 
-std::string withLength(std::string shown, size_t n, size_t shownMax) { return n > shownMax ? shown + " (" + std::to_string(n) + " bytes)" : shown; }
+std::string withLength(const std::string &shown, size_t n, size_t shownMax) { return n > shownMax ? shown + " (" + std::to_string(n) + " bytes)" : shown; }
 
 // a string value: text, or for the binary character set (BLOB, BINARY, VARBINARY) hexadecimal
 std::string stringValue(const uint8_t *v, size_t n, bool binary) {

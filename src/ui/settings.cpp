@@ -165,14 +165,14 @@ ui::Settings ui::loadSettings(const std::string &path) {
         } else if (key == "window_size") {
             int w = 0, h = 0;
             char tail = 0;
-            if (std::sscanf(value.c_str(), "%dx%d%c", &w, &h, &tail) == 2 && w > 0 && h > 0 && w <= 100000 && h <= 100000) {
+            if (std::sscanf(value.c_str(), "%dx%d%c", &w, &h, &tail) == 2 && w > 0 && h > 0 && w <= 100000 && h <= 100000) {  // NOLINT(cert-err34-c): the result count and a trailing sentinel are checked
                 settings.windowWidth = w;
                 settings.windowHeight = h;
             }
         } else if (key == "window_pos") {
             int x = 0, y = 0;
             char tail = 0;
-            if (std::sscanf(value.c_str(), "%d,%d%c", &x, &y, &tail) == 2 && std::abs(x) <= 1000000 && std::abs(y) <= 1000000) {
+            if (std::sscanf(value.c_str(), "%d,%d%c", &x, &y, &tail) == 2 && std::abs(x) <= 1000000 && std::abs(y) <= 1000000) {  // NOLINT(cert-err34-c): the result count and a trailing sentinel are checked
                 settings.windowX = x;
                 settings.windowY = y;
                 settings.hasWindowPos = true;

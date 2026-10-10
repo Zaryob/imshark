@@ -161,7 +161,7 @@ std::string typeText(uint32_t oid) {
     return n ? std::string(n) : "oid " + std::to_string(oid);
 }
 
-std::string withLength(std::string shown, size_t n) { return n > kValueChars ? shown + " (" + std::to_string(n) + " bytes)" : shown; }
+std::string withLength(const std::string &shown, size_t n) { return n > kValueChars ? shown + " (" + std::to_string(n) + " bytes)" : shown; }
 
 std::string textValue(const uint8_t *v, size_t n) { return withLength(printableText(v, n, kValueChars), n); }
 

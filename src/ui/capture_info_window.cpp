@@ -141,6 +141,7 @@ void ui::drawCaptureInfoWindow(AppState &state) {
     if (!info.packetComments.empty()) {
         ImGui::SeparatorText(("Packet comments (" + std::to_string(info.packetComments.size()) + ")").c_str());
         std::vector<uint32_t> numbers;
+        numbers.reserve(info.packetComments.size());
         for (const auto &kv: info.packetComments) numbers.push_back(kv.first);
         std::sort(numbers.begin(), numbers.end());
         ImGui::BeginChild("comments", ImVec2(0, 140), true);

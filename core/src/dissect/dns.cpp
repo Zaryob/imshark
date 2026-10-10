@@ -187,7 +187,8 @@ namespace {
         const unsigned d = doy - (153 * mp + 2) / 5 + 1;
         const unsigned m = mp < 10 ? mp + 3 : mp - 9;
         char buf[40];
-        std::snprintf(buf, sizeof buf, "%04lld-%02u-%02u %02u:%02u:%02u UTC", static_cast<long long>(y + (m <= 2)), m, d, sod / 3600, sod / 60 % 60, sod % 60);
+        const long long year = static_cast<long long>(y) + (m <= 2 ? 1 : 0);
+        std::snprintf(buf, sizeof buf, "%04lld-%02u-%02u %02u:%02u:%02u UTC", year, m, d, sod / 3600, sod / 60 % 60, sod % 60);
         return buf;
     }
 

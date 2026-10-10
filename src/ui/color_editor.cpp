@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cfloat>
+#include <cmath>
 
 #include <imgui.h>
 
@@ -13,7 +14,7 @@ namespace {
     }
 
     uint32_t fromColor(const float c[3]) {
-        auto byte = [](float v) { return static_cast<uint32_t>(std::max(0.0f, std::min(1.0f, v)) * 255.0f + 0.5f); };
+        auto byte = [](float v) { return static_cast<uint32_t>(std::lround(std::max(0.0f, std::min(1.0f, v)) * 255.0f)); };
         return (byte(c[0]) << 16) | (byte(c[1]) << 8) | byte(c[2]);
     }
 

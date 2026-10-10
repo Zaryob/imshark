@@ -73,6 +73,31 @@ With Clang, `llvm-cov` and `llvm-profdata`, `tools/coverage.sh` prints a source 
 
 `python3 tools/benchmark.py --profile mixed --packets 500000` builds `bench_driver`, creates a temporary synthetic capture, measures load time, one filter pass and peak RSS, then deletes the capture. `--size-mb 1024` selects an approximately 1 GiB workload. Record the hardware, compiler, configuration, workload and cache conditions; synthetic traffic does not establish throughput for every dissector. Never commit large benchmark captures.
 
+## Static analysis
+
+CI runs three analyses on every pull request:
+
+- **Compiler warnings.** Project targets (not vcpkg dependencies) build with `-Wall -Wextra -Wshadow -Wnon-virtual-dtor` (`/W4` on MSVC). Configure with `-DIMSHARK_WERROR=ON` to turn them into errors on GCC/Clang; the macOS CI job does. MSVC warnings are reported but not yet errors.
+- **clang-tidy** (`.clang-tidy`). The check set targets bugs in code that parses untrusted input: `bugprone-*`, `clang-analyzer-*`, `performance-*`, `misc-*` and a handful of `cert-*` integer, string and memory checks, minus the checks that only produce style churn (each exclusion is listed in the file). The CI job runs with `--warnings-as-errors='*'` over `core/src`, `src` and `tools` (the test sources are not analysed: GoogleTest macros and large fixtures produce hundreds of findings and dominate the run time), so the enabled set must stay at zero findings.
+- **CodeQL** (`.github/workflows/codeql.yml`) with the `security-extended` suite, on pushes to `master`, pull requests and weekly. Results appear under Security > Code scanning.
+
+Run clang-tidy locally against a configured build directory (`cmake --preset debug` writes `build-debug/compile_commands.json`):
+
+```sh
+run-clang-tidy -p build-debug -quiet "$PWD/(core/src|src|tools)/.*\.cpp"
+clang-tidy -p build-debug --warnings-as-errors='*' core/src/packet_parser.cpp   # a single file
+```
+
+Use the same clang-tidy major version as CI (the `clang-tidy` package of Ubuntu 24.04) when a result differs. On macOS install LLVM with Homebrew and call `$(brew --prefix llvm)/bin/run-clang-tidy`.
+
+Fix findings rather than silencing them. Where a pattern is intentional (for example a deliberate narrowing in a bit-field decoder), suppress it on that line with the check name and a reason, never a bare `NOLINT`:
+
+```cpp
+const auto lo = static_cast<uint8_t>(v);  // NOLINT(bugprone-narrowing-conversions): only the low byte is wanted
+```
+
+Prefer `NOLINTNEXTLINE(check): reason` for long lines. A check that is wrong for the whole codebase is disabled in `.clang-tidy` with a comment saying why; propose that in the pull request instead of scattering NOLINTs.
+
 ## Commits and releases
 
 Use a short imperative subject describing the resulting change. Split independent changes into reviewable commits with relevant validation. Before submitting, run the normal tests and the sanitizer tests appropriate to the change and review documentation/snapshot diffs.

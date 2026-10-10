@@ -80,7 +80,7 @@ void dissect::dissectPpi(Context &ctx, const char *data, size_t length) {
 
             ctx.pack.radiotap_freq = freq;
             ctx.pack.radiotap_rate = static_cast<uint8_t>(rate);
-            ctx.pack.radiotap_signal = sigDbm;
+            ctx.pack.radiotap_signal = sigDbm;  // NOLINT(bugprone-signed-char-misuse,cert-str34-c): a signed dBm value
 
             if (ppiLayer) {
                 Field &tlv = ppiLayer->add(std::string(ppiTlvTypeName(pfh_type)) + " (" + std::to_string(pfh_datalen) + " bytes)",

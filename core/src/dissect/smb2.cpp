@@ -502,7 +502,7 @@ std::string createContexts(Cmd &c, size_t headerOffset, size_t length) {
         names += (names.empty() ? "" : ", ") + (tag.empty() ? std::string("?") : tag);
         c.field("Context " + (tag.empty() ? std::string("?") : tag) + (desc ? std::string(" (") + desc + ")" : "") + ", data " + std::to_string(dataLen) + " bytes", at,
                 next ? std::min<size_t>(next, end - at) : end - at, list);
-        if (next == 0 || next < 16 || at + next >= end) break;
+        if (next < 16 || at + next >= end) break;
         at += next;
     }
     return names;
@@ -1170,7 +1170,7 @@ void dissectSmb2(Context &ctx, const char *data, size_t length) {
         const uint32_t treeId = async ? 0 : le32(h + 36);
         const uint64_t asyncId = async ? le64(msg + pos + 32) : 0;
         const uint64_t sessionId = le64(msg + pos + 40);
-        const size_t end = (nextCommand != 0 && nextCommand >= kHeader && nextCommand <= avail) ? pos + nextCommand : msgLen;   // this command's bytes
+        const size_t end = (nextCommand >= kHeader && nextCommand <= avail) ? pos + nextCommand : msgLen;   // this command's bytes
         const size_t body = pos + kHeader;
         const bool first = commands == 0;
 

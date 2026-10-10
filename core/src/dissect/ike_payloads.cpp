@@ -1115,12 +1115,12 @@ dissect::IkePayloadReport dissect::dissectIkePayloads(const uint8_t *body, size_
 
         if (root) {
             Tree node = root.add(all, at, pl.n, "Payload: " + ikePayloadTypeName(version, current) + " (" + std::to_string(plen) + " bytes" + (tooLong ? ", beyond the packet" : "") + ")");
-            const bool body = !tooLong && plen >= 4;
+            const bool hasBody = !tooLong && plen >= 4;
             if (encrypted) node.add(all, at, 1, "Next Payload: " + std::to_string(next) + " (" + ikePayloadTypeName(version, next) + ")" + (current == 53 && next == 0 ? " [not the first fragment: no inner payload type]" : " [first inner payload, encrypted]"));
             else node.add(all, at, 1, "Next Payload: " + std::to_string(next) + " (" + ikePayloadTypeName(version, next) + ")");
             if (v2) node.add(all, at + 1, 1, std::string("Critical: ") + ((all.u8(at + 1) & 0x80) ? "Yes" : "No"));
             node.add(all, at + 2, 2, "Payload Length: " + std::to_string(plen));
-            if (body) {
+            if (hasBody) {
                 if (v2) v2Body(current, pl, node);
                 else v1Body(current, pl, node);
             }

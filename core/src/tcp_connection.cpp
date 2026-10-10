@@ -86,23 +86,23 @@ network::TcpAnalysis network::TCPConnection::trackAndAnalyze(int64_t &relativeSe
         } else {
             // starts before the next expected byte: fills a gap (out of order) or repeats data (retransmission)
             bool fillsGap = false;
-            for (auto it = mine.gaps.begin(); it != mine.gaps.end();) {
-                const uint32_t gapBegin = it->first, gapEnd = it->second;
+            for (auto gap = mine.gaps.begin(); gap != mine.gaps.end();) {
+                const uint32_t gapBegin = gap->first, gapEnd = gap->second;
                 const bool overlaps = ahead(seqNum, gapEnd) < 0 && ahead(endSeq, gapBegin) > 0;
-                if (!overlaps) { ++it; continue; }
+                if (!overlaps) { ++gap; continue; }
                 fillsGap = true;
                 // remove the covered part of the gap
                 const bool cutsFront = ahead(seqNum, gapBegin) <= 0, cutsBack = ahead(endSeq, gapEnd) >= 0;
-                if (cutsFront && cutsBack) { it = mine.gaps.erase(it); continue; }
-                if (cutsFront) it->first = endSeq;
-                else if (cutsBack) it->second = seqNum;
+                if (cutsFront && cutsBack) { gap = mine.gaps.erase(gap); continue; }
+                if (cutsFront) gap->first = endSeq;
+                else if (cutsBack) gap->second = seqNum;
                 else { // the segment sits in the middle: split the gap
-                    const uint32_t oldEnd = it->second;
-                    it->second = seqNum;
-                    it = mine.gaps.insert(it + 1, {endSeq, oldEnd}) + 1;
+                    const uint32_t oldEnd = gap->second;
+                    gap->second = seqNum;
+                    gap = mine.gaps.insert(gap + 1, {endSeq, oldEnd}) + 1;
                     continue;
                 }
-                ++it;
+                ++gap;
             }
             result.flags |= fillsGap ? kTcpOutOfOrder : kTcpRetransmission;
             if (ahead(endSeq, mine.nextSeq) > 0) mine.nextSeq = endSeq;

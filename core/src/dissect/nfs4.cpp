@@ -306,7 +306,7 @@ struct V4 {
         }
         if (shown > 12) names += ",...";
         line(std::string(label) + ": " + (names.empty() ? std::string("(none)") : names), p, 4 + 4 * static_cast<size_t>(n));
-        if (out) *out = words;
+        if (out) *out = std::move(words);
         return true;
     }
     bool changeInfo(const char *label) {

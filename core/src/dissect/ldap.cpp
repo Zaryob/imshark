@@ -549,12 +549,12 @@ void dissect::dissectLdap(Context &ctx, const char *data, size_t length) {
                                 BerTlv opn, mod;
                                 int64_t o = -1;
                                 if (readBerTlv(sr, opn) && opn.asInt64(o) && readBerTlv(sr, mod)) {
-                                    const std::string opName = o >= 0 && o < 4 ? ops[o] : "operation " + std::to_string(o);
+                                    const std::string modName = o >= 0 && o < 4 ? ops[o] : "operation " + std::to_string(o);
                                     std::string attr;
                                     attribute(nullptr, mod, &attr);
-                                    if (n < 4) summary += (summary.empty() ? "" : ", ") + opName + " " + attr;
+                                    if (n < 4) summary += (summary.empty() ? "" : ", ") + modName + " " + attr;
                                     if (list) {
-                                        Field *c = node(list, "Change: " + opName + " " + attr, ch);
+                                        Field *c = node(list, "Change: " + modName + " " + attr, ch);
                                         attribute(c, mod, nullptr);
                                     }
                                 }
