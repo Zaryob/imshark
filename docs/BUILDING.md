@@ -167,7 +167,7 @@ cpack -C Release
 
 CMake configures a macOS `.dmg`, Linux `.tar.gz`/`.deb`, or Windows `.zip`. `tools/make_appimage.sh` uses a separately supplied `linuxdeploy` for Linux AppImages. The tag-triggered release workflow builds/tests packages and publishes them together under the same GitHub Release after all checks pass; a local build does not publish anything.
 
-The install step copies dependency copyright notices, including transitive vcpkg dependencies. macOS keeps these notices inside the `.app` resources; Linux/Windows use `share/imshark/licenses`. The AppImage helper stages the same install tree. Windows packages include the runtime DLLs found by CMake; macOS installation uses `fixup_bundle` and ad hoc signing. Developer ID signing and notarization are not configured. Test the resulting package on a clean target system before publishing.
+The install step copies dependency copyright notices, including transitive vcpkg dependencies, plus the full PCRE2 licence text (`resources/licenses/pcre2-LICENCE.txt`; the vcpkg notice of that port only refers to a file in its source tree). macOS keeps these notices inside the `.app` resources; Linux/Windows use `share/imshark/licenses`. The AppImage helper stages the same install tree. Windows packages include the runtime DLLs found by CMake; macOS installation uses `fixup_bundle` and ad hoc signing. Developer ID signing and notarization are not configured. Test the resulting package on a clean target system before publishing.
 
 
 ## Tagged releases
