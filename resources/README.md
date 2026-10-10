@@ -17,6 +17,6 @@ The generated assets are checked in; building requires no image conversion tools
 
 ## Licence
 
-The artwork in this directory (`logo.png` and everything derived from it) is part of ImShark and is distributed under the project's licence, GPL-3.0 (see `LICENSE`), unless its author says otherwise.
+The ImShark logo and icon artwork in this directory (`logo.png` and every image derived from it: `welcome-logo*.png`, `imshark*.png`, `imshark.icns`, `imshark.ico`) was created by Süleyman Poyraz and is dedicated to the public domain under [CC0 1.0 Universal](https://creativecommons.org/publicdomain/zero/1.0/). You may copy, modify and use it for any purpose without asking permission or giving attribution.
 
-> **TODO (maintainer):** The authorship and licence of `logo.png` are not recorded anywhere in the repository. Before 1.0, confirm who created the artwork, whether it may be distributed under GPL-3.0 (or another licence such as CC BY-SA 4.0) and whether any attribution is required, then replace this paragraph with the confirmed statement. If the artwork came from a third party or a generator, record the source, date and terms here.
+This applies to the artwork only. ImShark's source code stays under GPL-3.0 (see `LICENSE`).
