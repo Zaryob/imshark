@@ -123,7 +123,7 @@ embedded TLS secrets.
 ## Live capture
 
 The **Capture** menu needs a build with libpcap (Npcap on Windows); without it the menu is disabled and the tooltip says
-why. Capturing needs privileges: `/dev/bpf*` access on macOS, `CAP_NET_RAW` on Linux.
+why. Capturing needs privileges: `/dev/bpf*` access on macOS, `CAP_NET_RAW` on Linux. See [CAPTURE_PRIVILEGES.md](CAPTURE_PRIVILEGES.md) for details on privilege requirements, the ephemeral capture worker architecture, and manual setup options across macOS, Linux, and Windows.
 
 - **Capture > Interfaces...** (Ctrl+K): choose the interface (name, description, addresses, flags), a BPF capture filter
   (validated while you type), the snap length and promiscuous mode. The last choices are saved.
