@@ -99,7 +99,10 @@ namespace fuzz {
     /// Every node of the field tree lies inside a frame of `frameSize` bytes (the contract the truncation sweeps of
     /// tests/frame_sweep.h check for each dissector).
     inline bool fieldsInside(const packet::Field &f, size_t frameSize) {
-        if (size_t(f.offset) + f.length > frameSize) return false;
+        if (size_t(f.offset) + f.length > frameSize) {
+            std::fprintf(stderr, "field outside the %zu byte frame: offset %u length %u: %s\n", frameSize, f.offset, f.length, f.text.c_str());
+            return false;
+        }
         for (const auto &child: f.children) {
             if (!fieldsInside(child, frameSize)) return false;
         }

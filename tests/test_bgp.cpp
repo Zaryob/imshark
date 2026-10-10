@@ -187,6 +187,13 @@ TEST(Bgp, KeepaliveAndRouteRefresh) {
     EXPECT_TRUE(matches("bgp.type == 5", rr));
 }
 
+TEST(Bgp, UpdateLengthsLargerThanTheMessageAddNoFieldsOutsideTheFrame) {
+    // found by fuzz_packet: the Withdrawn Routes / Path Attributes nodes were sized by the declared length
+    // even though the message holds fewer bytes; bgpPkt() checks that every node lies inside the frame
+    bgpPkt(bgpHdr(23, 2) + "0100" "0000");   // withdrawn routes length 256, nothing follows
+    bgpPkt(bgpHdr(23, 2) + "0000" "0100");   // path attributes length 256, nothing follows
+}
+
 TEST(Bgp, SurviveDamageAndMalformedInputs) {
     std::mt19937 rng(55);
     const std::string seed =

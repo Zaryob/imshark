@@ -284,7 +284,7 @@ void dissectBgp(Context &ctx, const char *data, size_t length) {
         packet::Field *updateTree = nullptr;
         if (ctx.wantFields() && bgpLayer) {
             updateTree = &bgpLayer->add("UPDATE Message", baseOffset + 19, bodyLen);
-            if (withdrawnLen > 0) {
+            if (withdrawnLen > 0 && withdrawnReader.ok()) {   // a length beyond the message has no bytes to show
                 packet::Field &wTree = updateTree->add("Withdrawn Routes (" + std::to_string(withdrawnLen) + " bytes): " +
                                                        std::to_string(withdrawnRoutes.size()) + " routes", baseOffset + 21, withdrawnLen);
                 for (const auto &w : withdrawnRoutes) wTree.add("Route: " + w, baseOffset + 21, 0);
@@ -292,7 +292,7 @@ void dissectBgp(Context &ctx, const char *data, size_t length) {
         }
 
         packet::Field *attrsTree = nullptr;
-        if (updateTree && attrLen > 0) {
+        if (updateTree && attrLen > 0 && attrReader.ok()) {
             attrsTree = &updateTree->add("Path Attributes (" + std::to_string(attrLen) + " bytes)", baseOffset + 23 + withdrawnLen, attrLen);
         }
 
