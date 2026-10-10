@@ -48,6 +48,10 @@ IMSHARK_UPDATE_DOCS=1 ctest --test-dir build-debug -R Docs --output-on-failure
 
 The field snapshot also records types, descriptions and values on fixed packets. Run the affected test with `IMSHARK_UPDATE_SNAPSHOT=1` only for an intentional change, then inspect and commit the snapshot diff. Do not regenerate snapshots merely to hide a regression.
 
+## Fuzzing
+
+Parsers of untrusted input are fuzzed with libFuzzer harnesses in `fuzz/`. Every normal build compiles them and `ctest -R fuzz_replay` replays their seed corpus; `cmake --preset fuzz` (Linux) or `fuzz-macos` (Homebrew LLVM) builds the real fuzzers. A new or changed parser should be exercised by a harness (or its seeds), and a bug a harness finds needs a regression test plus its reproducer in `fuzz/corpus/<harness>/`. See [docs/FUZZING.md](docs/FUZZING.md) for building, running, reproducing and the corpus policy.
+
 ## Regression corpus
 
 `tests/corpus/` contains small synthetic captures and `manifest.json` with source, SHA-256 and expected results. `python3 tools/make_corpus.py` regenerates the synthetic corpus and manifest deterministically; `--real-dir DIR` records optional real captures you already have.
