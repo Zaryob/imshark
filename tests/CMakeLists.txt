@@ -78,6 +78,8 @@ add_executable(imshark_tests
     test_encap_ranges.cpp
     test_lldp_lacp.cpp
     test_live_capture.cpp
+    test_capture_worker.cpp
+    test_worker_stream.cpp
     test_hierarchy.cpp
     test_tls_crypto.cpp
     test_tls_decrypt.cpp

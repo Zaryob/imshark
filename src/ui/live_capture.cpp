@@ -102,21 +102,9 @@ namespace {
         }
     }
 
-    // Common part of startCapture / startInjectedCapture. `begin` opens the device (or the injection session).
-    template<typename Begin>
-    bool launch(ui::AppState &state, const capture::CaptureOptions &options, const std::string &name, bool injected, Begin &&begin) {
+    // The part of a start that replaces the old capture; runs once the new device is known to work.
+    void enterSession(ui::AppState &state, const capture::CaptureOptions &options, const std::string &name, bool injected) {
         auto &l = state.live;
-        if (l.processor) finish(state);          // take over everything the previous capture still holds before start() drops it
-        l.error.clear();
-        l.openError = false;
-        state.loadJob.reset();                   // a load that finishes later would replace the capture
-        capture::LiveCapture &device = deviceOf(l);
-        if (!begin(device)) {
-            l.error = device.lastError();
-            l.openError = true;
-            l.errorIsStop = false;
-            return false;                        // the previous capture is untouched
-        }
         ui::cancelBackgroundJobs(state);
         ui::clearCapture(state);                 // now the old capture goes
         l.processor = std::make_unique<core::FileProcessor>(state.registry ? *state.registry : dissect::Registry::builtin());
@@ -130,11 +118,62 @@ namespace {
         l.scrollToEnd = l.autoScroll;
         l.statsPending = false;
         l.lastStats = l.lastSortRebuild = steady_clock::now();
-        state.currentFile = device.tempPath();
+        state.currentFile = l.device->tempPath();
         state.displayName = "Live capture on " + name;
         ui::refilter(state);
         state.stats.dirty = true;
+    }
+
+    // Common part of startCapture / startInjectedCapture. `begin` opens the device (or the injection session).
+    template<typename Begin>
+    bool launch(ui::AppState &state, const capture::CaptureOptions &options, const std::string &name, bool injected, Begin &&begin) {
+        auto &l = state.live;
+        if (l.processor) finish(state);          // take over everything the previous capture still holds before start() drops it
+        l.error.clear();
+        l.openError = false;
+        l.permissionDenied = false;
+        state.loadJob.reset();                   // a load that finishes later would replace the capture
+        capture::LiveCapture &device = deviceOf(l);
+        if (!begin(device)) {
+            l.error = device.lastError();
+            l.openError = true;
+            l.errorIsStop = false;
+            l.permissionDenied = device.permissionDenied();   // structured: libpcap's status, not a guess from the text
+            l.deniedOptions = options;
+            return false;                        // the previous capture is untouched
+        }
+        enterSession(state, options, name, injected);
         return true;
+    }
+
+    // The helper delivered its first header: the new capture replaces the old one exactly like after a direct start.
+    void adoptElevated(ui::AppState &state) {
+        auto &l = state.live;
+        if (l.processor) finish(state);
+        l.error.clear();
+        l.openError = false;
+        l.permissionDenied = false;
+        state.loadJob.reset();
+        l.device = std::move(l.elevated);        // the previous device (stopped, its file released) is destroyed here
+        enterSession(state, l.deniedOptions, l.deniedOptions.interfaceName, false);
+    }
+
+    // Once per frame while a helper session waits for its authorization: adopt it, or report why it ended.
+    void pollElevated(ui::AppState &state) {
+        auto &l = state.live;
+        if (!l.elevated) return;
+        if (l.elevated->streaming()) {
+            adoptElevated(state);
+            return;
+        }
+        if (!l.elevated->running()) {
+            l.error = l.elevated->lastError();
+            if (l.error.empty()) l.error = "The capture helper ended before it sent any packets";
+            l.openError = true;
+            l.errorIsStop = false;
+            l.permissionDenied = false;
+            l.elevated.reset();
+        }
     }
 
     void perform(ui::AppState &state, const ui::PendingAction &action) {
@@ -193,7 +232,7 @@ namespace {
         if (ImGui::Begin("Capture Interfaces", &d.open)) {
             if (!available) ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.45f, 1.0f), "%s", ui::captureUnavailableReason().c_str());
             else if (!d.interfaces.error.empty()) ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.45f, 1.0f), "%s", d.interfaces.error.c_str());
-            else ImGui::TextDisabled("Select an interface. Capturing needs privileges (macOS: access to /dev/bpf*, Linux: CAP_NET_RAW, Windows: Npcap).");
+            else ImGui::TextDisabled("Select an interface. Capturing needs privileges (macOS: /dev/bpf*, Linux: CAP_NET_RAW, Windows: Npcap); if they are missing ImShark offers a one-session administrator helper.");
 
             const float footer = ImGui::GetFrameHeightWithSpacing() * 5.5f + ImGui::GetStyle().ItemSpacing.y * 4;
             std::string chosen;
@@ -324,14 +363,130 @@ namespace {
             ImGui::TextWrapped("%s", l.error.c_str());
             ImGui::PopTextWrapPos();
             ImGui::Spacing();
-            if (ImGui::Button("OK", ImVec2(120, 0))) ImGui::CloseCurrentPopup();
+            if (l.permissionDenied && !l.errorIsStop) {
+                // Nothing here starts an authorization prompt: that happens only on a click of "Authorize and capture".
+                const bool canElevate = capture::liveCaptureAvailable() && capture::platformElevationMethod() != capture::ElevationMethod::None;
+                ImGui::Separator();
+                ImGui::PushTextWrapPos(ImGui::GetFontSize() * 36.0f);
+                if (canElevate) {
+                    ImGui::TextWrapped("ImShark can capture this one session through a separate helper that runs with administrator rights "
+                                       "only to open the interface and then drops them. Nothing on the system is changed.");
+                } else {
+                    ImGui::TextWrapped("On this platform ImShark cannot ask for administrator rights itself. The permanent setup lists what to "
+                                       "install or configure so that a normal user may capture.");
+                }
+                ImGui::PopTextWrapPos();
+                ImGui::Spacing();
+                if (canElevate && ImGui::Button("Authorize and capture", ImVec2(190, 0))) {
+                    ImGui::CloseCurrentPopup();
+                    ui::startElevatedCapture(state);
+                }
+                if (canElevate) ImGui::SameLine();
+                if (ImGui::Button("Show permanent setup...", ImVec2(190, 0))) {
+                    ImGui::CloseCurrentPopup();
+                    l.setupOpen = true;
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Cancel", ImVec2(100, 0))) ImGui::CloseCurrentPopup();
+            } else if (ImGui::Button("OK", ImVec2(120, 0))) {
+                ImGui::CloseCurrentPopup();
+            }
             ImGui::EndPopup();
         }
+    }
+
+    // The popup that waits for the system's authorization dialog; opened by startElevatedCapture, closed by the poll.
+    void drawAuthorizePopup(ui::AppState &state) {
+        auto &l = state.live;
+        if (l.openAuthorize) {
+            ImGui::OpenPopup("Administrator authorization");
+            l.openAuthorize = false;
+        }
+        if (ImGui::BeginPopupModal("Administrator authorization", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+            if (!l.elevated) {
+                ImGui::CloseCurrentPopup();          // the capture started, or the helper ended (the error popup says why)
+            } else {
+                ImGui::TextUnformatted("Waiting for administrator authorization...");
+                ImGui::Spacing();
+                ImGui::PushTextWrapPos(ImGui::GetFontSize() * 30.0f);
+                ImGui::TextDisabled("Confirm in the system dialog. ImShark itself keeps running without administrator rights.");
+                ImGui::PopTextWrapPos();
+                ImGui::Spacing();
+                if (ImGui::Button("Cancel", ImVec2(120, 0))) {
+                    ImGui::CloseCurrentPopup();
+                    ui::cancelElevatedCapture(state);
+                }
+            }
+            ImGui::EndPopup();
+        }
+    }
+
+    // Single quotes around `text`, so that a pasted command treats it as one word (display only, never executed by ImShark).
+    std::string shellQuote(const std::string &text) {
+        std::string out = "'";
+        for (char c: text) {
+            if (c == '\'') out += "'\\''";
+            else out += c;
+        }
+        return out + "'";
+    }
+
+    void commandLine(const char *id, const std::string &command) {
+        ImGui::PushID(id);
+        if (ImGui::SmallButton("Copy")) ImGui::SetClipboardText(command.c_str());
+        ImGui::SameLine();
+        ImGui::TextUnformatted(command.c_str());
+        ImGui::PopID();
+    }
+
+    void drawPermanentSetupWindow(ui::AppState &state) {
+        auto &l = state.live;
+        if (!l.setupOpen) return;
+        ImGui::SetNextWindowSize(ImVec2(760, 480), ImGuiCond_FirstUseEver);
+        if (ImGui::Begin("Permanent capture setup", &l.setupOpen)) {
+            ImGui::PushTextWrapPos(0.0f);
+            ImGui::TextWrapped("These steps give your user permanent capture rights, so no authorization is needed per capture. They change "
+                               "system settings and are never run by ImShark; copy and run them yourself. Details: docs/CAPTURE_PRIVILEGES.md");
+            ImGui::PopTextWrapPos();
+            ImGui::Separator();
+#if defined(__APPLE__)
+            const ImGuiTreeNodeFlags macOpen = ImGuiTreeNodeFlags_DefaultOpen, linuxOpen = 0, winOpen = 0;
+#elif defined(_WIN32)
+            const ImGuiTreeNodeFlags macOpen = 0, linuxOpen = 0, winOpen = ImGuiTreeNodeFlags_DefaultOpen;
+#else
+            const ImGuiTreeNodeFlags macOpen = 0, linuxOpen = ImGuiTreeNodeFlags_DefaultOpen, winOpen = 0;
+#endif
+            if (ImGui::CollapsingHeader("macOS: access_bpf group (Wireshark's ChmodBPF)", macOpen)) {
+                ImGui::TextWrapped("Installs a LaunchDaemon that gives the access_bpf group (not everybody) access to /dev/bpf* at every boot.");
+                commandLine("mac1", "brew install --cask wireshark-chmodbpf");
+                commandLine("mac2", "sudo dseditgroup -o edit -a \"$USER\" -t user access_bpf");
+                ImGui::TextDisabled("Log out and in again. Do not use chmod 666 /dev/bpf*: it lets every process on the machine sniff traffic.");
+            }
+            if (ImGui::CollapsingHeader("Linux: capabilities for a dedicated group", linuxOpen)) {
+                const std::string exe = capture::currentExecutablePath().empty() ? std::string("/path/to/imshark") : capture::currentExecutablePath();
+                ImGui::TextWrapped("Only members of the group may run the binary that carries CAP_NET_RAW / CAP_NET_ADMIN. Repeat the setcap after "
+                                   "every update of the binary. Does not work for an AppImage (its path changes on every start).");
+                commandLine("lin1", "sudo groupadd -r imshark-capture");
+                commandLine("lin2", "sudo usermod -aG imshark-capture \"$USER\"");
+                commandLine("lin3", "sudo chgrp imshark-capture " + shellQuote(exe));
+                commandLine("lin4", "sudo chmod 750 " + shellQuote(exe));
+                commandLine("lin5", "sudo setcap cap_net_raw,cap_net_admin=eip " + shellQuote(exe));
+                ImGui::TextDisabled("Log out and in again for the group membership.");
+            }
+            if (ImGui::CollapsingHeader("Windows: Npcap", winOpen)) {
+                ImGui::TextWrapped("Install Npcap from https://npcap.com. If the driver is restricted to Administrators, add your user to the "
+                                   "npcap-users group (run in an elevated Command Prompt, then sign out and in) or start ImShark as administrator. "
+                                   "The default ImShark build for Windows has no live capture.");
+                commandLine("win1", "net localgroup npcap-users \"%USERNAME%\" /add");
+            }
+        }
+        ImGui::End();
     }
 } // namespace
 
 bool ui::startCapture(AppState &state, const capture::CaptureOptions &options) {
     auto &l = state.live;
+    l.elevated.reset();                      // a helper session still waiting for its authorization is dropped
     l.options = options;
     state.settings.captureInterface = options.interfaceName;
     state.settings.captureFilter = options.filter;
@@ -350,8 +505,28 @@ bool ui::startInjectedCapture(AppState &state, uint32_t linkType, uint32_t snapl
 
 void ui::stopCapture(AppState &state) { finish(state); }
 
+bool ui::startElevatedCapture(AppState &state) {
+    auto &l = state.live;
+    if (l.elevated) return false;
+    auto device = std::make_unique<capture::LiveCapture>();
+    const bool started = l.elevatedStarter ? l.elevatedStarter(*device, l.deniedOptions) : device->startElevated(l.deniedOptions);
+    l.permissionDenied = false;
+    if (!started) {
+        l.error = device->lastError();
+        l.openError = true;
+        l.errorIsStop = false;
+        return false;
+    }
+    l.elevated = std::move(device);
+    l.openAuthorize = true;
+    return true;
+}
+
+void ui::cancelElevatedCapture(AppState &state) { state.live.elevated.reset(); }
+
 void ui::pollCapture(AppState &state) {
     auto &l = state.live;
+    pollElevated(state);
     if (!l.processor || !l.device) return;
     drain(state, false);
     if (!l.device->running()) {            // stopped by itself: device error, vanished interface, full disk
@@ -367,6 +542,7 @@ void ui::pollCapture(AppState &state) {
 
 void ui::discardLiveCapture(AppState &state) {
     auto &l = state.live;
+    l.elevated.reset();
     if (l.device) {
         l.device->stop();
         if (l.session) {   // without a session the device's path is stale (an earlier, already removed capture)
@@ -395,7 +571,7 @@ bool ui::liveUnsaved(const AppState &state) {
 
 void ui::requestStartCapture(AppState &state) {
     auto &l = state.live;
-    if (!capture::liveCaptureAvailable() || l.capturing()) return;
+    if (!capture::liveCaptureAvailable() || l.capturing() || l.elevated) return;
     if (l.options.interfaceName.empty()) {
         l.dialog.open = true;
         l.dialog.needsRefresh = true;
@@ -495,5 +671,7 @@ void ui::handleCaptureShortcuts(AppState &state) {
 void ui::drawCaptureDialogs(AppState &state) {
     drawInterfacesDialog(state);
     drawUnsavedPopup(state);
+    drawAuthorizePopup(state);
     drawCaptureErrorPopup(state);
+    drawPermanentSetupWindow(state);
 }
