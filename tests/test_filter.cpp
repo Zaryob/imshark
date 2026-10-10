@@ -204,7 +204,7 @@ TEST(Filter, ErrorsCarryAPosition) {
         {"tcp.port in {}", "Empty set", 9},
         {"tcp.port in {9..1}", "Invalid range", 13},
         {"tcp.port == -5", "Expected a number", 12},
-        {"info matches \"(\"", "Invalid regular expression", 13},
+        {"info matches \"(\"", "Invalid regular expression", 15},
         {"tcp @ udp", "Unexpected character '@'", 4},
         {"tcp.port == 99999999999999999999999", "Expected a number", 12},
         {"frame.time_delta == x", "Expected a number", 20},

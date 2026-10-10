@@ -4,6 +4,8 @@ find_package(Python3 COMPONENTS Interpreter QUIET)
 if(Python3_Interpreter_FOUND AND TARGET imshark_dump)
     add_test(NAME compare_tshark_fixtures COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_compare_tshark.py)
     set_tests_properties(compare_tshark_fixtures PROPERTIES ENVIRONMENT "IMSHARK_DUMP=$<TARGET_FILE:imshark_dump>")
+    add_test(NAME cli_contract COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/test_cli.py)
+    set_tests_properties(cli_contract PROPERTIES ENVIRONMENT "IMSHARK_DUMP=$<TARGET_FILE:imshark_dump>;IMSHARK=$<TARGET_FILE:imshark>")
     add_test(NAME compare_tshark_corpus
              COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/../tools/compare_tshark.py
                      --imshark-dump $<TARGET_FILE:imshark_dump> ${CMAKE_CURRENT_SOURCE_DIR}/corpus)
@@ -15,6 +17,7 @@ find_package(GTest CONFIG REQUIRED)
 add_executable(imshark_tests
     test_asn1_reader.cpp
     test_bgp.cpp
+    test_bounded_regex.cpp
     test_brand.cpp
     test_capture_info.cpp
     test_capture_readers.cpp

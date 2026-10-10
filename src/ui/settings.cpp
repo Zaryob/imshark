@@ -1,11 +1,19 @@
 #include "settings.h"
 
 #include <algorithm>
+#include <chrono>
+#include <ctime>
 #include <charconv>
 #include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iterator>
+
+#ifndef _WIN32
+#include <fcntl.h>
+#include <unistd.h>
+#endif
 
 namespace {
     namespace fs = std::filesystem;
@@ -17,6 +25,93 @@ namespace {
 
     fs::path pathFromUtf8(const std::string &utf8) {
         return fs::path(std::u8string(reinterpret_cast<const char8_t *>(utf8.data()), utf8.size()));
+    }
+
+    // What is on disk at the settings path
+    enum class DiskState { Missing, Unwritable, Corrupt, Older, Current, Newer };
+
+    constexpr std::uintmax_t kMaxSettingsFileBytes = 1u << 20; // real files are a few KB; anything bigger is not ours
+
+    const char *const kKnownKeys[] = {"settings_version", "theme", "time_format", "colorize", "list_height", "toolbar",
+                                      "window_size", "window_pos", "tls_keylog", "esp_null", "capture_interface",
+                                      "capture_filter", "capture_snaplen", "capture_promiscuous", "colorrule", "recent", "filter"};
+
+    bool parseVersion(const std::string &value, int &version) {
+        int n = 0;
+        const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), n);
+        if (error != std::errc{} || end != value.data() + value.size() || n < 0) return false;
+        version = n;
+        return true;
+    }
+
+    DiskState inspectFile(const fs::path &file) {
+        std::error_code ec;
+        const auto status = fs::status(file, ec);
+        if (ec || !fs::exists(status)) return DiskState::Missing;
+        if (!fs::is_regular_file(status)) return DiskState::Unwritable;
+        std::ifstream in(file, std::ios::binary);
+        if (!in) return DiskState::Unwritable;
+        std::string content(kMaxSettingsFileBytes + 1, '\0');
+        in.read(content.data(), static_cast<std::streamsize>(content.size()));
+        content.resize(static_cast<size_t>(in.gcount()));
+        if (content.size() > kMaxSettingsFileBytes || content.find('\0') != std::string::npos) return DiskState::Corrupt;
+
+        bool anyContent = false, anyKnown = false, hasVersion = false;
+        int version = 0;
+        size_t pos = 0;
+        while (pos < content.size()) {
+            size_t end = content.find('\n', pos);
+            if (end == std::string::npos) end = content.size();
+            std::string line = content.substr(pos, end - pos);
+            pos = end + 1;
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            if (line.find_first_not_of(" \t") != std::string::npos) anyContent = true;
+            const auto eq = line.find('=');
+            if (eq == std::string::npos) continue;
+            const std::string key = line.substr(0, eq);
+            if (std::find(std::begin(kKnownKeys), std::end(kKnownKeys), key) == std::end(kKnownKeys)) continue;
+            anyKnown = true;
+            if (key == "settings_version") {
+                if (!parseVersion(line.substr(eq + 1), version)) return DiskState::Corrupt;
+                hasVersion = true;
+            }
+        }
+        if (anyContent && !anyKnown) return DiskState::Corrupt; // text, but nothing of ours in it
+        if (!hasVersion) return DiskState::Older;
+        if (version > ui::kSettingsVersion) return DiskState::Newer;
+        return version == ui::kSettingsVersion ? DiskState::Current : DiskState::Older;
+    }
+
+    // Copies `file` to `<file>.bak-<timestamp>` (never overwriting an earlier backup)
+    bool backUpFile(const fs::path &file) {
+        const std::time_t now = std::time(nullptr);
+        std::tm tm{};
+#if defined(_WIN32)
+        gmtime_s(&tm, &now);
+#else
+        gmtime_r(&now, &tm);
+#endif
+        char stamp[32];
+        std::strftime(stamp, sizeof stamp, "%Y%m%dT%H%M%S", &tm);
+        std::error_code ec;
+        for (int n = 0; n < 100; ++n) {
+            fs::path backup = file;
+            backup += std::string(".bak-") + stamp + (n ? "-" + std::to_string(n) : "");
+            if (fs::exists(backup, ec)) continue;
+            fs::copy_file(file, backup, fs::copy_options::none, ec);
+            return !ec;
+        }
+        return false;
+    }
+
+    void syncToDisk([[maybe_unused]] const fs::path &file) {
+#ifndef _WIN32
+        const int fd = ::open(file.c_str(), O_RDONLY);
+        if (fd >= 0) {
+            ::fsync(fd);
+            ::close(fd);
+        }
+#endif
     }
 } // namespace
 
@@ -44,7 +139,13 @@ ui::Settings ui::loadSettings(const std::string &path) {
         if (eq == std::string::npos) continue;
         const std::string key = line.substr(0, eq);
         const std::string value = line.substr(eq + 1);
-        if (key == "time_format") {
+        if (key == "settings_version") {
+            int version = 0;
+            if (parseVersion(value, version)) {
+                settings.loadedVersion = version;
+                settings.fromNewerVersion = version > kSettingsVersion;
+            }
+        } else if (key == "time_format") {
             settings.timeFormat = timeFormatFromKey(value);
         } else if (key == "colorize") {
             settings.colorize = value != "0";
@@ -101,36 +202,63 @@ ui::Settings ui::loadSettings(const std::string &path) {
     return settings;
 }
 
+namespace {
+    void writeSettings(std::ostream &out, const ui::Settings &settings) {
+        out << "settings_version=" << ui::kSettingsVersion << "\n";
+        out << "theme=" << (settings.darkTheme ? "dark" : "light") << "\n";
+        out << "time_format=" << ui::timeFormatKey(settings.timeFormat) << "\n";
+        out << "colorize=" << (settings.colorize ? 1 : 0) << "\n";
+        out << "list_height=" << settings.listHeight << "\n";
+        out << "toolbar=" << (settings.showToolbar ? 1 : 0) << "\n";
+        if (settings.windowWidth > 0 && settings.windowHeight > 0) out << "window_size=" << settings.windowWidth << "x" << settings.windowHeight << "\n";
+        if (settings.hasWindowPos) out << "window_pos=" << settings.windowX << "," << settings.windowY << "\n";
+        // one line per value: a line break in the filter text would corrupt the file
+        auto oneLine = [](std::string text) {
+            for (char &c: text) if (c == '\n' || c == '\r') c = ' ';
+            return text;
+        };
+        if (!settings.tlsKeyLogFile.empty()) out << "tls_keylog=" << oneLine(settings.tlsKeyLogFile) << "\n";
+        if (settings.espNullHeuristic) out << "esp_null=1\n";
+        if (!settings.captureInterface.empty()) out << "capture_interface=" << oneLine(settings.captureInterface) << "\n";
+        if (!settings.captureFilter.empty()) out << "capture_filter=" << oneLine(settings.captureFilter) << "\n";
+        out << "capture_snaplen=" << settings.captureSnaplen << "\n";
+        out << "capture_promiscuous=" << (settings.capturePromiscuous ? 1 : 0) << "\n";
+        for (const auto &rule: settings.colorRules) out << "colorrule=" << ui::serializeColorRule(rule) << "\n";
+        for (const auto &recent: settings.recentFiles) out << "recent=" << oneLine(recent) << "\n";
+        for (const auto &f: settings.filterHistory) out << "filter=" << oneLine(f) << "\n";
+    }
+} // namespace
+
 bool ui::saveSettings(const Settings &settings, const std::string &path) {
     std::error_code ec;
     const fs::path file = pathFromUtf8(path);
+
+    const DiskState existing = inspectFile(file);
+    if (existing == DiskState::Newer) return true; // keep the newer ImShark's data as it is
+    if (existing == DiskState::Unwritable) return false;
+    if (existing == DiskState::Corrupt && !backUpFile(file)) return false; // never destroy what we cannot read
+
     if (file.has_parent_path()) fs::create_directories(file.parent_path(), ec);
 
-    std::ofstream out(file, std::ios::trunc);
-    if (!out) return false;
-    out << "theme=" << (settings.darkTheme ? "dark" : "light") << "\n";
-    out << "time_format=" << timeFormatKey(settings.timeFormat) << "\n";
-    out << "colorize=" << (settings.colorize ? 1 : 0) << "\n";
-    out << "list_height=" << settings.listHeight << "\n";
-    out << "toolbar=" << (settings.showToolbar ? 1 : 0) << "\n";
-    if (settings.windowWidth > 0 && settings.windowHeight > 0) out << "window_size=" << settings.windowWidth << "x" << settings.windowHeight << "\n";
-    if (settings.hasWindowPos) out << "window_pos=" << settings.windowX << "," << settings.windowY << "\n";
-    // one line per value: a line break in the filter text would corrupt the file
-    auto oneLine = [](std::string text) {
-        for (char &c: text) if (c == '\n' || c == '\r') c = ' ';
-        return text;
-    };
-    if (!settings.tlsKeyLogFile.empty()) out << "tls_keylog=" << oneLine(settings.tlsKeyLogFile) << "\n";
-    if (settings.espNullHeuristic) out << "esp_null=1\n";
-    if (!settings.captureInterface.empty()) out << "capture_interface=" << oneLine(settings.captureInterface) << "\n";
-    if (!settings.captureFilter.empty()) out << "capture_filter=" << oneLine(settings.captureFilter) << "\n";
-    out << "capture_snaplen=" << settings.captureSnaplen << "\n";
-    out << "capture_promiscuous=" << (settings.capturePromiscuous ? 1 : 0) << "\n";
-    for (const auto &rule: settings.colorRules) out << "colorrule=" << serializeColorRule(rule) << "\n";
-    for (const auto &recent: settings.recentFiles) out << "recent=" << oneLine(recent) << "\n";
-    for (const auto &f: settings.filterHistory) out << "filter=" << oneLine(f) << "\n";
-    out.close(); // report buffered write errors as well as failures opening the file
-    return static_cast<bool>(out);
+    fs::path temp = file;
+    temp += ".tmp" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+    {
+        std::ofstream out(temp, std::ios::trunc);
+        if (!out) return false;
+        writeSettings(out, settings);
+        out.close(); // report buffered write errors as well as failures opening the file
+        if (!out) {
+            fs::remove(temp, ec);
+            return false;
+        }
+    }
+    syncToDisk(temp);
+    fs::rename(temp, file, ec); // replaces the old file in one step (MoveFileEx with REPLACE_EXISTING on Windows)
+    if (ec) {
+        fs::remove(temp, ec);
+        return false;
+    }
+    return true;
 }
 
 void ui::addRecentFile(Settings &settings, const std::string &path) {
