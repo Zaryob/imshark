@@ -71,12 +71,24 @@ namespace ui {
     float statusBarHeight();
 
     // filter_bar.cpp
-    /// Compiles `text` and, if valid, makes it the active filter and recomputes the visible packets.
-    /// Returns false (and leaves the previous filter active) if it does not compile; the error is in
-    /// state.filter.previewError.
+    /// Compiles `text` and, if valid, evaluates it over the capture on a worker thread; the result replaces the
+    /// displayed packets when it is done (pollFilter, called by the filter bar every frame). Until then the previous
+    /// result stays visible. Applying another filter (or closing/replacing the capture) cancels the running one.
+    /// An empty filter takes effect immediately. Returns false (and leaves the previous filter active) if it does not
+    /// compile; the error is in state.filter.previewError.
     bool applyFilter(AppState &state, const std::string &text);
-    /// Re-evaluates the active filter (after a capture was loaded).
+    /// The packets of the capture were replaced: forgets the old result and, if a filter is applied, evaluates it again
+    /// in the background (the list is empty until that is done).
     void refilter(AppState &state);
+    /// Publishes a finished filter job and reaps cancelled ones. Called once per frame.
+    void pollFilter(AppState &state);
+    /// Cancels the running filter job; the previous result stays.
+    void cancelFilter(AppState &state);
+    /// Progress of the running filter job in [0, 1]; negative if none runs.
+    float filterProgress(const AppState &state);
+    /// Blocking helpers for tests and scripts: applyFilter / wait until the running job has been published.
+    bool applyFilterNow(AppState &state, const std::string &text);
+    void waitForFilter(AppState &state);
     /// Live capture: evaluates the active filter for the rows appended since `from` and again for the earlier rows
     /// in `amended` (their summaries were edited in place by reassembly), keeping `filter.visible` sorted. Returns
     /// true if an earlier row appeared in or vanished from the visible set (the displayed order must be rebuilt).

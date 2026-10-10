@@ -800,7 +800,7 @@ TEST_F(UiInteract, ExportOfAllPacketsWritesEveryPacketInEveryFormat) {
     ui::AppState state;
     TempDir dir("export_all");
     load(state);
-    ASSERT_TRUE(ui::applyFilter(state, "tcp")) << "a filter does not limit an export of all packets";
+    ASSERT_TRUE(ui::applyFilterNow(state, "tcp")) << "a filter does not limit an export of all packets";
     for (const auto format: kAllFormats) {
         SCOPED_TRACE(exporter::formatName(format));
         const std::string path = dir.file(std::string("all") + exporter::formatExtension(format));
@@ -816,7 +816,7 @@ TEST_F(UiInteract, ExportOfDisplayedPacketsWritesOnlyTheFilteredPackets) {
     ui::AppState state;
     TempDir dir("export_displayed");
     load(state);
-    ASSERT_TRUE(ui::applyFilter(state, "tcp"));
+    ASSERT_TRUE(ui::applyFilterNow(state, "tcp"));
     frames(state);
     for (const auto format: kAllFormats) {
         SCOPED_TRACE(exporter::formatName(format));
@@ -848,7 +848,7 @@ TEST_F(UiInteract, ExportedCaptureFileKeepsTheOriginalFrames) {
     ui::AppState state;
     TempDir dir("export_frames");
     load(state);
-    ASSERT_TRUE(ui::applyFilter(state, "dns"));
+    ASSERT_TRUE(ui::applyFilterNow(state, "dns"));
     frames(state);
     for (const auto format: {exporter::Format::Pcap, exporter::Format::Pcapng}) {
         SCOPED_TRACE(exporter::formatName(format));
@@ -1091,7 +1091,7 @@ TEST_F(UiInteract, StatusBarSegmentsDescribeTheCapture) {
     EXPECT_TRUE(seg.selected.empty());
     EXPECT_TRUE(seg.filter.empty());
 
-    ASSERT_TRUE(ui::applyFilter(state, "tcp"));
+    ASSERT_TRUE(ui::applyFilterNow(state, "tcp"));
     frames(state);
     ASSERT_FALSE(state.filter.visible.empty());
     state.selectPacket(static_cast<int>(state.filter.visible.front()));

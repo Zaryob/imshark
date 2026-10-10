@@ -243,22 +243,22 @@ TEST_F(UiSmoke, AppliedFilterRestrictsTheDisplayedPackets) {
     frames(state);
     EXPECT_EQ(state.displayedCount(), 16u);
 
-    ASSERT_TRUE(ui::applyFilter(state, "tcp"));
+    ASSERT_TRUE(ui::applyFilterNow(state, "tcp"));
     EXPECT_TRUE(state.filter.active);
     EXPECT_EQ(state.displayedCount(), 7u);
     frames(state);
     EXPECT_EQ(state.order, (std::vector<uint32_t>{6, 7, 8, 9, 10, 11, 15}));
 
-    ASSERT_TRUE(ui::applyFilter(state, "tcp.flags.syn && !tcp.flags.ack"));
+    ASSERT_TRUE(ui::applyFilterNow(state, "tcp.flags.syn && !tcp.flags.ack"));
     frames(state);
     EXPECT_EQ(state.order, (std::vector<uint32_t>{6}));
 
-    ASSERT_TRUE(ui::applyFilter(state, "frame.number > 100"));
+    ASSERT_TRUE(ui::applyFilterNow(state, "frame.number > 100"));
     frames(state);
     EXPECT_TRUE(state.order.empty()) << "no match: an empty list, not the full one";
     EXPECT_EQ(state.displayedCount(), 0u);
 
-    ASSERT_TRUE(ui::applyFilter(state, ""));
+    ASSERT_TRUE(ui::applyFilterNow(state, ""));
     EXPECT_FALSE(state.filter.active);
     frames(state);
     EXPECT_EQ(state.order.size(), 16u);
@@ -267,8 +267,8 @@ TEST_F(UiSmoke, AppliedFilterRestrictsTheDisplayedPackets) {
 TEST_F(UiSmoke, InvalidFilterKeepsThePreviousOneAndReportsTheError) {
     ui::AppState state;
     load(state);
-    ASSERT_TRUE(ui::applyFilter(state, "udp"));
-    EXPECT_FALSE(ui::applyFilter(state, "udp &&"));
+    ASSERT_TRUE(ui::applyFilterNow(state, "udp"));
+    EXPECT_FALSE(ui::applyFilterNow(state, "udp &&"));
     EXPECT_FALSE(state.filter.previewOk);
     EXPECT_NE(state.filter.previewError.message.find("ends unexpectedly"), std::string::npos);
     EXPECT_EQ(state.filter.appliedText, "udp");
@@ -288,11 +288,11 @@ TEST_F(UiSmoke, FilterSurvivesReloadAndDropsHiddenSelection) {
     load(state);
     state.selectedPacket = 0;                        // ARP
     frames(state);
-    ASSERT_TRUE(ui::applyFilter(state, "tcp"));
+    ASSERT_TRUE(ui::applyFilterNow(state, "tcp"));
     EXPECT_EQ(state.selectedPacket, -1) << "the selected packet is no longer displayed";
 
     state.selectedPacket = 6;                        // a TCP packet stays selected
-    ASSERT_TRUE(ui::applyFilter(state, "tcp.port == 80"));
+    ASSERT_TRUE(ui::applyFilterNow(state, "tcp.port == 80"));
     EXPECT_EQ(state.selectedPacket, 6);
 
     load(state);                                     // open the capture again
@@ -304,9 +304,9 @@ TEST_F(UiSmoke, FilterSurvivesReloadAndDropsHiddenSelection) {
 TEST_F(UiSmoke, FilterHistoryIsRememberedAndHelpIsDrawn) {
     ui::AppState state;
     load(state);
-    ui::applyFilter(state, "tcp");
-    ui::applyFilter(state, "udp");
-    ui::applyFilter(state, "tcp");
+    ui::applyFilterNow(state, "tcp");
+    ui::applyFilterNow(state, "udp");
+    ui::applyFilterNow(state, "tcp");
     EXPECT_EQ(state.settings.filterHistory, (std::vector<std::string>{"tcp", "udp"}));
     state.filter.showHelp = true;
     frames(state);
@@ -318,7 +318,7 @@ TEST_F(UiSmoke, FilterHistoryIsRememberedAndHelpIsDrawn) {
 TEST_F(UiSmoke, FilterAndSortingCombine) {
     ui::AppState state;
     load(state);
-    ASSERT_TRUE(ui::applyFilter(state, "tcp"));
+    ASSERT_TRUE(ui::applyFilterNow(state, "tcp"));
     frames(state);
     ui::sortOrder(state.order, state.packets, ui::SortColumn::Length, false);
     ASSERT_EQ(state.order.size(), 7u);
@@ -382,7 +382,7 @@ TEST_F(UiSmoke, FindSelectsMatchesAndWraps) {
 TEST_F(UiSmoke, FindOnlySearchesDisplayedPackets) {
     ui::AppState state;
     load(state);
-    ASSERT_TRUE(ui::applyFilter(state, "udp"));       // packets 4, 5, 12, 13
+    ASSERT_TRUE(ui::applyFilterNow(state, "udp"));       // packets 4, 5, 12, 13
     state.find.text = "SMTP";                          // packet 11 is hidden by the filter
     EXPECT_FALSE(ui::findAndSelect(state, true));
     state.find.text = "example";
@@ -440,7 +440,7 @@ TEST_F(UiSmoke, StatisticsWindowsDrawAndFollowTheFilter) {
         EXPECT_TRUE(state.stats.endpointsValid[tab]);
     }
 
-    ASSERT_TRUE(ui::applyFilter(state, "tcp"));
+    ASSERT_TRUE(ui::applyFilterNow(state, "tcp"));
     EXPECT_TRUE(state.stats.dirty);
     frames(state);
     EXPECT_EQ(state.stats.hierarchy.packets, 7u) << "limited to the displayed packets";
@@ -468,7 +468,7 @@ TEST_F(UiSmoke, ExpertInformationWindow) {
     frames(state);
     ASSERT_TRUE(state.stats.expertValid);
     EXPECT_FALSE(state.stats.expert.empty());
-    ASSERT_TRUE(ui::applyFilter(state, "udp"));
+    ASSERT_TRUE(ui::applyFilterNow(state, "udp"));
     frames(state);
     for (const auto &item: state.stats.expert) {
         if (item.summary.find("hecksum") == std::string::npos) ADD_FAILURE() << item.summary << ": limited to the displayed (UDP) packets nothing else is noteworthy";
@@ -580,7 +580,7 @@ TEST_F(UiSmoke, ExportIndicesFollowTheRange) {
     EXPECT_EQ(ui::exportIndices(state, ui::ExportState::All).size(), 16u);
     EXPECT_EQ(ui::exportIndices(state, ui::ExportState::Displayed).size(), 16u);
     EXPECT_TRUE(ui::exportIndices(state, ui::ExportState::Selected).empty());
-    ASSERT_TRUE(ui::applyFilter(state, "tcp"));
+    ASSERT_TRUE(ui::applyFilterNow(state, "tcp"));
     EXPECT_EQ(ui::exportIndices(state, ui::ExportState::Displayed), (std::vector<uint32_t>{6, 7, 8, 9, 10, 11, 15}));
     EXPECT_EQ(ui::exportIndices(state, ui::ExportState::All).size(), 16u);
     state.selectedPacket = 9;
@@ -590,7 +590,7 @@ TEST_F(UiSmoke, ExportIndicesFollowTheRange) {
 TEST_F(UiSmoke, BackgroundExportWritesTheDisplayedPackets) {
     ui::AppState state;
     load(state);
-    ASSERT_TRUE(ui::applyFilter(state, "dns"));
+    ASSERT_TRUE(ui::applyFilterNow(state, "dns"));
     frames(state);
     const auto path = (std::filesystem::temp_directory_path() / "imshark_ui_export.pcapng").string();
     std::remove(path.c_str());
@@ -951,7 +951,7 @@ TEST_F(UiSmoke, LiveSessionGrowsFiltersSelectsAndBehavesLikeAFileAfterStop) {
     frames(state);
 
     // a display filter that matches rows only after a later packet amended them
-    ASSERT_TRUE(ui::applyFilter(state, "info contains \"Reassembled in\""));
+    ASSERT_TRUE(ui::applyFilterNow(state, "info contains \"Reassembled in\""));
     injectFrames(state, traffic, 0, 3);
     frames(state);
     ASSERT_EQ(state.packets.size(), 3u) << "polled by the frame";
@@ -975,7 +975,7 @@ TEST_F(UiSmoke, LiveSessionGrowsFiltersSelectsAndBehavesLikeAFileAfterStop) {
     EXPECT_EQ(state.order, (std::vector<uint32_t>{2}));
 
     // the display filter and the colouring apply to new packets as well
-    ASSERT_TRUE(ui::applyFilter(state, "tcp"));
+    ASSERT_TRUE(ui::applyFilterNow(state, "tcp"));
     EXPECT_EQ(state.filter.visible, (std::vector<uint32_t>{1, 2, 4}));
     injectFrames(state, traffic, 5, 6);
     frames(state);
@@ -1251,7 +1251,7 @@ TEST_F(UiSmoke, BurstIsDissectedOverSeveralFramesAndTheIncrementalFilterEqualsAF
     ui::AppState state;
     const auto traffic = liveTraffic();
     ASSERT_TRUE(ui::startInjectedCapture(state, 1, 262144, "fake0"));
-    ASSERT_TRUE(ui::applyFilter(state, "tcp || info contains \"Reassembled\""));
+    ASSERT_TRUE(ui::applyFilterNow(state, "tcp || info contains \"Reassembled\""));
     constexpr size_t kBurst = 3000;
     for (size_t i = 0; i < kBurst; ++i) {
         ASSERT_TRUE(state.live.device->injectPacket(1700000000 + i / 1000, static_cast<uint32_t>((i % 1000) * 1000), traffic[i % traffic.size()]));
@@ -1269,6 +1269,7 @@ TEST_F(UiSmoke, BurstIsDissectedOverSeveralFramesAndTheIncrementalFilterEqualsAF
 
     const auto incremental = state.filter.visible;
     ui::refilter(state);
+    ui::waitForFilter(state);
     EXPECT_EQ(state.filter.visible, incremental) << "extendFilter / amended handling equals a full re-evaluation";
     frames(state);
     ui::stopCapture(state);

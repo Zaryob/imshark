@@ -190,6 +190,7 @@ void ui::loadCapture(AppState &state, const std::string &path) {
         pollLoad(state);
         if (state.loading()) std::this_thread::sleep_for(std::chrono::milliseconds(1));
     }
+    waitForFilter(state); // blocking helper: the displayed packets are final when it returns
 }
 
 // Progress popup: only shown for loads that take noticeable time, so small files do not flash a dialog.
