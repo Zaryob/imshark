@@ -416,3 +416,17 @@ TEST(TcpLen, NonTcpPacketsHaveNone) {
     EXPECT_FALSE(f.filter.matches(parse(hex(std::string(support::kEthIpUdp)))));
     EXPECT_FALSE(f.filter.matches(parse(hex(support::kArpRequest))));
 }
+
+TEST(Parser, FcsLongerThanThePayloadAfterTheLinkHeaderDoesNotUnderflowTheNetworkLength) {
+    // found by fuzz_packet: a bare 14 byte Ethernet header with 4 FCS bytes configured leaves 10 bytes to dissect, fewer
+    // than the link header, and the network layer was handed a length of -4 (heap-buffer-overflow under ASan).
+    for (const char *etherType: {"0800", "86dd", "0806", "8847"}) {
+        const auto bytes = hex(std::string("001122334455 66778899aabb ") + etherType);
+        const std::vector<char> frame(bytes.begin(), bytes.end());   // exact capacity: the sanitizer sees every byte read past the end
+        packet::PacketParser parser;
+        packet::PacketInfo info(1);
+        info.fcs_length = 4;
+        parser.parsePacket(info, frame);
+        EXPECT_NE(info.info.find("Malformed"), std::string::npos) << etherType << ": " << info.info;
+    }
+}
