@@ -27,7 +27,7 @@ A Wireshark-inspired packet analyzer built with [Dear ImGui](https://github.com/
 
 - **Capture files:** pcap and pcapng; gzip-compressed files; readers for Sun snoop, NetMon 2.x, Endace ERF and AIX iptrace 2.0.
 - **Packet inspection:** sortable, colorized list, byte highlighting for the selected field, text/hex search and copy.
-- **Display filters:** protocol and field queries, CIDR, sets and regular expressions; validation while typing and a field reference.
+- **Display filters:** protocol and field queries, CIDR, sets and PCRE2 regular expressions evaluated under hard work limits; validation while typing and a field reference.
 - **Streams and statistics:** TCP/UDP Follow Stream, TCP and IP reassembly, conversations, endpoints, protocol hierarchy and Expert Information.
 - **TLS/DTLS:** decryption of supported TLS 1.2/1.3 and DTLS 1.2 cipher suites with a key log file or keys embedded in pcapng.
 - **Export:** all, displayed or selected packets as pcap, pcapng, CSV and JSON; stream data as raw bytes.
@@ -92,6 +92,7 @@ tls.decrypted
 | File/link/protocol support | [Support matrix](docs/SUPPORT_MATRIX.md) |
 | Protocol specifications and implementation files | [Protocol references](docs/PROTOCOLS.md) |
 | Functional limits and validation gaps | [Known issues](docs/KNOWN_ISSUES.md) |
+| What 1.x keeps stable; attackers, mitigations and residual risks | [Compatibility promise](docs/COMPATIBILITY.md), [threat model](docs/THREAT_MODEL.md) |
 | Data flow and modules | [Architecture](docs/ARCHITECTURE.md) |
 | Development and adding a dissector | [Contributing](CONTRIBUTING.md), [dissector guide](docs/DISSECTORS.md) |
 | Next priorities | [Roadmap](ROADMAP.md) |

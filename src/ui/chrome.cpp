@@ -59,6 +59,10 @@ void ui::initSettings(AppState &state, const std::string &path) {
     recompileColorRules(state);
     state.preferences.tlsKeyLogEdit = state.settings.tlsKeyLogFile;
     loadTlsKeyLog(state);
+    if (state.settings.fromNewerVersion) {
+        // shown once (the next capture load replaces the message); the file itself is never rewritten
+        state.loadMessage = "Settings were written by a newer ImShark and will not be modified.";
+    }
 }
 
 void ui::saveSettingsIfDirty(AppState &state) {
@@ -205,7 +209,13 @@ ui::StatusSegments ui::statusSegments(const AppState &state) {
     if (!state.loading() && (state.live.session || !state.currentFile.empty())) {
         seg.displayed = "Displayed: " + std::to_string(state.displayedCount()) + " / " + std::to_string(state.packets.size());
         if (const packet::PacketInfo *sel = state.currentPacket()) seg.selected = "Selected: #" + std::to_string(sel->number);
-        if (state.filter.active) seg.filter = state.filter.appliedText;
+        if (state.filter.active) {
+            seg.filter = state.filter.appliedText;
+            if (const uint64_t hits = state.filter.applied.regexLimitHits()) {
+                seg.filter += " (" + std::to_string(hits) + (hits == 1 ? " value" : " values") +
+                              " could not be evaluated: the regular expression is too complex)";
+            }
+        }
         const float progress = filterProgress(state);
         if (progress >= 0) seg.filter = "Filtering... " + std::to_string(static_cast<int>(progress * 100.0f)) + "%";
     }
