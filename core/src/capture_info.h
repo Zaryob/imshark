@@ -47,5 +47,16 @@ namespace core {
         size_t tlsKeyLogSecrets = 0;         // secrets read from the TLS key log blocks (they are in the session tables' key store)
         size_t tlsKeyLogMalformed = 0;       // lines of those blocks that were not valid key log lines
         size_t tlsKeyLogDropped = 0;         // valid secrets that were not stored because the key store is full
+        // Exact timestamp of the first packet (the base of PacketInfo::time): whole UTC seconds plus nanoseconds. The double
+        // epoch kept in the UI state resolves only ~240 ns at today's epoch; the export needs the exact value.
+        bool hasStart = false;
+        int64_t startSeconds = 0;
+        uint32_t startNanos = 0;
+
+        /// True if any interface records timestamps finer than microseconds (pcap nanosecond magic, pcapng if_tsresol > 6).
+        bool nanosecondTimestamps() const {
+            for (const auto &itf: interfaces) if (itf.ticksPerSecond > 1000000ull) return true;
+            return false;
+        }
     };
 } // namespace core

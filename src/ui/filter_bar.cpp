@@ -1,10 +1,65 @@
 #include "ui.h"
 
 #include <algorithm>
+#include <atomic>
+#include <chrono>
+#include <cstdio>
+#include <thread>
 
 #include <imgui.h>
 
+#include "filter_job.h"
 #include "text_input.h"
+
+namespace {
+    using ui::AppState;
+
+    /// Stops the running job without waiting for it: a job that is still busy (a pathological regular expression can
+    /// spend long on one row) is parked until it ends, so replacing a filter never blocks the UI thread.
+    void retireJob(ui::FilterState &f) {
+        if (!f.job) return;
+        f.job->cancelRequested = true;
+        if (!f.job->finished) f.retired.push_back(std::move(f.job));
+        f.job.reset();
+    }
+
+    /// Makes `filter` the active filter with the given result.
+    void commit(AppState &state, const filter::Filter &filter, const std::string &text, std::vector<uint32_t> &&visible) {
+        auto &f = state.filter;
+        f.applied = filter;
+        f.appliedText = text;
+        f.active = !filter.isEmpty();
+        f.visible = std::move(visible);
+        if (!f.active) f.visible.clear();
+        // the selected packet stays selected only if it is still displayed
+        if (f.active && state.selectedPacket >= 0 &&
+            !std::binary_search(f.visible.begin(), f.visible.end(), static_cast<uint32_t>(state.selectedPacket))) {
+            state.clearSelection();
+        }
+        state.orderDirty = true;
+        state.stats.dirty = true; // statistics "limited to displayed packets" depend on the filter
+    }
+
+    /// Evaluates `filter` over the packets in the background; the result is committed by ui::pollFilter.
+    void startJob(AppState &state, const filter::Filter &filter, const std::string &text) {
+        auto &f = state.filter;
+        retireJob(f);
+        if (state.packets.empty()) { // nothing to evaluate
+            commit(state, filter, text, {});
+            return;
+        }
+        auto job = std::make_shared<ui::FilterJob>();
+        job->filter = filter;
+        job->text = text;
+        job->packets = state.packets.share();
+        job->total = job->packets->size();
+        job->captureStartEpoch = state.captureStartEpoch;
+        if (const auto *eth = state.ethernetAddresses()) job->ethernet = *eth;
+        if (const auto *ipsec = state.ipsecHeaders()) job->ipsec = *ipsec;
+        job->thread = std::thread([raw = job.get()] { raw->run(); });
+        f.job = std::move(job);
+    }
+} // namespace
 
 bool ui::applyFilter(AppState &state, const std::string &text) {
     auto &f = state.filter;
@@ -15,41 +70,73 @@ bool ui::applyFilter(AppState &state, const std::string &text) {
     f.previewError = result.error;
     if (!result.ok) return false;
 
-    f.applied = result.filter;
-    f.appliedText = text;
-    f.active = !result.filter.isEmpty();
-    if (f.active) {
-        addFilterHistory(state.settings, text);
-        state.settingsDirty = true;
+    if (result.filter.isEmpty()) {
+        retireJob(f);
+        commit(state, result.filter, text, {});
+        return true;
     }
-    refilter(state);
+    addFilterHistory(state.settings, text);
+    state.settingsDirty = true;
+    startJob(state, result.filter, text);
     return true;
 }
 
 void ui::refilter(AppState &state) {
     auto &f = state.filter;
-    f.visible.clear();
-    if (f.active) {
-        filter::Context context;
-        context.captureStartEpoch = state.captureStartEpoch;
-        context.ethernet = state.ethernetAddresses();
-        context.ipsec = state.ipsecHeaders();
-        for (size_t i = 0; i < state.packets.size(); ++i) {
-            context.previous = i ? &state.packets[i - 1] : nullptr;
-            if (f.applied.matches(state.packets[i], context)) f.visible.push_back(static_cast<uint32_t>(i));
-        }
-        // the selected packet stays selected only if it is still displayed
-        if (state.selectedPacket >= 0 &&
-            !std::binary_search(f.visible.begin(), f.visible.end(), static_cast<uint32_t>(state.selectedPacket))) {
-            state.clearSelection();
-        }
-    }
+    // a filter that was still being evaluated is the latest one the user asked for: it applies to the new packets
+    const bool pending = f.job != nullptr;
+    const filter::Filter target = pending ? f.job->filter : f.applied;
+    const std::string targetText = pending ? f.job->text : f.appliedText;
+    retireJob(f);
+    f.visible.clear(); // indices of the old packets
+    if (pending || f.active) startJob(state, target, targetText);
     state.orderDirty = true;
-    state.stats.dirty = true; // statistics "limited to displayed packets" depend on the filter
+    state.stats.dirty = true;
+}
+
+void ui::cancelFilter(AppState &state) { retireJob(state.filter); }
+
+float ui::filterProgress(const AppState &state) {
+    const auto &job = state.filter.job;
+    if (!job) return -1.0f;
+    return job->total ? static_cast<float>(static_cast<double>(job->done.load(std::memory_order_relaxed)) / static_cast<double>(job->total)) : 0.0f;
+}
+
+void ui::pollFilter(AppState &state) {
+    auto &f = state.filter;
+    f.retired.erase(std::remove_if(f.retired.begin(), f.retired.end(), [](const std::shared_ptr<FilterJob> &j) { return j->finished.load(); }),
+                    f.retired.end());
+    if (!f.job || !f.job->finished) return;
+    std::shared_ptr<FilterJob> job = std::move(f.job);
+    f.job.reset();
+    job->thread.join();
+    if (job->failed) return; // keep the previous result
+
+    commit(state, job->filter, job->text, std::move(job->visible));
+    // a live capture went on while the job ran: catch up on the rows it did not see
+    if (state.packets.size() > job->total || !job->lateAmended.empty()) extendFilter(state, job->total, job->lateAmended);
+}
+
+void ui::waitForFilter(AppState &state) {
+    while (state.filter.job) {
+        pollFilter(state);
+        if (state.filter.job) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+}
+
+bool ui::applyFilterNow(AppState &state, const std::string &text) {
+    const bool ok = applyFilter(state, text);
+    waitForFilter(state);
+    return ok;
 }
 
 bool ui::extendFilter(AppState &state, size_t from, const std::vector<uint32_t> &amended) {
     auto &f = state.filter;
+    if (f.job) {
+        // a filter is being evaluated over an older snapshot: remember what changed, pollFilter catches up when it is done
+        for (uint32_t i: amended) if (i < f.job->total) f.job->lateAmended.push_back(i);
+        return false;
+    }
     if (!f.active) return false;
     filter::Context context;
     context.captureStartEpoch = state.captureStartEpoch;
@@ -82,6 +169,7 @@ bool ui::extendFilter(AppState &state, size_t from, const std::vector<uint32_t> 
 
 void ui::drawFilterBar(AppState &state) {
     auto &f = state.filter;
+    pollFilter(state);
 
     // validate what is typed, but only when it changed
     if (f.text != f.previewText) {
@@ -136,6 +224,15 @@ void ui::drawFilterBar(AppState &state) {
     if (ImGui::Button("?")) f.showHelp = !f.showHelp;
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Filter syntax and fields");
 
+    if (f.job) {
+        const float progress = std::max(0.0f, filterProgress(state));
+        char label[48];
+        std::snprintf(label, sizeof(label), "Filtering... %d%%", static_cast<int>(progress * 100.0f));
+        ImGui::ProgressBar(progress, ImVec2(220, 0), label);
+        ImGui::SameLine();
+        if (ImGui::Button("Stop")) cancelFilter(state);
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Cancel the filter; the previous result stays");
+    }
     if (!f.previewOk) {
         ImGui::TextColored(ImVec4(1.0f, 0.45f, 0.45f, 1.0f), "%s  (at position %zu)", f.previewError.message.c_str(),
                            f.previewError.position + 1);
