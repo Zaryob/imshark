@@ -31,6 +31,7 @@ add_executable(imshark_tests
     test_find.cpp
     test_fragments.cpp
     test_gzip.cpp
+    test_temp_file.cpp
     test_http_tls.cpp
     test_hpack.cpp
     test_http2.cpp

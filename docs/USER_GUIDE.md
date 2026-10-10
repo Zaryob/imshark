@@ -23,6 +23,9 @@ On macOS the Command key takes the place of Ctrl in every shortcut below (Dear I
   **gzip** (`.gz`). The format is recognised by its magic number, not the extension (ERF has none: it is recognised by a
   plausible first record). Frames of a medium ImShark cannot decode (Token Ring, FDDI, ATM, ...) are listed as
   "Unsupported link type" and their bytes are shown as data; the status bar says how many frames were affected.
+- A gzip file is unpacked to a private temporary copy first. To stop decompression bombs, ImShark refuses to continue
+  (and deletes the partial copy) when the result would exceed 16 GB or the free disk space of the temp folder minus
+  1 GB, or when the data expands by more than 1000:1 once it has passed 1 GB; the status bar then says so.
 - Loading runs in the background with a progress bar and a Cancel button; the list fills when it is done. Damaged or
   truncated files load as far as they are readable, and problems are shown in the status bar.
 - **File > Close File** (Ctrl+W) closes the capture.
