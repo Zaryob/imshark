@@ -417,6 +417,21 @@ TEST(TcpLen, NonTcpPacketsHaveNone) {
     EXPECT_FALSE(f.filter.matches(parse(hex(support::kArpRequest))));
 }
 
+TEST(Parser, ManyMessagesInOneSegmentKeepTheInfoColumnLinear) {
+    // found by fuzz_packet (out of memory, 2 GB): a TCP segment on port 443 holding a run of records made the info of
+    // every following message include the whole info built so far, so it doubled with each message (up to 64 of them)
+    const auto frame = hex("aabbccddeeff00112233445508004500 00e010004000400600000a0000010a000002c35001bd00000000aabbccddeeff00ffffffffffbdffffffff"
+                           "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+                           "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+                           "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+                           "00000000000013907f0500000000000000000000000000000000000000000000000000000000000000000000861b9c9ed2c5d6cdf58d40da02549d3ee03eb3"
+                           "05315fdeb4f6e600000000000000000000000000");
+    packet::PacketParser parser;
+    packet::PacketInfo info(1);
+    parser.parsePacket(info, frame, dissect::ParseMode::Summary);
+    EXPECT_LT(info.info.size(), 16u * 1024) << "info grew to " << info.info.size() << " bytes";
+}
+
 TEST(Parser, FcsLongerThanThePayloadAfterTheLinkHeaderDoesNotUnderflowTheNetworkLength) {
     // found by fuzz_packet: a bare 14 byte Ethernet header with 4 FCS bytes configured leaves 10 bytes to dissect, fewer
     // than the link header, and the network layer was handed a length of -4 (heap-buffer-overflow under ASan).
