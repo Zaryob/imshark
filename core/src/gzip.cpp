@@ -1,8 +1,11 @@
 #include "gzip.h"
 
 #include <array>
+#include <algorithm>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <vector>
@@ -14,7 +17,7 @@ namespace core {
         thread_local uint64_t g_lastOutputSize = 0;
 
         // ------------------------------------------------------------------------------------------
-        struct Failure { std::string message; };  // thrown inside the decoder, caught in gunzipFile
+        struct Failure { std::string message; bool limit = false; };  // thrown inside the decoder, caught in gunzipFile
         struct Cancelled {};
 
         uint32_t crcUpdate(uint32_t crc, const uint8_t *data, size_t n) {
@@ -88,10 +91,11 @@ namespace core {
         // Output: written to the file in blocks, the last 32 KiB kept as the back-reference window.
         class Output {
         public:
-            explicit Output(std::ostream &f, uint64_t limit = UINT64_MAX) : out_(f), limit_(limit), window_(kWindow), block_() { block_.reserve(1 << 16); }
+            explicit Output(std::ostream &f, uint64_t limit = UINT64_MAX, const Input *in = nullptr, uint64_t ratioFloor = 0, uint32_t maxRatio = 0)
+                : out_(f), limit_(limit), in_(in), ratioFloor_(ratioFloor), maxRatio_(maxRatio), window_(kWindow), block_() { block_.reserve(1 << 16); }
 
             void put(uint8_t b) {
-                if (total_ >= limit_) throw Failure{"The decompressed data is larger than the allowed size"};
+                if (total_ >= limit_) throw Failure{sizeMessage(limit_), true};
                 window_[wpos_] = b;
                 wpos_ = (wpos_ + 1) & (kWindow - 1);
                 block_.push_back(b);
@@ -104,7 +108,26 @@ namespace core {
                 while (length--) put(window_[(wpos_ - distance) & (kWindow - 1)]);
             }
 
+            static std::string sizeMessage(uint64_t limit) {
+                char buf[160];
+                if (limit >= 1000000000ull) std::snprintf(buf, sizeof buf, "The decompressed capture would exceed %.1f GB; refusing to continue", static_cast<double>(limit) / 1e9);
+                else std::snprintf(buf, sizeof buf, "The decompressed capture would exceed %.1f MB; refusing to continue", static_cast<double>(limit) / 1e6);
+                return buf;
+            }
+
+            // Expansion ratio guard: only meaningful once the output is large, so small, very compressible files pass.
+            void checkRatio() const {
+                if (!in_ || maxRatio_ == 0 || total_ <= ratioFloor_) return;
+                const uint64_t consumed = std::max<uint64_t>(in_->consumed(), 1);
+                if (total_ / consumed > maxRatio_) {
+                    char buf[200];
+                    std::snprintf(buf, sizeof buf, "The compressed file expands by more than %u:1 (over %.1f GB so far); it looks like a decompression bomb. Refusing to continue", maxRatio_, static_cast<double>(total_) / 1e9);
+                    throw Failure{buf, true};
+                }
+            }
+
             void flush() {
+                checkRatio();
                 if (block_.empty()) return;
                 crc_ = crcUpdate(crc_, block_.data(), block_.size());
                 out_.write(reinterpret_cast<const char *>(block_.data()), static_cast<std::streamsize>(block_.size()));
@@ -121,6 +144,9 @@ namespace core {
             static constexpr size_t kWindow = 32768;
             std::ostream &out_;
             uint64_t limit_;
+            const Input *in_;
+            uint64_t ratioFloor_;
+            uint32_t maxRatio_;
             std::vector<uint8_t> window_;
             std::vector<uint8_t> block_;
             size_t wpos_ = 0;
@@ -317,7 +343,7 @@ namespace core {
             if (members == 0) throw Failure{"Not gzip data"};
             output.flush();
         } catch (const Failure &f) {
-            error = f.message;
+            error = f.limit ? "The decompressed data is larger than the allowed size" : f.message;
             return false;
         } catch (const Cancelled &) {
             return false;
@@ -328,7 +354,20 @@ namespace core {
 
     uint64_t lastGunzipOutputSize() { return g_lastOutputSize; }
 
-    bool gunzipFile(const std::string &inPath, const std::string &outPath, std::string &error, LoadControl *control) {
+    uint64_t defaultGunzipMaxOutput(const std::string &outPath) {
+        constexpr uint64_t kMargin = 1ull << 30;
+        std::error_code ec;
+        auto dir = std::filesystem::absolute(pathFromUtf8(outPath), ec).parent_path();
+        if (ec || dir.empty()) return kGunzipMaxOutput;
+        const auto info = std::filesystem::space(dir, ec);
+        if (ec) return kGunzipMaxOutput;
+        const uint64_t avail = info.available;
+        // keep a safety margin; on a nearly full disk allow half of what is left rather than refusing everything
+        const uint64_t byDisk = avail > kMargin ? avail - kMargin : avail / 2;
+        return std::min(kGunzipMaxOutput, byDisk);
+    }
+
+    bool gunzipFile(const std::string &inPath, const std::string &outPath, std::string &error, LoadControl *control, const GunzipLimits &limits) {
         error.clear();
         std::ifstream in(pathFromUtf8(inPath), std::ios::binary);
         if (!in) { error = "Failed to open file: " + inPath; return false; }
@@ -341,9 +380,16 @@ namespace core {
             control->bytesProcessed = 0;
         }
 
+        const uint64_t maxOutput = limits.maxOutput ? limits.maxOutput : defaultGunzipMaxOutput(outPath);
+        bool limitHit = false;
+        auto discard = [&] {
+            outFile.close();
+            std::error_code rec;
+            std::filesystem::remove(pathFromUtf8(outPath), rec);
+        };
         try {
             Input input(in, control);
-            Output output(outFile);
+            Output output(outFile, maxOutput, &input, limits.ratioFloor, limits.maxRatio);
             int members = 0;
             while (true) {
                 int next;
@@ -357,10 +403,12 @@ namespace core {
             g_lastOutputSize = output.total();
         } catch (const Failure &f) {
             error = f.message;
-            return false;
+            limitHit = f.limit;
         } catch (const Cancelled &) {
             return false;
         }
+        if (limitHit) { discard(); return false; }
+        if (!error.empty()) return false;
         outFile.flush();
         if (!outFile) { error = "Writing the decompressed file failed (disk full?)"; return false; }
         if (control) control->bytesProcessed = control->totalBytes.load();
