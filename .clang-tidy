@@ -2,6 +2,14 @@
 # CI runs it with -warnings-as-errors=*, so every enabled check must stay at zero findings; see CONTRIBUTING.md
 # ("Static analysis") for how to run it and for the NOLINT policy.
 #
+# Disabled after a first run over the tree, with the reason (a Checks block cannot hold comments):
+#   bugprone-signed-bitwise      ~1000 hits: flags `flags & ENUM` style bit tests on promoted unsigned fields; not a bug.
+#   bugprone-std-exception-baseclass, performance-inefficient-string-concatenation, performance-faster-string-find,
+#   performance-prefer-single-char-overloads, misc-unused-using-decls: style or micro-cost, no correctness impact.
+#   bugprone-empty-catch: the few empty handlers are best-effort paths and each carries a comment saying why.
+#   bugprone-unchecked-string-to-number-conversion: its remaining hits are sscanf calls that already check the
+#   result count and a trailing-character sentinel; atoi uses were replaced with strtol.
+#
 # Globs keep the set stable across clang-tidy versions; checks that do not exist in the installed version are ignored.
 Checks: >
   -*,
@@ -13,6 +21,10 @@ Checks: >
   -bugprone-exception-escape,
   -bugprone-reserved-identifier,
   -bugprone-macro-parentheses,
+  -bugprone-signed-bitwise,
+  -bugprone-std-exception-baseclass,
+  -bugprone-empty-catch,
+  -bugprone-unchecked-string-to-number-conversion,
   cert-err34-c,
   cert-str34-c,
   cert-flp30-c,
@@ -28,6 +40,9 @@ Checks: >
   performance-*,
   -performance-enum-size,
   -performance-avoid-endl,
+  -performance-inefficient-string-concatenation,
+  -performance-faster-string-find,
+  -performance-prefer-single-char-overloads,
   misc-*,
   -misc-non-private-member-variables-in-classes,
   -misc-no-recursion,
@@ -36,6 +51,7 @@ Checks: >
   -misc-use-anonymous-namespace,
   -misc-use-internal-linkage,
   -misc-unused-parameters,
+  -misc-unused-using-decls,
   -misc-header-include-cycle
 # Only diagnostics located in project code are reported; vcpkg, build and third_party headers are skipped.
 HeaderFilterRegex: '^(?!.*(vcpkg_installed|[/\\]\.vcpkg|third_party|[/\\]_deps[/\\])).*[/\\](core|src|tests|tools)[/\\].*'

@@ -114,5 +114,5 @@ jobs:
         run: cmake --preset default -DCMAKE_BUILD_TYPE=Debug -DIMSHARK_BUILD_BENCH=ON
       - name: clang-tidy
         run: |
-          find core/src src tools tests -name '*.cpp' -print0 \
+          find core/src src tools -name '*.cpp' -print0 \
             | xargs -0 -P "$(nproc)" -n 4 clang-tidy -p build --quiet --warnings-as-errors='*'

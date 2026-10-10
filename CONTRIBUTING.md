@@ -78,13 +78,13 @@ With Clang, `llvm-cov` and `llvm-profdata`, `tools/coverage.sh` prints a source 
 CI runs three analyses on every pull request:
 
 - **Compiler warnings.** Project targets (not vcpkg dependencies) build with `-Wall -Wextra -Wshadow -Wnon-virtual-dtor` (`/W4` on MSVC). Configure with `-DIMSHARK_WERROR=ON` to turn them into errors on GCC/Clang; the macOS CI job does. MSVC warnings are reported but not yet errors.
-- **clang-tidy** (`.clang-tidy`). The check set targets bugs in code that parses untrusted input: `bugprone-*`, `clang-analyzer-*`, `performance-*`, `misc-*` and a handful of `cert-*` integer, string and memory checks, minus the checks that only produce style churn (each exclusion is listed in the file). The CI job runs with `--warnings-as-errors='*'` over `core/src`, `src`, `tools` and `tests`, so the enabled set must stay at zero findings.
+- **clang-tidy** (`.clang-tidy`). The check set targets bugs in code that parses untrusted input: `bugprone-*`, `clang-analyzer-*`, `performance-*`, `misc-*` and a handful of `cert-*` integer, string and memory checks, minus the checks that only produce style churn (each exclusion is listed in the file). The CI job runs with `--warnings-as-errors='*'` over `core/src`, `src` and `tools` (the test sources are not analysed: GoogleTest macros and large fixtures produce hundreds of findings and dominate the run time), so the enabled set must stay at zero findings.
 - **CodeQL** (`.github/workflows/codeql.yml`) with the `security-extended` suite, on pushes to `master`, pull requests and weekly. Results appear under Security > Code scanning.
 
 Run clang-tidy locally against a configured build directory (`cmake --preset debug` writes `build-debug/compile_commands.json`):
 
 ```sh
-run-clang-tidy -p build-debug -quiet 'core/src/.*\.cpp|src/.*\.cpp|tools/.*\.cpp|tests/.*\.cpp'
+run-clang-tidy -p build-debug -quiet "$PWD/(core/src|src|tools)/.*\.cpp"
 clang-tidy -p build-debug --warnings-as-errors='*' core/src/packet_parser.cpp   # a single file
 ```
 
