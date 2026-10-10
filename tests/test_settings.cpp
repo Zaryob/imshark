@@ -272,7 +272,9 @@ TEST(SettingsVersion, SaveWritesTheVersionAsTheFirstLineAndLoadReportsIt) {
     const auto path = tempPath("version_roundtrip");
     ASSERT_TRUE(ui::saveSettings(ui::Settings(), path));
     const std::string text = readAll(path);
-    EXPECT_EQ(text.rfind("settings_version=" + std::to_string(ui::kSettingsVersion) + "\n", 0), 0u);
+    // text mode: the line ends in "\r\n" on Windows, which the reader accepts too
+    const std::string firstLine = text.substr(0, text.find('\n'));
+    EXPECT_EQ(firstLine.substr(0, firstLine.find('\r')), "settings_version=" + std::to_string(ui::kSettingsVersion));
     const auto loaded = ui::loadSettings(path);
     EXPECT_EQ(loaded.loadedVersion, ui::kSettingsVersion);
     EXPECT_FALSE(loaded.fromNewerVersion);
