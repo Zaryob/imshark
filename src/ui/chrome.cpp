@@ -210,6 +210,8 @@ ui::StatusSegments ui::statusSegments(const AppState &state) {
         seg.displayed = "Displayed: " + std::to_string(state.displayedCount()) + " / " + std::to_string(state.packets.size());
         if (const packet::PacketInfo *sel = state.currentPacket()) seg.selected = "Selected: #" + std::to_string(sel->number);
         if (state.filter.active) seg.filter = state.filter.appliedText;
+        const float progress = filterProgress(state);
+        if (progress >= 0) seg.filter = "Filtering... " + std::to_string(static_cast<int>(progress * 100.0f)) + "%";
     }
     seg.error = state.live.error;
     seg.message = state.loadMessage;

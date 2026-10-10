@@ -146,6 +146,21 @@ namespace filter {
             std::shared_ptr<std::regex> regex;   // String, Matches
             std::vector<network::IpNetwork> nets; // addresses
 
+            // std::regex is a backtracking engine whose cost and (on some standard libraries) recursion depth grow with the
+            // input, so only the first kMaxRegexInput bytes of a value are searched. Summary texts and URIs are far
+            // shorter in practice; the bound keeps one evaluation from running away on a giant value. An engine failure
+            // (error_complexity / error_stack) counts as "no match" instead of escaping into a worker thread.
+            static constexpr size_t kMaxRegexInput = 4096;
+
+            bool regexMatches(std::string_view text) const {
+                if (text.size() > kMaxRegexInput) text = text.substr(0, kMaxRegexInput);
+                try {
+                    return std::regex_search(text.data(), text.data() + text.size(), *regex);
+                } catch (const std::regex_error &) {
+                    return false;
+                }
+            }
+
             template<typename T, typename Pred>
             static bool any(const Values &v, Pred pred) {
                 for (int i = 0; i < v.n; ++i) if (pred(v.v[i])) return true;
@@ -199,7 +214,7 @@ namespace filter {
                     case Op::Contains:
                         return any<void>(v, [&](const Value &x) { return x.s.find(strings[0]) != std::string_view::npos; });
                     case Op::Matches:
-                        return any<void>(v, [&](const Value &x) { return std::regex_search(x.s.data(), x.s.data() + x.s.size(), *regex); });
+                        return any<void>(v, [&](const Value &x) { return regexMatches(x.s); });
                 }
                 return false;
             }
