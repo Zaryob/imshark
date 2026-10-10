@@ -248,3 +248,22 @@ TEST(GreTest, TruncatedHeadersDoNotCrash) {
     const auto p2 = parseEthernet(0x0800, ipv4(47, gre(0x0000, 0x88BE, {}, {0x00, 0x00}), 192, 0, 2, 1, 192, 0, 2, 2));
     EXPECT_TRUE(matchFilter("malformed", p2));
 }
+
+TEST(GreTest, SummaryParseOfUnrecognisedPayloadBuildsNoFieldTree) {
+    // found by fuzz_packet: GRE added its "Data" layer to the tree even when only the summary was wanted
+    const std::vector<std::pair<uint16_t, std::vector<uint8_t>>> cases = {
+        {0x6558, std::vector<uint8_t>(12, 0x8a)},   // transparent Ethernet bridging, shorter than an Ethernet header
+        {0x6558, std::vector<uint8_t>(20, 0x8a)},   // ... with an unknown inner EtherType
+        {0x88BE, std::vector<uint8_t>(12, 0x00)},   // ERSPAN II with an unknown inner frame
+    };
+    for (const auto &[protocol, payload]: cases) {
+        std::vector<uint8_t> frame = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0x08, 0x00};
+        const auto ip = ipv4(47, gre(0x0000, protocol, {}, payload), 192, 0, 2, 1, 192, 0, 2, 2);
+        frame.insert(frame.end(), ip.begin(), ip.end());
+        const std::vector<char> bytes(frame.begin(), frame.end());
+        packet::PacketParser parser;
+        packet::PacketInfo pack(1);
+        parser.parsePacket(pack, bytes, dissect::ParseMode::Summary);
+        EXPECT_TRUE(pack.fields.empty()) << std::hex << protocol;
+    }
+}

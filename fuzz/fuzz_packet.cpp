@@ -63,6 +63,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     // Summary: the same frame again as a second packet of the capture (retransmission / duplicate fragment paths)
     packet::PacketInfo summary = prepare(2);
     parser.parsePacket(summary, frame, dissect::ParseMode::Summary);
+    for (const auto &field: summary.fields) std::fprintf(stderr, "summary parse built a field: %s\n", field.text.c_str());
     FUZZ_CHECK(summary.fields.empty());
     walkFields(summary, parser.sessions());
 
