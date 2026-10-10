@@ -8,10 +8,16 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
+
+#ifndef _WIN32
+#include <csignal>
+#include <unistd.h>
+#endif
 
 #include <imgui.h>
 #include <imgui_internal.h>
@@ -24,6 +30,7 @@
 #include <ui/time_format.h>
 #include <ui/ui.h>
 
+#include "pcap_stream_support.h"
 #include "support.h"
 
 namespace {
@@ -1242,3 +1249,190 @@ TEST_F(UiInteract, StatusBarOfALiveSessionKeepsTheCaptureText) {
     EXPECT_EQ(seg.left, "Capturing on fake0 - 0 packets, 0 dropped");
     EXPECT_EQ(seg.displayed, "Displayed: 0 / 0");
 }
+
+// ---- permission popup and the administrator helper ---------------------------------------------------------------------
+// A fake starter replaces LiveCapture::startElevated, so no test ever starts pkexec / osascript or asks for an authorization.
+#ifndef _WIN32
+namespace {
+    /// A pipe that stands in for the FIFO of the helper: the fake starter hands the read end to LiveCapture.
+    struct FakeHelper {
+        int writeFd = -1;
+        int calls = 0;
+        std::function<bool(capture::LiveCapture &, const capture::CaptureOptions &)> starter() {
+            return [this](capture::LiveCapture &device, const capture::CaptureOptions &) {
+                ++calls;
+                int fds[2];
+                if (::pipe(fds) != 0) return false;
+                writeFd = fds[1];
+                capture::WorkerStreamOptions stream;
+                stream.connectTimeoutMs = 60000;
+                return device.startFromWorkerStream(fds[0], stream);
+            };
+        }
+        ~FakeHelper() {
+            if (writeFd >= 0) ::close(writeFd);
+        }
+    };
+
+    bool helperCaptureAvailable() {
+        return capture::liveCaptureAvailable() && capture::platformElevationMethod() != capture::ElevationMethod::None;
+    }
+
+    std::string bytesOf(const std::vector<char> &v) { return std::string(v.begin(), v.end()); }
+} // namespace
+
+TEST_F(UiInteract, PermissionPopupOffersTheThreeChoicesAndCancelStartsNothing) {
+    if (!helperCaptureAvailable()) GTEST_SKIP() << "no administrator helper in this build / platform";
+    ui::AppState state;
+    FakeHelper helper;
+    state.live.elevatedStarter = helper.starter();
+    state.live.permissionDenied = true;
+    state.live.error = "Permission denied: capturing needs access to /dev/bpf*";
+    state.live.deniedOptions.interfaceName = "en0";
+    state.live.openError = true;
+    frames(state, 4);
+    ASSERT_TRUE(popupOpen("Capture problem"));
+    ImVec2 p;
+    EXPECT_TRUE(locate(state, topPopup(), "Authorize and capture", p));
+    EXPECT_TRUE(locate(state, topPopup(), "Show permanent setup...", p));
+    EXPECT_TRUE(locate(state, topPopup(), "Cancel", p));
+
+    ASSERT_TRUE(clickInTopPopup(state, "Cancel"));
+    frames(state);
+    EXPECT_FALSE(popupOpen("Capture problem"));
+    EXPECT_EQ(helper.calls, 0) << "no authorization without a click on Authorize";
+    EXPECT_FALSE(state.live.elevated);
+    EXPECT_FALSE(popupOpen("Administrator authorization"));
+    EXPECT_FALSE(state.live.session);
+}
+
+TEST_F(UiInteract, ErrorPopupWithoutAPermissionErrorHasOnlyOk) {
+    ui::AppState state;
+    state.live.error = "Cannot open fake0: no such device";
+    state.live.openError = true;
+    frames(state, 4);
+    ASSERT_TRUE(popupOpen("Capture problem"));
+    ImVec2 p;
+    EXPECT_FALSE(locate(state, topPopup(), "Authorize and capture", p));
+    EXPECT_TRUE(locate(state, topPopup(), "OK", p));
+}
+
+TEST_F(UiInteract, ShowPermanentSetupOpensTheInstructionsWindowWithoutAuthorizing) {
+    if (!helperCaptureAvailable()) GTEST_SKIP() << "no administrator helper in this build / platform";
+    ui::AppState state;
+    FakeHelper helper;
+    state.live.elevatedStarter = helper.starter();
+    state.live.permissionDenied = true;
+    state.live.error = "Permission denied";
+    state.live.openError = true;
+    frames(state, 4);
+    ASSERT_TRUE(clickInTopPopup(state, "Show permanent setup..."));
+    frames(state);
+    EXPECT_TRUE(state.live.setupOpen);
+    EXPECT_NE(windowNamed("Permanent capture setup"), nullptr);
+    EXPECT_EQ(helper.calls, 0);
+}
+
+TEST_F(UiInteract, AuthorizeStartsTheHelperOnceAndItsPacketsReplaceNothingUntilTheyArrive) {
+    if (!helperCaptureAvailable()) GTEST_SKIP() << "no administrator helper in this build / platform";
+    std::signal(SIGPIPE, SIG_IGN);
+    ui::AppState state;
+    load(state);
+    ASSERT_EQ(state.packets.size(), 16u);
+    FakeHelper helper;
+    state.live.elevatedStarter = helper.starter();
+    state.live.permissionDenied = true;
+    state.live.error = "Permission denied";
+    state.live.deniedOptions.interfaceName = "en0";
+    state.live.openError = true;
+    frames(state, 4);
+
+    ASSERT_TRUE(clickInTopPopup(state, "Authorize and capture"));
+    frames(state, 4);
+    EXPECT_EQ(helper.calls, 1);
+    ASSERT_TRUE(state.live.elevated);
+    EXPECT_TRUE(popupOpen("Administrator authorization")) << "waiting for the authorization, with a Cancel button";
+    EXPECT_EQ(state.packets.size(), 16u) << "the open capture stays until the helper delivers";
+    EXPECT_FALSE(state.live.session);
+
+    // the helper authorizes and streams
+    pcapstream::Options o;
+    const std::string stream = pcapstream::header(o) + pcapstream::packet(o, 1700000000, 1, bytesOf(support::hex(support::kArpRequest))) +
+                               pcapstream::packet(o, 1700000001, 2, bytesOf(support::hex(support::kEthIpUdp)));
+    ASSERT_EQ(::write(helper.writeFd, stream.data(), stream.size()), static_cast<ssize_t>(stream.size()));
+    for (int i = 0; i < 2000 && (state.live.elevated || state.packets.size() != 2); ++i) {
+        frame(state);
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    frames(state, 3);
+    EXPECT_FALSE(state.live.elevated);
+    EXPECT_TRUE(state.live.session);
+    EXPECT_EQ(state.packets.size(), 2u);
+    EXPECT_TRUE(state.live.capturing());
+    EXPECT_FALSE(popupOpen("Administrator authorization"));
+    EXPECT_EQ(state.live.interfaceName, "en0");
+
+    // the helper goes away: the capture ends like any other and stays open as a file
+    ::close(helper.writeFd);
+    helper.writeFd = -1;
+    for (int i = 0; i < 2000 && state.live.capturing(); ++i) {
+        frame(state);
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    EXPECT_FALSE(state.live.capturing());
+    EXPECT_EQ(state.packets.size(), 2u);
+    ui::discardLiveCapture(state);
+}
+
+TEST_F(UiInteract, CancelInTheAuthorizationPopupDropsTheHelperSession) {
+    if (!helperCaptureAvailable()) GTEST_SKIP() << "no administrator helper in this build / platform";
+    std::signal(SIGPIPE, SIG_IGN);
+    ui::AppState state;
+    FakeHelper helper;
+    state.live.elevatedStarter = helper.starter();
+    state.live.permissionDenied = true;
+    state.live.error = "Permission denied";
+    state.live.openError = true;
+    frames(state, 4);
+    ASSERT_TRUE(clickInTopPopup(state, "Authorize and capture"));
+    frames(state, 4);
+    ASSERT_TRUE(state.live.elevated);
+    ASSERT_TRUE(popupOpen("Administrator authorization"));
+
+    ASSERT_TRUE(clickInTopPopup(state, "Cancel"));
+    frames(state, 3);
+    EXPECT_FALSE(state.live.elevated);
+    EXPECT_FALSE(popupOpen("Administrator authorization"));
+    EXPECT_FALSE(state.live.session);
+    // the read end of the stream is closed, so a late helper sees EPIPE and ends
+    const char byte = 0;
+    EXPECT_EQ(::write(helper.writeFd, &byte, 1), -1);
+}
+
+TEST_F(UiInteract, AnEndedHelperSessionShowsItsReasonInTheErrorPopup) {
+    if (!helperCaptureAvailable()) GTEST_SKIP() << "no administrator helper in this build / platform";
+    ui::AppState state;
+    state.live.elevatedStarter = [](capture::LiveCapture &device, const capture::CaptureOptions &) {
+        int fds[2];
+        if (::pipe(fds) != 0) return false;
+        ::close(fds[1]);                    // the "helper" is gone at once, without a word
+        capture::WorkerStreamOptions stream;
+        stream.connectTimeoutMs = 200;
+        return device.startFromWorkerStream(fds[0], stream);
+    };
+    state.live.permissionDenied = true;
+    state.live.error = "Permission denied";
+    state.live.openError = true;
+    frames(state, 4);
+    ASSERT_TRUE(clickInTopPopup(state, "Authorize and capture"));
+    for (int i = 0; i < 2000 && state.live.elevated; ++i) {
+        frame(state);
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    EXPECT_FALSE(state.live.elevated);
+    EXPECT_FALSE(state.live.error.empty());
+    EXPECT_FALSE(state.live.permissionDenied);
+    frames(state, 3);
+    EXPECT_TRUE(popupOpen("Capture problem"));
+}
+#endif

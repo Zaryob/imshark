@@ -130,6 +130,7 @@ namespace capture {
         char errbuf[PCAP_ERRBUF_SIZE] = {0};
         pcap_t *h = pcap_create(options.interfaceName.c_str(), errbuf);
         if (!h) {
+            permissionDenied_ = looksLikePermissionError(errbuf);
             error = looksLikePermissionError(errbuf) ? std::string(kPermissionDenied) + " (" + errbuf + ")"
                                                      : "Cannot open " + options.interfaceName + ": " + errbuf;
             return false;
@@ -143,6 +144,7 @@ namespace capture {
         if (rc < 0) {
             const std::string detail = pcap_geterr(h);
             if (rc == PCAP_ERROR_PERM_DENIED || looksLikePermissionError(detail)) {
+                permissionDenied_ = true;
                 error = std::string(kPermissionDenied) + (detail.empty() ? "" : " (" + detail + ")");
             } else {
                 error = "Cannot open " + options.interfaceName + ": " + (detail.empty() ? pcap_statustostr(rc) : detail);

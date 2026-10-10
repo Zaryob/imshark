@@ -123,7 +123,14 @@ embedded TLS secrets.
 ## Live capture
 
 The **Capture** menu needs a build with libpcap (Npcap on Windows); without it the menu is disabled and the tooltip says
-why. Capturing needs privileges: `/dev/bpf*` access on macOS, `CAP_NET_RAW` on Linux. See [CAPTURE_PRIVILEGES.md](CAPTURE_PRIVILEGES.md) for details on privilege requirements, the ephemeral capture worker architecture, and manual setup options across macOS, Linux, and Windows.
+why. Capturing needs privileges: `/dev/bpf*` access on macOS, `CAP_NET_RAW` on Linux. ImShark itself always runs as your
+normal user and tries to open the interface directly first. If that fails with a permission error, the **Capture problem**
+window offers **Authorize and capture** (macOS and Linux): after you confirm the system's authorization dialog (osascript /
+pkexec), a separate helper process opens the interface with administrator rights, drops them at once and streams the packets
+back through a private pipe for this one capture; **Cancel** starts nothing, and nothing on the system is changed (no
+permissions, capabilities or groups). **Show permanent setup...** lists commands for a permanent setup (macOS access_bpf
+group, Linux capabilities, Npcap) that you run yourself. Design, limits and cleanup: [CAPTURE_PRIVILEGES.md](CAPTURE_PRIVILEGES.md)
+(Turkish).
 
 - **Capture > Interfaces...** (Ctrl+K): choose the interface (name, description, addresses, flags), a BPF capture filter
   (validated while you type), the snap length and promiscuous mode. The last choices are saved.
