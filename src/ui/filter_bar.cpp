@@ -84,9 +84,10 @@ bool ui::applyFilter(AppState &state, const std::string &text) {
 void ui::refilter(AppState &state) {
     auto &f = state.filter;
     // a filter that was still being evaluated is the latest one the user asked for: it applies to the new packets
-    const bool pending = f.job != nullptr;
-    const filter::Filter target = pending ? f.job->filter : f.applied;
-    const std::string targetText = pending ? f.job->text : f.appliedText;
+    const FilterJob *job = f.job.get();
+    const bool pending = job != nullptr;
+    const filter::Filter target = job ? job->filter : f.applied;
+    const std::string targetText = job ? job->text : f.appliedText;
     retireJob(f);
     f.visible.clear(); // indices of the old packets
     if (pending || f.active) startJob(state, target, targetText);

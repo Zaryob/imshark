@@ -112,6 +112,8 @@ namespace capture::worker {
                     if (value.empty() || value.size() > kMaxPathLength || value.front() != '/') return bad("--fifo must be an absolute path");
                     a.fifoPath = value;
                     break;
+                default:
+                    break;     // unreachable: index < 7 here
             }
         }
         for (size_t k = 0; k < 7; ++k) {
