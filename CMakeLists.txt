@@ -60,6 +60,19 @@ elseif(IMSHARK_SANITIZE)
     add_link_options(-fsanitize=address,undefined)
 endif()
 
+# Warning set for project code only (vcpkg dependencies and generated code are not linked against this target).
+option(IMSHARK_WERROR "Treat compiler warnings in project code as errors (GCC/Clang only)" OFF)
+add_library(imshark_warnings INTERFACE)
+if(MSVC)
+    # /W4 only: IMSHARK_WERROR does not add /WX until the MSVC build of the UI is verified warning-free.
+    target_compile_options(imshark_warnings INTERFACE /W4)
+else()
+    target_compile_options(imshark_warnings INTERFACE -Wall -Wextra -Wshadow -Wnon-virtual-dtor)
+    if(IMSHARK_WERROR)
+        target_compile_options(imshark_warnings INTERFACE -Werror)
+    endif()
+endif()
+
 add_subdirectory(core)          # imshark_core: parsing library (no UI dependencies)
 include(cmake/Dependencies.cmake) # ImGui, backends and file dialogs from vcpkg
 
@@ -98,7 +111,7 @@ add_library(imshark_ui STATIC
     src/ui/time_format.cpp
 )
 target_include_directories(imshark_ui PUBLIC src)
-target_link_libraries(imshark_ui PUBLIC imshark_core imshark_imgui)
+target_link_libraries(imshark_ui PUBLIC imshark_core imshark_imgui PRIVATE imshark_warnings)
 
 # Version string for `imshark --version`: the project version plus `git describe` captured at configure time
 # ("unknown" outside a git checkout, e.g. a source tarball). Re-run cmake to refresh it after new commits.
@@ -117,14 +130,14 @@ configure_file(src/version.h.in "${CMAKE_BINARY_DIR}/generated/version.h" @ONLY)
 
 add_executable(imshark src/main.cpp)
 target_include_directories(imshark PRIVATE "${CMAKE_BINARY_DIR}/generated")
-target_link_libraries(imshark PRIVATE imshark_ui)
+target_link_libraries(imshark PRIVATE imshark_ui imshark_warnings)
 if(APPLE)
     target_compile_definitions(imshark PRIVATE GL_SILENCE_DEPRECATION)
 endif()
 
 if(IMSHARK_BUILD_TOOLS)
     add_executable(imshark_dump tools/imshark_dump.cpp)
-    target_link_libraries(imshark_dump PRIVATE imshark_core)
+    target_link_libraries(imshark_dump PRIVATE imshark_core imshark_warnings)
 endif()
 
 if(IMSHARK_BUILD_BENCH)

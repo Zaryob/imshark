@@ -188,8 +188,4 @@ target_link_libraries(imshark_core PUBLIC Threads::Threads)
 
 target_include_directories(imshark_core PUBLIC src)
 
-if(MSVC)
-    target_compile_options(imshark_core PRIVATE /W4)
-else()
-    target_compile_options(imshark_core PRIVATE -Wall -Wextra)
-endif()
+target_link_libraries(imshark_core PRIVATE imshark_warnings)
