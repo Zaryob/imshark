@@ -108,6 +108,31 @@ TEST(Http2Dissect, HeadersAndDataFrames) {
     EXPECT_NE(dpack.info.find("DATA[stream 1]: 5 bytes (END_STREAM)"), std::string::npos);
 }
 
+namespace {
+    bool insideFrame(const packet::Field &f, size_t size) {
+        if (size_t(f.offset) + f.length > size) return false;
+        for (const auto &c: f.children) if (!insideFrame(c, size)) return false;
+        return true;
+    }
+}
+
+TEST(Http2Dissect, PaddedDataWithPadLengthBeyondThePayloadStaysInsideTheFrame) {
+    // found by fuzz_packet: the Padding node was sized by the Pad Length byte, which here is larger than the payload
+    const uint8_t frame[] = {
+        0x00, 0x00, 0x02,       // Length: 2
+        0x00,                   // Type: DATA
+        0x08,                   // Flags: PADDED
+        0x00, 0x00, 0x00, 0x01, // Stream: 1
+        0xff, 0x00              // Pad Length 255, one byte of payload
+    };
+    packet::PacketInfo pack;
+    network::TCPConnection tcp;
+    Context ctx = makeCtx(pack, reinterpret_cast<const char*>(frame), sizeof(frame), tcp);
+    dissectHttp2(ctx, reinterpret_cast<const char*>(frame), sizeof(frame));
+    EXPECT_EQ(pack.protocol, "HTTP2");
+    for (const auto &f: pack.fields) EXPECT_TRUE(insideFrame(f, sizeof(frame))) << f.text;
+}
+
 TEST(Http2Dissect, PingRstGoawayWindowUpdate) {
     // PING ACK frame (type 6, flags 0x01, stream 0, length 8)
     const uint8_t pingFrame[] = {
