@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <imgui.h>
 
 #include "app_state.h"
 
@@ -194,10 +195,10 @@ namespace ui {
     bool ensureDetail(AppState &state);
 
     // main_window.cpp
-    void drawMainWindow(AppState &state);
+    void drawMainWindow(AppState &state, ImTextureRef logo = {});
     /// The empty state: no capture open, none loading and no live session.
     bool welcomeVisible(const AppState &state);
-    void drawWelcome(AppState &state);
+    void drawWelcome(AppState &state, ImTextureRef logo = {});
     void drawToolbar(AppState &state);
     void drawOtherWindows(AppState &state);   // popup windows and dialogs drawn after the main window
 } // namespace ui

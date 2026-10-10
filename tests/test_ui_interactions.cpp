@@ -74,16 +74,23 @@ namespace {
             ImGui::DestroyContext(ctx);
         }
 
-        void frame(ui::AppState &state) {
+        ImTextureRef logoRef{};
+
+        void frame(ui::AppState &state, std::string *log = nullptr) {
             ImGui::GetIO().DeltaTime = 1.0f / 60.0f;
             ImGui::NewFrame();
             ui::pollLoad(state);
             ui::pollCapture(state);
             ui::drawMenuAndDialogs(state);
-            ui::drawMainWindow(state);
+            ui::drawMainWindow(state, logoRef);
+            if (log) ImGui::LogToBuffer();
             ui::drawStatusBar(state);
             ui::drawLoadErrorPopup(state);
             ui::drawLoadProgressPopup(state);
+            if (log) {
+                *log = ImGui::GetCurrentContext()->LogBuffer.c_str();
+                ImGui::LogFinish();
+            }
             ImGui::Render();
         }
 
@@ -340,6 +347,40 @@ TEST_F(UiInteract, CtrlOOpensTheFileDialog) {
     EXPECT_FALSE(ImGuiFileDialog::Instance()->IsOpened("ChooseFileDlgKey"));
     key(state, ImGuiKey_O, true);
     EXPECT_TRUE(ImGuiFileDialog::Instance()->IsOpened("ChooseFileDlgKey"));
+}
+
+TEST_F(UiInteract, CaptureFileDialogHasAUsableSizeOnItsFirstFrame) {
+    ui::AppState state;
+    ui::openCaptureDialog();
+    frame(state);
+    ImGuiWindow *dialog = ImGui::FindWindowByName("Open capture file##ChooseFileDlgKey");
+    ASSERT_NE(dialog, nullptr);
+    EXPECT_TRUE(dialog->Active);
+    EXPECT_GE(dialog->Size.x, 640.0f);
+    EXPECT_GE(dialog->Size.y, 420.0f);
+    EXPECT_NEAR(dialog->Pos.x + dialog->Size.x * 0.5f, 640.0f, 1.0f);
+    EXPECT_NEAR(dialog->Pos.y + dialog->Size.y * 0.5f, 360.0f, 20.0f); // the menu bar reduces the work area
+
+    // User resizing remains effective while the dialog is open.
+    ImGui::SetWindowSize(dialog->Name, ImVec2(700, 460));
+    frames(state);
+    EXPECT_FLOAT_EQ(dialog->Size.x, 700.0f);
+    EXPECT_FLOAT_EQ(dialog->Size.y, 460.0f);
+}
+
+TEST_F(UiInteract, CaptureFileDialogFitsASmallViewportOnItsFirstFrame) {
+    ui::AppState state;
+    ImGui::GetIO().DisplaySize = ImVec2(640, 400);
+    ui::openCaptureDialog();
+    frame(state);
+    ImGuiWindow *dialog = ImGui::FindWindowByName("Open capture file##ChooseFileDlgKey");
+    ASSERT_NE(dialog, nullptr);
+    EXPECT_GE(dialog->Size.x, 600.0f);
+    EXPECT_GE(dialog->Size.y, 340.0f);
+    EXPECT_GE(dialog->Pos.x, 0.0f);
+    EXPECT_GE(dialog->Pos.y, 0.0f);
+    EXPECT_LE(dialog->Pos.x + dialog->Size.x, 640.0f);
+    EXPECT_LE(dialog->Pos.y + dialog->Size.y, 400.0f);
 }
 
 TEST_F(UiInteract, OpenRecentMenuLoadsTheChosenCapture) {
@@ -992,6 +1033,38 @@ TEST_F(UiInteract, WelcomeRecentFileClickRequestsOpen) {
     EXPECT_EQ(state.packets.size(), 16u);
 }
 
+TEST_F(UiInteract, WelcomePanelWithLogoDrawsImageAndStaysInteractive) {
+    ui::AppState state;
+    logoRef = ImTextureRef(static_cast<ImTextureID>(0x42));
+    frames(state);
+    ImGuiWindow *mainWin = windowNamed("ImShark");
+    ASSERT_NE(mainWin, nullptr);
+    bool foundImage = false;
+    for (const ImDrawCmd &cmd: mainWin->DrawList->CmdBuffer) {
+        if (cmd.TexRef.GetTexID() == logoRef.GetTexID()) {
+            foundImage = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(foundImage);
+    EXPECT_FALSE(ImGuiFileDialog::Instance()->IsOpened("ChooseFileDlgKey"));
+    ASSERT_TRUE(clickInMain(state, "Open capture...", false));
+    EXPECT_TRUE(ImGuiFileDialog::Instance()->IsOpened("ChooseFileDlgKey"));
+}
+
+TEST_F(UiInteract, WelcomePanelWithLogoRecentFileClickRequestsOpen) {
+    ui::AppState state;
+    logoRef = ImTextureRef(static_cast<ImTextureID>(0x42));
+    TempDir dir("welcome_logo_recent");
+    const std::string recent = dir.copyOfSample("welcome_logo.pcap");
+    state.settings.recentFiles = {recent};
+    frames(state);
+    ASSERT_TRUE(clickInMain(state, "welcome_logo.pcap", false, recent.c_str()));
+    pumpLoad(state);
+    EXPECT_EQ(state.displayName, recent);
+    EXPECT_EQ(state.packets.size(), 16u);
+}
+
 TEST_F(UiInteract, ToolbarEnabledStatesFollowTheCapture) {
     ui::AppState state;
     frames(state);
@@ -1111,6 +1184,54 @@ TEST_F(UiInteract, StatusBarKeepsLoadAndCaptureMessages) {
     const ui::StatusSegments seg = ui::statusSegments(state);
     EXPECT_EQ(seg.message, "Truncated file");
     EXPECT_EQ(seg.error, "no permission");
+}
+
+TEST_F(UiInteract, LongStatusErrorsStaySeparateAndShowTheirFullTextOnHover) {
+    ui::AppState state;
+    state.live.error = "Permission denied: capturing needs access to /dev/bpf* (macOS) or CAP_NET_RAW (Linux) "
+                       "(Attempt to open /dev/bpf0 failed - root privileges may be required)";
+    state.loadMessage = "Warning: " + std::string(200, 'x');
+    ImVec2 errorHover;
+    for (const float width: {1280.0f, 640.0f}) {
+        if (width == 640.0f) {
+            state.currentFile = "/capture.pcap";
+            for (int i = 0; i < 80; ++i) state.displayName += "ölçüm";
+            state.displayName += ".pcap";
+            state.filter.active = true;
+            state.filter.appliedText = "tcp && " + std::string(100, 'x');
+            state.live.error += "\nMore details: " + std::string(100, 'x');
+        }
+        ImGui::GetIO().DisplaySize = ImVec2(width, 720);
+        frames(state);
+        ImGuiWindow *status = windowNamed("##status");
+        ASSERT_NE(status, nullptr);
+        float textRight = 0.0f;
+        float errorLeft = width;
+        bool hasError = false;
+        const ImU32 textColor = ImGui::GetColorU32(ImGuiCol_Text);
+        const ImU32 errorColor = ImGui::ColorConvertFloat4ToU32(ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
+        for (const ImDrawVert &v: status->DrawList->VtxBuffer) {
+            if (v.col == textColor) textRight = std::max(textRight, v.pos.x);
+            if (v.col == errorColor) {
+                hasError = true;
+                errorLeft = std::min(errorLeft, v.pos.x);
+                EXPECT_LE(v.pos.x, width - ImGui::GetStyle().WindowPadding.x);
+            }
+        }
+        ASSERT_TRUE(hasError);
+        EXPECT_GE(errorLeft, width * 0.5f);
+        EXPECT_LT(textRight, errorLeft);
+        EXPECT_LE(status->ContentSize.x, width - 2 * ImGui::GetStyle().WindowPadding.x);
+        errorHover = ImVec2((errorLeft + width - ImGui::GetStyle().WindowPadding.x) * 0.5f,
+                            status->Pos.y + ImGui::GetStyle().WindowPadding.y + ImGui::GetFontSize() * 0.5f);
+    }
+
+    moveTo(state, errorHover);
+    std::string log;
+    frame(state, &log);
+    std::istringstream errorLines(state.live.error);
+    for (std::string line; std::getline(errorLines, line);) EXPECT_NE(log.find(line), std::string::npos) << log;
+    EXPECT_NE(log.find(state.loadMessage), std::string::npos) << log;
 }
 
 TEST_F(UiInteract, StatusBarOfALiveSessionKeepsTheCaptureText) {

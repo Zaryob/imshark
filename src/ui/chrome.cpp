@@ -12,6 +12,30 @@
 #include <capture/live_capture.h>
 #include <core.h>
 
+namespace {
+    // Keep status text on one line and cut at a UTF-8 character boundary using the current font's pixel widths.
+    std::string fitStatusText(std::string text, float width) {
+        std::replace(text.begin(), text.end(), '\n', ' ');
+        std::replace(text.begin(), text.end(), '\r', ' ');
+        if (ImGui::CalcTextSize(text.c_str()).x <= width) return text;
+        const float dotsWidth = ImGui::CalcTextSize("...").x;
+        if (width < dotsWidth) return {};
+        const char *end = text.c_str();
+        ImGui::GetFont()->CalcTextSizeA(ImGui::GetFontSize(), width - dotsWidth, 0.0f, text.c_str(), nullptr, &end);
+        text.resize(static_cast<size_t>(end - text.c_str()));
+        return text + "...";
+    }
+
+    void statusTooltip(const std::string &text) {
+        if (!ImGui::IsItemHovered()) return;
+        ImGui::BeginTooltip();
+        ImGui::PushTextWrapPos(std::min(600.0f, ImGui::GetIO().DisplaySize.x - 32.0f));
+        ImGui::TextUnformatted(text.c_str());
+        ImGui::PopTextWrapPos();
+        ImGui::EndTooltip();
+    }
+} // namespace
+
 void ui::openCaptureDialog() {
     IGFD::FileDialogConfig config;
     config.path = ".";
@@ -144,11 +168,21 @@ void ui::drawMenuAndDialogs(AppState &state) {
         openCaptureDialog();
     }
 
-    if (ImGuiFileDialog::Instance()->Display("ChooseFileDlgKey")) {
-        if (ImGuiFileDialog::Instance()->IsOk()) {
-            requestOpen(state, ImGuiFileDialog::Instance()->GetFilePathName());
+    if (ImGuiFileDialog::Instance()->IsOpened("ChooseFileDlgKey")) {
+        const ImGuiViewport *viewport = ImGui::GetMainViewport();
+        const ImVec2 maxSize(std::max(1.0f, viewport->WorkSize.x - 32.0f), std::max(1.0f, viewport->WorkSize.y - 32.0f));
+        const ImVec2 minSize(std::min(640.0f, maxSize.x), std::min(420.0f, maxSize.y));
+        const ImVec2 initialSize(std::min(900.0f, maxSize.x), std::min(600.0f, maxSize.y));
+        const ImVec2 center = viewport->GetWorkCenter();
+        ImGui::SetNextWindowSize(initialSize, ImGuiCond_Appearing);
+        // Use a concrete top-left position: ImGui defers pivot-based centering while measuring a new popup.
+        ImGui::SetNextWindowPos(ImVec2(center.x - initialSize.x * 0.5f, center.y - initialSize.y * 0.5f), ImGuiCond_Appearing);
+        if (ImGuiFileDialog::Instance()->Display("ChooseFileDlgKey", ImGuiWindowFlags_NoCollapse, minSize, maxSize)) {
+            if (ImGuiFileDialog::Instance()->IsOk()) {
+                requestOpen(state, ImGuiFileDialog::Instance()->GetFilePathName());
+            }
+            ImGuiFileDialog::Instance()->Close();
         }
-        ImGuiFileDialog::Instance()->Close();
     }
 }
 
@@ -205,47 +239,31 @@ void ui::drawStatusBar(const AppState &state) {
         const StatusSegments seg = statusSegments(state);
         const ImVec4 red(1.0f, 0.4f, 0.4f, 1.0f);
         const ImVec4 amber(1.0f, 0.8f, 0.3f, 1.0f);
-        auto separator = [] {
-            ImGui::SameLine();
-            ImGui::TextDisabled("|");
-            ImGui::SameLine();
-        };
-        ImGui::TextUnformatted(seg.left.c_str());
-        if (!seg.leftTooltip.empty() && ImGui::IsItemHovered()) ImGui::SetTooltip("%s", seg.leftTooltip.c_str());
-        if (!seg.displayed.empty()) {
-            separator();
-            ImGui::TextUnformatted(seg.displayed.c_str());
+        std::string status = seg.left;
+        if (!seg.displayed.empty()) status += " | " + seg.displayed;
+        if (!seg.selected.empty()) status += " | " + seg.selected;
+        if (!seg.filter.empty()) status += " | Filter: " + seg.filter;
+        std::string problem = seg.error;
+        if (!seg.message.empty()) {
+            if (!problem.empty()) problem += " | ";
+            problem += seg.message;
         }
-        if (!seg.selected.empty()) {
-            separator();
-            ImGui::TextUnformatted(seg.selected.c_str());
-        }
-        if (!seg.filter.empty()) {
-            separator();
-            constexpr size_t kMaxFilterChars = 60;
-            std::string shown = seg.filter;
-            if (shown.size() > kMaxFilterChars) {
-                shown.resize(kMaxFilterChars);
-                while (!shown.empty() && (static_cast<unsigned char>(shown.back()) & 0xC0) == 0x80) shown.pop_back(); // keep UTF-8 intact
-                if (!shown.empty() && static_cast<unsigned char>(shown.back()) >= 0xC0) shown.pop_back();
-                shown += "...";
-            }
-            ImGui::Text("Filter: %s", shown.c_str());
-            if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", seg.filter.c_str());
-        }
-        // Problems on the right edge
+
+        // Reserve separate areas before drawing: neither long filenames nor errors can overlap the other text.
+        const float start = ImGui::GetCursorPosX();
+        const float available = ImGui::GetContentRegionAvail().x;
         const float gap = ImGui::GetStyle().ItemSpacing.x;
-        float width = 0;
-        if (!seg.error.empty()) width += ImGui::CalcTextSize(seg.error.c_str()).x;
-        if (!seg.message.empty()) width += ImGui::CalcTextSize(seg.message.c_str()).x;
-        if (!seg.error.empty() && !seg.message.empty()) width += 2 * gap + ImGui::CalcTextSize("|").x;
-        if (width > 0) {
-            ImGui::SameLine(std::max(ImGui::GetCursorPosX() + gap, ImGui::GetWindowContentRegionMax().x - width));
-            if (!seg.error.empty()) {
-                ImGui::TextColored(red, "%s", seg.error.c_str());
-                if (!seg.message.empty()) separator();
-            }
-            if (!seg.message.empty()) ImGui::TextColored(state.loadFailed ? red : amber, "%s", seg.message.c_str());
+        const float problemWidth = problem.empty() ? 0.0f : std::min(available * 0.5f, ImGui::CalcTextSize(problem.c_str()).x);
+        const float statusWidth = std::max(0.0f, available - problemWidth - (problem.empty() ? 0.0f : gap));
+        ImGui::TextUnformatted(fitStatusText(status, statusWidth).c_str());
+        statusTooltip(seg.leftTooltip.empty() ? status : seg.leftTooltip + "\n" + status);
+        if (!problem.empty()) {
+            const std::string shown = fitStatusText(problem, problemWidth);
+            ImGui::SameLine(start + available - ImGui::CalcTextSize(shown.c_str()).x);
+            ImGui::PushStyleColor(ImGuiCol_Text, !seg.error.empty() || state.loadFailed ? red : amber);
+            ImGui::TextUnformatted(shown.c_str());
+            ImGui::PopStyleColor();
+            statusTooltip(problem);
         }
     }
     ImGui::End();
