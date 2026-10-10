@@ -176,20 +176,20 @@ namespace dissect {
         bool ok = total <= network::DatagramReassembler::kMaxMessageBytes;
         uint64_t offset = 0;
         for (uint32_t s = first; ok; ++s) {
-            const Held &h = p.fragments.at(s);
-            if (seenPackets.insert(h.packet).second) m.packets.push_back(h.packet);
-            if (!h.bytes.empty()) {
+            const Held &held = p.fragments.at(s);
+            if (seenPackets.insert(held.packet).second) m.packets.push_back(held.packet);
+            if (!held.bytes.empty()) {
                 network::DatagramFragment df;
                 df.offset = static_cast<uint32_t>(offset);
                 df.totalLength = static_cast<uint32_t>(total);
-                df.data.assign(h.bytes.begin(), h.bytes.end());
-                df.packetNumber = h.packet;
+                df.data.assign(held.bytes.begin(), held.bytes.end());
+                df.packetNumber = held.packet;
                 df.time = f.time;
                 const auto r = reassembler_.add(chainKey, df);
                 if (r.rejected || r.totalConflict) ok = false;
                 else if (r.complete) m.data.assign(r.message.begin(), r.message.end());
             }
-            offset += h.bytes.size();
+            offset += held.bytes.size();
             if (s == last) break;
         }
         if (ok && total && m.data.size() != total) ok = false;
@@ -197,14 +197,14 @@ namespace dissect {
         // the chain leaves the pending state either way
         std::vector<uint64_t> chainRefs;
         for (uint32_t s = first;; ++s) {
-            const Held &h = p.fragments.at(s);
-            chainRefs.push_back(refKey(h.packet, h.position));
+            const Held &held = p.fragments.at(s);
+            chainRefs.push_back(refKey(held.packet, held.position));
             if (s == last) break;
         }
         for (uint32_t s = first;; ++s) {
-            const Held &h = p.fragments.at(s);
-            memory_ -= std::min(memory_, h.bytes.size() + kFragmentOverhead);
-            p.bytes -= h.bytes.size();
+            const Held &held = p.fragments.at(s);
+            memory_ -= std::min(memory_, held.bytes.size() + kFragmentOverhead);
+            p.bytes -= held.bytes.size();
             p.fragments.erase(s);
             if (s == last) break;
         }
