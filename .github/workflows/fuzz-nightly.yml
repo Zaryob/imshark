@@ -1,0 +1,65 @@
+name: Fuzz (weekly)
+
+# A longer run of the libFuzzer harnesses than the 60 seconds per harness of the `fuzz` job in ci.yml. Each harness runs
+# on its own runner so they proceed in parallel, grow their own cached corpus (minimized after every run) and upload
+# their reproducers when they fail. Costs 5 jobs of about 40 minutes a week.
+
+on:
+  schedule:
+    - cron: '17 3 * * 0'
+  workflow_dispatch:
+    inputs:
+      minutes:
+        description: Minutes of fuzzing per harness
+        default: '20'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: fuzz-nightly-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  fuzz:
+    name: ${{ matrix.harness }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        harness: [fuzz_capture_file, fuzz_packet, fuzz_packet_sequence, fuzz_filter, fuzz_gzip]
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}/.vcpkg
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/.vcpkg-cache,readwrite
+      FUZZ_MINUTES: ${{ github.event.inputs.minutes || '20' }}
+
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install build tools and the libFuzzer runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y autoconf autoconf-archive automake bison clang-18 flex libclang-rt-18-dev libgl1-mesa-dev libglu1-mesa-dev libltdl-dev libtool libwayland-dev libx11-dev libxcursor-dev libxi-dev libxinerama-dev libxrandr-dev ninja-build pkg-config wayland-protocols
+      - uses: ./.github/actions/setup-vcpkg
+        with:
+          cache-scope: fuzz
+      - name: Configure
+        run: cmake --preset fuzz -DCMAKE_C_COMPILER=clang-18 -DCMAKE_CXX_COMPILER=clang++-18
+      - name: Build the harness
+        run: cmake --build --preset fuzz --parallel 4
+      - name: Restore the evolved corpus
+        uses: actions/cache@v6
+        with:
+          path: fuzz-work/corpus/${{ matrix.harness }}
+          key: fuzz-corpus-nightly-${{ matrix.harness }}-${{ github.run_id }}
+          restore-keys: |
+            fuzz-corpus-nightly-${{ matrix.harness }}-
+      - name: Fuzz
+        run: fuzz/run_fuzzers.sh -b build-fuzz -t $((FUZZ_MINUTES * 60)) -w fuzz-work -m ${{ matrix.harness }}
+      - name: Upload crash reproducers
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzz-crashes-${{ matrix.harness }}
+          path: fuzz-work/crashes
+          if-no-files-found: ignore

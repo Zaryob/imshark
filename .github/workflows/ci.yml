@@ -64,6 +64,46 @@ jobs:
       - name: Test
         run: ctest --preset ${{ matrix.preset }} --parallel 4 --output-on-failure
 
+  fuzz:
+    name: fuzz / libFuzzer + ASan + UBSan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}/.vcpkg
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/.vcpkg-cache,readwrite
+
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install build tools and the libFuzzer runtime
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y autoconf autoconf-archive automake bison clang-18 flex libclang-rt-18-dev libgl1-mesa-dev libglu1-mesa-dev libltdl-dev libtool libwayland-dev libx11-dev libxcursor-dev libxi-dev libxinerama-dev libxrandr-dev ninja-build pkg-config wayland-protocols
+      - uses: ./.github/actions/setup-vcpkg
+        with:
+          cache-scope: fuzz
+      - name: Configure
+        run: cmake --preset fuzz -DCMAKE_C_COMPILER=clang-18 -DCMAKE_CXX_COMPILER=clang++-18
+      - name: Build the harnesses
+        run: cmake --build --preset fuzz --parallel 4
+      - name: Replay the seed corpus
+        run: ctest --preset fuzz --output-on-failure
+      - name: Restore the evolved corpus
+        uses: actions/cache@v6
+        with:
+          path: fuzz-work/corpus
+          key: fuzz-corpus-${{ github.run_id }}
+          restore-keys: |
+            fuzz-corpus-
+      - name: Fuzz every harness for 60 seconds
+        run: fuzz/run_fuzzers.sh -b build-fuzz -t 60 -w fuzz-work
+      - name: Upload crash reproducers
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: fuzz-crashes
+          path: fuzz-work/crashes
+          if-no-files-found: ignore
+
   linux-docker:
     name: Linux / Docker + software OpenGL
     runs-on: ubuntu-24.04
