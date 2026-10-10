@@ -17,6 +17,7 @@ find_package(GTest CONFIG REQUIRED)
 add_executable(imshark_tests
     test_asn1_reader.cpp
     test_bgp.cpp
+    test_bounded_regex.cpp
     test_brand.cpp
     test_capture_info.cpp
     test_capture_readers.cpp

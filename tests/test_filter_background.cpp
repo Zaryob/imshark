@@ -19,7 +19,7 @@
 namespace {
     using Clock = std::chrono::steady_clock;
 
-    // Regex-heavy on purpose: std::regex backtracks, so every packet costs real time.
+    // Regex-heavy on purpose: a backtracking engine is slow, so every packet costs real time.
     const char *kHeavy = "info matches \"^(.*[0-9])+.*(Len|Win|Seq)=.*[0-9]+$\" || info matches \"^[0-9]+ .*[0-9]+ .*(Len|Win)=[0-9]+$\"";
     const char *kLight = "udp && ip.dst == 10.0.0.2";
 
@@ -295,13 +295,13 @@ TEST_F(FilterBackground, LiveCaptureRowsAddedWhileTheFilterRunsAreCaughtUp) {
     ui::stopCapture(state);
 }
 
-TEST(FilterRegex, LongValuesAreBoundedAndNeverThrow) {
+TEST(FilterRegex, LongValuesAreSearchedWholeAndNeverThrow) {
     packet::PacketInfo p;
     p.info = std::string(200000, 'a') + "b";
     const auto anchored = filter::Filter::compile("info matches \"^a*b$\"");
     ASSERT_TRUE(anchored.ok);
-    // only the first 4096 bytes are searched: the 'b' lies beyond them
-    EXPECT_FALSE(anchored.filter.matches(p));
+    // the whole value is searched (the engine is work bounded, not input bounded)
+    EXPECT_TRUE(anchored.filter.matches(p));
     const auto prefix = filter::Filter::compile("info matches \"^a+\"");
     ASSERT_TRUE(prefix.ok);
     EXPECT_TRUE(prefix.filter.matches(p));

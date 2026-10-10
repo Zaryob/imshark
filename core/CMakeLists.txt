@@ -141,6 +141,7 @@ add_library(imshark_core STATIC
     src/dissect/mac_control_fields.cpp
     src/dissect/bluetooth_fields.cpp
     src/dissect/usb_fields.cpp
+    src/filter/bounded_regex.cpp
     src/filter/fields.cpp
     src/filter/field_modules.cpp
     src/filter/filter.cpp
@@ -187,6 +188,9 @@ if(IMSHARK_TLS_DECRYPT)
 else()
     message(STATUS "TLS/DTLS decryption: disabled")
 endif()
+
+find_package(pcre2 CONFIG REQUIRED)
+target_link_libraries(imshark_core PRIVATE PCRE2::8BIT)
 
 find_package(Threads REQUIRED)  # the capture thread
 target_link_libraries(imshark_core PUBLIC Threads::Threads)
