@@ -194,6 +194,14 @@ TEST(Bgp, UpdateLengthsLargerThanTheMessageAddNoFieldsOutsideTheFrame) {
     bgpPkt(bgpHdr(23, 2) + "0000" "0100");   // path attributes length 256, nothing follows
 }
 
+TEST(Bgp, OpenOptionalParameterLengthsLargerThanTheMessageStayInsideTheFrame) {
+    // found by fuzz_packet: Optional Parameters / parameter / capability nodes were sized by the declared lengths
+    const std::string open = "04" "fde9" "00b4" "c0000201";
+    bgpPkt(bgpHdr(31, 1) + open + "04" "02ff");                  // optional parameters length 4 but 2 bytes follow, parameter length 255
+    bgpPkt(bgpHdr(35, 1) + open + "06" "0204" "41ff" "0000");     // capability of length 255 inside a 4 byte parameter
+    bgpPkt(bgpHdr(29, 1) + open + "ff");                         // optional parameters length 255, nothing follows
+}
+
 TEST(Bgp, SurviveDamageAndMalformedInputs) {
     std::mt19937 rng(55);
     const std::string seed =
