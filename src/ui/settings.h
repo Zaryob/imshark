@@ -35,7 +35,15 @@ namespace ui {
         std::string captureFilter;             // BPF capture filter
         uint32_t captureSnaplen = kMaxSnaplen;
         bool capturePromiscuous = true;
+
+        // Filled in by loadSettings, not persisted
+        int loadedVersion = 0;                 // format version found in the file (0 = legacy, no version key)
+        bool fromNewerVersion = false;         // the file was written by a newer ImShark; saveSettings leaves it untouched
     };
+
+    /// Current settings file format version, written as `settings_version=` on every save.
+    /// 0 = legacy files without the key (migrated to 1 on load: no key changed, so the migration is the identity).
+    constexpr int kSettingsVersion = 1;
 
     /// A rectangle in screen coordinates (window geometry, monitor work area).
     struct WindowRect {
@@ -50,10 +58,15 @@ namespace ui {
     /// Per-user location of the settings file (platform config directory).
     std::string defaultSettingsPath();
 
-    /// Reads `path`; a missing or damaged file yields defaults, unknown keys are ignored.
+    /// Reads `path`; a missing or damaged file yields defaults, unknown keys are ignored (and dropped on the next save,
+    /// except for files of a newer version, which are never rewritten). Sets `loadedVersion` / `fromNewerVersion`.
     Settings loadSettings(const std::string &path);
 
-    /// Writes `settings` to `path`, creating the directory if needed. Returns false on failure.
+    /// Writes `settings` to `path` atomically (temporary file in the same directory, then rename), creating the
+    /// directory if needed. Returns false on failure, leaving any existing file intact. Two cases leave the file alone:
+    ///  - it was written by a newer ImShark (version > kSettingsVersion): nothing is written and true is returned;
+    ///  - it is unreadable as a settings file (corrupt): a copy `<path>.bak-<timestamp>` is made first, and the save
+    ///    fails if that copy cannot be made.
     bool saveSettings(const Settings &settings, const std::string &path);
 
     /// Moves `path` to the front of the recent files (no duplicates, capped at kMaxRecentFiles).
