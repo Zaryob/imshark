@@ -23,9 +23,9 @@ Her başlık bağımsız bir çalışma olarak ele alınmalıdır. Protokol adı
 
 ## Kullanılabilirlik ve performans
 
-- [ ] Büyük yakalamalarda düzenli ifade filtrelerini UI iş parçacığından çıkar veya işi dilimle.
+- [x] Büyük yakalamalarda düzenli ifade filtrelerini UI iş parçacığından çıkar veya işi dilimle (filtreler arka plan iş parçacığında değerlendirilir; ilerleme gösterilir, iptal edilebilir; ölçüm: [PORTFOLIO_VALIDATION.md](docs/PORTFOLIO_VALIDATION.md)).
 - [ ] IP adreslerini sayısal sırala ve Decode As kurallarını kalıcı yap (pencere boyutu/konumu artık kalıcı).
-- [ ] Nanosaniyelik yakalamaların dışa aktarımında zaman hassasiyetini koru.
+- [x] Nanosaniyelik yakalamaların dışa aktarımında zaman hassasiyetini koru (pcap nanosaniye sihirli sayısı, pcapng `if_tsresol`, CSV/JSON tam hassasiyet).
 - [ ] Yeni bağımlılık/dissector sürümlerinden sonra yükleme, filtre ve tepe bellek ölçümünü tekrarla; yöntemi ve ham çıktıyı kaydet.
 - [x] Menü, sağ tık, sürükle-bırak ve dışa aktarma gibi etkileşimlere daha geniş GUI doğrulaması ekle.
 
