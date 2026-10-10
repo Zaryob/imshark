@@ -63,16 +63,26 @@ void ui::drawToolbar(AppState &state) {
     ImGui::Separator();
 }
 
-void ui::drawWelcome(AppState &state) {
+void ui::drawWelcome(AppState &state, ImTextureRef logo) {
     const ImVec2 avail = ImGui::GetContentRegionAvail();
     const float width = std::min(avail.x, ImGui::GetFontSize() * 30.0f);
     const float left = std::max(0.0f, (avail.x - width) * 0.5f);
-    const float top = std::max(0.0f, (avail.y - ImGui::GetFontSize() * 18.0f) * 0.35f);
+    const bool hasLogo = logo.GetTexID() != ImTextureID_Invalid;
+    // Leave space for the capture actions and recent files at the application's minimum window height.
+    const float logoHeight = hasLogo ? std::min(width * 0.5f, std::max(48.0f, avail.y - ImGui::GetFontSize() * 18.0f)) : 0.0f;
+    const float top = std::max(0.0f, (avail.y - ImGui::GetFontSize() * 18.0f - logoHeight) * 0.35f);
     ImGui::SetCursorPos(ImVec2(ImGui::GetCursorPosX() + left, ImGui::GetCursorPosY() + top));
     ImGui::BeginGroup();
-    ImGui::SetWindowFontScale(2.0f);
-    ImGui::TextUnformatted("ImShark");
-    ImGui::SetWindowFontScale(1.0f);
+    if (hasLogo) {
+        const float logoWidth = logoHeight * 2.0f;
+        ImGui::SetCursorPosX(ImGui::GetCursorPosX() + (width - logoWidth) * 0.5f);
+        ImGui::Image(logo, ImVec2(logoWidth, logoHeight));
+        ImGui::Spacing();
+    } else {
+        ImGui::SetWindowFontScale(2.0f);
+        ImGui::TextUnformatted("ImShark");
+        ImGui::SetWindowFontScale(1.0f);
+    }
     ImGui::TextDisabled("A packet analyzer for capture files and live traffic");
     ImGui::Spacing();
     ImGui::Spacing();
@@ -112,7 +122,7 @@ void ui::drawWelcome(AppState &state) {
     ImGui::EndGroup();
 }
 
-void ui::drawMainWindow(AppState &state) {
+void ui::drawMainWindow(AppState &state, ImTextureRef logo) {
     // Fill the area between the menu bar and the status bar
     const float menuHeight = ImGui::GetFrameHeight();
     ImVec2 size = ImGui::GetIO().DisplaySize;
@@ -125,7 +135,7 @@ void ui::drawMainWindow(AppState &state) {
     if (ImGui::Begin("ImShark", nullptr, flags)) {
         if (state.settings.showToolbar) drawToolbar(state);
         if (welcomeVisible(state)) {
-            drawWelcome(state);
+            drawWelcome(state, logo);
             ImGui::End();
             drawOtherWindows(state);
             return;

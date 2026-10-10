@@ -8,10 +8,16 @@
 #include <cstring>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <sstream>
 #include <string>
 #include <thread>
 #include <vector>
+
+#ifndef _WIN32
+#include <csignal>
+#include <unistd.h>
+#endif
 
 #include <imgui.h>
 #include <imgui_internal.h>
@@ -24,6 +30,7 @@
 #include <ui/time_format.h>
 #include <ui/ui.h>
 
+#include "pcap_stream_support.h"
 #include "support.h"
 
 namespace {
@@ -74,16 +81,23 @@ namespace {
             ImGui::DestroyContext(ctx);
         }
 
-        void frame(ui::AppState &state) {
+        ImTextureRef logoRef{};
+
+        void frame(ui::AppState &state, std::string *log = nullptr) {
             ImGui::GetIO().DeltaTime = 1.0f / 60.0f;
             ImGui::NewFrame();
             ui::pollLoad(state);
             ui::pollCapture(state);
             ui::drawMenuAndDialogs(state);
-            ui::drawMainWindow(state);
+            ui::drawMainWindow(state, logoRef);
+            if (log) ImGui::LogToBuffer();
             ui::drawStatusBar(state);
             ui::drawLoadErrorPopup(state);
             ui::drawLoadProgressPopup(state);
+            if (log) {
+                *log = ImGui::GetCurrentContext()->LogBuffer.c_str();
+                ImGui::LogFinish();
+            }
             ImGui::Render();
         }
 
@@ -340,6 +354,40 @@ TEST_F(UiInteract, CtrlOOpensTheFileDialog) {
     EXPECT_FALSE(ImGuiFileDialog::Instance()->IsOpened("ChooseFileDlgKey"));
     key(state, ImGuiKey_O, true);
     EXPECT_TRUE(ImGuiFileDialog::Instance()->IsOpened("ChooseFileDlgKey"));
+}
+
+TEST_F(UiInteract, CaptureFileDialogHasAUsableSizeOnItsFirstFrame) {
+    ui::AppState state;
+    ui::openCaptureDialog();
+    frame(state);
+    ImGuiWindow *dialog = ImGui::FindWindowByName("Open capture file##ChooseFileDlgKey");
+    ASSERT_NE(dialog, nullptr);
+    EXPECT_TRUE(dialog->Active);
+    EXPECT_GE(dialog->Size.x, 640.0f);
+    EXPECT_GE(dialog->Size.y, 420.0f);
+    EXPECT_NEAR(dialog->Pos.x + dialog->Size.x * 0.5f, 640.0f, 1.0f);
+    EXPECT_NEAR(dialog->Pos.y + dialog->Size.y * 0.5f, 360.0f, 20.0f); // the menu bar reduces the work area
+
+    // User resizing remains effective while the dialog is open.
+    ImGui::SetWindowSize(dialog->Name, ImVec2(700, 460));
+    frames(state);
+    EXPECT_FLOAT_EQ(dialog->Size.x, 700.0f);
+    EXPECT_FLOAT_EQ(dialog->Size.y, 460.0f);
+}
+
+TEST_F(UiInteract, CaptureFileDialogFitsASmallViewportOnItsFirstFrame) {
+    ui::AppState state;
+    ImGui::GetIO().DisplaySize = ImVec2(640, 400);
+    ui::openCaptureDialog();
+    frame(state);
+    ImGuiWindow *dialog = ImGui::FindWindowByName("Open capture file##ChooseFileDlgKey");
+    ASSERT_NE(dialog, nullptr);
+    EXPECT_GE(dialog->Size.x, 600.0f);
+    EXPECT_GE(dialog->Size.y, 340.0f);
+    EXPECT_GE(dialog->Pos.x, 0.0f);
+    EXPECT_GE(dialog->Pos.y, 0.0f);
+    EXPECT_LE(dialog->Pos.x + dialog->Size.x, 640.0f);
+    EXPECT_LE(dialog->Pos.y + dialog->Size.y, 400.0f);
 }
 
 TEST_F(UiInteract, OpenRecentMenuLoadsTheChosenCapture) {
@@ -992,6 +1040,38 @@ TEST_F(UiInteract, WelcomeRecentFileClickRequestsOpen) {
     EXPECT_EQ(state.packets.size(), 16u);
 }
 
+TEST_F(UiInteract, WelcomePanelWithLogoDrawsImageAndStaysInteractive) {
+    ui::AppState state;
+    logoRef = ImTextureRef(static_cast<ImTextureID>(0x42));
+    frames(state);
+    ImGuiWindow *mainWin = windowNamed("ImShark");
+    ASSERT_NE(mainWin, nullptr);
+    bool foundImage = false;
+    for (const ImDrawCmd &cmd: mainWin->DrawList->CmdBuffer) {
+        if (cmd.TexRef.GetTexID() == logoRef.GetTexID()) {
+            foundImage = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(foundImage);
+    EXPECT_FALSE(ImGuiFileDialog::Instance()->IsOpened("ChooseFileDlgKey"));
+    ASSERT_TRUE(clickInMain(state, "Open capture...", false));
+    EXPECT_TRUE(ImGuiFileDialog::Instance()->IsOpened("ChooseFileDlgKey"));
+}
+
+TEST_F(UiInteract, WelcomePanelWithLogoRecentFileClickRequestsOpen) {
+    ui::AppState state;
+    logoRef = ImTextureRef(static_cast<ImTextureID>(0x42));
+    TempDir dir("welcome_logo_recent");
+    const std::string recent = dir.copyOfSample("welcome_logo.pcap");
+    state.settings.recentFiles = {recent};
+    frames(state);
+    ASSERT_TRUE(clickInMain(state, "welcome_logo.pcap", false, recent.c_str()));
+    pumpLoad(state);
+    EXPECT_EQ(state.displayName, recent);
+    EXPECT_EQ(state.packets.size(), 16u);
+}
+
 TEST_F(UiInteract, ToolbarEnabledStatesFollowTheCapture) {
     ui::AppState state;
     frames(state);
@@ -1113,6 +1193,54 @@ TEST_F(UiInteract, StatusBarKeepsLoadAndCaptureMessages) {
     EXPECT_EQ(seg.error, "no permission");
 }
 
+TEST_F(UiInteract, LongStatusErrorsStaySeparateAndShowTheirFullTextOnHover) {
+    ui::AppState state;
+    state.live.error = "Permission denied: capturing needs access to /dev/bpf* (macOS) or CAP_NET_RAW (Linux) "
+                       "(Attempt to open /dev/bpf0 failed - root privileges may be required)";
+    state.loadMessage = "Warning: " + std::string(200, 'x');
+    ImVec2 errorHover;
+    for (const float width: {1280.0f, 640.0f}) {
+        if (width == 640.0f) {
+            state.currentFile = "/capture.pcap";
+            for (int i = 0; i < 80; ++i) state.displayName += "ölçüm";
+            state.displayName += ".pcap";
+            state.filter.active = true;
+            state.filter.appliedText = "tcp && " + std::string(100, 'x');
+            state.live.error += "\nMore details: " + std::string(100, 'x');
+        }
+        ImGui::GetIO().DisplaySize = ImVec2(width, 720);
+        frames(state);
+        ImGuiWindow *status = windowNamed("##status");
+        ASSERT_NE(status, nullptr);
+        float textRight = 0.0f;
+        float errorLeft = width;
+        bool hasError = false;
+        const ImU32 textColor = ImGui::GetColorU32(ImGuiCol_Text);
+        const ImU32 errorColor = ImGui::ColorConvertFloat4ToU32(ImVec4(1.0f, 0.4f, 0.4f, 1.0f));
+        for (const ImDrawVert &v: status->DrawList->VtxBuffer) {
+            if (v.col == textColor) textRight = std::max(textRight, v.pos.x);
+            if (v.col == errorColor) {
+                hasError = true;
+                errorLeft = std::min(errorLeft, v.pos.x);
+                EXPECT_LE(v.pos.x, width - ImGui::GetStyle().WindowPadding.x);
+            }
+        }
+        ASSERT_TRUE(hasError);
+        EXPECT_GE(errorLeft, width * 0.5f);
+        EXPECT_LT(textRight, errorLeft);
+        EXPECT_LE(status->ContentSize.x, width - 2 * ImGui::GetStyle().WindowPadding.x);
+        errorHover = ImVec2((errorLeft + width - ImGui::GetStyle().WindowPadding.x) * 0.5f,
+                            status->Pos.y + ImGui::GetStyle().WindowPadding.y + ImGui::GetFontSize() * 0.5f);
+    }
+
+    moveTo(state, errorHover);
+    std::string log;
+    frame(state, &log);
+    std::istringstream errorLines(state.live.error);
+    for (std::string line; std::getline(errorLines, line);) EXPECT_NE(log.find(line), std::string::npos) << log;
+    EXPECT_NE(log.find(state.loadMessage), std::string::npos) << log;
+}
+
 TEST_F(UiInteract, StatusBarOfALiveSessionKeepsTheCaptureText) {
     ui::AppState state;
     ASSERT_TRUE(ui::startInjectedCapture(state, 1, 262144, "fake0"));
@@ -1121,3 +1249,190 @@ TEST_F(UiInteract, StatusBarOfALiveSessionKeepsTheCaptureText) {
     EXPECT_EQ(seg.left, "Capturing on fake0 - 0 packets, 0 dropped");
     EXPECT_EQ(seg.displayed, "Displayed: 0 / 0");
 }
+
+// ---- permission popup and the administrator helper ---------------------------------------------------------------------
+// A fake starter replaces LiveCapture::startElevated, so no test ever starts pkexec / osascript or asks for an authorization.
+#ifndef _WIN32
+namespace {
+    /// A pipe that stands in for the FIFO of the helper: the fake starter hands the read end to LiveCapture.
+    struct FakeHelper {
+        int writeFd = -1;
+        int calls = 0;
+        std::function<bool(capture::LiveCapture &, const capture::CaptureOptions &)> starter() {
+            return [this](capture::LiveCapture &device, const capture::CaptureOptions &) {
+                ++calls;
+                int fds[2];
+                if (::pipe(fds) != 0) return false;
+                writeFd = fds[1];
+                capture::WorkerStreamOptions stream;
+                stream.connectTimeoutMs = 60000;
+                return device.startFromWorkerStream(fds[0], stream);
+            };
+        }
+        ~FakeHelper() {
+            if (writeFd >= 0) ::close(writeFd);
+        }
+    };
+
+    bool helperCaptureAvailable() {
+        return capture::liveCaptureAvailable() && capture::platformElevationMethod() != capture::ElevationMethod::None;
+    }
+
+    std::string bytesOf(const std::vector<char> &v) { return std::string(v.begin(), v.end()); }
+} // namespace
+
+TEST_F(UiInteract, PermissionPopupOffersTheThreeChoicesAndCancelStartsNothing) {
+    if (!helperCaptureAvailable()) GTEST_SKIP() << "no administrator helper in this build / platform";
+    ui::AppState state;
+    FakeHelper helper;
+    state.live.elevatedStarter = helper.starter();
+    state.live.permissionDenied = true;
+    state.live.error = "Permission denied: capturing needs access to /dev/bpf*";
+    state.live.deniedOptions.interfaceName = "en0";
+    state.live.openError = true;
+    frames(state, 4);
+    ASSERT_TRUE(popupOpen("Capture problem"));
+    ImVec2 p;
+    EXPECT_TRUE(locate(state, topPopup(), "Authorize and capture", p));
+    EXPECT_TRUE(locate(state, topPopup(), "Show permanent setup...", p));
+    EXPECT_TRUE(locate(state, topPopup(), "Cancel", p));
+
+    ASSERT_TRUE(clickInTopPopup(state, "Cancel"));
+    frames(state);
+    EXPECT_FALSE(popupOpen("Capture problem"));
+    EXPECT_EQ(helper.calls, 0) << "no authorization without a click on Authorize";
+    EXPECT_FALSE(state.live.elevated);
+    EXPECT_FALSE(popupOpen("Administrator authorization"));
+    EXPECT_FALSE(state.live.session);
+}
+
+TEST_F(UiInteract, ErrorPopupWithoutAPermissionErrorHasOnlyOk) {
+    ui::AppState state;
+    state.live.error = "Cannot open fake0: no such device";
+    state.live.openError = true;
+    frames(state, 4);
+    ASSERT_TRUE(popupOpen("Capture problem"));
+    ImVec2 p;
+    EXPECT_FALSE(locate(state, topPopup(), "Authorize and capture", p));
+    EXPECT_TRUE(locate(state, topPopup(), "OK", p));
+}
+
+TEST_F(UiInteract, ShowPermanentSetupOpensTheInstructionsWindowWithoutAuthorizing) {
+    if (!helperCaptureAvailable()) GTEST_SKIP() << "no administrator helper in this build / platform";
+    ui::AppState state;
+    FakeHelper helper;
+    state.live.elevatedStarter = helper.starter();
+    state.live.permissionDenied = true;
+    state.live.error = "Permission denied";
+    state.live.openError = true;
+    frames(state, 4);
+    ASSERT_TRUE(clickInTopPopup(state, "Show permanent setup..."));
+    frames(state);
+    EXPECT_TRUE(state.live.setupOpen);
+    EXPECT_NE(windowNamed("Permanent capture setup"), nullptr);
+    EXPECT_EQ(helper.calls, 0);
+}
+
+TEST_F(UiInteract, AuthorizeStartsTheHelperOnceAndItsPacketsReplaceNothingUntilTheyArrive) {
+    if (!helperCaptureAvailable()) GTEST_SKIP() << "no administrator helper in this build / platform";
+    std::signal(SIGPIPE, SIG_IGN);
+    ui::AppState state;
+    load(state);
+    ASSERT_EQ(state.packets.size(), 16u);
+    FakeHelper helper;
+    state.live.elevatedStarter = helper.starter();
+    state.live.permissionDenied = true;
+    state.live.error = "Permission denied";
+    state.live.deniedOptions.interfaceName = "en0";
+    state.live.openError = true;
+    frames(state, 4);
+
+    ASSERT_TRUE(clickInTopPopup(state, "Authorize and capture"));
+    frames(state, 4);
+    EXPECT_EQ(helper.calls, 1);
+    ASSERT_TRUE(state.live.elevated);
+    EXPECT_TRUE(popupOpen("Administrator authorization")) << "waiting for the authorization, with a Cancel button";
+    EXPECT_EQ(state.packets.size(), 16u) << "the open capture stays until the helper delivers";
+    EXPECT_FALSE(state.live.session);
+
+    // the helper authorizes and streams
+    pcapstream::Options o;
+    const std::string stream = pcapstream::header(o) + pcapstream::packet(o, 1700000000, 1, bytesOf(support::hex(support::kArpRequest))) +
+                               pcapstream::packet(o, 1700000001, 2, bytesOf(support::hex(support::kEthIpUdp)));
+    ASSERT_EQ(::write(helper.writeFd, stream.data(), stream.size()), static_cast<ssize_t>(stream.size()));
+    for (int i = 0; i < 2000 && (state.live.elevated || state.packets.size() != 2); ++i) {
+        frame(state);
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    frames(state, 3);
+    EXPECT_FALSE(state.live.elevated);
+    EXPECT_TRUE(state.live.session);
+    EXPECT_EQ(state.packets.size(), 2u);
+    EXPECT_TRUE(state.live.capturing());
+    EXPECT_FALSE(popupOpen("Administrator authorization"));
+    EXPECT_EQ(state.live.interfaceName, "en0");
+
+    // the helper goes away: the capture ends like any other and stays open as a file
+    ::close(helper.writeFd);
+    helper.writeFd = -1;
+    for (int i = 0; i < 2000 && state.live.capturing(); ++i) {
+        frame(state);
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    EXPECT_FALSE(state.live.capturing());
+    EXPECT_EQ(state.packets.size(), 2u);
+    ui::discardLiveCapture(state);
+}
+
+TEST_F(UiInteract, CancelInTheAuthorizationPopupDropsTheHelperSession) {
+    if (!helperCaptureAvailable()) GTEST_SKIP() << "no administrator helper in this build / platform";
+    std::signal(SIGPIPE, SIG_IGN);
+    ui::AppState state;
+    FakeHelper helper;
+    state.live.elevatedStarter = helper.starter();
+    state.live.permissionDenied = true;
+    state.live.error = "Permission denied";
+    state.live.openError = true;
+    frames(state, 4);
+    ASSERT_TRUE(clickInTopPopup(state, "Authorize and capture"));
+    frames(state, 4);
+    ASSERT_TRUE(state.live.elevated);
+    ASSERT_TRUE(popupOpen("Administrator authorization"));
+
+    ASSERT_TRUE(clickInTopPopup(state, "Cancel"));
+    frames(state, 3);
+    EXPECT_FALSE(state.live.elevated);
+    EXPECT_FALSE(popupOpen("Administrator authorization"));
+    EXPECT_FALSE(state.live.session);
+    // the read end of the stream is closed, so a late helper sees EPIPE and ends
+    const char byte = 0;
+    EXPECT_EQ(::write(helper.writeFd, &byte, 1), -1);
+}
+
+TEST_F(UiInteract, AnEndedHelperSessionShowsItsReasonInTheErrorPopup) {
+    if (!helperCaptureAvailable()) GTEST_SKIP() << "no administrator helper in this build / platform";
+    ui::AppState state;
+    state.live.elevatedStarter = [](capture::LiveCapture &device, const capture::CaptureOptions &) {
+        int fds[2];
+        if (::pipe(fds) != 0) return false;
+        ::close(fds[1]);                    // the "helper" is gone at once, without a word
+        capture::WorkerStreamOptions stream;
+        stream.connectTimeoutMs = 200;
+        return device.startFromWorkerStream(fds[0], stream);
+    };
+    state.live.permissionDenied = true;
+    state.live.error = "Permission denied";
+    state.live.openError = true;
+    frames(state, 4);
+    ASSERT_TRUE(clickInTopPopup(state, "Authorize and capture"));
+    for (int i = 0; i < 2000 && state.live.elevated; ++i) {
+        frame(state);
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+    EXPECT_FALSE(state.live.elevated);
+    EXPECT_FALSE(state.live.error.empty());
+    EXPECT_FALSE(state.live.permissionDenied);
+    frames(state, 3);
+    EXPECT_TRUE(popupOpen("Capture problem"));
+}
+#endif

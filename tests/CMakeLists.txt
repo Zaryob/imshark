@@ -15,6 +15,7 @@ find_package(GTest CONFIG REQUIRED)
 add_executable(imshark_tests
     test_asn1_reader.cpp
     test_bgp.cpp
+    test_brand.cpp
     test_capture_info.cpp
     test_capture_readers.cpp
     test_truncated_load.cpp
@@ -77,6 +78,8 @@ add_executable(imshark_tests
     test_encap_ranges.cpp
     test_lldp_lacp.cpp
     test_live_capture.cpp
+    test_capture_worker.cpp
+    test_worker_stream.cpp
     test_hierarchy.cpp
     test_tls_crypto.cpp
     test_tls_decrypt.cpp
@@ -132,6 +135,7 @@ if(IMSHARK_SANITIZE)
     target_sources(imshark_tests PRIVATE asan_options.cpp)
 endif()
 target_link_libraries(imshark_tests PRIVATE imshark_ui GTest::gtest_main)
+target_include_directories(imshark_tests PRIVATE "${CMAKE_BINARY_DIR}/generated" ${Stb_INCLUDE_DIR})
 target_compile_definitions(imshark_tests PRIVATE IMSHARK_TEST_DATA_DIR="${CMAKE_CURRENT_SOURCE_DIR}/data"
     IMSHARK_DOCS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../docs"
     IMSHARK_GUIDE_TEST_SOURCE="${CMAKE_CURRENT_SOURCE_DIR}/test_dissector_guide.cpp")

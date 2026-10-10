@@ -4,19 +4,71 @@
 #include <iostream>
 #include <string>
 #include <string_view>
+#include <vector>
 
 #include <GLFW/glfw3.h>
+
+// Windows only declares OpenGL 1.1 in its <GL/gl.h>; the value is fixed by the OpenGL 1.2 specification.
+#ifndef GL_CLAMP_TO_EDGE
+#define GL_CLAMP_TO_EDGE 0x812F
+#endif
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
 #include <imgui_impl_opengl3.h>
 
+#include <capture/capture_worker.h>
 #include <filter/fields.h>
 
 #include "ui/theme.h"
 #include "ui/ui.h"
 #include "version.h"
+#include "brand_assets.h"
+
+#define STB_IMAGE_IMPLEMENTATION
+#define STBI_ONLY_PNG
+#define STBI_NO_STDIO
+#include <stb_image.h>
 
 namespace {
+    GLuint loadTextureFromMemory(const unsigned char *data, size_t size) {
+        int width = 0, height = 0, channels = 0;
+        unsigned char *pixels = stbi_load_from_memory(data, static_cast<int>(size),
+                                                     &width, &height, &channels, STBI_rgb_alpha);
+        if (!pixels) {
+            std::cerr << "Cannot decode the embedded logo: " << stbi_failure_reason() << std::endl;
+            return 0;
+        }
+        GLint previousTexture = 0;
+        glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousTexture);
+        GLuint texture = 0;
+        glGenTextures(1, &texture);
+        glBindTexture(GL_TEXTURE_2D, texture);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+        glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previousTexture));
+        stbi_image_free(pixels);
+        return texture;
+    }
+
+    void setWindowIcon(GLFWwindow *window) {
+#ifndef __APPLE__
+        // macOS uses the .icns resource in the application bundle; GLFW supplies Windows/Linux title-bar icons.
+        int channels = 0;
+        GLFWimage icon{};
+        icon.pixels = stbi_load_from_memory(brand::kIconPng, static_cast<int>(sizeof(brand::kIconPng)),
+                                           &icon.width, &icon.height, &channels, STBI_rgb_alpha);
+        if (icon.pixels) {
+            glfwSetWindowIcon(window, 1, &icon);
+            stbi_image_free(icon.pixels);
+        }
+#else
+        (void) window;
+#endif
+    }
+
     std::string captureWindowTitle(const ui::AppState &state) {
         if (state.displayName.empty()) return "ImShark";
         std::string name = state.displayName;
@@ -33,11 +85,19 @@ namespace {
                "\nOptions:\n"
                "  -h, --help     Show this help and exit\n"
                "  -V, --version  Show the version and exit\n"
+               "  --capture-worker ...  Internal: the capture helper started with administrator rights (see\n"
+               "                 docs/CAPTURE_PRIVILEGES.md); not meant to be run by hand\n"
                "  --             Treat the next argument as a capture file\n";
     }
 } // namespace
 
 int main(int argc, char **argv) {
+    // The privileged capture worker (started by the GUI through pkexec / osascript) must not initialise anything of the
+    // window system or the UI: it opens the device, drops its privileges and streams packets (docs/CAPTURE_PRIVILEGES.md).
+    if (argc > 1 && std::string_view(argv[1]) == "--capture-worker") {
+        return capture::worker::runCaptureWorker(std::vector<std::string>(argv + 2, argv + argc));
+    }
+
     // Handle command-line queries before touching the window system so they also work headless.
     const char *capturePath = nullptr;
     if (argc > 1) {
@@ -113,6 +173,7 @@ int main(int argc, char **argv) {
         std::cerr << "Failed to create GLFW window" << std::endl;
         return EXIT_FAILURE;
     }
+    setWindowIcon(window);
     if (placeWindow) glfwSetWindowPos(window, windowX, windowY);
     glfwSetWindowSizeLimits(window, kMinWidth, kMinHeight, GLFW_DONT_CARE, GLFW_DONT_CARE);
     glfwMakeContextCurrent(window);
@@ -152,6 +213,8 @@ int main(int argc, char **argv) {
         return EXIT_FAILURE;
     }
 
+    const GLuint logoForLightMode = loadTextureFromMemory(brand::kLogoPng, sizeof(brand::kLogoPng));
+    const GLuint logoForDarkMode = loadTextureFromMemory(brand::kLogoLightPng, sizeof(brand::kLogoLightPng));
     ui::AppState state;
     ui::initSettings(state, ui::defaultSettingsPath());
     ui::applyTheme(state.settings.darkTheme);
@@ -185,7 +248,8 @@ int main(int argc, char **argv) {
             glfwSetWindowTitle(window, windowTitle.c_str());
         }
         ui::drawMenuAndDialogs(state);
-        ui::drawMainWindow(state);
+        const GLuint currentLogoTexture = state.settings.darkTheme ? logoForDarkMode : logoForLightMode;
+        ui::drawMainWindow(state, ImTextureRef(static_cast<ImTextureID>(currentLogoTexture)));
         ui::drawStatusBar(state);
         ui::drawLoadErrorPopup(state);
         ui::drawLoadProgressPopup(state);
@@ -210,7 +274,7 @@ int main(int argc, char **argv) {
         glfwGetWindowSize(window, &w, &h);
         glfwGetWindowPos(window, &x, &y);
         if (w > 0 && h > 0 && (w != state.settings.windowWidth || h != state.settings.windowHeight || !state.settings.hasWindowPos ||
-                               x != state.settings.windowX || y != state.settings.windowY)) {
+                                x != state.settings.windowX || y != state.settings.windowY)) {
             state.settings.windowWidth = w;
             state.settings.windowHeight = h;
             state.settings.windowX = x;
@@ -221,6 +285,8 @@ int main(int argc, char **argv) {
     }
     ui::saveSettingsIfDirty(state);
 
+    if (logoForLightMode) glDeleteTextures(1, &logoForLightMode);
+    if (logoForDarkMode) glDeleteTextures(1, &logoForDarkMode);
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();
     ImGui::DestroyContext();

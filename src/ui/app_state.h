@@ -193,6 +193,13 @@ namespace ui {
     /// (pollCapture) appends the packets that arrived since the last frame, and after stop the capture simply
     /// stays open as a file whose temporary pcap is owned by AppState::tempFile.
     struct LiveState {
+        std::unique_ptr<capture::LiveCapture> elevated;     // helper session (pkexec / osascript) until its first packets arrive
+        capture::CaptureOptions deniedOptions;              // the start that failed with a permission error (what the helper repeats)
+        bool permissionDenied = false;                      // the last failed start was a permission error (structured, from LiveCapture)
+        bool openAuthorize = false;                         // show the "waiting for authorization" popup next frame
+        bool setupOpen = false;                             // the "Permanent capture setup" window
+        /// Test seam: replaces LiveCapture::startElevated, so that tests never start pkexec / osascript.
+        std::function<bool(capture::LiveCapture &, const capture::CaptureOptions &)> elevatedStarter;
         std::unique_ptr<capture::LiveCapture> device;       // created on first use (runs a thread while capturing)
         std::unique_ptr<core::FileProcessor> processor;     // dissects the packets of the running capture; null otherwise
         capture::CaptureOptions options;                    // what Start uses (remembered in the settings)

@@ -41,6 +41,7 @@ COPY CMakeLists.txt CMakePresets.json LICENSE ./
 COPY cmake/ ./cmake/
 COPY core/ ./core/
 COPY src/ ./src/
+COPY resources/ ./resources/
 COPY tests/ ./tests/
 COPY tools/ ./tools/
 RUN cmake --preset default -DVCPKG_INSTALLED_DIR=/workspace/vcpkg_installed \

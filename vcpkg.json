@@ -17,7 +17,8 @@
       ]
     },
     "imguifiledialog",
-    "opengl"
+    "opengl",
+    "stb"
   ],
   "default-features": [
     "tests",

@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <imgui.h>
 
 #include "app_state.h"
 
@@ -127,6 +128,12 @@ namespace ui {
     bool startInjectedCapture(AppState &state, uint32_t linkType, uint32_t snaplen, const std::string &name);
     /// Stops the capture, takes over the packets that are still queued and keeps the capture open as a file.
     void stopCapture(AppState &state);
+    /// "Authorize and capture": repeats the failed start (state.live.deniedOptions) through the administrator helper. Returns at once;
+    /// the system asks for the authorization, state.live.elevated holds the pending session and pollCapture adopts it when its first
+    /// packets arrive (or reports why it ended). Never called without an explicit click.
+    bool startElevatedCapture(AppState &state);
+    /// Cancel in the authorization popup: the pending helper session is dropped (process asked to end, pipe removed).
+    void cancelElevatedCapture(AppState &state);
     /// Call once per frame: appends the packets that arrived (bounded work per call), keeps the filter and the list
     /// up to date and finishes a capture that ended on its own (device or write error).
     void pollCapture(AppState &state);
@@ -182,10 +189,10 @@ namespace ui {
     bool ensureDetail(AppState &state);
 
     // main_window.cpp
-    void drawMainWindow(AppState &state);
+    void drawMainWindow(AppState &state, ImTextureRef logo = {});
     /// The empty state: no capture open, none loading and no live session.
     bool welcomeVisible(const AppState &state);
-    void drawWelcome(AppState &state);
+    void drawWelcome(AppState &state, ImTextureRef logo = {});
     void drawToolbar(AppState &state);
     void drawOtherWindows(AppState &state);   // popup windows and dialogs drawn after the main window
 } // namespace ui

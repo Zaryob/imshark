@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=ImShark
+Comment=Analyze capture files and live network traffic
+Exec=imshark %f
+Icon=imshark
+Type=Application
+Terminal=false
+Categories=Network;Monitor;
