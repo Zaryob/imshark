@@ -82,4 +82,4 @@ Bir paket seçilince `CaptureReader` dosya ofsetinden baytları okur, `buildPack
 | `export_dialog`, `capture_info_window`, `preferences` | Dışa aktarma, metaveri ve TLS anahtar ayarları |
 | `settings`, `clipboard`, `time_format` | Kalıcı ayarlar ve saf biçimlendirme yardımcıları |
 
-Canlı yakalama çekirdeği `core/src/capture/` altında libpcap kullanır; paketleri geçici pcap dosyasına yazıp aynı paket başı ayrıştırma yoluna verir. TLS/DTLS şifre çözme çekirdeği `core/src/tls/` altında OpenSSL libcrypto kullanır. Bu özelliklerin kapalı derlemeleri aynı arayüzün kullanılabilirlik bildiren uygulamalarını sağlar.
+Canlı yakalama çekirdeği `core/src/capture/` altında libpcap kullanır; paketleri geçici pcap dosyasına yazıp aynı paket başı ayrıştırma yoluna verir. Canlı yakalama yetki gereksinimleri ve platformlar arası geçici ayrıcalık mimarisi [CAPTURE_PRIVILEGES.md](CAPTURE_PRIVILEGES.md) belgesinde ayrıntılı olarak açıklanmaktadır. TLS/DTLS şifre çözme çekirdeği `core/src/tls/` altında OpenSSL libcrypto kullanır. Bu özelliklerin kapalı derlemeleri aynı arayüzün kullanılabilirlik bildiren uygulamalarını sağlar.

@@ -7,12 +7,11 @@
 #
 # linuxdeploy is not downloaded by this script: the release workflow fetches a pinned release, and by hand you obtain
 # it yourself, check its signature or checksum, and point LINUXDEPLOY at it. `--output appimage` also needs the
-# executable linuxdeploy-plugin-appimage on PATH. The icon is
-# optional; without one a plain placeholder PNG is generated (the project has no icon artwork yet).
+# executable linuxdeploy-plugin-appimage on PATH. The optional icon argument overrides the bundled ImShark logo.
 set -euo pipefail
 
 BUILD_DIR="${1:-build}"
-ICON_SRC="${2:-}"
+ICON_SRC="${2:-$(cd "$(dirname "$0")/.." && pwd)/resources/imshark.png}"
 APP_DIR="AppDir"
 LINUXDEPLOY="${LINUXDEPLOY:-linuxdeploy-x86_64.AppImage}"
 
@@ -32,30 +31,7 @@ ICON="$APP_DIR/usr/share/icons/hicolor/256x256/apps/imshark.png"
 # Use the install rules so the AppImage includes dependency copyright notices and future resources.
 DESTDIR="$(pwd)/$APP_DIR" cmake --install "$BUILD_DIR" --prefix /usr
 
-cat > "$APP_DIR/usr/share/applications/imshark.desktop" <<DESKTOP
-[Desktop Entry]
-Name=ImShark
-Exec=imshark
-Icon=imshark
-Type=Application
-Categories=Network;
-DESKTOP
-
-if [ -n "$ICON_SRC" ]; then
-    cp "$ICON_SRC" "$ICON"
-else
-    # placeholder: a valid 256x256 single colour PNG (a 0-byte file makes linuxdeploy fail)
-    python3 - "$ICON" <<'PY'
-import struct, sys, zlib
-def chunk(t, d):
-    c = struct.pack(">I", len(d)) + t + d
-    return c + struct.pack(">I", zlib.crc32(t + d) & 0xFFFFFFFF)
-row = b"\x00" + bytes([0x2E, 0x5E, 0x8C]) * 256
-png = b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", struct.pack(">IIBBBBB", 256, 256, 8, 2, 0, 0, 0)) \
-    + chunk(b"IDAT", zlib.compress(row * 256)) + chunk(b"IEND", b"")
-open(sys.argv[1], "wb").write(png)
-PY
-fi
+cp "$ICON_SRC" "$ICON"
 
 "$LINUXDEPLOY" --appdir "$APP_DIR" --output appimage \
     -d "$APP_DIR/usr/share/applications/imshark.desktop" -i "$ICON"
