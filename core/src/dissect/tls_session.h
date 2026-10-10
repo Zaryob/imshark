@@ -66,7 +66,7 @@ namespace dissect {
             return direction == static_cast<unsigned>(clientDirection) ? TlsRole::Client : TlsRole::Server;
         }
         const TlsDirection *client() const { return clientDirection < 0 ? nullptr : &directions[clientDirection]; }
-        const TlsDirection *server() const { return clientDirection < 0 ? nullptr : &directions[1 - clientDirection]; }
+        const TlsDirection *server() const { return clientDirection < 0 ? nullptr : &directions[clientDirection == 0 ? 1 : 0]; }
     };
 
     /// Where one registered TCP message sits: its session, direction and the records it holds
