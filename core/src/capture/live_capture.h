@@ -18,6 +18,8 @@
 #include <atomic>
 #include <cstdint>
 #include <fstream>
+#include <functional>
+#include <memory>
 #include <mutex>
 #include <string>
 #include <thread>
@@ -25,6 +27,8 @@
 
 #include <core.h>
 #include <packet/packet_info.h>
+
+#include "worker_launch.h"
 
 struct pcap;   // libpcap's pcap_t, kept opaque so this header does not need pcap.h
 
@@ -73,6 +77,13 @@ namespace capture {
         bool promiscuous = true;
     };
 
+    /// How a pcap byte stream from the capture worker is read (see LiveCapture::startFromWorkerStream).
+    struct WorkerStreamOptions {
+        int connectTimeoutMs = 300000;                         // no header after this long: the helper never started
+        std::function<bool()> producerGone;                    // true once the process feeding the stream has ended
+        std::function<std::string(const std::string &readerError)> finalize;   // the end: returns the error text to show
+    };
+
     /// One captured packet that is in the temp file but has not been summarised yet.
     struct CapturedPacket {
         uint64_t fileOffset = 0;      // of the frame bytes in the temp file (what PacketInfo::file_offset holds)
@@ -95,9 +106,32 @@ namespace capture {
         /// is still running is stopped first; the temp file of an earlier capture that was not released is removed.
         bool start(const CaptureOptions &options);
 
+        /// Capture through the privileged capture worker (docs/CAPTURE_PRIVILEGES.md): creates a private FIFO, starts
+        /// `pkexec` / `osascript` on a background thread (the call returns at once; the authorization dialog is the
+        /// user's business) and reads the pcap stream the worker sends after it dropped its privileges. authorizing() is
+        /// true until the first valid header arrived; a refused or cancelled authorization ends the session with
+        /// lastError() set and running() false. `spawner` replaces the real process start (tests). Returns false only if
+        /// nothing could be set up (no pkexec/osascript on this platform, FIFO creation failed).
+        bool startElevated(const CaptureOptions &options, const WorkerProcess::Spawner &spawner = {});
+
+        /// Reads a classic pcap stream from `fd` (a FIFO or pipe; takes ownership and closes it), validates every header and
+        /// record, and feeds the packets through the same writeRecord/publish path as the capture thread. The call returns
+        /// at once; a malformed stream or EOF ends the session (running() false, lastError() set unless it ended cleanly).
+        bool startFromWorkerStream(int fd, const WorkerStreamOptions &options = {});
+
         /// Stops the capture thread and flushes the file. Idempotent; the packets stay available through
-        /// takePackets() and the temp file stays on disk.
+        /// takePackets() and the temp file stays on disk. A worker session is cancelled: the reader closes the FIFO,
+        /// the helper process is asked to end and the FIFO and its directory are removed.
         void stop();
+
+        /// true if the last start() failed because the device may not be opened without more privileges (structured: set
+        /// from PCAP_ERROR_PERM_DENIED, not from the error text).
+        bool permissionDenied() const { return permissionDenied_; }
+        /// true from startElevated()/startFromWorkerStream() until the first valid pcap header arrived (or the session ended).
+        bool authorizing() const { return authorizing_; }
+        /// true once a worker stream delivered its header (the temp file exists then).
+        bool streaming() const { return streaming_; }
+        std::string workerFifoPath() const;    // the private FIFO of a worker session ("" otherwise); for tests
 
         /// true while the capture records packets; turns false after stop(), when the capture thread ended on its
         /// own (device error) and when a write to the temp file failed (lastError() then says why).
@@ -133,6 +167,8 @@ namespace capture {
         void breakCapture();           // pcap_breakloop
         void closeDevice();
         void captureLoop();            // runs on thread_ until stopRequested_ or an error
+        bool launchStreamThread(int fd, const WorkerStreamOptions &options);
+        void streamLoop(int fd, const WorkerStreamOptions &options);   // runs on thread_ for a worker stream
 
         bool openFile(uint32_t linkType, uint32_t snaplen);
         bool writeRecord(uint64_t tsSeconds, uint32_t tsMicros, const char *data, uint32_t capturedLength, uint32_t originalLength);
@@ -159,6 +195,11 @@ namespace capture {
         std::atomic<uint64_t> packetCount_{0};
         std::atomic<uint64_t> dropped_{0};
         std::atomic<uint32_t> linkType_{1};
+        std::atomic<bool> permissionDenied_{false};
+        std::atomic<bool> authorizing_{false};
+        std::atomic<bool> streaming_{false};
+        std::unique_ptr<PrivateFifo> fifo_;          // worker session: the private directory + FIFO
+        std::unique_ptr<WorkerProcess> worker_;      // worker session: pkexec / osascript
         uint32_t snaplen_ = 262144;
         bool released_ = false;
         std::thread thread_;
