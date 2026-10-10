@@ -91,6 +91,7 @@ tls.decrypted
 | File/link/protocol support | [Support matrix](docs/SUPPORT_MATRIX.md) |
 | Protocol specifications and implementation files | [Protocol references](docs/PROTOCOLS.md) |
 | Functional limits and validation gaps | [Known issues](docs/KNOWN_ISSUES.md) |
+| What 1.x keeps stable; attackers, mitigations and residual risks | [Compatibility promise](docs/COMPATIBILITY.md), [threat model](docs/THREAT_MODEL.md) |
 | Data flow and modules | [Architecture](docs/ARCHITECTURE.md) |
 | Development and adding a dissector | [Contributing](CONTRIBUTING.md), [dissector guide](docs/DISSECTORS.md) |
 | Next priorities | [Roadmap](ROADMAP.md) |
