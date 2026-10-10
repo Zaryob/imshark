@@ -199,7 +199,13 @@ namespace filter {
                     case Op::Contains:
                         return any<void>(v, [&](const Value &x) { return x.s.find(strings[0]) != std::string_view::npos; });
                     case Op::Matches:
-                        return any<void>(v, [&](const Value &x) { return std::regex_search(x.s.data(), x.s.data() + x.s.size(), *regex); });
+                        return any<void>(v, [&](const Value &x) {
+                            try {
+                                return std::regex_search(x.s.data(), x.s.data() + x.s.size(), *regex);
+                            } catch (const std::regex_error &) {
+                                return false;   // too complex / too deep for std::regex on this input: no match, never an escaping exception
+                            }
+                        });
                 }
                 return false;
             }

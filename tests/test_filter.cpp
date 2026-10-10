@@ -140,6 +140,18 @@ TEST(Filter, Text) {
     EXPECT_TRUE(match("info contains \"quote\\\"d\"", [&] { auto q = p; q.info = "a quote\"d"; return q; }()));
 }
 
+TEST(Filter, RegexThatIsTooComplexToEvaluateIsNoMatchNotACrash) {
+    // found by fuzz_filter: std::regex_search throws regex_error (error_complexity / error_stack) on some pattern and
+    // input combinations, which escaped matches() and terminated the program. The expression has a pattern with
+    // dozens of empty alternatives.
+    const auto bytes = hex("696e666f206d617463686573202228693f7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7ca9aaaaaaaaaaaa027c7c7c7c7c7c7c7c7c667c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7ca9aaaaaaaaaaaa027c7c7c7c7c7c7c7c7c6672616d652e74696d655f65706f6368207c7c7c20317c7c3e7c7c7c7c7c7c7c7c7c7c7c7c8a8383837c7c7c7c7c7c7c7c7c7c7c7ca9aaaaaaaaaaaa027c7c7c7c7c7c7c7c7c66727c295e666561726d62637024206165722e7422");
+    const auto compiled = filter::Filter::compile(std::string(bytes.begin(), bytes.end()));
+    if (!compiled.ok) GTEST_SKIP() << "this standard library rejects the pattern at compile time";
+    auto p = parse(hex(kTcpSyn));
+    p.info = "GET /index.html HTTP/1.1";
+    EXPECT_NO_THROW((void) compiled.filter.matches(p));
+}
+
 TEST(Filter, LogicAndPrecedence) {
     const auto syn = parse(hex(kTcpSyn));
     EXPECT_TRUE(match("udp || tcp && ip.ttl == 64", syn)) << "&& binds tighter than ||";
