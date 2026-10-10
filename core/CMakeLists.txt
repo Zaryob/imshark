@@ -16,6 +16,7 @@ add_library(imshark_core STATIC
     src/io/erf_reader.cpp
     src/io/iptrace_reader.cpp
     src/gzip.cpp
+    src/temp_file.cpp
     src/packet_parser.cpp
     src/tcp_connection.cpp
     src/network/ip_reassembly.cpp

@@ -164,6 +164,8 @@ bool core::FileProcessor::load(io::CaptureFileReader &reader, const std::string 
         }
     }
     captureStart_ = timeBase.startEpoch();
+    info_.hasStart = timeBase.set;
+    timeBase.startExact(info_.startSeconds, info_.startNanos);
     reportProgress(control, fileSize, packets.size() - firstPacket);
     parser.sessions().freeze();
     reader.finish(message);
@@ -201,6 +203,8 @@ void core::FileProcessor::appendLivePacket(std::vector<packet::PacketInfo> &pack
     if (info_.interfaces.empty()) beginLive(linkType, 0);
     const double time = liveTime_.relative(tsSeconds, tsMicros, 1000000);
     captureStart_ = liveTime_.startEpoch();
+    info_.hasStart = true;
+    liveTime_.startExact(info_.startSeconds, info_.startNanos);
     parser.sessions().unfreeze();
     addPacket(parser, packets, time, linkType, fileOffset, originalLength, frame, false, 0, amended);
     parser.sessions().freeze();

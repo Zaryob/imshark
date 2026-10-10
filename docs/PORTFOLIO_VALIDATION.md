@@ -35,3 +35,30 @@ Generator'ın `mixed` profili varsayılan seed 1 kullanır. Bu koşudaki dosya 6
 ## Yayın engelleri
 
 Denetimde yayımlanmış GitHub Release veya hazır binary yoktu. [İncelenen release çalışması](https://github.com/Zaryob/imshark/actions/runs/37850000156) başarısız: Windows MSVC derlemesinde `PacketInfo` union/anonymous-struct varsayılan alan başlatıcıları; Linux debug koşusunda SCTP I-DATA retransmission testi. Bu yerel macOS sonucu o platformları yeşil kabul ettirmez. [#2](https://github.com/Zaryob/imshark/issues/2) bu engelleri kapatmadan yeni tag/binary yayımlanmaz. Yerel parser/evidence ve test izolasyonu [#1](https://github.com/Zaryob/imshark/issues/1) ile izlenir.
+
+## Arka plan filtre ölçümü (düzenli ifade filtreleri)
+
+Makine: macOS 27 arm64 (Apple M4), ölçüm sırasında başka derlemelerle paylaşılan yoğun yük (load average 25-45); süreler gürültülüdür, yalnızca aynı koşudaki öncesi/sonrası karşılaştırması anlamlıdır. Capture: `python3 tools/make_bench_pcap.py --profile mixed --packets 200000 --output mixed200k.pcap` (118,2 MB, 200.000 paket). Filtre: `http.request.uri matches "^/a.*b$" || dns.qry.name matches ".*example.*"` (39.841 eşleşme).
+
+**Önce** (Release, `bench_driver`, 0.9.2 kaynağı; filtre adımı UI iş parçacığındaki eski tek geçişle aynıdır, yani pencere bu süre boyunca donar):
+
+```
+$ bench_driver mixed200k.pcap --filter '<yukarıdaki ifade>'   (3 koşu)
+packets=200000 load_ms=1808 load_peak_rss_mb=123 filter_ms=245 filter_matched=39841 peak_rss_mb=124
+packets=200000 load_ms=1381 load_peak_rss_mb=124 filter_ms=272 filter_matched=39841 peak_rss_mb=124
+packets=200000 load_ms=1238 load_peak_rss_mb=124 filter_ms=280 filter_matched=39841 peak_rss_mb=124
+```
+
+Daha ağır bir desen (`info matches "^(.*[0-9])+.*(Len|Win|Seq)=.*[0-9]+$"`) eski kodda `bench_driver`'ı şu çıktıyla çökertti: `libc++abi: terminating due to uncaught exception of type std::__1::regex_error: The complexity of an attempted match against a regular expression exceeded a pre-set level.` Yeni kod bu hatayı yakalar ve "eşleşmez" sayar.
+
+**Sonra** (Debug + ASan/UBSan, aynı ifade; UI çerçeve döngüsü başsız ImGui ile çalıştırılır; `IMSHARK_BENCH_PCAP=... IMSHARK_BENCH_FILTER=... imshark_tests --gtest_filter='FilterBackground.MeasureUiThreadCost'`). Aynı koşuda eski davranışa denk tek bloklu geçiş de ölçülür:
+
+```
+MEASURE packets=200000 matched=39841 blocking_pass_ms=4772.9 background: apply_call_ms=10.77 frames_while_running=1172 longest_frame_ms=199.9 total_to_publish_ms=5069.9
+```
+
+Yorum: eskiden UI iş parçacığı `blocking_pass_ms` kadar (burada 4,8 sn) bloke olurdu. Şimdi filtreyi uygulama çağrısı 10,8 ms sürer (anlık görüntü ve tablo kopyası), filtre sürerken 1172 çerçeve çizilir; en uzun çerçeve (sonucu yayımlayan, sıralamayı yeniden kuran çerçeve dahil) 199,9 ms'dir (ASan'lı Debug). Toplam süre aynı büyüklüktedir; kazanç yanıt verebilirliktir, hız değil. Önceki sonuç, yenisi yayımlanana dek ekranda kalır.
+
+Tasarım notları: iş parçacığı yalnızca kendi sahip olduğu paket anlık görüntüsünü, MAC/IPsec tablo kopyalarını ve değişmez derlenmiş filtreyi okur (ayrıntı/yeniden çözümleme yoktur). `std::regex` korundu: bağımlılık kümesinde (glfw, imgui, openssl, libpcap, gtest) daha güvenli bir motor yok; RE2 gibi bir bağımlılık eklemek ECMAScript sözdizimi uyumunu ve paketlemeyi bozar. Bunun yerine değerin yalnızca ilk 4096 baytı aranır ve motor hataları "eşleşmez" sayılır. Felaket geri izleme (catastrophic backtracking) tek bir satırı yine de uzatabilir; bu durumda iptal edilen iş UI'yi bloke etmeden bitene dek park edilir, ancak uygulama kapanırken bitmesini bekler.
+
+`FilterBackground.*` testleri TSan altında (`-fsanitize=thread`) uyarısız geçti ve Debug/ASan altında `--repeat until-fail:20` ile 20 kez tekrarlandı.
