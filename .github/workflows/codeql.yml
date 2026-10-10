@@ -1,0 +1,56 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+  schedule:
+    - cron: '23 4 * * 1'   # weekly, Monday 04:23 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  analyze:
+    name: Analyze (c-cpp)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    permissions:
+      security-events: write
+      contents: read
+      actions: read
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}/.vcpkg
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/.vcpkg-cache,readwrite
+
+    steps:
+      - uses: actions/checkout@v7
+      - name: Install platform build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y autoconf autoconf-archive automake bison flex libgl1-mesa-dev libglu1-mesa-dev libltdl-dev libtool libwayland-dev libx11-dev libxcursor-dev libxi-dev libxinerama-dev libxrandr-dev ninja-build pkg-config wayland-protocols
+      # vcpkg is bootstrapped and its dependencies are built before CodeQL starts tracing, so the database only holds
+      # project code and not the third-party ports.
+      - uses: ./.github/actions/setup-vcpkg
+        with:
+          cache-scope: default
+      - name: Configure (installs the vcpkg dependencies)
+        run: cmake --preset default
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: c-cpp
+          build-mode: manual
+          queries: security-extended
+      # The default preset enables TLS decryption and live capture, so the build covers core, the UI and the tools.
+      - name: Build
+        run: cmake --build --preset default --parallel 4
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: /language:c-cpp
