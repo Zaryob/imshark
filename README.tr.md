@@ -94,6 +94,7 @@ tls.decrypted
 | Veri akışı ve modüller | [Mimari](docs/ARCHITECTURE.md) |
 | Geliştirme ve yeni dissector ekleme | [Katkı rehberi](CONTRIBUTING.md), [dissector rehberi](docs/DISSECTORS.md) |
 | Sonraki öncelikler | [Yol haritası](ROADMAP.md) |
+| Her sürümde neyin değiştiği | [Değişiklik günlüğü](CHANGELOG.md) (İngilizce) |
 
 ## Lisans
 

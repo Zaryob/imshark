@@ -95,6 +95,7 @@ tls.decrypted
 | Data flow and modules | [Architecture](docs/ARCHITECTURE.md) |
 | Development and adding a dissector | [Contributing](CONTRIBUTING.md), [dissector guide](docs/DISSECTORS.md) |
 | Next priorities | [Roadmap](ROADMAP.md) |
+| What changed in each version | [Changelog](CHANGELOG.md) |
 
 The architecture notes, known issues, portfolio validation record and roadmap are written in Turkish.
 
