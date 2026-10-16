@@ -9,7 +9,13 @@
 
 #include "pcap_stream.h"
 
-#ifndef _WIN32
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#else
 #include <fcntl.h>
 #include <grp.h>
 #include <poll.h>
@@ -63,8 +69,8 @@ namespace capture::worker {
             result.error = text;
             return result;
         };
-        const char *const names[] = {"--interface", "--snaplen", "--promisc", "--filter", "--uid", "--gid", "--fifo"};
-        bool seen[7] = {false, false, false, false, false, false, false};
+        const char *const names[] = {"--interface", "--snaplen", "--promisc", "--filter", "--uid", "--gid", "--fifo", "--pipe"};
+        bool seen[8] = {false, false, false, false, false, false, false, false};
         WorkerArgs a;
         if (args.size() % 2 != 0) {
             // a flag without its value (or a stray value): name the last element
@@ -73,11 +79,11 @@ namespace capture::worker {
         for (size_t i = 0; i < args.size(); i += 2) {
             const std::string &flag = args[i];
             const std::string &value = args[i + 1];
-            size_t index = 7;
-            for (size_t k = 0; k < 7; ++k) {
+            size_t index = 8;
+            for (size_t k = 0; k < 8; ++k) {
                 if (flag == names[k]) index = k;
             }
-            if (index == 7) return bad("unknown argument: " + (flag.size() > 64 ? flag.substr(0, 64) + "..." : flag));
+            if (index == 8) return bad("unknown argument: " + (flag.size() > 64 ? flag.substr(0, 64) + "..." : flag));
             if (seen[index]) return bad(std::string("duplicate argument ") + names[index]);
             seen[index] = true;
             uint64_t n = 0;
@@ -101,56 +107,310 @@ namespace capture::worker {
                     a.filter = value;
                     break;
                 case 4:
+#ifdef _WIN32
+                    if (!parseNumber(value, 0xfffffffeu, n)) return bad("--uid must be a number");
+#else
                     if (!parseNumber(value, 0xfffffffeu, n) || n == 0) return bad("--uid must be a number greater than 0");
+#endif
                     a.uid = static_cast<uint32_t>(n);
                     break;
                 case 5:
+#ifdef _WIN32
+                    if (!parseNumber(value, 0xfffffffeu, n)) return bad("--gid must be a number");
+#else
                     if (!parseNumber(value, 0xfffffffeu, n) || n == 0) return bad("--gid must be a number greater than 0");
+#endif
                     a.gid = static_cast<uint32_t>(n);
                     break;
                 case 6:
                     if (value.empty() || value.size() > kMaxPathLength || value.front() != '/') return bad("--fifo must be an absolute path");
                     a.fifoPath = value;
                     break;
+                case 7:
+                    if (value.empty() || value.size() > kMaxPathLength || value.rfind("\\\\.\\pipe\\", 0) != 0) return bad("--pipe must start with \\\\.\\pipe\\");
+                    a.pipePath = value;
+                    break;
                 default:
-                    break;     // unreachable: index < 7 here
+                    break;     // unreachable: index < 8 here
             }
         }
-        for (size_t k = 0; k < 7; ++k) {
+        for (size_t k = 0; k < 6; ++k) {
             if (!seen[k]) return bad(std::string("missing argument ") + names[k]);
         }
+        if (seen[6] && seen[7]) return bad("cannot specify both --fifo and --pipe");
+        if (!seen[6] && !seen[7]) return bad("missing argument --fifo or --pipe");
         result.ok = true;
         result.args = std::move(a);
         return result;
     }
 
     std::vector<std::string> workerCommandLine(const WorkerArgs &a) {
-        return {"--capture-worker",
-                "--interface", a.interfaceName,
-                "--snaplen", std::to_string(a.snaplen),
-                "--promisc", a.promiscuous ? "1" : "0",
-                "--filter", a.filter,
-                "--uid", std::to_string(a.uid),
-                "--gid", std::to_string(a.gid),
-                "--fifo", a.fifoPath};
+        std::vector<std::string> args = {
+            "--capture-worker",
+            "--interface", a.interfaceName,
+            "--snaplen", std::to_string(a.snaplen),
+            "--promisc", a.promiscuous ? "1" : "0",
+            "--filter", a.filter,
+            "--uid", std::to_string(a.uid),
+            "--gid", std::to_string(a.gid)
+        };
+        if (!a.pipePath.empty()) {
+            args.push_back("--pipe");
+            args.push_back(a.pipePath);
+        } else {
+            args.push_back("--fifo");
+            args.push_back(a.fifoPath);
+        }
+        return args;
     }
 
+#ifdef IMSHARK_HAVE_LIVE_CAPTURE
+    namespace {
+        uint32_t dltToLinkType(int dlt) {
+#ifdef DLT_RAW
+            if (dlt == DLT_RAW) return 101;
+#endif
+#ifdef DLT_LOOP
+            if (dlt == DLT_LOOP) return 108;
+#endif
+            return static_cast<uint32_t>(dlt);
+        }
+
+        bool interfaceExists(const std::string &name, std::string &error) {
+            char errbuf[PCAP_ERRBUF_SIZE] = {0};
+            pcap_if_t *devices = nullptr;
+            if (pcap_findalldevs(&devices, errbuf) != 0) {
+                error = std::string("cannot list the capture interfaces: ") + errbuf;
+                return false;
+            }
+            bool found = false;
+            for (const pcap_if_t *d = devices; d && !found; d = d->next) found = d->name && name == d->name;
+            pcap_freealldevs(devices);
+            if (!found) error = "no such capture interface";
+            return found;
+        }
+
+        class LibpcapSource : public PacketSource {
+        public:
+            explicit LibpcapSource(pcap_t *h) : h_(h) {}
+            Status next(SourcePacket &out) override {
+                pcap_pkthdr *header = nullptr;
+                const u_char *bytes = nullptr;
+                const int rc = pcap_next_ex(h_, &header, &bytes);
+                if (rc == 1) {
+                    out.tsSeconds = static_cast<uint64_t>(header->ts.tv_sec);
+                    out.tsMicros = static_cast<uint32_t>(header->ts.tv_usec);
+                    out.data = bytes;
+                    out.capturedLength = header->caplen;
+                    out.originalLength = header->len;
+                    return Status::Packet;
+                }
+                if (rc == 0) return Status::Timeout;
+                if (rc == PCAP_ERROR_BREAK || rc == -2) return Status::End;
+                error_ = pcap_geterr(h_);
+                return Status::Error;
+            }
+            std::string error() const override { return error_; }
+
+        private:
+            pcap_t *h_;
+            std::string error_;
+        };
+    } // namespace
+#endif
+
 #ifdef _WIN32
-    // ---- Windows: no worker -----------------------------------------------------------------------------------------
+    // ---- Windows stream loop & worker --------------------------------------------------------------------------------
     StreamEnd streamCapture(int, PacketSource &, uint32_t, uint32_t, const volatile std::sig_atomic_t *, std::string &error, bool) {
-        error = "The capture worker is not supported on this platform";
+        error = "Direct file descriptor streaming is not supported on Windows; use Named Pipes";
         return StreamEnd::SourceError;
     }
     bool peerGone(int, bool) { return false; }
     int openFifoForWriting(const std::string &, uint32_t, const volatile std::sig_atomic_t *, int, std::string &error) {
-        error = "The capture worker is not supported on this platform";
+        error = "FIFOs are not supported on Windows";
         return -1;
     }
+
+    namespace {
+        bool writeAllPipe(HANDLE hPipe, const char *data, size_t size, const volatile std::sig_atomic_t *stop, std::string &error) {
+            size_t done = 0;
+            while (done < size) {
+                if (stop && *stop) return false;
+                DWORD written = 0;
+                DWORD toWrite = static_cast<DWORD>(std::min<size_t>(size - done, 64 * 1024));
+                if (!WriteFile(hPipe, data + done, toWrite, &written, nullptr) || written == 0) {
+                    DWORD err = GetLastError();
+                    if (err == ERROR_BROKEN_PIPE || err == ERROR_NO_DATA || err == ERROR_PIPE_NOT_CONNECTED) {
+                        return false;
+                    }
+                    error = "Pipe write failed: error " + std::to_string(err);
+                    return false;
+                }
+                done += written;
+            }
+            return true;
+        }
+
+        bool pipePeerGone(HANDLE hPipe) {
+            DWORD avail = 0;
+            if (!PeekNamedPipe(hPipe, nullptr, 0, nullptr, &avail, nullptr)) {
+                DWORD err = GetLastError();
+                if (err == ERROR_BROKEN_PIPE || err == ERROR_PIPE_NOT_CONNECTED) return true;
+            }
+            return false;
+        }
+    } // namespace
+
+    StreamEnd streamCapturePipe(void *pipeHandle, PacketSource &source, uint32_t linkType, uint32_t snaplen,
+                                const volatile std::sig_atomic_t *stop, std::string &error) {
+        HANDLE hPipe = static_cast<HANDLE>(pipeHandle);
+        std::string head;
+        put32(head, 0xa1b2c3d4);     // classic pcap, little endian, microsecond timestamps
+        put16(head, 2);
+        put16(head, 4);
+        put32(head, 0);
+        put32(head, 0);
+        put32(head, snaplen);
+        put32(head, linkType);
+
+        if (!writeAllPipe(hPipe, head.data(), head.size(), stop, error)) {
+            if (pipePeerGone(hPipe)) return StreamEnd::ReaderGone;
+            if (stop && *stop) return StreamEnd::Stopped;
+            return StreamEnd::WriteError;
+        }
+
+        std::string record;
+        SourcePacket packet;
+        while (true) {
+            if (stop && *stop) return StreamEnd::Stopped;
+            switch (source.next(packet)) {
+                case PacketSource::Status::Packet: {
+                    const uint32_t captured = std::min(packet.capturedLength, snaplen);
+                    record.clear();
+                    put32(record, static_cast<uint32_t>(packet.tsSeconds));
+                    put32(record, packet.tsMicros);
+                    put32(record, captured);
+                    put32(record, std::max(packet.originalLength, captured));
+                    record.append(reinterpret_cast<const char *>(packet.data), captured);
+                    if (!writeAllPipe(hPipe, record.data(), record.size(), stop, error)) {
+                        if (pipePeerGone(hPipe)) return StreamEnd::ReaderGone;
+                        if (stop && *stop) return StreamEnd::Stopped;
+                        return StreamEnd::WriteError;
+                    }
+                    break;
+                }
+                case PacketSource::Status::Timeout:
+                    if (pipePeerGone(hPipe)) return StreamEnd::ReaderGone;
+                    break;
+                case PacketSource::Status::End: return StreamEnd::SourceEnded;
+                case PacketSource::Status::Error:
+                    error = source.error();
+                    return StreamEnd::SourceError;
+            }
+        }
+    }
+
+    void *openPipeForWriting(const std::string &path, const volatile std::sig_atomic_t *stop, int timeoutMs, std::string &error) {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
+        while (true) {
+            if (stop && *stop) {
+                error = "Interrupted while connecting to capture pipe";
+                return reinterpret_cast<void *>(static_cast<intptr_t>(-1));
+            }
+            HANDLE h = CreateFileA(path.c_str(), GENERIC_WRITE, 0, nullptr, OPEN_EXISTING, 0, nullptr);
+            if (h != INVALID_HANDLE_VALUE) return h;
+            DWORD err = GetLastError();
+            if (err == ERROR_PIPE_BUSY) {
+                WaitNamedPipeA(path.c_str(), 100);
+            } else {
+                std::this_thread::sleep_for(std::chrono::milliseconds(25));
+            }
+            if (std::chrono::steady_clock::now() >= deadline) {
+                error = "Timed out connecting to capture pipe: error " + std::to_string(err);
+                return reinterpret_cast<void *>(static_cast<intptr_t>(-1));
+            }
+        }
+    }
+
+#ifdef IMSHARK_HAVE_LIVE_CAPTURE
+    static volatile std::sig_atomic_t g_stopWin = 0;
+    static BOOL WINAPI consoleCtrlHandler(DWORD ctrlType) {
+        if (ctrlType == CTRL_C_EVENT || ctrlType == CTRL_BREAK_EVENT || ctrlType == CTRL_CLOSE_EVENT) {
+            g_stopWin = 1;
+            return TRUE;
+        }
+        return FALSE;
+    }
+
     int runCaptureWorker(const std::vector<std::string> &args) {
         const ParseResult parsed = parseWorkerArgs(args);
         if (!parsed.ok) return fail(kExitUsage, parsed.error);
-        return fail(kExitUnsupported, "the capture worker is not supported on this platform");
+        const WorkerArgs &a = parsed.args;
+
+        SetConsoleCtrlHandler(consoleCtrlHandler, TRUE);
+
+        std::string error;
+        if (!interfaceExists(a.interfaceName, error)) return fail(kExitNoSuchInterface, error);
+
+        char errbuf[PCAP_ERRBUF_SIZE] = {0};
+        pcap_t *h = pcap_create(a.interfaceName.c_str(), errbuf);
+        if (!h) return fail(kExitOpenFailed, std::string("cannot open ") + a.interfaceName + ": " + errbuf);
+        pcap_set_snaplen(h, static_cast<int>(a.snaplen));
+        pcap_set_promisc(h, a.promiscuous ? 1 : 0);
+        pcap_set_timeout(h, 250);
+        pcap_set_immediate_mode(h, 1);
+        const int rc = pcap_activate(h);
+        if (rc < 0) {
+            const std::string detail = pcap_geterr(h);
+            const std::string text = "cannot open " + a.interfaceName + ": " + (detail.empty() ? pcap_statustostr(rc) : detail);
+            pcap_close(h);
+            return fail(rc == PCAP_ERROR_PERM_DENIED ? kExitPermission : kExitOpenFailed, text);
+        }
+        if (!a.filter.empty()) {
+            bpf_program program{};
+            if (pcap_compile(h, &program, a.filter.c_str(), 1, PCAP_NETMASK_UNKNOWN) != 0) {
+                const std::string text = std::string("invalid capture filter: ") + pcap_geterr(h);
+                pcap_close(h);
+                return fail(kExitFilter, text);
+            }
+            const int src = pcap_setfilter(h, &program);
+            pcap_freecode(&program);
+            if (src != 0) {
+                const std::string text = std::string("cannot apply the capture filter: ") + pcap_geterr(h);
+                pcap_close(h);
+                return fail(kExitFilter, text);
+            }
+        }
+        const uint32_t linkType = dltToLinkType(pcap_datalink(h));
+
+        const std::string &targetPipe = !a.pipePath.empty() ? a.pipePath : a.fifoPath;
+        void *rawPipe = openPipeForWriting(targetPipe, &g_stopWin, 10000, error);
+        if (rawPipe == reinterpret_cast<void *>(static_cast<intptr_t>(-1))) {
+            pcap_close(h);
+            return fail(kExitFifo, error);
+        }
+        HANDLE hPipe = static_cast<HANDLE>(rawPipe);
+
+        LibpcapSource source(h);
+        const StreamEnd end = streamCapturePipe(hPipe, source, linkType, a.snaplen, &g_stopWin, error);
+        CloseHandle(hPipe);
+        pcap_close(h);
+        switch (end) {
+            case StreamEnd::Stopped:
+            case StreamEnd::ReaderGone:
+            case StreamEnd::SourceEnded: return kExitOk;
+            case StreamEnd::SourceError: return fail(kExitCapture, "capture stopped: " + error);
+            case StreamEnd::WriteError: return fail(kExitFifo, error);
+        }
+        return kExitOk;
     }
+#else
+    int runCaptureWorker(const std::vector<std::string> &args) {
+        const ParseResult parsed = parseWorkerArgs(args);
+        if (!parsed.ok) return fail(kExitUsage, parsed.error);
+        return fail(kExitUnsupported, "this build of ImShark has no live capture");
+    }
+#endif // IMSHARK_HAVE_LIVE_CAPTURE
 #else
     // ---- POSIX stream loop --------------------------------------------------------------------------------------------
     namespace {
@@ -301,30 +561,6 @@ namespace capture::worker {
             environ = empty;
         }
 
-        uint32_t dltToLinkType(int dlt) {
-#ifdef DLT_RAW
-            if (dlt == DLT_RAW) return 101;
-#endif
-#ifdef DLT_LOOP
-            if (dlt == DLT_LOOP) return 108;
-#endif
-            return static_cast<uint32_t>(dlt);
-        }
-
-        bool interfaceExists(const std::string &name, std::string &error) {
-            char errbuf[PCAP_ERRBUF_SIZE] = {0};
-            pcap_if_t *devices = nullptr;
-            if (pcap_findalldevs(&devices, errbuf) != 0) {
-                error = std::string("cannot list the capture interfaces: ") + errbuf;
-                return false;
-            }
-            bool found = false;
-            for (const pcap_if_t *d = devices; d && !found; d = d->next) found = d->name && name == d->name;
-            pcap_freealldevs(devices);
-            if (!found) error = "no such capture interface";
-            return found;
-        }
-
         // Irrevocable: group list emptied, gid, then uid (the order matters: setgid needs the root uid), then verified.
         bool dropPrivileges(uint32_t uid, uint32_t gid, pid_t parentBefore, std::string &error) {
             if (::geteuid() != 0 && ::getuid() != 0) {
@@ -373,33 +609,6 @@ namespace capture::worker {
 #endif
             return true;
         }
-
-        class LibpcapSource : public PacketSource {
-        public:
-            explicit LibpcapSource(pcap_t *h) : h_(h) {}
-            Status next(SourcePacket &out) override {
-                pcap_pkthdr *header = nullptr;
-                const u_char *bytes = nullptr;
-                const int rc = pcap_next_ex(h_, &header, &bytes);
-                if (rc == 1) {
-                    out.tsSeconds = static_cast<uint64_t>(header->ts.tv_sec);
-                    out.tsMicros = static_cast<uint32_t>(header->ts.tv_usec);
-                    out.data = bytes;
-                    out.capturedLength = header->caplen;
-                    out.originalLength = header->len;
-                    return Status::Packet;
-                }
-                if (rc == 0) return Status::Timeout;
-                if (rc == PCAP_ERROR_BREAK || rc == -2) return Status::End;
-                error_ = pcap_geterr(h_);
-                return Status::Error;
-            }
-            std::string error() const override { return error_; }
-
-        private:
-            pcap_t *h_;
-            std::string error_;
-        };
     } // namespace
 
     int runCaptureWorker(const std::vector<std::string> &args) {

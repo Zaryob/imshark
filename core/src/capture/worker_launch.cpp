@@ -6,7 +6,16 @@
 #include <cstring>
 #include <filesystem>
 
-#ifndef _WIN32
+#ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#include <shellapi.h>
+#include <sddl.h>
+#include <objbase.h>    // CoCreateGuid
+#else
 #include <fcntl.h>
 #include <poll.h>
 #include <signal.h>
@@ -35,6 +44,70 @@ namespace capture {
             if (text.size() > limit) text = text.substr(0, limit) + "...";
             return text;
         }
+
+#ifdef _WIN32
+        std::string wideToUtf8(const std::wstring &wide) {
+            if (wide.empty()) return {};
+            const int n = WideCharToMultiByte(CP_UTF8, 0, wide.data(), static_cast<int>(wide.size()), nullptr, 0, nullptr, nullptr);
+            if (n <= 0) return {};
+            std::string out(static_cast<size_t>(n), '\0');
+            WideCharToMultiByte(CP_UTF8, 0, wide.data(), static_cast<int>(wide.size()), out.data(), n, nullptr, nullptr);
+            return out;
+        }
+
+        std::wstring utf8ToWide(const std::string &utf8) {
+            if (utf8.empty()) return {};
+            const int n = MultiByteToWideChar(CP_UTF8, 0, utf8.data(), static_cast<int>(utf8.size()), nullptr, 0);
+            if (n <= 0) return {};
+            std::wstring out(static_cast<size_t>(n), L'\0');
+            MultiByteToWideChar(CP_UTF8, 0, utf8.data(), static_cast<int>(utf8.size()), out.data(), n);
+            return out;
+        }
+
+        // Generate a unique pipe name using CoCreateGuid.
+        std::string generatePipeName() {
+            GUID guid{};
+            if (CoCreateGuid(&guid) != S_OK) {
+                // Fallback: use tick count and process id.
+                return "\\\\.\\pipe\\imshark-capture-" + std::to_string(GetCurrentProcessId()) + "-" + std::to_string(GetTickCount64());
+            }
+            wchar_t buf[64];
+            StringFromGUID2(guid, buf, 64);
+            return "\\\\.\\pipe\\imshark-capture-" + wideToUtf8(buf);
+        }
+
+        // Quote a single argument for the Windows command line (CreateProcess rules).
+        std::wstring quoteArgW(const std::string &arg) {
+            const std::wstring wide = utf8ToWide(arg);
+            // If it contains no special characters, return as-is.
+            if (wide.find_first_of(L" \t\"") == std::wstring::npos) return wide;
+            std::wstring out = L"\"";
+            for (size_t i = 0; i < wide.size(); ++i) {
+                size_t backslashes = 0;
+                while (i < wide.size() && wide[i] == L'\\') { ++backslashes; ++i; }
+                if (i == wide.size()) {
+                    out.append(backslashes * 2, L'\\');
+                    break;
+                } else if (wide[i] == L'"') {
+                    out.append(backslashes * 2 + 1, L'\\');
+                    out += L'"';
+                } else {
+                    out.append(backslashes, L'\\');
+                    out += wide[i];
+                }
+            }
+            return out + L'"';
+        }
+
+        std::wstring buildCommandLine(const std::vector<std::string> &argv) {
+            std::wstring cmd;
+            for (size_t i = 0; i < argv.size(); ++i) {
+                if (i > 0) cmd += L' ';
+                cmd += quoteArgW(argv[i]);
+            }
+            return cmd;
+        }
+#endif
     } // namespace
 
     ElevationMethod platformElevationMethod() {
@@ -42,6 +115,8 @@ namespace capture {
         return ElevationMethod::Osascript;
 #elif defined(__linux__)
         return ElevationMethod::Pkexec;
+#elif defined(_WIN32)
+        return ElevationMethod::RunAs;
 #else
         return ElevationMethod::None;
 #endif
@@ -84,6 +159,12 @@ namespace capture {
         switch (method) {
             case ElevationMethod::Pkexec: return buildPkexecArgv(exe, workerArgs);
             case ElevationMethod::Osascript: return buildOsascriptArgv(exe, workerArgs);
+            case ElevationMethod::RunAs: {
+                // On Windows the RunAs elevation argv is just {exe, workerArgs...}; spawnElevated handles the UAC verb.
+                std::vector<std::string> argv = {exe};
+                argv.insert(argv.end(), workerArgs.begin(), workerArgs.end());
+                return argv;
+            }
             case ElevationMethod::None: break;
         }
         return {};
@@ -102,6 +183,11 @@ namespace capture {
         char real[4096];
         if (!::realpath(buf, real)) return std::string(buf);
         return real;
+#elif defined(_WIN32)
+        wchar_t buf[4096];
+        const DWORD n = GetModuleFileNameW(nullptr, buf, 4096);
+        if (n == 0 || n >= 4096) return {};
+        return wideToUtf8(std::wstring(buf, n));
 #else
         return {};
 #endif
@@ -114,6 +200,120 @@ namespace capture {
         return false;
     }
     void PrivateFifo::remove() {}
+
+    // ---- PrivateNamedPipe ---------------------------------------------------------------------------------------------
+    bool PrivateNamedPipe::create(std::string &error) {
+        remove();
+        const std::string name = generatePipeName();
+
+        // Create a Named Pipe with a restrictive DACL: allow only the current user (OWNER) and SYSTEM full control.
+        // "D:(A;;GA;;;SY)(A;;GA;;;OW)" = DACL: Allow Generic All to SYSTEM and Owner.
+        SECURITY_ATTRIBUTES sa{};
+        sa.nLength = sizeof(sa);
+        sa.bInheritHandle = FALSE;
+        PSECURITY_DESCRIPTOR sd = nullptr;
+        if (!ConvertStringSecurityDescriptorToSecurityDescriptorA(
+                "D:(A;;GA;;;SY)(A;;GA;;;OW)", SDDL_REVISION_1, &sd, nullptr)) {
+            error = "Cannot create security descriptor for the capture pipe";
+            return false;
+        }
+        sa.lpSecurityDescriptor = sd;
+
+        HANDLE h = CreateNamedPipeA(
+            name.c_str(),
+            PIPE_ACCESS_INBOUND | FILE_FLAG_OVERLAPPED,
+            PIPE_TYPE_BYTE | PIPE_READMODE_BYTE | PIPE_WAIT | PIPE_REJECT_REMOTE_CLIENTS,
+            1,         // max instances
+            0,         // output buffer
+            256 * 1024, // input buffer
+            0,         // default timeout
+            &sa);
+        LocalFree(sd);
+
+        if (h == INVALID_HANDLE_VALUE) {
+            error = "Cannot create the capture pipe: error " + std::to_string(GetLastError());
+            return false;
+        }
+        std::lock_guard<std::mutex> lock(mutex_);
+        name_ = name;
+        pipe_ = h;
+        return true;
+    }
+
+    void PrivateNamedPipe::remove() {
+        HANDLE h;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            h = pipe_;
+            pipe_ = INVALID_HANDLE_VALUE;
+            name_.clear();
+        }
+        if (h != INVALID_HANDLE_VALUE) {
+            DisconnectNamedPipe(h);
+            CloseHandle(h);
+        }
+    }
+
+    std::string PrivateNamedPipe::path() const {
+        std::lock_guard<std::mutex> lock(mutex_);
+        return name_;
+    }
+
+    void *PrivateNamedPipe::waitForConnection(int timeoutMs, const std::atomic<bool> &stopFlag, std::string &error) {
+        HANDLE h;
+        {
+            std::lock_guard<std::mutex> lock(mutex_);
+            h = pipe_;
+        }
+        if (h == INVALID_HANDLE_VALUE) {
+            error = "The capture pipe was not created";
+            return INVALID_HANDLE_VALUE;
+        }
+
+        OVERLAPPED ov{};
+        ov.hEvent = CreateEventA(nullptr, TRUE, FALSE, nullptr);
+        if (!ov.hEvent) {
+            error = "Cannot create event for pipe connection";
+            return INVALID_HANDLE_VALUE;
+        }
+
+        BOOL connected = ConnectNamedPipe(h, &ov);
+        DWORD lastErr = GetLastError();
+        if (!connected && lastErr == ERROR_PIPE_CONNECTED) {
+            // Already connected.
+            CloseHandle(ov.hEvent);
+            return h;
+        }
+        if (!connected && lastErr != ERROR_IO_PENDING) {
+            error = "ConnectNamedPipe failed: error " + std::to_string(lastErr);
+            CloseHandle(ov.hEvent);
+            return INVALID_HANDLE_VALUE;
+        }
+
+        // Wait with periodic checks for stopFlag.
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
+        while (!stopFlag && std::chrono::steady_clock::now() < deadline) {
+            DWORD wait = WaitForSingleObject(ov.hEvent, 250);
+            if (wait == WAIT_OBJECT_0) {
+                DWORD bytes = 0;
+                if (GetOverlappedResult(h, &ov, &bytes, FALSE)) {
+                    CloseHandle(ov.hEvent);
+                    return h;
+                }
+                error = "Pipe connection failed: error " + std::to_string(GetLastError());
+                CloseHandle(ov.hEvent);
+                return INVALID_HANDLE_VALUE;
+            }
+        }
+        CancelIo(h);
+        CloseHandle(ov.hEvent);
+        if (stopFlag) {
+            error = "Pipe connection cancelled";
+        } else {
+            error = "Timed out waiting for the capture helper to connect";
+        }
+        return INVALID_HANDLE_VALUE;
+    }
 #else
     bool PrivateFifo::create(std::string &error) {
         remove();
@@ -179,10 +379,94 @@ namespace capture {
 
     // ---- spawn --------------------------------------------------------------------------------------------------------
 #ifdef _WIN32
-    SpawnResult spawnProcess(const std::vector<std::string> &) {
-        SpawnResult r;
-        r.error = "Starting the capture worker is not supported on this platform";
-        return r;
+    SpawnResult spawnProcess(const std::vector<std::string> &argv) {
+        SpawnResult result;
+        if (argv.empty() || argv[0].empty()) {
+            result.error = "The program to start must be specified";
+            return result;
+        }
+
+        // Create a pipe for stderr.
+        SECURITY_ATTRIBUTES psa{};
+        psa.nLength = sizeof(psa);
+        psa.bInheritHandle = TRUE;
+        HANDLE stderrRead = nullptr, stderrWrite = nullptr;
+        if (!CreatePipe(&stderrRead, &stderrWrite, &psa, 0)) {
+            result.error = "Cannot create stderr pipe: error " + std::to_string(GetLastError());
+            return result;
+        }
+        SetHandleInformation(stderrRead, HANDLE_FLAG_INHERIT, 0);  // read end is not inherited
+
+        // NUL device for stdin/stdout.
+        HANDLE hNul = CreateFileA("NUL", GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE,
+                                  &psa, OPEN_EXISTING, 0, nullptr);
+
+        STARTUPINFOW si{};
+        si.cb = sizeof(si);
+        si.dwFlags = STARTF_USESTDHANDLES;
+        si.hStdInput = hNul;
+        si.hStdOutput = hNul;
+        si.hStdError = stderrWrite;
+
+        PROCESS_INFORMATION pi{};
+        std::wstring cmdLine = buildCommandLine(argv);
+        BOOL ok = CreateProcessW(
+            utf8ToWide(argv[0]).c_str(),
+            cmdLine.data(),
+            nullptr, nullptr,
+            TRUE,   // inherit handles
+            CREATE_NO_WINDOW,
+            nullptr, nullptr,
+            &si, &pi);
+
+        CloseHandle(hNul);
+        CloseHandle(stderrWrite);
+
+        if (!ok) {
+            CloseHandle(stderrRead);
+            result.error = "Cannot start " + argv[0] + ": error " + std::to_string(GetLastError());
+            return result;
+        }
+        CloseHandle(pi.hThread);
+
+        result.ok = true;
+        result.pid = static_cast<long>(pi.dwProcessId);
+        result.processHandle = pi.hProcess;
+        result.stderrHandle = stderrRead;
+        return result;
+    }
+
+    SpawnResult spawnElevated(const std::string &exe, const std::vector<std::string> &args) {
+        SpawnResult result;
+        // Build the parameter string (everything after the exe).
+        std::wstring params;
+        for (size_t i = 1; i < args.size(); ++i) {
+            if (i > 1) params += L' ';
+            params += quoteArgW(args[i]);
+        }
+
+        SHELLEXECUTEINFOW sei{};
+        sei.cbSize = sizeof(sei);
+        sei.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC;
+        sei.lpVerb = L"runas";
+        sei.lpFile = utf8ToWide(exe).c_str();
+        sei.lpParameters = params.c_str();
+        sei.nShow = SW_HIDE;
+
+        if (!ShellExecuteExW(&sei)) {
+            DWORD err = GetLastError();
+            if (err == ERROR_CANCELLED) {
+                result.error = "Authorization cancelled by the user";
+            } else {
+                result.error = "Cannot start elevated process: error " + std::to_string(err);
+            }
+            result.spawnFailed = true;
+            return result;
+        }
+        result.ok = true;
+        result.processHandle = sei.hProcess;
+        result.pid = static_cast<long>(GetProcessId(sei.hProcess));
+        return result;
     }
 #else
     SpawnResult spawnProcess(const std::vector<std::string> &argv) {
@@ -229,6 +513,12 @@ namespace capture {
         result.stderrFd = fds[0];
         return result;
     }
+
+    SpawnResult spawnElevated(const std::string &, const std::vector<std::string> &) {
+        SpawnResult r;
+        r.error = "UAC elevation is only available on Windows";
+        return r;
+    }
 #endif
 
     // ---- failure text -------------------------------------------------------------------------------------------------
@@ -236,6 +526,7 @@ namespace capture {
         const std::string text = oneLine(stderrText);
         if (exit.spawnFailed) {
             if (method == ElevationMethod::Pkexec) return "pkexec could not be started (is polkit installed?): " + text;
+            if (method == ElevationMethod::RunAs) return "Administrator elevation failed: " + text;
             return "The authorization helper could not be started: " + text;
         }
         if (!exit.exited) return "The capture helper is still running";
@@ -262,6 +553,9 @@ namespace capture {
                        (text.empty() ? "" : ": " + text);
             }
         }
+        if (method == ElevationMethod::RunAs) {
+            return "The elevated capture helper failed with exit status " + std::to_string(exit.code) + (text.empty() ? "" : ": " + text);
+        }
         return "The capture helper failed with exit status " + std::to_string(exit.code) + (text.empty() ? "" : ": " + text);
     }
 
@@ -277,10 +571,26 @@ namespace capture {
         bool killSent = false;
         std::chrono::steady_clock::time_point abandonedAt;
         std::thread thread;
+#ifdef _WIN32
+        HANDLE processHandle = nullptr;
+#endif
     };
 
     namespace {
-#ifndef _WIN32
+#ifdef _WIN32
+        void readStderrWin(HANDLE h, std::string &into) {
+            char buf[1024];
+            DWORD avail = 0;
+            while (PeekNamedPipe(h, nullptr, 0, nullptr, &avail, nullptr) && avail > 0) {
+                DWORD n = 0;
+                if (ReadFile(h, buf, sizeof(buf), &n, nullptr) && n > 0) {
+                    if (into.size() < kMaxStderrBytes) into.append(buf, std::min<size_t>(n, kMaxStderrBytes - into.size()));
+                } else {
+                    break;
+                }
+            }
+        }
+#else
         void readStderr(int fd, std::string &into) {
             char buf[1024];
             while (true) {
@@ -312,8 +622,47 @@ namespace capture {
                 return;
             }
 #ifdef _WIN32
+            {
+                std::lock_guard<std::mutex> lock(s->mutex);
+                s->pid = r.pid;
+                s->processHandle = r.processHandle;
+            }
+            std::string collected;
+            bool done = false;
+            while (!done) {
+                if (r.stderrHandle) {
+                    readStderrWin(r.stderrHandle, collected);
+                }
+                {
+                    std::lock_guard<std::mutex> lock(s->mutex);
+                    if (s->abandoned && !s->killSent && s->processHandle &&
+                        std::chrono::steady_clock::now() - s->abandonedAt > std::chrono::milliseconds(1500)) {
+                        TerminateProcess(static_cast<HANDLE>(s->processHandle), 1);
+                        s->killSent = true;
+                    }
+                }
+                DWORD waitResult = WaitForSingleObject(static_cast<HANDLE>(r.processHandle), 50);
+                if (waitResult == WAIT_OBJECT_0) {
+                    DWORD exitCode = 0;
+                    GetExitCodeProcess(static_cast<HANDLE>(r.processHandle), &exitCode);
+                    std::lock_guard<std::mutex> lock(s->mutex);
+                    s->exit.exited = true;
+                    s->exit.code = static_cast<int>(exitCode);
+                    done = true;
+                } else if (waitResult == WAIT_FAILED) {
+                    std::lock_guard<std::mutex> lock(s->mutex);
+                    s->exit.exited = true;
+                    done = true;
+                }
+            }
+            if (r.stderrHandle) {
+                readStderrWin(r.stderrHandle, collected);
+                CloseHandle(r.stderrHandle);
+            }
+            CloseHandle(r.processHandle);
             std::lock_guard<std::mutex> lock(s->mutex);
-            s->exit.exited = true;
+            s->stderrText = collected;
+            s->processHandle = nullptr;
             s->finished = true;
             s->cv.notify_all();
 #else
@@ -393,7 +742,11 @@ namespace capture {
         if (s->abandoned) return;
         s->abandoned = true;
         s->abandonedAt = std::chrono::steady_clock::now();
-#ifndef _WIN32
+#ifdef _WIN32
+        if (s->processHandle && !s->exit.exited) {
+            TerminateProcess(static_cast<HANDLE>(s->processHandle), 1);
+        }
+#else
         if (s->pid > 0 && !s->exit.exited) ::kill(static_cast<pid_t>(s->pid), SIGTERM);
 #endif
         if (s->thread.joinable()) s->thread.detach();

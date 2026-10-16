@@ -95,7 +95,8 @@ Sıra önemlidir ve kod bu sırayı izler (`core/src/capture/capture_worker.cpp`
   ```
 
   Çalıştırılabilir dosya ve her worker argümanı `--` sonrasında ayrı osascript argümanıdır; kabuk tırnaklamasını tamamen AppleScript'in `quoted form of` ifadesi yapar. Kullanıcı yetkilendirme penceresini iptal ederse osascript `-128` hatasıyla çıkar ve "Authorization cancelled" gösterilir. (Boşluk, tek/çift tırnak, `$()`, ters tırnak, `;` ve satır sonu içeren değerlerle elle doğrulandı; hiçbiri yorumlanmadı.)
-* **Windows ve diğerleri:** yetki yükseltme yoktur; yalnızca rehber (kalıcı kurulum) gösterilir. Varsayılan Windows derlemesinde zaten canlı yakalama yoktur.
+* **Windows:** UAC (User Account Control) onay penceresi `ShellExecuteEx` (`runas` fiili) ile tetiklenir. Arayüz ile worker arasındaki güvenli iletişim için rastgele GUID içeren özel bir Windows Named Pipe (`\\.\pipe\imshark-capture-...`) kullanılır. Pipe, yalnızca mevcut kullanıcının SID'sine ve SYSTEM hesabına tam erişim veren kısıtlayıcı bir DACL (`D:(A;;GA;;;SY)(A;;GA;;;OW)`) ile oluşturulur. Worker Npcap sürücüsüyle arayüzü açar ve paketleri bu pipe üzerinden arayüze aktarır; ana arayüz normal kullanıcı haklarıyla çalışmaya devam eder.
+* **Diğer platformlar:** yetki yükseltme yoktur; yalnızca kalıcı kurulum rehberi gösterilir.
 
 ## Okuma tarafı ve doğrulama
 
@@ -125,7 +126,7 @@ ImShark şunları **yapmaz**: `chmod`/`chown` ile aygıt izinlerini değiştirme
 * **Güven:** yetkilendirilen dosya, çalışan ImShark yürütülebilir dosyasının kendisidir. Kullanıcının yazabildiği bir dizindeki (ör. `~/build`) ikili için bu, o dosyayı değiştirebilen herhangi bir kullanıcı süreciyle sınırlı bir güven demektir; üretimde ikiliyi root sahipli bir dizine (`/usr/bin`, `/Applications`) kurun.
 * Worker yalnızca birincil `gid`'i korur; kullanıcının ek grup üyelikleri bırakılır. Bu yakalama için gerekmez; FIFO zaten kullanıcının kendi dizinindedir.
 * macOS'ta çökmüş bir arayüzün ardından boştaki bir worker bir sonraki pakete kadar yaşayabilir (FIFO okuyucusu `poll` ile görünmez; ilk yazma `EPIPE` verir). Linux'ta çekirdek `PDEATHSIG` ile sonlandırır.
-* Windows: yetki yükseltme ve worker desteklenmez.
+* Windows: Npcap sürücüsü ve SDK'sı gereklidir; yönetici yetkisi gerektiğinde UAC ve Named Pipe üzerinden worker kullanılır. Sürücüye erişim kısıtlıysa kullanıcı `npcap-users` grubuna eklenebilir veya "Authorize and capture" ile UAC onayı verilebilir.
 * Gerçek yetkili yakalama bir insan onayı gerektirdiği için bu depodaki otomatik testler gerçek `pkexec`/`osascript` çağırmaz; sahte süreç başlatıcıyla (borular ve `/bin/sh`) tüm akış sınanır.
 
 ## Kalıcı alternatifler (kendi sorumluluğunuzda)

@@ -245,6 +245,9 @@ TEST(WorkerLaunch, ElevationArgvFollowsTheMethod) {
     EXPECT_TRUE(buildElevationArgv(ElevationMethod::None, kExe, args).empty());
     EXPECT_EQ(buildElevationArgv(ElevationMethod::Pkexec, kExe, args), buildPkexecArgv(kExe, args));
     EXPECT_EQ(buildElevationArgv(ElevationMethod::Osascript, kExe, args), buildOsascriptArgv(kExe, args));
+    std::vector<std::string> expectedRunAs = {kExe};
+    expectedRunAs.insert(expectedRunAs.end(), args.begin(), args.end());
+    EXPECT_EQ(buildElevationArgv(ElevationMethod::RunAs, kExe, args), expectedRunAs);
 }
 
 TEST(WorkerLaunch, FailureTextsAreSpecific) {
@@ -257,16 +260,61 @@ TEST(WorkerLaunch, FailureTextsAreSpecific) {
     e.code = 1;
     EXPECT_EQ(describeWorkerFailure(ElevationMethod::Osascript, e, "0:42: execution error: User canceled. (-128)"), "Authorization cancelled");
     EXPECT_NE(describeWorkerFailure(ElevationMethod::Osascript, e, "execution error: nope (1)").find("failed"), std::string::npos);
+    EXPECT_NE(describeWorkerFailure(ElevationMethod::RunAs, e, "").find("exit status 1"), std::string::npos);
     // the worker's own message, also inside osascript's wrapper
     e.code = 5;
     EXPECT_EQ(describeWorkerFailure(ElevationMethod::Pkexec, e, "imshark-capture-worker: cannot open en0: boom\n"), "Capture helper: cannot open en0: boom");
     EXPECT_EQ(describeWorkerFailure(ElevationMethod::Osascript, e, "execution error: imshark-capture-worker: cannot open en0: boom (5)\n"),
               "Capture helper: cannot open en0: boom");
+    EXPECT_EQ(describeWorkerFailure(ElevationMethod::RunAs, e, "imshark-capture-worker: cannot open Ethernet0: boom\n"),
+              "Capture helper: cannot open Ethernet0: boom");
     e.code = 0;
     EXPECT_TRUE(describeWorkerFailure(ElevationMethod::Pkexec, e, "").empty());
     ProcessExit spawn;
     spawn.exited = spawn.spawnFailed = true;
     EXPECT_NE(describeWorkerFailure(ElevationMethod::Pkexec, spawn, "Cannot start /usr/bin/pkexec: No such file or directory").find("pkexec"), std::string::npos);
+    EXPECT_NE(describeWorkerFailure(ElevationMethod::RunAs, spawn, "Elevation rejected").find("elevation failed"), std::string::npos);
+}
+
+TEST(CaptureWorkerArgs, PipeFlagIsAcceptedInsteadOfFifo) {
+    auto args = validArgs();
+    args[args.size() - 2] = "--pipe";
+    args[args.size() - 1] = "\\\\.\\pipe\\imshark-capture-test";
+    const auto r = parseWorkerArgs(args);
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_EQ(r.args.pipePath, "\\\\.\\pipe\\imshark-capture-test");
+    EXPECT_TRUE(r.args.fifoPath.empty());
+}
+
+TEST(CaptureWorkerArgs, BothFifoAndPipeOrInvalidPipeAreRefused) {
+    auto both = validArgs();
+    both.insert(both.end(), {"--pipe", "\\\\.\\pipe\\test"});
+    EXPECT_FALSE(parseWorkerArgs(both).ok);
+
+    auto invalidPipe = validArgs();
+    invalidPipe[invalidPipe.size() - 2] = "--pipe";
+    invalidPipe[invalidPipe.size() - 1] = "bad_pipe_name";
+    EXPECT_FALSE(parseWorkerArgs(invalidPipe).ok);
+}
+
+TEST(CaptureWorkerArgs, PipeCommandLineRoundTrip) {
+    worker::WorkerArgs a;
+    a.interfaceName = "Ethernet0";
+    a.snaplen = 65535;
+    a.promiscuous = true;
+    a.filter = "ip";
+    a.uid = 1000;
+    a.gid = 1000;
+    a.pipePath = "\\\\.\\pipe\\imshark-capture-abc";
+    const auto line = worker::workerCommandLine(a);
+    ASSERT_EQ(line.size(), 15u);
+    EXPECT_EQ(line[0], "--capture-worker");
+    EXPECT_EQ(line[13], "--pipe");
+    EXPECT_EQ(line[14], "\\\\.\\pipe\\imshark-capture-abc");
+    const auto r = parseWorkerArgs(std::vector<std::string>(line.begin() + 1, line.end()));
+    ASSERT_TRUE(r.ok) << r.error;
+    EXPECT_EQ(r.args.pipePath, a.pipePath);
+    EXPECT_TRUE(r.args.fifoPath.empty());
 }
 
 #ifndef _WIN32

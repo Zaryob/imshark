@@ -37,6 +37,8 @@ namespace capture::worker {
 
     /// The command line of the worker, after `--capture-worker`:
     ///   --interface <name> --snaplen <64..262144> --promisc <0|1> --filter <bpf, may be empty> --uid <n> --gid <n> --fifo <absolute path>
+    ///   On Windows, --uid/--gid are 0 and --pipe <name> replaces --fifo:
+    ///   --interface <name> --snaplen <64..262144> --promisc <0|1> --filter <bpf, may be empty> --uid 0 --gid 0 --pipe <\\.\pipe\name>
     /// Every flag exactly once; every value is taken verbatim (no quoting, no expansion).
     struct WorkerArgs {
         std::string interfaceName;
@@ -45,6 +47,7 @@ namespace capture::worker {
         std::string filter;
         uint32_t uid = 0, gid = 0;
         std::string fifoPath;
+        std::string pipePath;              // Windows Named Pipe path (mutually exclusive with fifoPath)
     };
 
     struct ParseResult {
@@ -104,6 +107,13 @@ namespace capture::worker {
     /// blocking while no reader is there (retries for up to `timeoutMs`), then fstat must say FIFO owned by `expectedUid`.
     /// Returns the (blocking) fd or -1 with `error` set. POSIX only.
     int openFifoForWriting(const std::string &path, uint32_t expectedUid, const volatile std::sig_atomic_t *stop, int timeoutMs, std::string &error);
+
+#ifdef _WIN32
+    /// Connects to a Windows Named Pipe for writing. Returns HANDLE or INVALID_HANDLE_VALUE (-1).
+    void *openPipeForWriting(const std::string &path, const volatile std::sig_atomic_t *stop, int timeoutMs, std::string &error);
+    StreamEnd streamCapturePipe(void *pipeHandle, PacketSource &source, uint32_t linkType, uint32_t snaplen,
+                                const volatile std::sig_atomic_t *stop, std::string &error);
+#endif
 
     /// Entry point of `imshark --capture-worker`: `args` are the arguments after the flag. Returns the process exit code
     /// and prints one line on stderr on failure. Call it before any window system initialisation.

@@ -27,7 +27,11 @@ namespace capture {
     }
 
     std::string LiveCapture::workerFifoPath() const {
+#ifdef _WIN32
+        return pipe_ ? pipe_->path() : std::string();
+#else
         return fifo_ ? fifo_->path() : std::string();
+#endif
     }
 
     std::string LiveCapture::lastError() const {
@@ -239,6 +243,12 @@ namespace capture {
             fifo_->remove();
             fifo_.reset();
         }
+#ifdef _WIN32
+        if (pipe_) {
+            pipe_->remove();
+            pipe_.reset();
+        }
+#endif
     }
 
     bool LiveCapture::beginInjected(uint32_t linkType, uint32_t snaplen) {

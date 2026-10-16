@@ -473,9 +473,9 @@ namespace {
                 ImGui::TextDisabled("Log out and in again for the group membership.");
             }
             if (ImGui::CollapsingHeader("Windows: Npcap", winOpen)) {
-                ImGui::TextWrapped("Install Npcap from https://npcap.com. If the driver is restricted to Administrators, add your user to the "
-                                   "npcap-users group (run in an elevated Command Prompt, then sign out and in) or start ImShark as administrator. "
-                                   "The default ImShark build for Windows has no live capture.");
+                ImGui::TextWrapped("Install Npcap from https://npcap.com. If the driver is restricted to Administrators, use 'Authorize and capture' "
+                                   "for single-session UAC authorization, or add your user to the npcap-users group (run in an elevated Command Prompt, "
+                                   "then sign out and in). The default release build for Windows has live capture disabled unless built with the Npcap SDK.");
                 commandLine("win1", "net localgroup npcap-users \"%USERNAME%\" /add");
             }
         }

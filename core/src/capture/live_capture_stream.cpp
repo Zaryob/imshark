@@ -20,20 +20,176 @@
 
 namespace capture {
 #ifdef _WIN32
+#define WIN32_LEAN_AND_MEAN
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+
     bool LiveCapture::startFromWorkerStream(int, const WorkerStreamOptions &) {
         stop();
-        setError("Capturing through a helper process is not supported on this platform");
+        setError("Capturing through a raw file descriptor stream is not supported on Windows");
         return false;
     }
 
-    bool LiveCapture::startElevated(const CaptureOptions &, const WorkerProcess::Spawner &) {
+    bool LiveCapture::launchStreamThreadPipe(const WorkerStreamOptions &options) {
+        stopRequested_ = false;
+        running_ = true;
+        authorizing_ = true;
+        try {
+            thread_ = std::thread([this, options] {
+                streamLoopPipe(options);
+                publish();
+                authorizing_ = false;
+                if (pipe_) pipe_->remove();
+                running_ = false;
+            });
+        } catch (const std::system_error &e) {
+            running_ = false;
+            authorizing_ = false;
+            setError(std::string("Cannot start the capture thread: ") + e.what());
+            return false;
+        }
+        return true;
+    }
+
+    void LiveCapture::streamLoopPipe(const WorkerStreamOptions &options) {
+        std::string pipeError;
+        void *rawHandle = pipe_->waitForConnection(options.connectTimeoutMs, stopRequested_, pipeError);
+        if (rawHandle == reinterpret_cast<void *>(static_cast<intptr_t>(-1))) {
+            if (!stopRequested_) setError(pipeError);
+            return;
+        }
+        HANDLE hPipe = static_cast<HANDLE>(rawHandle);
+
+        PcapStreamParser parser(
+            [this](const PcapStreamHeader &h) {
+                if (!openFile(h.linkType, h.snaplen)) return false;   // openFile set the error
+                streaming_ = true;
+                authorizing_ = false;
+                return true;
+            },
+            [this](uint64_t sec, uint32_t usec, const char *data, uint32_t captured, uint32_t original) {
+                writeRecord(sec, usec, data, captured, original);
+            });
+
+        std::string error;
+        bool eof = false;
+        bool producerSeenGone = false;
+        const auto started = std::chrono::steady_clock::now();
+        std::vector<char> buffer(64 * 1024);
+        while (!stopRequested_ && !writeFailed_) {
+            const bool gone = options.producerGone && options.producerGone();
+            DWORD bytesAvail = 0;
+            if (PeekNamedPipe(hPipe, nullptr, 0, nullptr, &bytesAvail, nullptr) && bytesAvail > 0) {
+                DWORD n = 0;
+                if (ReadFile(hPipe, buffer.data(), static_cast<DWORD>(std::min<size_t>(buffer.size(), bytesAvail)), &n, nullptr) && n > 0) {
+                    if (!parser.feed(buffer.data(), static_cast<size_t>(n))) {
+                        error = parser.error();
+                        break;
+                    }
+                    publish();
+                    continue;
+                }
+            }
+            DWORD lastErr = GetLastError();
+            if (lastErr == ERROR_BROKEN_PIPE || lastErr == ERROR_PIPE_NOT_CONNECTED) {
+                if (parser.bytesConsumed() > 0) {
+                    eof = true;
+                } else {
+                    error = "The capture helper ended without sending any data";
+                }
+                break;
+            }
+            if (gone && parser.bytesConsumed() == 0) {
+                if (producerSeenGone) {
+                    error = "The capture helper ended without sending any data";
+                    break;
+                }
+                producerSeenGone = true;
+            }
+            if (!parser.headerSeen() &&
+                std::chrono::steady_clock::now() - started > std::chrono::milliseconds(options.connectTimeoutMs)) {
+                error = "Timed out waiting for the capture helper to start";
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        }
+        if (stopRequested_) return;
+        if (eof && !parser.finish()) error = parser.error();
+        publish();
+        if (options.finalize) error = options.finalize(error);
+        if (!error.empty()) setError(error);
+    }
+
+    bool LiveCapture::startElevated(const CaptureOptions &options, const WorkerProcess::Spawner &spawner) {
         stop();
-        setError("Capturing through a helper process is not supported on this platform");
-        return false;
-    }
+        removeTemp();
+        resetSession();
+        if (!liveCaptureAvailable()) {
+            setError(kNotAvailable);
+            return false;
+        }
+        const ElevationMethod method = platformElevationMethod();
+        if (method == ElevationMethod::None) {
+            setError("Capturing with administrator authorization is not available on this platform; see the permanent setup instructions");
+            return false;
+        }
+        if (options.interfaceName.empty()) {
+            setError("No capture interface selected");
+            return false;
+        }
+        if (options.snaplen < kMinWorkerSnaplen || options.snaplen > kMaxStreamSnaplen) {
+            setError("The snapshot length must be between " + std::to_string(kMinWorkerSnaplen) + " and " + std::to_string(kMaxStreamSnaplen) + " bytes");
+            return false;
+        }
+        const std::string exe = currentExecutablePath();
+        if (exe.empty()) {
+            setError("Cannot determine the path of the ImShark executable");
+            return false;
+        }
+        auto pipe = std::make_unique<PrivateNamedPipe>();
+        std::string error;
+        if (!pipe->create(error)) {
+            setError(error);
+            return false;
+        }
+        worker::WorkerArgs args;
+        args.interfaceName = options.interfaceName;
+        args.snaplen = options.snaplen;
+        args.promiscuous = options.promiscuous;
+        args.filter = options.filter;
+        args.uid = 0;
+        args.gid = 0;
+        args.pipePath = pipe->path();
 
-    bool LiveCapture::launchStreamThread(int, const WorkerStreamOptions &) { return false; }
-    void LiveCapture::streamLoop(int, const WorkerStreamOptions &) {}
+        pipe_ = std::move(pipe);
+        worker_ = std::make_unique<WorkerProcess>();
+        auto defaultSpawner = [](const std::vector<std::string> &argv) {
+            return spawnElevated(argv[0], argv);
+        };
+        worker_->start(buildElevationArgv(method, exe, worker::workerCommandLine(args)), spawner ? spawner : defaultSpawner);
+
+        WorkerStreamOptions stream;
+        WorkerProcess *process = worker_.get();
+        stream.producerGone = [process] { return process->exited(); };
+        stream.finalize = [process, method](const std::string &readerError) {
+            process->waitExit(1500);
+            if (process->exited()) {
+                const std::string why = describeWorkerFailure(method, process->status(), process->stderrText());
+                if (!why.empty()) return why;
+            }
+            return readerError;
+        };
+        if (!launchStreamThreadPipe(stream)) {
+            worker_->abandon();
+            worker_.reset();
+            pipe_->remove();
+            pipe_.reset();
+            return false;
+        }
+        return true;
+    }
 #else
     bool LiveCapture::launchStreamThread(int fd, const WorkerStreamOptions &options) {
         const int flags = ::fcntl(fd, F_GETFL);

@@ -37,8 +37,8 @@ With no file open and no capture running, the main area shows the ImShark logo (
 theme) instead of an empty packet list:
 
 - **Open capture...** does the same as File > Open (Ctrl+O).
-- **Start live capture...** opens the capture interface chooser. It appears only in builds with live capture; the Windows
-  package does not have it.
+- **Start live capture...** opens the capture interface chooser. It appears only in builds with live capture (on Windows,
+  requires building with the Npcap SDK).
 - A hint says that a `.pcap` or `.pcapng` file can be dropped anywhere on the window.
 - **Recent files** lists the last files you opened, newest first: the file name, its folder in grey and the full path in a
   tooltip. Click an entry to open it. The list is the same as File > Open Recent.
@@ -172,15 +172,15 @@ embedded TLS secrets.
 ## Live capture
 
 The **Capture** menu needs a build with libpcap (Npcap on Windows); without it the menu is disabled and the tooltip says
-why. Capturing needs privileges: `/dev/bpf*` access on macOS, `CAP_NET_RAW` on Linux. ImShark itself always runs as your
-normal user and tries to open the interface directly first. If that fails with a permission error, the **Capture problem**
-window offers **Authorize and capture** (macOS and Linux): after you confirm the system's authorization dialog (osascript /
-pkexec), a separate helper process opens the interface with administrator rights, drops them at once and streams the packets
-back through a private pipe for this one capture; **Cancel** starts nothing, and nothing on the system is changed (no
+why. Capturing needs privileges: `/dev/bpf*` access on macOS, `CAP_NET_RAW` on Linux, administrator rights or `npcap-users`
+group membership on Windows. ImShark itself always runs as your normal user and tries to open the interface directly first.
+If that fails with a permission error, the **Capture problem** window offers **Authorize and capture** (macOS, Linux, and
+Windows via UAC): after you confirm the system's authorization dialog (osascript / pkexec / UAC), a separate helper process
+opens the interface with administrator rights and streams the packets back through a private pipe (UNIX FIFO or Windows
+Named Pipe with restrictive DACL) for this one capture; **Cancel** starts nothing, and nothing on the system is changed (no
 permissions, capabilities or groups). **Show permanent setup...** lists commands for a permanent setup (macOS access_bpf
 group, Linux capabilities, Npcap) that you run yourself. While the system dialog is open, "Waiting for administrator
-authorization..." offers **Cancel**. The Windows package has no live capture and shows guidance only. Design, limits and
-cleanup: [CAPTURE_PRIVILEGES.md](CAPTURE_PRIVILEGES.md) (Turkish).
+authorization..." offers **Cancel**. Design, limits and cleanup: [CAPTURE_PRIVILEGES.md](CAPTURE_PRIVILEGES.md) (Turkish).
 
 - **Capture > Interfaces...** (Ctrl+K): choose the interface (name, description, addresses, flags), a BPF capture filter
   (validated while you type), the snap length and promiscuous mode. The last choices are saved.

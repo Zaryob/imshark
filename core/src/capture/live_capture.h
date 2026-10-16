@@ -167,8 +167,13 @@ namespace capture {
         void breakCapture();           // pcap_breakloop
         void closeDevice();
         void captureLoop();            // runs on thread_ until stopRequested_ or an error
+#ifdef _WIN32
+        bool launchStreamThreadPipe(const WorkerStreamOptions &options);
+        void streamLoopPipe(const WorkerStreamOptions &options);
+#else
         bool launchStreamThread(int fd, const WorkerStreamOptions &options);
         void streamLoop(int fd, const WorkerStreamOptions &options);   // runs on thread_ for a worker stream
+#endif
 
         bool openFile(uint32_t linkType, uint32_t snaplen);
         bool writeRecord(uint64_t tsSeconds, uint32_t tsMicros, const char *data, uint32_t capturedLength, uint32_t originalLength);
@@ -199,7 +204,10 @@ namespace capture {
         std::atomic<bool> authorizing_{false};
         std::atomic<bool> streaming_{false};
         std::unique_ptr<PrivateFifo> fifo_;          // worker session: the private directory + FIFO
-        std::unique_ptr<WorkerProcess> worker_;      // worker session: pkexec / osascript
+#ifdef _WIN32
+        std::unique_ptr<PrivateNamedPipe> pipe_;     // Windows worker session: Named Pipe
+#endif
+        std::unique_ptr<WorkerProcess> worker_;      // worker session: pkexec / osascript / UAC runas
         uint32_t snaplen_ = 262144;
         bool released_ = false;
         std::thread thread_;

@@ -194,6 +194,9 @@ target_link_libraries(imshark_core PRIVATE PCRE2::8BIT)
 
 find_package(Threads REQUIRED)  # the capture thread
 target_link_libraries(imshark_core PUBLIC Threads::Threads)
+if(WIN32)
+    target_link_libraries(imshark_core PUBLIC shell32 advapi32)
+endif()
 
 target_include_directories(imshark_core PUBLIC src)
 
