@@ -78,6 +78,7 @@ namespace capture {
 
         // Quote a single argument for the Windows command line (CreateProcess rules).
         std::wstring quoteArgW(const std::string &arg) {
+            if (arg.empty()) return L"\"\"";
             const std::wstring wide = utf8ToWide(arg);
             // If it contains no special characters, return as-is.
             if (wide.find_first_of(L" \t\"") == std::wstring::npos) return wide;

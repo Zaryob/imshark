@@ -60,11 +60,11 @@ namespace {
         const auto path = pipe->path();
         require(live.startFromWorkerPipe(std::move(pipe)), live.lastError());
         HANDLE writer = connect(path);
-        std::jthread producer([&] { writeBytes(writer, bytes, chunk); CloseHandle(writer); });
+        std::jthread producer([&] { writeBytes(writer, bytes, chunk); FlushFileBuffers(writer); CloseHandle(writer); });
         const bool ended = waitUntil([&] { return !live.running(); });
         live.stop();
         require(ended, "reader did not end on EOF");
-        require(live.packetCount() == expectedPackets, "packet count: " + std::to_string(live.packetCount()));
+        require(live.packetCount() == expectedPackets, "packet count: " + std::to_string(live.packetCount()) + "; " + live.lastError());
         if (expectedError.empty()) require(live.lastError().empty(), live.lastError());
         else require(live.lastError().find(expectedError) != std::string::npos, "unexpected error: " + live.lastError());
         require(live.workerFifoPath().empty(), "pipe not cleaned up");
@@ -129,7 +129,7 @@ namespace {
             require(live.startFromWorkerPipe(std::move(pipe)), live.lastError());
             HANDLE writer = connect(path);
             const auto bytes = ps::header() + ps::packet({}, 42, static_cast<uint32_t>(i), "session");
-            require(writeBytes(writer, bytes), "write failed"); CloseHandle(writer);
+            require(writeBytes(writer, bytes), "write failed"); FlushFileBuffers(writer); CloseHandle(writer);
             require(waitUntil([&] { return !live.running(); }), "restart EOF did not finish");
             live.stop(); require(live.packetCount() == 1, "sessions mixed");
             require(readFile(live.tempPath()) == bytes, "restart file mismatch");

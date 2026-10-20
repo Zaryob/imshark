@@ -304,7 +304,15 @@ namespace capture::worker {
                 case PacketSource::Status::Timeout:
                     if (pipePeerGone(hPipe)) return StreamEnd::ReaderGone;
                     break;
-                case PacketSource::Status::End: return StreamEnd::SourceEnded;
+                case PacketSource::Status::End:
+                    // Closing a Windows pipe client can discard unread buffered data. Drain it before a clean EOF.
+                    if (!FlushFileBuffers(hPipe)) {
+                        const DWORD err = GetLastError();
+                        if (err == ERROR_BROKEN_PIPE || err == ERROR_NO_DATA || err == ERROR_PIPE_NOT_CONNECTED) return StreamEnd::ReaderGone;
+                        error = "Cannot flush capture pipe: error " + std::to_string(err);
+                        return StreamEnd::WriteError;
+                    }
+                    return StreamEnd::SourceEnded;
                 case PacketSource::Status::Error:
                     error = source.error();
                     return StreamEnd::SourceError;
