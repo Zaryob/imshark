@@ -252,10 +252,12 @@ namespace capture::worker {
         }
 
         bool pipePeerGone(HANDLE hPipe) {
-            DWORD avail = 0;
-            if (!PeekNamedPipe(hPipe, nullptr, 0, nullptr, &avail, nullptr)) {
-                DWORD err = GetLastError();
-                if (err == ERROR_BROKEN_PIPE || err == ERROR_PIPE_NOT_CONNECTED) return true;
+            // This is a write-only handle: PeekNamedPipe requires read access. A null write probes the
+            // connection without adding bytes to the pcap stream, including while the interface is idle.
+            DWORD written = 0;
+            if (!WriteFile(hPipe, "", 0, &written, nullptr)) {
+                const DWORD err = GetLastError();
+                if (err == ERROR_BROKEN_PIPE || err == ERROR_NO_DATA || err == ERROR_PIPE_NOT_CONNECTED) return true;
             }
             return false;
         }

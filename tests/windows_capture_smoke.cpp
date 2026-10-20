@@ -157,6 +157,26 @@ namespace {
         ps::Options options; options.snaplen = 64;
         require(readFile(live.tempPath()) == ps::header(options) + ps::packet(options, 1700000000, 123456, std::string(64, 'x'), 200), "worker file mismatch");
     }
+    void idleWorkerExitsWhenReaderCloses() {
+        struct IdleSource : worker::PacketSource {
+            std::atomic<bool> forceEnd{false};
+            Status next(worker::SourcePacket &) override {
+                std::this_thread::sleep_for(10ms);
+                return forceEnd ? Status::End : Status::Timeout;
+            }
+        } source;
+        LiveCapture live; auto pipe = makePipe(); const auto path = pipe->path();
+        require(live.startFromWorkerPipe(std::move(pipe)), live.lastError());
+        HANDLE writer = connect(path);
+        std::atomic<bool> ended{false}; worker::StreamEnd end = worker::StreamEnd::SourceError;
+        std::jthread producer([&] { std::string error; end = worker::streamCapturePipe(writer, source, 1, 64, nullptr, error); ended = true; CloseHandle(writer); });
+        const bool headerSeen = waitUntil([&] { return live.streaming(); });
+        live.stop();
+        const bool exited = waitUntil([&] { return ended.load(); }, 1000);
+        source.forceEnd = true; producer.join();
+        require(headerSeen, "idle worker header missing");
+        require(exited && end == worker::StreamEnd::ReaderGone, "idle worker did not notice the GUI closed its pipe");
+    }
     void childWithUnicodePath() {
         const auto dir = core::pathFromUtf8(core::privateTempDir()) / core::pathFromUtf8("Test User İ");
         std::filesystem::create_directory(dir);
@@ -187,7 +207,8 @@ int main(int argc, char **argv) {
     run("client connected before server wait", preconnected);
     run("restart isolates sessions", restart);
     run("real worker stream writer snaplen and timestamps", actualWorkerStream);
+    run("idle worker exits when GUI closes its pipe", idleWorkerExitsWhenReaderCloses);
     run("child executable Unicode path and quoted arguments", childWithUnicodePath);
-    std::cout << "Native IPC scenarios: 11, failed: " << failures << std::endl;
+    std::cout << "Native IPC scenarios: 12, failed: " << failures << std::endl;
     return failures ? 1 : 0;
 }

@@ -293,8 +293,8 @@ namespace capture {
 
         // Wait with periodic checks for stopFlag.
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
-        while (!stopFlag && !(producerGone && producerGone()) && std::chrono::steady_clock::now() < deadline) {
-            DWORD wait = WaitForSingleObject(ov.hEvent, 20);
+        while (true) {
+            const DWORD wait = WaitForSingleObject(ov.hEvent, 20);
             if (wait == WAIT_OBJECT_0) {
                 DWORD bytes = 0;
                 if (GetOverlappedResult(h, &ov, &bytes, FALSE)) {
@@ -305,6 +305,8 @@ namespace capture {
                 CloseHandle(ov.hEvent);
                 return INVALID_HANDLE_VALUE;
             }
+            if (wait == WAIT_FAILED || stopFlag || (producerGone && producerGone()) ||
+                std::chrono::steady_clock::now() >= deadline) break;
         }
         CancelIoEx(h, &ov);
         DWORD ignored = 0;
