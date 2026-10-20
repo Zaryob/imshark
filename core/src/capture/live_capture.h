@@ -106,12 +106,12 @@ namespace capture {
         /// is still running is stopped first; the temp file of an earlier capture that was not released is removed.
         bool start(const CaptureOptions &options);
 
-        /// Capture through the privileged capture worker (docs/CAPTURE_PRIVILEGES.md): creates a private FIFO, starts
-        /// `pkexec` / `osascript` on a background thread (the call returns at once; the authorization dialog is the
-        /// user's business) and reads the pcap stream the worker sends after it dropped its privileges. authorizing() is
+        /// Capture through the privileged capture worker (docs/CAPTURE_PRIVILEGES.md): creates a private FIFO/Named Pipe,
+        /// starts pkexec / osascript / UAC on a background thread, and reads the worker's pcap stream. Linux/macOS workers
+        /// drop privileges after opening the device; the Windows worker retains its elevated token. authorizing() is
         /// true until the first valid header arrived; a refused or cancelled authorization ends the session with
         /// lastError() set and running() false. `spawner` replaces the real process start (tests). Returns false only if
-        /// nothing could be set up (no pkexec/osascript on this platform, FIFO creation failed).
+        /// nothing could be set up (unsupported platform or pipe creation failed).
         bool startElevated(const CaptureOptions &options, const WorkerProcess::Spawner &spawner = {});
 
         /// Reads a classic pcap stream from `fd` (a FIFO or pipe; takes ownership and closes it), validates every header and

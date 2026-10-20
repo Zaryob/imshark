@@ -1,7 +1,12 @@
 name: Windows capture validation
 on:
   push:
-    branches: [codex/windows-capture-validation]
+    branches: [master, codex/windows-capture-validation]
+    paths:
+      - 'core/**'
+      - 'tests/**'
+      - 'tools/windows_capture_validation/**'
+      - '.github/workflows/windows-capture.yml'
   pull_request:
     paths:
       - 'core/**'
