@@ -259,7 +259,8 @@ namespace capture {
         return name_;
     }
 
-    void *PrivateNamedPipe::waitForConnection(int timeoutMs, const std::atomic<bool> &stopFlag, std::string &error) {
+    void *PrivateNamedPipe::waitForConnection(int timeoutMs, const std::atomic<bool> &stopFlag, std::string &error,
+                                              const std::function<bool()> &producerGone) {
         HANDLE h;
         {
             std::lock_guard<std::mutex> lock(mutex_);
@@ -278,8 +279,8 @@ namespace capture {
         }
 
         BOOL connected = ConnectNamedPipe(h, &ov);
-        DWORD lastErr = GetLastError();
-        if (!connected && lastErr == ERROR_PIPE_CONNECTED) {
+        DWORD lastErr = connected ? ERROR_SUCCESS : GetLastError();
+        if (connected || lastErr == ERROR_PIPE_CONNECTED) {
             // Already connected.
             CloseHandle(ov.hEvent);
             return h;
@@ -292,8 +293,8 @@ namespace capture {
 
         // Wait with periodic checks for stopFlag.
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeoutMs);
-        while (!stopFlag && std::chrono::steady_clock::now() < deadline) {
-            DWORD wait = WaitForSingleObject(ov.hEvent, 250);
+        while (!stopFlag && !(producerGone && producerGone()) && std::chrono::steady_clock::now() < deadline) {
+            DWORD wait = WaitForSingleObject(ov.hEvent, 20);
             if (wait == WAIT_OBJECT_0) {
                 DWORD bytes = 0;
                 if (GetOverlappedResult(h, &ov, &bytes, FALSE)) {
@@ -305,10 +306,14 @@ namespace capture {
                 return INVALID_HANDLE_VALUE;
             }
         }
-        CancelIo(h);
+        CancelIoEx(h, &ov);
+        DWORD ignored = 0;
+        GetOverlappedResult(h, &ov, &ignored, TRUE); // cancellation must finish before ov/event go out of scope
         CloseHandle(ov.hEvent);
         if (stopFlag) {
             error = "Pipe connection cancelled";
+        } else if (producerGone && producerGone()) {
+            error = "The capture helper ended before connecting";
         } else {
             error = "Timed out waiting for the capture helper to connect";
         }
@@ -449,7 +454,8 @@ namespace capture {
         sei.cbSize = sizeof(sei);
         sei.fMask = SEE_MASK_NOCLOSEPROCESS | SEE_MASK_NOASYNC;
         sei.lpVerb = L"runas";
-        sei.lpFile = utf8ToWide(exe).c_str();
+        const std::wstring executable = utf8ToWide(exe);
+        sei.lpFile = executable.c_str();
         sei.lpParameters = params.c_str();
         sei.nShow = SW_HIDE;
 
@@ -460,7 +466,6 @@ namespace capture {
             } else {
                 result.error = "Cannot start elevated process: error " + std::to_string(err);
             }
-            result.spawnFailed = true;
             return result;
         }
         result.ok = true;

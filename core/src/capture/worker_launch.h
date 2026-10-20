@@ -66,7 +66,8 @@ namespace capture {
 
         /// Waits for the worker to connect (blocking, with timeout). Returns the connected pipe handle or
         /// INVALID_HANDLE_VALUE. `stopFlag` is checked periodically.
-        void *waitForConnection(int timeoutMs, const std::atomic<bool> &stopFlag, std::string &error);
+        void *waitForConnection(int timeoutMs, const std::atomic<bool> &stopFlag, std::string &error,
+                                const std::function<bool()> &producerGone = {});
 
     private:
         mutable std::mutex mutex_;

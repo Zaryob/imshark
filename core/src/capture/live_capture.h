@@ -118,6 +118,11 @@ namespace capture {
         /// record, and feeds the packets through the same writeRecord/publish path as the capture thread. The call returns
         /// at once; a malformed stream or EOF ends the session (running() false, lastError() set unless it ended cleanly).
         bool startFromWorkerStream(int fd, const WorkerStreamOptions &options = {});
+#ifdef _WIN32
+        /// Windows equivalent: takes ownership of an already created private pipe and validates the worker's pcap stream.
+        /// Also available in offline builds for IPC regression tests, without Npcap or an authorization prompt.
+        bool startFromWorkerPipe(std::unique_ptr<PrivateNamedPipe> pipe, const WorkerStreamOptions &options = {});
+#endif
 
         /// Stops the capture thread and flushes the file. Idempotent; the packets stay available through
         /// takePackets() and the temp file stays on disk. A worker session is cancelled: the reader closes the FIFO,

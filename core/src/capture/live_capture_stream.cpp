@@ -1,6 +1,6 @@
 // The worker stream backend of LiveCapture: reads the classic pcap stream the capture worker writes into the private
 // FIFO and feeds it through the same writeRecord/publish path as the libpcap capture thread. Also the glue that starts
-// the worker through pkexec / osascript (startElevated). POSIX only; the Windows build gets stubs.
+// the worker through pkexec / osascript / UAC (startElevated), using a FIFO on POSIX or Named Pipe on Windows.
 
 #include "live_capture.h"
 
@@ -18,14 +18,16 @@
 #include <unistd.h>
 #endif
 
-namespace capture {
 #ifdef _WIN32
 #define WIN32_LEAN_AND_MEAN
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
 #include <windows.h>
+#endif
 
+namespace capture {
+#ifdef _WIN32
     bool LiveCapture::startFromWorkerStream(int, const WorkerStreamOptions &) {
         stop();
         setError("Capturing through a raw file descriptor stream is not supported on Windows");
@@ -53,18 +55,34 @@ namespace capture {
         return true;
     }
 
+    bool LiveCapture::startFromWorkerPipe(std::unique_ptr<PrivateNamedPipe> pipe, const WorkerStreamOptions &options) {
+        stop();
+        removeTemp();
+        resetSession();
+        if (!pipe || pipe->path().empty()) {
+            setError("The capture pipe was not created");
+            return false;
+        }
+        pipe_ = std::move(pipe);
+        if (launchStreamThreadPipe(options)) return true;
+        pipe_.reset();
+        return false;
+    }
+
     void LiveCapture::streamLoopPipe(const WorkerStreamOptions &options) {
-        std::string pipeError;
-        void *rawHandle = pipe_->waitForConnection(options.connectTimeoutMs, stopRequested_, pipeError);
+        std::string error;
+        void *rawHandle = pipe_->waitForConnection(options.connectTimeoutMs, stopRequested_, error, options.producerGone);
         if (rawHandle == reinterpret_cast<void *>(static_cast<intptr_t>(-1))) {
-            if (!stopRequested_) setError(pipeError);
+            if (!stopRequested_) {
+                if (options.finalize) error = options.finalize(error);
+                setError(error);
+            }
             return;
         }
         HANDLE hPipe = static_cast<HANDLE>(rawHandle);
-
         PcapStreamParser parser(
             [this](const PcapStreamHeader &h) {
-                if (!openFile(h.linkType, h.snaplen)) return false;   // openFile set the error
+                if (!openFile(h.linkType, h.snaplen)) return false;
                 streaming_ = true;
                 authorizing_ = false;
                 return true;
@@ -73,48 +91,44 @@ namespace capture {
                 writeRecord(sec, usec, data, captured, original);
             });
 
-        std::string error;
-        bool eof = false;
-        bool producerSeenGone = false;
+        HANDLE event = CreateEventW(nullptr, TRUE, FALSE, nullptr);
+        if (!event) {
+            setError("Cannot create event for capture pipe reads");
+            return;
+        }
         const auto started = std::chrono::steady_clock::now();
         std::vector<char> buffer(64 * 1024);
+        bool eof = false;
         while (!stopRequested_ && !writeFailed_) {
-            const bool gone = options.producerGone && options.producerGone();
-            DWORD bytesAvail = 0;
-            if (PeekNamedPipe(hPipe, nullptr, 0, nullptr, &bytesAvail, nullptr) && bytesAvail > 0) {
-                DWORD n = 0;
-                if (ReadFile(hPipe, buffer.data(), static_cast<DWORD>(std::min<size_t>(buffer.size(), bytesAvail)), &n, nullptr) && n > 0) {
-                    if (!parser.feed(buffer.data(), static_cast<size_t>(n))) {
-                        error = parser.error();
+            OVERLAPPED ov{};
+            ov.hEvent = event;
+            ResetEvent(event);
+            DWORD n = 0;
+            BOOL ok = ReadFile(hPipe, buffer.data(), static_cast<DWORD>(buffer.size()), &n, &ov);
+            DWORD lastError = ok ? ERROR_SUCCESS : GetLastError();
+            if (!ok && lastError == ERROR_IO_PENDING) {
+                while (!stopRequested_ && WaitForSingleObject(event, 20) == WAIT_TIMEOUT) {
+                    if (!parser.headerSeen() &&
+                        std::chrono::steady_clock::now() - started > std::chrono::milliseconds(options.connectTimeoutMs)) {
+                        error = "Timed out waiting for the capture helper to start";
                         break;
                     }
-                    publish();
-                    continue;
                 }
+                if (stopRequested_ || !error.empty()) CancelIoEx(hPipe, &ov);
+                ok = GetOverlappedResult(hPipe, &ov, &n, TRUE);
+                lastError = ok ? ERROR_SUCCESS : GetLastError();
             }
-            DWORD lastErr = GetLastError();
-            if (lastErr == ERROR_BROKEN_PIPE || lastErr == ERROR_PIPE_NOT_CONNECTED) {
-                if (parser.bytesConsumed() > 0) {
-                    eof = true;
-                } else {
-                    error = "The capture helper ended without sending any data";
-                }
+            if (stopRequested_ || !error.empty()) break;
+            if (!ok) {
+                if (lastError == ERROR_BROKEN_PIPE || lastError == ERROR_PIPE_NOT_CONNECTED) eof = true;
+                else error = "Cannot read the capture pipe: error " + std::to_string(lastError);
                 break;
             }
-            if (gone && parser.bytesConsumed() == 0) {
-                if (producerSeenGone) {
-                    error = "The capture helper ended without sending any data";
-                    break;
-                }
-                producerSeenGone = true;
-            }
-            if (!parser.headerSeen() &&
-                std::chrono::steady_clock::now() - started > std::chrono::milliseconds(options.connectTimeoutMs)) {
-                error = "Timed out waiting for the capture helper to start";
-                break;
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            if (n == 0) { eof = true; break; }
+            if (!parser.feed(buffer.data(), static_cast<size_t>(n))) { error = parser.error(); break; }
+            publish();
         }
+        CloseHandle(event);
         if (stopRequested_) return;
         if (eof && !parser.finish()) error = parser.error();
         publish();

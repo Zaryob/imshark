@@ -1,0 +1,40 @@
+name: Windows capture validation
+on:
+  push:
+    branches: [codex/windows-capture-validation]
+  pull_request:
+    paths:
+      - 'core/**'
+      - 'tests/**'
+      - 'tools/windows_capture_validation/**'
+      - '.github/workflows/windows-capture.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-ipc:
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ilammy/msvc-dev-cmd@v1
+      - name: Fetch checksum-pinned Npcap SDK (no driver install)
+        shell: pwsh
+        run: |
+          Invoke-WebRequest https://npcap.com/dist/npcap-sdk-1.16.zip -OutFile npcap-sdk.zip
+          $expected = 'f0a8be7778ee3ae1b99bbbecb27a3ff0f6c111a4093f1c78c5c5a099607184db'
+          if ((Get-FileHash npcap-sdk.zip -Algorithm SHA256).Hash.ToLowerInvariant() -ne $expected) { throw 'Npcap SDK checksum mismatch' }
+          Expand-Archive npcap-sdk.zip -DestinationPath npcap-sdk
+      - name: Build native IPC tests and Npcap backend compile check
+        shell: pwsh
+        run: |
+          cmake -S tools/windows_capture_validation -B build-windows-capture -G Ninja -DCMAKE_BUILD_TYPE=Release "-DNPCAP_SDK_DIR=$pwd/npcap-sdk"
+          cmake --build build-windows-capture
+      - name: Run native IPC scenarios repeatedly
+        shell: pwsh
+        run: ctest --test-dir build-windows-capture --output-on-failure --repeat until-fail:10
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: windows-capture-validation
+          path: build-windows-capture/Testing/Temporary/*.log

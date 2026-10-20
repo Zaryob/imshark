@@ -109,8 +109,10 @@ TEST(CaptureWorkerArgs, EveryInvalidFormIsRefusedWithAOneLineMessage) {
         {"snaplen overflow", withValue("--snaplen", "99999999999999999999")},
         {"promisc 2", withValue("--promisc", "2")},
         {"promisc word", withValue("--promisc", "true")},
+#ifndef _WIN32
         {"uid zero", withValue("--uid", "0")},
         {"gid zero", withValue("--gid", "0")},
+#endif
         {"uid negative", withValue("--uid", "-1")},
         {"uid all ones", withValue("--uid", "4294967295")},
         {"uid text", withValue("--uid", "root")},
