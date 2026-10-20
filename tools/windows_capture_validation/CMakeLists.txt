@@ -8,7 +8,7 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 add_compile_definitions(NOMINMAX _CRT_SECURE_NO_WARNINGS)
 if(MSVC)
-    add_compile_options(/utf-8 /Zc:__cplusplus /W4 /Gy)
+    add_compile_options(/utf-8 /Zc:__cplusplus /W4)
 endif()
 set(CAPTURE_DIR "${IMSHARK_ROOT}/core/src/capture")
 add_executable(windows_capture_smoke

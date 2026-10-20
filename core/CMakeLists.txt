@@ -3,6 +3,7 @@
 add_library(imshark_core STATIC
     src/capture/capture_worker.cpp
     src/capture/live_capture.cpp
+    src/capture/live_capture_consumer.cpp
     src/capture/live_capture_stream.cpp
     src/capture/pcap_stream.cpp
     src/capture/worker_launch.cpp
