@@ -19,8 +19,8 @@ remain open. The published 1.0.0 ZIP is still an offline-analysis build.
 |---|---|
 | Standalone native IPC executable, using the production capture/worker/stream code | Passed |
 | Npcap-enabled capture backend, compiled and linked against the SDK import library | Passed; executable not run with a driver |
-| Twelve native IPC scenarios, repeated ten times | 120 scenario runs, zero failures |
-| Default offline Windows application and capture/documentation regressions | Pending final job result |
+| Twelve native IPC scenarios, repeated ten times | 120 scenario runs, zero failures (4.72 seconds total) |
+| Default offline Windows application and capture/documentation regressions | Application built; 19 selected CTest checks passed, zero skips/failures (2.01 seconds) |
 | macOS Release build and capture/documentation regressions after the changes | 81 selected tests: 78 passed, 3 skipped, zero failures (3.97 seconds) |
 
 The twelve scenarios cover: exact pcap bytes, one-byte input chunks, malformed/truncated streams retaining earlier
@@ -71,6 +71,9 @@ ctest --test-dir build-windows-capture --output-on-failure --repeat until-fail:1
 The standalone project uses no vcpkg dependencies. With `NPCAP_SDK_DIR`, it also builds `npcap_link_check` to verify the
 Npcap-enabled backend's compilation and linkage; CTest runs the offline IPC executable. In the normal project,
 `windows_capture_native_ipc` is included in CTest on Windows.
+
+The tested source commit above precedes the final documentation and setup-guidance wording changes; the latter were
+also compiled in the local macOS application and do not change the tested IPC logic.
 
 ## Still required for live-capture sign-off
 

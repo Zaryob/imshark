@@ -205,4 +205,3 @@ The workflow runs sanitizer and minimal configurations, verifies Linux in Docker
 The AppImage build tools have fixed versions and SHA-256 checks. Linux GUI screenshots/logs are retained separately as the workflow's `linux-gui-smoke` artifact. Native package archives remain available as workflow artifacts for 14 days, including when a different platform or regression check prevents publication.
 
 To verify a download, place `SHA256SUMS.txt` next to the packages and use `sha256sum --check --ignore-missing SHA256SUMS.txt` on Linux, `shasum -a 256 <file>` on macOS or `Get-FileHash <file> -Algorithm SHA256` in PowerShell, comparing the digest with the matching filename in `SHA256SUMS.txt`.
-

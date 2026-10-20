@@ -172,7 +172,7 @@ embedded TLS secrets.
 ## Live capture
 
 The **Capture** menu needs a build with libpcap (Npcap on Windows); without it the menu is disabled and the tooltip says
-why. Capturing needs privileges: `/dev/bpf*` access on macOS, `CAP_NET_RAW` on Linux, Npcap driver access on Windows (administrator authorization when installed in admin-only mode). ImShark does not elevate the GUI; run it as your normal user. It and tries to open the interface directly first.
+why. Capturing needs privileges: `/dev/bpf*` access on macOS, `CAP_NET_RAW` on Linux, Npcap driver access on Windows (administrator authorization when installed in admin-only mode). ImShark does not elevate the GUI; run it as your normal user. It tries to open the interface directly first.
 If that fails with a permission error, the **Capture problem** window offers **Authorize and capture** (macOS, Linux, and
 Windows via UAC): after you confirm the system's authorization dialog (osascript / pkexec / UAC), a separate helper process
 opens the interface with administrator rights and streams the packets back through a private pipe (UNIX FIFO or Windows

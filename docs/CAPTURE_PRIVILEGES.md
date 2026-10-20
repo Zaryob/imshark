@@ -35,7 +35,7 @@ Doğrudan yol her zaman önce denenir. Yetkilendirme istemi yalnızca **Authoriz
 |---|---|---|
 | macOS | `/dev/bpf*` (Berkeley Packet Filter) | `root:wheel`, mod `0600`; normal kullanıcı için `EACCES` |
 | Linux | `AF_PACKET` ham soketi | `CAP_NET_RAW` (promiscuous için çoğunlukla `CAP_NET_ADMIN`) gerekir; yoksa `EPERM` |
-| Windows | Npcap sürücüsü (`\\.\NPF_*`) | "Restrict Npcap driver's access to Administrators only" seçiliyse yalnızca Administrators ve `npcap-users` açabilir |
+| Windows | Npcap sürücüsü (`\\.\NPF_*`) | "Restrict Npcap driver's access to Administrators only" seçiliyse yönetici yetkilendirmesi gerekir; standart bir kullanıcı grubu varsayılmaz |
 
 ## Worker komut satırı
 
@@ -44,11 +44,13 @@ imshark --capture-worker --interface <ad> --snaplen <64..262144> --promisc <0|1>
         --filter <bpf, boş olabilir> --uid <n> --gid <n> --fifo <mutlak yol>
 ```
 
-* Yedi bayrağın **hepsi** gerekir, her biri **tam bir kez** verilir; her bayrağı bir değer izler (`--bayrak=değer` biçimi yoktur). Bilinmeyen/yinelenen/eksik bayrak, eksik değer, sayısal olmayan veya aralık dışı sayı (snaplen 64..262144), `uid`/`gid` = 0, göreli FIFO yolu, boş veya 255 karakterden uzun arabirim adı reddedilir.
+Windows'ta `--fifo` yerine `--pipe "\\.\pipe\imshark-capture-..."` kullanılır; `--uid 0 --gid 0` kabul edilir. POSIX yetki bırakma adımları Windows'ta uygulanmaz. Pipe ve FIFO aynı çağrıda verilemez.
+
+* Yedi bayrağın **hepsi** gerekir, her biri **tam bir kez** verilir; her bayrağı bir değer izler (`--bayrak=değer` biçimi yoktur). Bilinmeyen/yinelenen/eksik bayrak, eksik değer, sayısal olmayan veya aralık dışı sayı (snaplen 64..262144), POSIX üzerinde `uid`/`gid` = 0, göreli FIFO yolu, boş veya 255 karakterden uzun arabirim adı reddedilir.
 * Değerler **olduğu gibi** alınır: tırnak, boşluk, `$()`, ters tırnak, satır sonu hiçbir zaman yorumlanmaz. Worker'ın hiçbir yerinde shell yoktur.
-* Ortam değişkenlerine güvenilmez: worker başlar başlamaz ortamı boşaltır. `umask 077` ve `RLIMIT_CORE=0` ayarlanır.
+* Linux/macOS üzerinde worker başlar başlamaz ortamı boşaltır. `umask 077` ve `RLIMIT_CORE=0` ayarlanır; Windows yardımcısında bu POSIX işlemleri yoktur.
 * Arabirim adı `pcap_findalldevs` listesinde yoksa çıkar.
-* Çıkış kodları (stderr'e tek satır mesaj yazılır, arayüz bunu hata metni olarak gösterir):
+* Çıkış kodları (stderr'e tek satır mesaj yazılır, Linux/macOS arayüzü bunu hata metni olarak gösterir; Windows UAC yardımcısında stderr toplanmaz):
 
 | Kod | Anlam |
 |---|---|
@@ -63,9 +65,9 @@ imshark --capture-worker --interface <ad> --snaplen <64..262144> --promisc <0|1>
 | 9 | Yakalama sırasında hata (aygıt kayboldu vb.) |
 | 10 | Bu derlemede canlı yakalama / worker yok |
 
-Worker root olarak çalışmıyorsa bırakacak yetki yoktur; bu durumda `--uid/--gid` mevcut kullanıcınınkiyle aynı olmalıdır, aksi halde 7 ile çıkar. (Elle çalıştırıp hata yollarını denemek için kullanışlıdır.)
+Linux/macOS üzerinde worker root olarak çalışmıyorsa bırakacak yetki yoktur; bu durumda `--uid/--gid` mevcut kullanıcınınkiyle aynı olmalıdır, aksi halde 7 ile çıkar. (Elle çalıştırıp hata yollarını denemek için kullanışlıdır.)
 
-## Yetkinin bırakılması
+## Linux/macOS üzerinde yetkinin bırakılması
 
 Sıra önemlidir ve kod bu sırayı izler (`core/src/capture/capture_worker.cpp`):
 
@@ -80,7 +82,7 @@ Sıra önemlidir ve kod bu sırayı izler (`core/src/capture/capture_worker.cpp`
 ## Başlatma (arayüz tarafı)
 
 * **Özel dizin ve FIFO:** `mkdtemp` ile `imshark-capture-XXXXXX` (mod `0700`, sahibi kullanıcı; kod `lstat` ile doğrular), içinde `mkfifo("capture.fifo", 0600)`. FIFO'nun okuma ucu önce engellemesiz açılır (`O_RDONLY|O_NONBLOCK`), böylece worker'ın açışı beklemez.
-* **Süreç:** argüman **vektörü** `posix_spawn` ile, arka plan thread'inde başlatılır; arayüz hiç bloklanmaz ve "Waiting for administrator authorization..." penceresi **Cancel** düğmesiyle gösterilir. Hiçbir yerde `std::system`, `popen` veya değer birleştirilmiş bir shell satırı yoktur. Çocuğun stdin/stdout'u `/dev/null`, stderr'i bir boru; macOS'ta `POSIX_SPAWN_CLOEXEC_DEFAULT` ile başka hiçbir tanıtıcı çocuğa geçmez. Yürütülebilir dosya yolu `/proc/self/exe` (Linux) veya `_NSGetExecutablePath` + `realpath` (macOS) ile çözülür; `pkexec` ve `osascript` mutlak yollarıyla (`/usr/bin/...`) çağrılır, `PATH` aranmaz.
+* **Linux/macOS süreç başlatma:** argüman **vektörü** `posix_spawn` ile, arka plan thread'inde başlatılır; arayüz hiç bloklanmaz ve "Waiting for administrator authorization..." penceresi **Cancel** düğmesiyle gösterilir. Hiçbir yerde `std::system`, `popen` veya değer birleştirilmiş bir shell satırı yoktur. Çocuğun stdin/stdout'u `/dev/null`, stderr'i bir boru; macOS'ta `POSIX_SPAWN_CLOEXEC_DEFAULT` ile başka hiçbir tanıtıcı çocuğa geçmez. Yürütülebilir dosya yolu `/proc/self/exe` (Linux) veya `_NSGetExecutablePath` + `realpath` (macOS) ile çözülür; `pkexec` ve `osascript` mutlak yollarıyla (`/usr/bin/...`) çağrılır, `PATH` aranmaz.
 * **Linux:** `/usr/bin/pkexec <mutlak-yol>/imshark --capture-worker ...` (pkexec programı doğrudan `exec` eder; arada shell yoktur). pkexec yoksa ("pkexec could not be started"), polkit kimlik doğrulama ajanı yoksa veya pencere kapatılırsa (çıkış kodu 127 / 126) açık bir mesaj gösterilir.
 * **macOS:** `/usr/bin/osascript -e <satır> -e <satır> ... -- <yol>/imshark --capture-worker ...`. Betik sabit bir şablondur (`osascriptScript()`), hiçbir kullanıcı değeri içermez:
 
@@ -126,7 +128,7 @@ ImShark şunları **yapmaz**: `chmod`/`chown` ile aygıt izinlerini değiştirme
 * **AppImage:** `pkexec`, yürütülebilir dosyanın yolunun mutlak ve kalıcı olmasını bekler. AppImage `/tmp/.mount_*` altına bağlanır ve root'a (FUSE'un `allow_other` olmaması nedeniyle) görünmeyebilir; bu durumda "Authorize and capture" başarısız olur. Yolu aynen çalıştırırız; AppImage dosyasını sistem yoluna çıkarın (`--appimage-extract`) veya aşağıdaki kalıcı yöntemlerden birini kullanın.
 * **Polkit ajanı yok** (başsız oturum, bazı hafif pencere yöneticileri): pkexec 127 ile döner; mesaj bunu söyler.
 * **Güven:** yetkilendirilen dosya, çalışan ImShark yürütülebilir dosyasının kendisidir. Kullanıcının yazabildiği bir dizindeki (ör. `~/build`) ikili için bu, o dosyayı değiştirebilen herhangi bir kullanıcı süreciyle sınırlı bir güven demektir; üretimde ikiliyi root sahipli bir dizine (`/usr/bin`, `/Applications`) kurun.
-* Worker yalnızca birincil `gid`'i korur; kullanıcının ek grup üyelikleri bırakılır. Bu yakalama için gerekmez; FIFO zaten kullanıcının kendi dizinindedir.
+* Linux/macOS worker'ı yalnızca birincil `gid`'i korur; kullanıcının ek grup üyelikleri bırakılır. Bu yakalama için gerekmez; FIFO zaten kullanıcının kendi dizinindedir.
 * macOS'ta çökmüş bir arayüzün ardından boştaki bir worker bir sonraki pakete kadar yaşayabilir (FIFO okuyucusu `poll` ile görünmez; ilk yazma `EPIPE` verir). Linux'ta çekirdek `PDEATHSIG` ile sonlandırır.
 * Windows: Derleme için Npcap SDK'sı, çalıştırma için Npcap sürücüsü gereklidir; yönetici yetkisi gerektiğinde UAC ve Named Pipe üzerinden worker kullanılır. Admin-only sürücü kurulumu için "Authorize and capture" ile UAC onayı gerekir; standart bir `npcap-users` grubu olduğu varsayılmaz. [Doğrulama kontrol listesi](RELEASING.md#10-windows-live-capture-checklist) açık kontrolleri tutar.
 * Gerçek yetkili yakalama bir insan onayı gerektirdiği için bu depodaki otomatik testler gerçek `pkexec`/`osascript` çağırmaz; POSIX akışı sahte süreç başlatıcıyla (borular ve `/bin/sh`) sınanır. Windows IPC kontrolleri gerçek Named Pipe ve süreç API'lerini kullanır; sürücü ve etkileşimli UAC kontrollerinin yerine geçmez.
