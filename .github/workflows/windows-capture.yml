@@ -38,3 +38,28 @@ jobs:
         with:
           name: windows-capture-validation
           path: build-windows-capture/Testing/Temporary/*.log
+  offline-regression:
+    runs-on: windows-2025
+    timeout-minutes: 45
+    env:
+      VCPKG_ROOT: ${{ github.workspace }}/.vcpkg
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/.vcpkg-cache,readwrite
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ilammy/msvc-dev-cmd@v1
+      - uses: ./.github/actions/setup-vcpkg
+        with:
+          cache-scope: default
+      - name: Build default offline application and regression tests
+        shell: pwsh
+        run: |
+          cmake --preset default -DIMSHARK_LIVE_CAPTURE=OFF
+          cmake --build --preset default --parallel 4 --target imshark imshark_tests windows_capture_smoke
+      - name: Run capture and documentation regressions without Npcap
+        shell: pwsh
+        run: ctest --test-dir build --output-on-failure -R '^(CaptureWorkerArgs\.|WorkerLaunch\.|LiveCapture\.|Docs\.|windows_capture_native_ipc)' --parallel 1
+      - uses: actions/upload-artifact@v6
+        if: always()
+        with:
+          name: windows-offline-regressions
+          path: build/Testing/Temporary/*.log
