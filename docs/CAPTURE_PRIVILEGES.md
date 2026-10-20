@@ -1,10 +1,10 @@
 # Canlı Yakalama Yetkileri ve Yetkili Capture Worker
 
-Ağ arabiriminden paket yakalamak (packet sniffing) her işletim sisteminde ayrıcalıklı bir işlemdir. ImShark arayüzü (OpenGL, Dear ImGui, onlarca protokol çözücü ve dosya ayrıştırıcı) **hiçbir zaman** yönetici yetkisiyle çalışmaz. Aygıt doğrudan açılamazsa ve kullanıcı açıkça onaylarsa, ImShark aynı çalıştırılabilir dosyayı `--capture-worker` kipinde, yalnızca aygıtı açmak için yetkili olan küçük bir yardımcı süreç olarak başlatır. Yardımcı aygıtı açar, **yetkilerini geri alınamaz biçimde bırakır** ve paketleri kullanıcının sahip olduğu özel bir FIFO üzerinden arayüze akıtır.
+Ağ arabiriminden paket yakalamak (packet sniffing) her işletim sisteminde ayrıcalıklı bir işlemdir. ImShark arayüzü (OpenGL, Dear ImGui, onlarca protokol çözücü ve dosya ayrıştırıcı) kendisi için yönetici yetkisi istemez; normal kullanıcı olarak çalıştırılmalıdır. Aygıt doğrudan açılamazsa ve kullanıcı açıkça onaylarsa, ImShark aynı çalıştırılabilir dosyayı `--capture-worker` kipinde, aygıtı açıp paket akışını ileten küçük bir yardımcı süreç olarak başlatır. Linux/macOS yardımcısı aygıtı açar, **yetkilerini geri alınamaz biçimde bırakır** ve paketleri kullanıcının sahip olduğu özel bir FIFO üzerinden arayüze akıtır. İsteğe bağlı Windows/Npcap derlemesinde yardımcı UAC ile başlatılır ve yetkili token'ını koruyarak özel bir Named Pipe üzerinden paket gönderir; yerel Windows IPC kontrolleri geçti, gerçek Npcap aygıtı ve etkileşimli UAC doğrulaması henüz tamamlanmadı ([kayıt](WINDOWS_CAPTURE_VALIDATION.md)).
 
 Bu belge kodun yaptığını olduğu gibi anlatır. Sistem genelinde hiçbir izin, capability veya grup değişikliği yapılmaz.
 
-## Akış
+## Linux/macOS akışı
 
 ```mermaid
 flowchart TD
@@ -107,9 +107,11 @@ Sıra önemlidir ve kod bu sırayı izler (`core/src/capture/capture_worker.cpp`
 * her kayıtta `incl_len <= snaplen` ve `<= 262144`, zaman damgası kesri aralık içinde; aşırı uzunluk için bellek ayrılmaz;
 * başlık veya kayıt ortasında EOF hata sayılır, kayıt sınırında EOF temiz bitiştir; hatadan önceki paketler korunur.
 
-Doğrulanan kayıtlar, kütüphane thread'inin kullandığı **aynı** yoldan (`writeRecord`/`publish`) geçici pcap dosyasına yazılır, dolayısıyla paket listesi, dışa aktarma ve ayrıntılar doğrudan yakalamayla aynıdır. Worker `pcap_stats` iletmediğinden bu oturumda "dropped" sayacı 0 görünür. Worker'ın stderr'i bir boruyla toplanır; çıkış kodu ve metin (`pkexec` 126/127, `osascript` -128, worker'ın kendi satırı) arayüzdeki hata metnini oluşturur.
+Doğrulanan kayıtlar, kütüphane thread'inin kullandığı **aynı** yoldan (`writeRecord`/`publish`) geçici pcap dosyasına yazılır, dolayısıyla paket listesi, dışa aktarma ve ayrıntılar doğrudan yakalamayla aynıdır. Worker `pcap_stats` iletmediğinden bu oturumda "dropped" sayacı 0 görünür. Linux/macOS worker'ının stderr'i bir boruyla toplanır; çıkış kodu ve metin (`pkexec` 126/127, `osascript` -128, worker'ın kendi satırı) arayüzdeki hata metnini oluşturur.
 
-## Ömür ve temizlik
+Windows yardımcısının stderr çıktısı toplanmaz; UAC başlatma hatası veya worker çıkış kodu gösterilir. Named Pipe bağlantısı ve okumaları overlapped I/O kullanır; iptalde bekleyen işlem tamamlanmadan OVERLAPPED durumu serbest bırakılmaz.
+
+## Linux/macOS ömür ve temizlik
 
 * **Stop, Cancel veya oturum sonu:** okuma ucu kapatılır (worker `EPIPE`/`POLLHUP` ile çıkar), yardımcı süreç sonlandırılması istenir (`SIGTERM`; 1,5 sn sonra hâlâ yaşıyorsa `SIGKILL`; süreç arka plan thread'inde `waitpid` ile toplanır, arayüz beklemez), FIFO ve dizin silinir. Aynısı hata durumunda (yetkilendirme reddi, bozuk akış, spawn hatası) ve `LiveCapture` yıkıcısında da olur.
 * Sinyaller: Linux'ta pkexec yetkilendirme sürerken kullanıcının gerçek kimliğiyle çalıştığı, worker da yetkisini bıraktıktan sonra kullanıcıya ait olduğu için arayüz bunlara `SIGTERM` gönderebilir. Yetkili (root) aşamadaki bir worker sinyal almayabilir; ona FIFO'nun kapanması yeter. macOS'ta `osascript` kullanıcıya aittir ve sonlandırılır; root olarak çalışan worker ise FIFO kapandığı için kendiliğinden çıkar.
@@ -126,8 +128,8 @@ ImShark şunları **yapmaz**: `chmod`/`chown` ile aygıt izinlerini değiştirme
 * **Güven:** yetkilendirilen dosya, çalışan ImShark yürütülebilir dosyasının kendisidir. Kullanıcının yazabildiği bir dizindeki (ör. `~/build`) ikili için bu, o dosyayı değiştirebilen herhangi bir kullanıcı süreciyle sınırlı bir güven demektir; üretimde ikiliyi root sahipli bir dizine (`/usr/bin`, `/Applications`) kurun.
 * Worker yalnızca birincil `gid`'i korur; kullanıcının ek grup üyelikleri bırakılır. Bu yakalama için gerekmez; FIFO zaten kullanıcının kendi dizinindedir.
 * macOS'ta çökmüş bir arayüzün ardından boştaki bir worker bir sonraki pakete kadar yaşayabilir (FIFO okuyucusu `poll` ile görünmez; ilk yazma `EPIPE` verir). Linux'ta çekirdek `PDEATHSIG` ile sonlandırır.
-* Windows: Npcap sürücüsü ve SDK'sı gereklidir; yönetici yetkisi gerektiğinde UAC ve Named Pipe üzerinden worker kullanılır. Sürücüye erişim kısıtlıysa kullanıcı `npcap-users` grubuna eklenebilir veya "Authorize and capture" ile UAC onayı verilebilir.
-* Gerçek yetkili yakalama bir insan onayı gerektirdiği için bu depodaki otomatik testler gerçek `pkexec`/`osascript` çağırmaz; sahte süreç başlatıcıyla (borular ve `/bin/sh`) tüm akış sınanır.
+* Windows: Derleme için Npcap SDK'sı, çalıştırma için Npcap sürücüsü gereklidir; yönetici yetkisi gerektiğinde UAC ve Named Pipe üzerinden worker kullanılır. Admin-only sürücü kurulumu için "Authorize and capture" ile UAC onayı gerekir; standart bir `npcap-users` grubu olduğu varsayılmaz. [Doğrulama kontrol listesi](RELEASING.md#10-windows-live-capture-checklist) açık kontrolleri tutar.
+* Gerçek yetkili yakalama bir insan onayı gerektirdiği için bu depodaki otomatik testler gerçek `pkexec`/`osascript` çağırmaz; POSIX akışı sahte süreç başlatıcıyla (borular ve `/bin/sh`) sınanır. Windows IPC kontrolleri gerçek Named Pipe ve süreç API'lerini kullanır; sürücü ve etkileşimli UAC kontrollerinin yerine geçmez.
 
 ## Kalıcı alternatifler (kendi sorumluluğunuzda)
 
@@ -158,8 +160,4 @@ Yalnızca grup üyeleri ikiliyi çalıştırabilir. Her güncellemeden sonra `se
 
 ### Windows: Npcap
 
-[Npcap](https://npcap.com) kurun. Sürücü yalnızca Administrators'a kısıtlıysa kullanıcıyı `npcap-users` grubuna ekleyin (yönetici komut isteminde) ve oturumu kapatıp açın; ya da ImShark'ı yönetici olarak başlatın:
-
-```cmd
-net localgroup npcap-users "%USERNAME%" /add
-```
+[Npcap](https://npcap.com) sürücüsünü kurun. Yönetici erişimi gereksinimi kurulumdaki **Restrict Npcap driver's access to Administrators only** seçeneğine bağlıdır; [resmî kullanıcı rehberine](https://npcap.com/guide/npcap-users-guide.html) bakın. ImShark sürücü izinlerini veya yerel grupları değiştirmez. Npcap destekli derlemede erişim reddedilirse **Authorize and capture** yolunu kullanın; bütün arayüzü yönetici olarak çalıştırmak ayrıştırıcıları da yetkilendirir.

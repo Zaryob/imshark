@@ -1,6 +1,6 @@
 # ImShark yol haritası
 
-Öncelik sırası doğruluk, doğrulanabilirlik ve kullanılabilirliktir. Bu dosya henüz tamamlanmamış işleri tutar; mevcut özelliklerin referansı [destek matrisi](docs/SUPPORT_MATRIX.md), işlevsel sınırların referansı [bilinen sorunlar](docs/KNOWN_ISSUES.md) dosyasıdır. Sürümleme henüz `v1.x` aşamasına geçmemiştir; sürümler `v0.x.y` serisi üzerinden SemVer ile ilerler (`v0.8.x` → `v0.9.x` → `v0.10.x` ...). Eski taahhüt ve plan notlarındaki tarihsel başlıklar (`v1.1`–`v1.9` gibi) yayın sürümü değildi; gerçek sürüm `CMakeLists.txt` ve `vcpkg.json` içindeki `project(... VERSION ...)` değeridir. `v1.0.0` sürümü yol haritasındaki bağımsız doğrulama, üretici yakalama karşılaştırmaları ve çoklu platform paketleme denetimleri tamamlandığında hedeflenecektir.
+Öncelik sırası doğruluk, doğrulanabilirlik ve kullanılabilirliktir. Bu dosya henüz tamamlanmamış işleri tutar; mevcut özelliklerin referansı [destek matrisi](docs/SUPPORT_MATRIX.md), işlevsel sınırların referansı [bilinen sorunlar](docs/KNOWN_ISSUES.md) dosyasıdır. Güncel kaynak sürümü ve yayımlanmış kararlı sürüm `1.0.0`'dır; sürümün kaynağı `CMakeLists.txt` içindeki `project(... VERSION ...)` ve `vcpkg.json` içindeki `version` değeridir. Sonraki sürümler SemVer ve [1.x uyumluluk sözü](docs/COMPATIBILITY.md) ile ilerler. Eski plan notlarındaki tarihsel başlıklar (`v1.1`–`v1.9` gibi) yayımlanmış sürümler değildir. Bağımsız corpus doğrulaması ve temiz makine testleri aşağıda açık işler olarak izlenir; 1.0.0 yayımlanmış olması bu kontrollerin tamamlandığı anlamına gelmez.
 
 ## Doğruluk ve gerçek veri
 
@@ -35,13 +35,13 @@ Her başlık bağımsız bir çalışma olarak ele alınmalıdır. Protokol adı
 - [ ] macOS Developer ID imzası ve noter onayı; Linux/Windows paketlerinin bağımlılık ve lisanslarını temiz makinelerde denetle.
 - [x] Etiket tetiklemeli release iş akışının gerçek çalışmasını ve üretilen AppImage/DMG/ZIP paketlerini doğrula ([v0.9.2](https://github.com/Zaryob/imshark/releases/tag/v0.9.2): bütün platform kontrolleri geçti, SHA256SUMS ve DMG içindeki uygulama sürümü doğrulandı).
 
-## 1.0 kapısı
+## 1.0 teslim kaydı ve açık doğrulamalar
 
 `v1.0.0` için engelleyici işler ve durumları. Kod tarafındaki bütün engeller `master` üzerinde birleştirildi; Windows temiz makine testi 1.0'da yapılmadı ve bilinen sınır olarak kaldı.
 
 | İş | Durum | Bağlantı |
 |---|---|---|
-| Güvenli yakalama yardımcısı (ayrıcalıklı süreç yalnızca aygıtı açar, sonra yetkilerini bırakır; sistem genelinde izin değişikliği yok) | tamamlandı | [#8](https://github.com/Zaryob/imshark/pull/8) |
+| Linux/macOS yakalama yardımcısı (ayrıcalıklı süreç yalnızca aygıtı açar, sonra yetkilerini bırakır; sistem genelinde izin değişikliği yok) | tamamlandı | [#8](https://github.com/Zaryob/imshark/pull/8) |
 | Fuzzing (libFuzzer koşum takımları, CI'da çalıştırma, bulunan ayrıştırıcı hatalarının düzeltilmesi) | tamamlandı | [#13](https://github.com/Zaryob/imshark/pull/13) |
 | Statik analiz (CodeQL, clang-tidy, tek uyarı kümesi) | tamamlandı | [#12](https://github.com/Zaryob/imshark/pull/12) |
 | Ayar dosyası sürümü, uyumluluk sözü ve tehdit modeli | tamamlandı | [#10](https://github.com/Zaryob/imshark/pull/10) |
@@ -52,7 +52,7 @@ Her başlık bağımsız bir çalışma olarak ele alınmalıdır. Protokol adı
 | macOS ad hoc imza | bilinçli karar: 1.0 için Developer ID imzası ve noter onayı yok; kullanıcılar Gatekeeper'da "Open Anyway" adımını izler | [RELEASING.md](docs/RELEASING.md#7-macos-signing) |
 | Düzenli ifadelerin sınırlı PCRE2 ile değerlendirilmesi (fuzzing'in bulduğu ReDoS) | tamamlandı | [#15](https://github.com/Zaryob/imshark/pull/15) |
 
-Sürüm `1.0.0` etiketlenmeden önce bu tablodaki her satır `tamamlandı` olmalı ya da açıkça kabul edilmiş bir karar olmalıdır.
+Bu tablo 1.0 hazırlığının tarihsel kaydıdır. Açık doğrulamalar sonraki sürümler için izlenmeye devam eder.
 
 ## 1.0 sonrası
 
@@ -66,6 +66,8 @@ Bunlar 1.0'ı engellemez; sıralama bağlayıcı değildir.
 - [ ] Erişilebilirlik: klavyeyle gezinme, yazı ölçekleme ve renk körlüğüne uygun renk kuralları.
 - [ ] Linux arm64 ve Flatpak paketleri.
 - [ ] macOS Intel paketi.
-- [ ] Yetkili yakalamanın Windows'ta da yardımcı süreçle yapılması (şimdi Windows paketinde canlı yakalama yoktur).
+- [x] Windows kaynak koduna UAC ve Named Pipe üzerinden yetkili yakalama yardımcısı ekle (Npcap ile isteğe bağlı derleme; yayımlanmış ZIP çevrimdışıdır).
+- [x] Windows Named Pipe ve süreç senaryolarını yerel Windows API'leriyle sınayan otomatik kontroller; Npcap SDK ile derleme/bağlama kontrolü ([doğrulama kaydı](docs/WINDOWS_CAPTURE_VALIDATION.md)).
+- [ ] Windows yardımcısının gerçek Npcap aygıtıyla UAC kabul/iptal, başlat/durdur/yeniden başlat ve dışa aktarma senaryolarını doğrula ([kontrol listesi](docs/RELEASING.md#10-windows-live-capture-checklist)).
 
 Tam Wireshark eşdeğerliği, bütün SampleCaptures koleksiyonunu eksiksiz çözme ve medya çözümü şu anki hedefler arasında değildir. Yeni protokol sayısından önce mevcut çıktının doğruluğu gelir.

@@ -162,15 +162,18 @@ Threats: an expression that makes the compiler or evaluator consume unbounded CP
 expression (D); a filter that is wrongly accepted and hides packets (T in the sense of misleading display).
 
 Mitigations: the filter is compiled once into a tree, errors are reported with a position and never abort the program
-(`core/src/filter/filter.cpp`; `std::regex_error` is caught at `filter.cpp:355-358`). Coloring rule lines are parsed strictly
+(`core/src/filter/filter.cpp`, `core/src/filter/bounded_regex.cpp`). Coloring rule lines are parsed strictly
 (six fields, hexadecimal colors of exactly six digits, expression without tabs: `src/ui/color_rules.cpp:99-114`; tests in
 `tests/test_color_rules.cpp`) and invalid rules are skipped. Filters read the packet summary, never the raw buffer.
 Filter history is capped at 15 entries and settings cannot grow without bound (`Settings::kMaxFilterHistory`).
 
-Residual risk: `matches` uses `std::regex` (ECMAScript), which can be slow on some patterns and deep on recursion for long
-inputs. A pathological pattern can make a filter run very slowly or exhaust the stack. The pattern is typed by the user or pasted by the user into a settings file, so
-the attacker needs the user's help. How regular expressions are threaded and bounded is being reworked separately;
-the answer will be reflected here.
+Display filters run against a packet snapshot on a background thread with progress and cancellation. `matches` uses
+PCRE2 in interpreter mode with per-search match (100000), depth (1000) and heap (1 MiB) limits. A limit hit counts as
+no match and is reported in the status bar. Coloring rules use the same bounded engine.
+
+Residual risk: limits bound individual searches, not the total work over an arbitrarily large capture or many coloring
+rules. Snapshot creation and publishing the filtered list still run on the UI thread. A limit hit can hide a packet that
+would match with a larger budget; the status indication must be considered when interpreting the result.
 
 ### 3.7 Drag-and-drop, command-line paths, exports, temporary files
 
@@ -203,8 +206,10 @@ filter reaching privileged code (E, T); captured packets written where the user 
 chose (T); a remote host sending traffic crafted to crash the viewer (D).
 
 Design (see [CAPTURE_PRIVILEGES.md](CAPTURE_PRIVILEGES.md) for the authoritative description): the GUI and the dissectors
-never run with elevated privileges. A separate helper may open the interface with administrator rights and drops those
-rights before it touches any user file. Packets cross from the helper to the unprivileged GUI, which parses them like any
+never run with elevated privileges. On Linux/macOS, a separate helper may open the interface with administrator rights and drops those
+rights before it touches any user file. The optional Windows helper uses UAC and retains its elevated token while
+streaming Npcap packets through a private Named Pipe; [native IPC tests](WINDOWS_CAPTURE_VALIDATION.md) pass, while
+real-driver capture and interactive UAC validation remain pending. Packets cross from the helper to the unprivileged GUI, which parses them like any
 other untrusted data. Inputs sent to the helper (interface name, snap length, promiscuous flag, filter text) are treated as
 untrusted by the helper.
 
@@ -215,7 +220,7 @@ Live frames use exactly the same parsing paths as files, so 3.1 applies to them.
 
 Residual risk: a vulnerability in the helper, or in libpcap/Npcap, is out of ImShark's control and could give the attacker the
 helper's rights. Until the helper is the only way to capture, granting capabilities directly to the GUI binary (as the build
-guide describes for `CAP_NET_RAW`) means a dissector bug would run with them. Prefer the helper once available. A remote
+guide describes for `CAP_NET_RAW`) means a dissector bug would run with them. Prefer the helper over granting privileges to the GUI. A remote
 attacker can always cause *some* traffic to be captured and displayed; they cannot choose where it is saved.
 
 ### 3.9 Packaging and supply chain

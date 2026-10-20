@@ -122,7 +122,17 @@ Offline analysis needs no capture privileges. On macOS, live capture needs acces
 sudo setcap cap_net_raw,cap_net_admin=eip ./build/imshark
 ```
 
-Rebuilding replaces the executable and can remove these capabilities. Windows live capture is an advanced configuration: install the Npcap runtime driver and obtain its SDK, enable `IMSHARK_LIVE_CAPTURE` and set `NPCAP_SDK_DIR` to the SDK directory. The vcpkg libpcap Windows port's default null backend is not a replacement for Npcap capture support.
+Rebuilding replaces the executable and can remove these capabilities. Prefer **Authorize and capture** to granting capabilities to the GUI; see [Capture privileges](CAPTURE_PRIVILEGES.md). Windows live capture is an advanced configuration: install the Npcap runtime driver and obtain its SDK, enable `IMSHARK_LIVE_CAPTURE` and set `NPCAP_SDK_DIR` to the SDK directory. The SDK is a build dependency; the installed driver is a runtime dependency. Default Windows CI and release packages leave this option disabled. The source includes UAC authorization and Named Pipe IPC, but real Windows/Npcap validation is pending ([checklist](RELEASING.md#10-windows-live-capture-checklist)).
+
+Use a separate directory for the Npcap build, from a Visual Studio developer PowerShell:
+
+```powershell
+cmake --preset default -B build-npcap -DIMSHARK_LIVE_CAPTURE=ON -DNPCAP_SDK_DIR="C:/Npcap SDK"
+cmake --build build-npcap
+ctest --test-dir build-npcap --output-on-failure
+```
+
+Npcap runtime DLL discovery must also be checked on the target machine; SDK link success alone does not verify that the application can start. The vcpkg libpcap Windows port's default null backend is not a replacement for Npcap capture support.
 
 ## Linux Docker verification
 
@@ -195,3 +205,4 @@ The workflow runs sanitizer and minimal configurations, verifies Linux in Docker
 The AppImage build tools have fixed versions and SHA-256 checks. Linux GUI screenshots/logs are retained separately as the workflow's `linux-gui-smoke` artifact. Native package archives remain available as workflow artifacts for 14 days, including when a different platform or regression check prevents publication.
 
 To verify a download, place `SHA256SUMS.txt` next to the packages and use `sha256sum --check --ignore-missing SHA256SUMS.txt` on Linux, `shasum -a 256 <file>` on macOS or `Get-FileHash <file> -Algorithm SHA256` in PowerShell, comparing the digest with the matching filename in `SHA256SUMS.txt`.
+

@@ -474,9 +474,9 @@ namespace {
             }
             if (ImGui::CollapsingHeader("Windows: Npcap", winOpen)) {
                 ImGui::TextWrapped("Install Npcap from https://npcap.com. If the driver is restricted to Administrators, use 'Authorize and capture' "
-                                   "for single-session UAC authorization, or add your user to the npcap-users group (run in an elevated Command Prompt, "
-                                   "then sign out and in). The default release build for Windows has live capture disabled unless built with the Npcap SDK.");
-                commandLine("win1", "net localgroup npcap-users \"%USERNAME%\" /add");
+                                   "for single-session UAC authorization. Driver access depends on Npcap's admin-only installation option; "
+                                   "ImShark does not change local groups or driver permissions. Windows live capture requires an Npcap-enabled build "
+                                   "and the installed driver; the published Windows package supports offline analysis.");
             }
         }
         ImGui::End();

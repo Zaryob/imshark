@@ -4,7 +4,15 @@ All notable changes to ImShark are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project follows [Semantic Versioning](https://semver.org/). Detailed per-release notes, including the download table, live in [docs/releases/](docs/releases/). Procedure: [docs/RELEASING.md](docs/RELEASING.md).
 
-Only the packages of **0.9.2** were ever published on GitHub Releases. Earlier tags exist in the repository but produced no packages; the entries below say why.
+Packages for **0.9.2** and **1.0.0** were published on GitHub Releases. The 0.9.0 and 0.9.1 tags produced no packages; the entries below say why.
+
+## [Unreleased]
+
+### Added
+- Optional Windows live capture helper using UAC authorization and a private Named Pipe. Requires an Npcap-enabled build and installed driver; native IPC and SDK compile/link checks pass, while real-driver and interactive UAC validation remain pending ([record](docs/WINDOWS_CAPTURE_VALIDATION.md)). The published 1.0.0 ZIP remains an offline-analysis build.
+
+### Fixed
+- Preserve empty BPF filters when launching the Windows helper, use overlapped reads correctly, report failed authorization promptly, and drain the worker stream before a clean EOF. Native pipe regressions run on Windows without requiring an installed driver.
 
 ## [1.0.0] - 2026-10-10
 

@@ -159,7 +159,7 @@ reported in the header line.
 ## Export
 
 **File > Export Packets...** writes **All packets**, **Displayed packets** (those passing the filter) or the
-**Selected packet** as **pcapng**, classic **pcap** (original frames and timestamps; microsecond resolution), **CSV** or
+**Selected packet** as **pcapng**, classic **pcap** (original frames and timestamps; nanosecond precision is preserved for nanosecond inputs), **CSV** or
 **JSON** (the packet list columns). Export runs in the background with Cancel; a cancelled export leaves no partial file.
 CSV/JSON tables follow the sorted packet list; capture files retain capture order. Follow Stream's **Save As...** writes the raw bytes of the stream. Pcapng exports preserve embedded TLS secrets, even when exporting a packet subset.
 
@@ -172,8 +172,7 @@ embedded TLS secrets.
 ## Live capture
 
 The **Capture** menu needs a build with libpcap (Npcap on Windows); without it the menu is disabled and the tooltip says
-why. Capturing needs privileges: `/dev/bpf*` access on macOS, `CAP_NET_RAW` on Linux, administrator rights or `npcap-users`
-group membership on Windows. ImShark itself always runs as your normal user and tries to open the interface directly first.
+why. Capturing needs privileges: `/dev/bpf*` access on macOS, `CAP_NET_RAW` on Linux, Npcap driver access on Windows (administrator authorization when installed in admin-only mode). ImShark does not elevate the GUI; run it as your normal user. It and tries to open the interface directly first.
 If that fails with a permission error, the **Capture problem** window offers **Authorize and capture** (macOS, Linux, and
 Windows via UAC): after you confirm the system's authorization dialog (osascript / pkexec / UAC), a separate helper process
 opens the interface with administrator rights and streams the packets back through a private pipe (UNIX FIFO or Windows

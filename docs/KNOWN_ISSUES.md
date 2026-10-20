@@ -56,11 +56,11 @@ Anahtar günlüğünü değiştirmek açık dosyayı yeniden yükler. Canlı yak
 - Snoop yalnızca sürüm 2, NetMon yalnızca 2.x, iptrace yalnızca 2.0 alt kümesini okur. NetMon dosya sonu çerçeve tablosu kesilmişse önceki paketler de yüklenemez; başlıktaki SYSTEMTIME UTC kabul edilir. Metaveri tablolarının çoğu okunmaz.
 - ERF sayaç/META kayıtlarını atlar; bazı taşıma türleri ham veridir. İlk kayıtla sezgisel tanıma bozuk bir dosyayı yanlışlıkla ERF sayabilir. Ethernet FCS uzunluğu bilinmez.
 - AIX iptrace yerleşimi gerçek AIX çıktısıyla doğrulanmamıştır; bu okuyucunun sonuçlarına özellikle temkinli yaklaşılmalıdır. Eşlenemeyen ortamlar desteklenmeyen link türü olarak korunur.
-- Pcap/pcapng dışa aktarımı mikro-saniye çözünürlüğündedir; nanosaniye girişin son üç hanesi korunmaz. Klasik pcap tek link türü taşır ve pcapng metaverisini/gömülü sırlarını korumaz.
+- Pcap/pcapng dışa aktarımı nanosaniyelik girişin hassasiyetini korur (pcap nanosaniye sihirli sayısı, pcapng `if_tsresol`); CSV/JSON zaman alanları da bu hassasiyeti taşır. Klasik pcap tek link türü taşır ve pcapng metaverisini/gömülü sırlarını korumaz.
 
 ## Arayüz, canlı yakalama ve bellek
 
-- Düzenli ifade (`matches`) filtreleri UI iş parçacığında çalışır; büyük yakalamada gecikmeye yol açabilir. Filtreler özet alanlarını kullanır, ayrıntı ağacındaki her alan süzgeçlenemez.
+- Görüntüleme filtreleri ilerleme ve iptal desteğiyle arka planda değerlendirilir. `matches`, PCRE2 eşleşme/derinlik/bellek sınırlarını kullanır; sınıra ulaşan değer eşleşmez sayılır ve durum çubuğunda bildirilir. Anlık görüntü oluşturma ve sonucu listeye uygulama UI iş parçacığında kalır; çok büyük yakalamalarda yine gecikme yaratabilir. Filtreler özet alanlarını kullanır, ayrıntı ağacındaki her alan süzgeçlenemez.
 - IP adresleri metin olarak sıralanır. ImGui pencere yerleşimi ve Decode As kuralları oturumlar arasında saklanmaz.
 - Canlı yakalama tek arayüz/tek link türüdür ve geçici klasik pcap yazar; pcapng açıklama/ISB metaverisi yoktur. Yakalama sırasında arka plan işler başladıkları andaki paket listesinin görüntüsünü kullanır. Decode As için yakalamayı durdurup dışa aktarılan dosyayı açın.
 - Gzip yakalamalar en çok min(16 GiB, geçici klasördeki boş disk − 1 GiB) boyuta açılır; 1 GiB'tan sonra 1000:1'i aşan genişleme de reddedilir. Meşru ama çok sıkışan büyük bir dosya bu yüzden açılmayabilir; dosyayı harici bir araçla açıp doğrudan yükleyin. Çökmeyle sonlanan bir oturumun özel geçici klasörü silinmez.
@@ -72,6 +72,6 @@ Anahtar günlüğünü değiştirmek açık dosyayı yeniden yükler. Canlı yak
 - Gerçek corpus dosyaları `IMSHARK_CORPUS_DIR` verilmediğinde atlanır. Birçok gelişmiş protokol ve eski dosya biçimi yalnızca sentetik girdilerle sınanmıştır; [katkı rehberi](../CONTRIBUTING.md#regression-corpus) bu ayrımı açıklar.
 - `tests/data/tshark` içindeki elle yazılmış JSON'lar karşılaştırma aracını sınar. Bunlar gerçek tshark kaydı veya Wireshark ile eşitlik kanıtı değildir.
 - Linux Docker duman testi bir yazılım OpenGL/Xvfb ortamını kullanır. Fiziksel ağ arayüzü, Npcap sürücüsü, gerçek masaüstü etkileşimleri ve hardware GPU doğrulamasının yerini tutmaz.
-- Windows canlı yakalama ve temiz makinede paket çalıştırma ayrıca doğrulanmalıdır. macOS dağıtımı ad hoc imzalıdır; Developer ID/noter onayı yoktur.
+- Windows kaynak kodunda Npcap ile isteğe bağlı canlı yakalama ve UAC/Named Pipe yardımcısı vardır; yayımlanmış 1.0.0 ZIP canlı yakalama içermez. Gerçek Windows/Npcap yakalaması ve temiz makinede paket çalıştırma ayrıca doğrulanmalıdır ([kontrol listesi](RELEASING.md#10-windows-live-capture-checklist)). macOS dağıtımı ad hoc imzalıdır; Developer ID/noter onayı yoktur.
 
 Tekrarlanabilir derleme, test ve Docker komutları [BUILDING.md](BUILDING.md) içindedir. Güncel test sayısı, atlanan kontroller ve derlenen özellikler çalıştırmanın loglarından okunmalıdır; burada sabit bir kapsam yüzdesi veya test sayısı verilmez.

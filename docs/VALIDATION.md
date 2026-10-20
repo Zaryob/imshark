@@ -1,5 +1,7 @@
 # Validation record — 8–9 October 2026
 
+For the current Windows capture checks and their remaining driver/UAC limits, see the [20 October Windows validation record](WINDOWS_CAPTURE_VALIDATION.md). The historical results below are unchanged.
+
 This record describes local verification of ImShark 0.8.0 during the vcpkg migration. It does not report a completed GitHub Actions run. Reproduction instructions are in [BUILDING.md](BUILDING.md).
 
 ## Dependency inputs

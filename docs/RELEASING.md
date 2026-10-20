@@ -126,7 +126,7 @@ Do these from the published release page, not from your build directory.
 
 ## 9. Windows clean machine checklist
 
-The automated checks run on a GitHub runner with the build tools installed. Before 1.0, and before any release that changes dependencies or packaging, test the ZIP on a Windows 10 or 11 x86_64 machine or virtual machine that has never had Visual Studio, vcpkg or ImShark installed. A fresh VM snapshot is ideal.
+The automated checks run on a GitHub runner with the build tools installed. Before any release that changes dependencies or packaging, test the ZIP on a Windows 10 or 11 x86_64 machine or virtual machine that has never had Visual Studio, vcpkg or ImShark installed. A fresh VM snapshot is ideal.
 
 - [ ] Download `imshark-X.Y.Z-windows-x86_64.zip` and `SHA256SUMS.txt` with a browser; the digest from `Get-FileHash` matches.
 - [ ] Extract the ZIP to a path that contains a space and a non-ASCII character, for example `C:\Users\Test User\İndirilenler\imshark`.
@@ -141,3 +141,30 @@ The automated checks run on a GitHub runner with the build tools installed. Befo
 - [ ] Record the Windows version, hardware or VM, who tested, the date and the package version, and add the result to [VALIDATION.md](VALIDATION.md).
 
 Record failures as issues. A missing DLL, a crash on start or an unreadable file after a clean install blocks the release.
+
+
+## 10. Windows live capture checklist
+
+This is separate from the offline ZIP checklist above. The current source implements UAC and Named Pipe capture;
+the published 1.0.0 ZIP and default Windows CI do not enable Npcap. Passing portable parser/argument tests does not
+validate this native path. Native IPC and SDK compile/link results are in [WINDOWS_CAPTURE_VALIDATION.md](WINDOWS_CAPTURE_VALIDATION.md); no completed real Npcap/interactive UAC run is recorded yet.
+
+Build with `IMSHARK_LIVE_CAPTURE=ON` and `NPCAP_SDK_DIR` as described in [BUILDING.md](BUILDING.md#live-capture-privileges).
+Use an installed Npcap driver and a normal-user desktop session. See the [Npcap users' guide](https://npcap.com/guide/npcap-users-guide.html)
+for admin-only installation behavior. Do not assume an `npcap-users` group exists.
+
+- [ ] Record the source commit, Windows version, architecture, compiler, SDK/driver versions and Npcap admin-only setting.
+- [ ] Launch from a path containing spaces and non-ASCII characters; record DLL discovery and startup failures.
+- [ ] Enumerate interfaces and capture known traffic directly when the installed driver permits normal-user access.
+- [ ] With restricted access, verify the permission error offers **Authorize and capture**; accept UAC and check that packets arrive while the GUI remains unelevated.
+- [ ] Reject UAC: show a useful error promptly, without waiting for the full pipe connection timeout.
+- [ ] Cancel while awaiting authorization or pipe connection; verify the GUI remains responsive and no worker or IPC handle is left behind after the dialog is resolved.
+- [ ] Stop an idle capture and one receiving traffic; restart repeatedly and verify sessions do not mix packets or leave workers running.
+- [ ] Apply a valid BPF filter and a short snap length; confirm exported packets obey both. Invalid filters must fail with a useful message.
+- [ ] Export to pcap and pcapng, reopen both and compare packet counts, captured lengths and timestamps.
+- [ ] Close the GUI during capture and check worker exit and temporary-file cleanup; check the unsaved-capture prompt on normal exit.
+- [ ] Repeat without an installed driver and record the startup/error behavior. Verify the default offline build still opens captures without Npcap.
+- [ ] Add dated results and logs to the validation record, distinguishing native IPC tests, driver capture and interactive UAC checks.
+
+Automated native pipe tests can verify IPC and cancellation without a driver or a real UAC prompt. They do not replace
+the driver and interactive checks above. A failed or unexecuted item remains open.

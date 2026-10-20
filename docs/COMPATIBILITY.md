@@ -109,7 +109,7 @@ JSON shape, and the options and invalid-argument handling of `imshark`; `tests/t
 - **pcap and pcapng** (`exporter::exportPackets`): original frame bytes and link types are preserved, in capture order.
   Classic pcap needs a single link type (mixed link types need pcapng). Pcapng exports keep embedded TLS secrets as
   Decryption Secrets Blocks. Files open in Wireshark and other standard tools. Timestamp resolution is a property of the
-  writer (currently microsecond for pcap); a finer resolution may be introduced in a minor release, and readers of the
+  writer (microsecond or nanosecond for pcap/pcapng, preserving nanosecond inputs); a finer resolution may be introduced in a minor release, and readers of the
   format must not depend on the digit count.
 - **CSV** (`exporter::writeCsv`): UTF-8, one header line, every field quoted with `"` (quotes doubled, RFC 4180), `\n` line
   ends. Columns, in this order: `No.`, `Time`, `Source`, `Destination`, `Protocol`, `Length`, `Info`. These seven columns
