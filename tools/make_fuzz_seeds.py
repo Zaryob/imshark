@@ -88,8 +88,16 @@ def frames_of(path):
 
 # ------------------------------------------------------------------------------------------------ writers
 def reset(directory):
-    shutil.rmtree(directory, ignore_errors=True)
-    os.makedirs(directory)
+    """Empties a corpus directory except the hand-added reproducers of fixed bugs (regress-*, docs/FUZZING.md)."""
+    os.makedirs(directory, exist_ok=True)
+    for name in os.listdir(directory):
+        if name.startswith("regress-"):
+            continue
+        path = os.path.join(directory, name)
+        if os.path.isdir(path):
+            shutil.rmtree(path)
+        else:
+            os.remove(path)
 
 
 def write(directory, name, data):

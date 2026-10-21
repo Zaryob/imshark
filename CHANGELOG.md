@@ -6,6 +6,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and 
 
 Only the packages of **0.9.2** were ever published on GitHub Releases. Earlier tags exist in the repository but produced no packages; the entries below say why.
 
+## [Unreleased]
+
+### Fixed
+- An IPv6 Hop-by-Hop or Destination Options header whose last option declares more bytes than the header has left no longer makes the Jumbo Payload, Router Alert, Tunnel Encapsulation Limit or Home Address value be read past the header and, at the end of a frame, past the packet buffer (found by the weekly `fuzz_packet_sequence` run).
+
 ## [1.0.0] - 2026-10-10
 
 First stable release. [Release notes](docs/releases/v1.0.0.md); what 1.0 promises to keep stable is in [docs/COMPATIBILITY.md](docs/COMPATIBILITY.md).
