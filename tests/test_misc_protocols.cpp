@@ -486,6 +486,29 @@ TEST(Ipv6Extensions, OptionsRoutingAndAuthenticationHeaders) {
     EXPECT_NE(find(bad.fields, "[Option continues past the end of the header]"), nullptr);
 }
 
+TEST(Ipv6Extensions, OptionValueCutByTheHeaderEnd) {
+    // An option whose declared length is right for its type but that has fewer bytes left in the header: the value
+    // must not be read from past the header (fuzz_packet_sequence found the Jumbo Payload case reading past the frame).
+    // The ICMPv6 echo behind the header makes an over-read visible without a sanitizer.
+    const struct {
+        const char *header;
+        const char *text;
+    } cases[] = {
+        {"3a 00 00 c2 04 00 00 00", "Jumbo Payload"},              // Pad1, Jumbo Payload: length 4, 3 bytes left
+        {"3a 00 00 00 00 00 05 02", "Router Alert"},               // 4 x Pad1, Router Alert: length 2, 0 bytes left
+        {"3a 00 00 00 00 00 04 01", "Tunnel Encapsulation Limit"}, // 4 x Pad1, limit: length 1, 0 bytes left
+        {"3a 00 c9 10 00 00 00 00", "Home Address"},               // Home Address: length 16, 4 bytes left
+    };
+    for (const auto &c: cases) {
+        SCOPED_TRACE(c.header);
+        const auto p = support::parse(ipv6Packet(0, std::string(c.header) + "80 00 0000 abcd 0007"));
+        const packet::Field *option = find(p.fields, c.text);
+        ASSERT_NE(option, nullptr);
+        EXPECT_EQ(option->text, c.text);
+        EXPECT_NE(find(p.fields, "[Option continues past the end of the header]"), nullptr);
+    }
+}
+
 namespace {
     packet::PacketInfo ntp(const std::string &hexPayload) { return support::parse(support::udpPacket("0a000002", "0a000001", "007b", "007b", bytes(hexPayload))); }
     std::string ntpClient() { return "23" "00" "06" "ec" + zeros(44); }

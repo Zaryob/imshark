@@ -184,13 +184,14 @@ namespace {
             if (i + 2 > extLen) break;
             const size_t len = static_cast<uint8_t>(h[i + 1]);
             const size_t take = std::min(len, extLen - i - 2);
+            const bool whole = take == len;   // the value is read only when all of it lies inside the header
             std::string text;
             switch (t) {
                 case 1: text = "PadN (" + std::to_string(len) + " bytes)"; break;
-                case 5: text = "Router Alert" + std::string(len == 2 ? ": " + std::string(be16(h + i + 2) == 0 ? "MLD" : be16(h + i + 2) == 1 ? "RSVP" : be16(h + i + 2) == 2 ? "Active Networks" : "value " + std::to_string(be16(h + i + 2))) : ""); break;
-                case 194: text = "Jumbo Payload" + std::string(len == 4 ? ": " + std::to_string(be32(h + i + 2)) + " bytes" : ""); break;
-                case 4: text = "Tunnel Encapsulation Limit" + std::string(len == 1 ? ": " + std::to_string(static_cast<uint8_t>(h[i + 2])) : ""); break;
-                case 201: text = "Home Address" + std::string(len == 16 ? ": " + network::formatIPv6(h + i + 2) : ""); break;
+                case 5: text = "Router Alert" + std::string(whole && len == 2 ? ": " + std::string(be16(h + i + 2) == 0 ? "MLD" : be16(h + i + 2) == 1 ? "RSVP" : be16(h + i + 2) == 2 ? "Active Networks" : "value " + std::to_string(be16(h + i + 2))) : ""); break;
+                case 194: text = "Jumbo Payload" + std::string(whole && len == 4 ? ": " + std::to_string(be32(h + i + 2)) + " bytes" : ""); break;
+                case 4: text = "Tunnel Encapsulation Limit" + std::string(whole && len == 1 ? ": " + std::to_string(static_cast<uint8_t>(h[i + 2])) : ""); break;
+                case 201: text = "Home Address" + std::string(whole && len == 16 ? ": " + network::formatIPv6(h + i + 2) : ""); break;
                 default: text = "Option " + std::to_string(t) + " (" + std::to_string(len) + " bytes)";
             }
             // the two highest bits say what a node does with an option it does not know (RFC 8200 4.2)
