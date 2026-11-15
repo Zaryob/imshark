@@ -151,7 +151,7 @@ void ui::drawExportDialog(AppState &state) {
         ImGui::EndPopup();
     }
 
-    if (ImGuiFileDialog::Instance()->Display("ExportDlgKey")) {
+    if (displayFileDialog("ExportDlgKey")) {
         if (ImGuiFileDialog::Instance()->IsOk()) {
             startExport(state, static_cast<ExportState::Range>(e.range), kFormats[e.format], ImGuiFileDialog::Instance()->GetFilePathName());
         }

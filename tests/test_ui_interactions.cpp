@@ -984,6 +984,20 @@ TEST_F(UiInteract, ExportDialogSaveAsOpensTheFileChooser) {
     EXPECT_FALSE(popupOpen("Export Packets")) << "the options popup makes room for the chooser";
 }
 
+TEST_F(UiInteract, ExportFileChooserHasAUsableSizeOnItsFirstFrame) {
+    ui::AppState state;
+    load(state);
+    ASSERT_TRUE(clickMenu(state, {"File", "Export Packets..."}));
+    ASSERT_TRUE(popupOpen("Export Packets"));
+    ASSERT_TRUE(clickInTopPopup(state, "Save As..."));
+    frame(state);
+    ImGuiWindow *chooser = ImGui::FindWindowByName("Export Packets##ExportDlgKey");
+    ASSERT_NE(chooser, nullptr);
+    EXPECT_TRUE(chooser->Active);
+    EXPECT_GE(chooser->Size.x, 640.0f) << "without a size the chooser opened about 30 pixels wide on first use";
+    EXPECT_GE(chooser->Size.y, 420.0f);
+}
+
 TEST_F(UiInteract, ExportDialogDoesNotOfferSaveForAnEmptySelection) {
     ui::AppState state;
     load(state);

@@ -172,22 +172,26 @@ void ui::drawMenuAndDialogs(AppState &state) {
         openCaptureDialog();
     }
 
-    if (ImGuiFileDialog::Instance()->IsOpened("ChooseFileDlgKey")) {
-        const ImGuiViewport *viewport = ImGui::GetMainViewport();
-        const ImVec2 maxSize(std::max(1.0f, viewport->WorkSize.x - 32.0f), std::max(1.0f, viewport->WorkSize.y - 32.0f));
-        const ImVec2 minSize(std::min(640.0f, maxSize.x), std::min(420.0f, maxSize.y));
-        const ImVec2 initialSize(std::min(900.0f, maxSize.x), std::min(600.0f, maxSize.y));
-        const ImVec2 center = viewport->GetWorkCenter();
-        ImGui::SetNextWindowSize(initialSize, ImGuiCond_Appearing);
-        // Use a concrete top-left position: ImGui defers pivot-based centering while measuring a new popup.
-        ImGui::SetNextWindowPos(ImVec2(center.x - initialSize.x * 0.5f, center.y - initialSize.y * 0.5f), ImGuiCond_Appearing);
-        if (ImGuiFileDialog::Instance()->Display("ChooseFileDlgKey", ImGuiWindowFlags_NoCollapse, minSize, maxSize)) {
-            if (ImGuiFileDialog::Instance()->IsOk()) {
-                requestOpen(state, ImGuiFileDialog::Instance()->GetFilePathName());
-            }
-            ImGuiFileDialog::Instance()->Close();
+    if (displayFileDialog("ChooseFileDlgKey")) {
+        if (ImGuiFileDialog::Instance()->IsOk()) {
+            requestOpen(state, ImGuiFileDialog::Instance()->GetFilePathName());
         }
+        ImGuiFileDialog::Instance()->Close();
     }
+}
+
+bool ui::displayFileDialog(const char *key) {
+    if (!ImGuiFileDialog::Instance()->IsOpened(key)) return false;
+    // Without a size the dialog appears at ImGui's smallest window size the first time it is used.
+    const ImGuiViewport *viewport = ImGui::GetMainViewport();
+    const ImVec2 maxSize(std::max(1.0f, viewport->WorkSize.x - 32.0f), std::max(1.0f, viewport->WorkSize.y - 32.0f));
+    const ImVec2 minSize(std::min(640.0f, maxSize.x), std::min(420.0f, maxSize.y));
+    const ImVec2 initialSize(std::min(900.0f, maxSize.x), std::min(600.0f, maxSize.y));
+    const ImVec2 center = viewport->GetWorkCenter();
+    ImGui::SetNextWindowSize(initialSize, ImGuiCond_Appearing);
+    // Use a concrete top-left position: ImGui defers pivot-based centering while measuring a new popup.
+    ImGui::SetNextWindowPos(ImVec2(center.x - initialSize.x * 0.5f, center.y - initialSize.y * 0.5f), ImGuiCond_Appearing);
+    return ImGuiFileDialog::Instance()->Display(key, ImGuiWindowFlags_NoCollapse, minSize, maxSize);
 }
 
 ui::StatusSegments ui::statusSegments(const AppState &state) {

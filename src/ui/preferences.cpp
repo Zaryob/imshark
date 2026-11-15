@@ -114,7 +114,7 @@ void ui::drawPreferencesWindow(AppState &state) {
     }
     ImGui::End();
 
-    if (ImGuiFileDialog::Instance()->Display("ChooseTlsKeyLogDlg")) {
+    if (ui::displayFileDialog("ChooseTlsKeyLogDlg")) {
         if (ImGuiFileDialog::Instance()->IsOk()) setTlsKeyLogFile(state, ImGuiFileDialog::Instance()->GetFilePathName());
         ImGuiFileDialog::Instance()->Close();
     }

@@ -13,11 +13,8 @@ Packages for **0.9.2** and **1.0.0** were published on GitHub Releases. The 0.9.
 
 ### Fixed
 - Preserve empty BPF filters when launching the Windows helper, use overlapped reads correctly, report failed authorization promptly, and drain the worker stream before a clean EOF. Native pipe regressions run on Windows without requiring an installed driver.
-
-## [Unreleased]
-
-### Fixed
 - An IPv6 Hop-by-Hop or Destination Options header whose last option declares more bytes than the header has left no longer makes the Jumbo Payload, Router Alert, Tunnel Encapsulation Limit or Home Address value be read past the header and, at the end of a frame, past the packet buffer (found by the weekly `fuzz_packet_sequence` run).
+- The file choosers of Export Packets, Save Stream and the TLS key log setting open at a usable size. They appeared about 30 pixels wide the first time they were used.
 
 ## [1.0.0] - 2026-10-10
 

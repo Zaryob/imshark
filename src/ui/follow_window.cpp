@@ -183,7 +183,7 @@ void ui::drawFollowWindow(AppState &state) {
         applyFilter(state, stats::conversationFilter(c, s.tcp ? stats::AddressKind::Tcp : stats::AddressKind::Udp));
     }
 
-    if (ImGuiFileDialog::Instance()->Display("SaveStreamDlg")) {
+    if (ui::displayFileDialog("SaveStreamDlg")) {
         if (ImGuiFileDialog::Instance()->IsOk()) {
             // the shown direction is what gets saved, as raw bytes
             std::ofstream file(core::pathFromUtf8(ImGuiFileDialog::Instance()->GetFilePathName()), std::ios::binary | std::ios::trunc);

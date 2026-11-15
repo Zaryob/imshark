@@ -119,6 +119,11 @@ namespace ui {
     bool startExport(AppState &state, ExportState::Range range, exporter::Format format, const std::string &path);
     void drawExportDialog(AppState &state);
 
+    // chrome.cpp
+    /// Shows the open ImGuiFileDialog `key` at a usable size, centered in the main window. Returns what Display()
+    /// returns: true once the user has confirmed or cancelled. Every file dialog of the program goes through this.
+    bool displayFileDialog(const char *key);
+
     // follow_window.cpp
     /// Starts following the TCP/UDP conversation that packet `packetIndex` belongs to. Returns false if the
     /// packet is not TCP/UDP. The result appears in the Follow Stream window when the background job ends.
