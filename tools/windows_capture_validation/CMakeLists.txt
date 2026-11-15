@@ -18,6 +18,7 @@ add_executable(windows_capture_smoke
     "${CAPTURE_DIR}/live_capture.cpp"
     "${CAPTURE_DIR}/live_capture_stream.cpp"
     "${CAPTURE_DIR}/live_capture_stub.cpp"
+    "${CAPTURE_DIR}/pcap_library.cpp"
     "${CAPTURE_DIR}/pcap_stream.cpp"
     "${IMSHARK_ROOT}/core/src/temp_file.cpp")
 target_include_directories(windows_capture_smoke PRIVATE "${IMSHARK_ROOT}/core/src")
@@ -29,7 +30,7 @@ if(NPCAP_SDK_DIR)
         "${IMSHARK_ROOT}/tests/windows_capture_smoke.cpp"
         "${CAPTURE_DIR}/capture_worker.cpp" "${CAPTURE_DIR}/worker_launch.cpp"
         "${CAPTURE_DIR}/live_capture.cpp" "${CAPTURE_DIR}/live_capture_stream.cpp"
-        "${CAPTURE_DIR}/live_capture_pcap.cpp" "${CAPTURE_DIR}/pcap_stream.cpp"
+        "${CAPTURE_DIR}/live_capture_pcap.cpp" "${CAPTURE_DIR}/pcap_library.cpp" "${CAPTURE_DIR}/pcap_stream.cpp"
         "${IMSHARK_ROOT}/core/src/temp_file.cpp")
     target_include_directories(npcap_link_check PRIVATE "${IMSHARK_ROOT}/core/src" "${NPCAP_SDK_DIR}/Include")
     target_compile_definitions(npcap_link_check PRIVATE IMSHARK_HAVE_LIVE_CAPTURE=1)

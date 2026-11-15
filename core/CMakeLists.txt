@@ -5,6 +5,7 @@ add_library(imshark_core STATIC
     src/capture/live_capture.cpp
     src/capture/live_capture_consumer.cpp
     src/capture/live_capture_stream.cpp
+    src/capture/pcap_library.cpp
     src/capture/pcap_stream.cpp
     src/capture/worker_launch.cpp
     src/capture_reader.cpp
@@ -168,6 +169,12 @@ if(IMSHARK_LIVE_CAPTURE)
         find_library(PCAP_LIBRARY NAMES wpcap HINTS "${NPCAP_SDK_DIR}" "$ENV{NPCAP_SDK_DIR}" PATH_SUFFIXES ${_pcap_lib_suffix} REQUIRED)
         target_include_directories(imshark_core PRIVATE ${PCAP_INCLUDE_DIR})
         target_link_libraries(imshark_core PUBLIC ${PCAP_LIBRARY} ws2_32)
+        if(MSVC)
+            # Load Npcap on first use instead of at program start: the program then starts, and opens capture files, on
+            # a machine without Npcap. capture::ensurePcapLibrary() loads the DLL before the first call.
+            target_link_options(imshark_core PUBLIC "/DELAYLOAD:wpcap.dll")
+            target_link_libraries(imshark_core PUBLIC delayimp)
+        endif()
     else()
         find_package(PkgConfig REQUIRED)
         pkg_check_modules(PCAP REQUIRED IMPORTED_TARGET libpcap)

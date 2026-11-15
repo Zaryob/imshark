@@ -18,6 +18,7 @@
 #endif
 
 #include <capture/live_capture.h>
+#include <capture/pcap_library.h>
 #include <core.h>
 
 #include "support.h"
@@ -144,6 +145,7 @@ namespace {
 
 TEST(LiveCaptureFilter, ValidAndInvalidExpressions) {
     if (!capture::liveCaptureAvailable()) GTEST_SKIP() << "built without libpcap";
+    if (std::string missing; !capture::ensurePcapLibrary(missing)) GTEST_SKIP() << missing; // a live capture build on a machine without Npcap
     for (const char *ok: {"", "tcp", "tcp port 80", "host 10.0.0.1 and not udp", "ip6 or arp", "ether src 00:11:22:33:44:55",
                           "tcp[tcpflags] & (tcp-syn|tcp-ack) != 0", "vlan 100 and net 192.168.0.0/16"}) {
         const auto check = capture::validateCaptureFilter(ok);

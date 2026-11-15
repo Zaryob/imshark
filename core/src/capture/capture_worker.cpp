@@ -7,6 +7,7 @@
 #include <cstring>
 #include <thread>
 
+#include "pcap_library.h"
 #include "pcap_stream.h"
 
 #ifdef _WIN32
@@ -360,6 +361,7 @@ namespace capture::worker {
         SetConsoleCtrlHandler(consoleCtrlHandler, TRUE);
 
         std::string error;
+        if (!ensurePcapLibrary(error)) return fail(kExitOpenFailed, error);
         if (!interfaceExists(a.interfaceName, error)) return fail(kExitNoSuchInterface, error);
 
         char errbuf[PCAP_ERRBUF_SIZE] = {0};

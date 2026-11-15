@@ -1,6 +1,7 @@
 // The libpcap backed part of live capture (built when IMSHARK_HAVE_LIVE_CAPTURE is defined).
 
 #include "live_capture.h"
+#include "pcap_library.h"
 
 #include <pcap.h>
 
@@ -67,6 +68,7 @@ namespace capture {
 
     InterfaceList listInterfaces() {
         InterfaceList result;
+        if (!ensurePcapLibrary(result.error)) return result;
         char errbuf[PCAP_ERRBUF_SIZE] = {0};
         pcap_if_t *devices = nullptr;
         if (pcap_findalldevs(&devices, errbuf) != 0) {
@@ -101,6 +103,10 @@ namespace capture {
 
     FilterCheck validateCaptureFilter(const std::string &expr, uint32_t linkType, uint32_t snaplen) {
         FilterCheck check;
+        if (std::string missing; !ensurePcapLibrary(missing)) {
+            check.ok = true; // nothing to compile with: do not call the text invalid, Start reports the missing library
+            return check;
+        }
         pcap_t *dead = pcap_open_dead(linkTypeToDlt(linkType), static_cast<int>(snaplen ? snaplen : 262144));
         if (!dead) {
             check.error = "Cannot prepare the filter compiler";
@@ -127,6 +133,7 @@ namespace capture {
             error = "No capture interface selected";
             return false;
         }
+        if (!ensurePcapLibrary(error)) return false;
         char errbuf[PCAP_ERRBUF_SIZE] = {0};
         pcap_t *h = pcap_create(options.interfaceName.c_str(), errbuf);
         if (!h) {

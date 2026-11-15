@@ -37,8 +37,12 @@ namespace capture {
     inline const char *const kNotAvailable = "Live capture is not available in this build";
 
     /// Text of the permission error (the OS error text of libpcap is appended to it).
+#ifdef _WIN32
+    inline const char *const kPermissionDenied = "Permission denied: Npcap lets only administrators capture on this computer";
+#else
     inline const char *const kPermissionDenied =
         "Permission denied: capturing needs access to /dev/bpf* (macOS) or CAP_NET_RAW (Linux)";
+#endif
 
     /// true if this build can capture (IMSHARK_HAVE_LIVE_CAPTURE).
     bool liveCaptureAvailable();

@@ -15,6 +15,7 @@
 
 #include <imgui.h>
 
+#include <capture/pcap_library.h>
 #include <core.h>
 #include <ui/ui.h>
 
@@ -883,6 +884,7 @@ TEST_F(UiSmoke, CaptureDialogListsInterfacesAndValidatesTheFilterWhileTyping) {
         EXPECT_NE(ui::captureUnavailableReason().find("not available in this build"), std::string::npos);
         return;
     }
+    if (std::string missing; !capture::ensurePcapLibrary(missing)) GTEST_SKIP() << missing; // a live capture build on a machine without Npcap
     EXPECT_TRUE(state.live.dialog.interfaces.error.empty()) << state.live.dialog.interfaces.error;
     for (const auto &itf: state.live.dialog.interfaces.interfaces) EXPECT_FALSE(itf.name.empty());
     if (!state.live.dialog.interfaces.interfaces.empty()) EXPECT_FALSE(state.live.options.interfaceName.empty()) << "a default interface is offered";
@@ -1159,6 +1161,7 @@ TEST_F(UiSmoke, LaterFileLoadsDoNotDeleteTheStalePathOfAnEarlierCapture) {
 
 TEST_F(UiSmoke, InvalidCaptureFilterWarnsButDoesNotBlockStart) {
     if (!capture::liveCaptureAvailable()) GTEST_SKIP() << "built without libpcap";
+    if (std::string missing; !capture::ensurePcapLibrary(missing)) GTEST_SKIP() << missing; // a live capture build on a machine without Npcap
     ui::AppState state;
     state.live.dialog.open = true;
     state.live.options.interfaceName = "imshark-no-such-interface0";
