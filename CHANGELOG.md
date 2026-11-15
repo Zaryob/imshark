@@ -9,7 +9,7 @@ Packages for **0.9.2** and **1.0.0** were published on GitHub Releases. The 0.9.
 ## [Unreleased]
 
 ### Added
-- Optional Windows live capture helper using UAC authorization and a private Named Pipe. Requires an Npcap-enabled build and installed driver; native IPC and SDK compile/link checks pass, while real-driver and interactive UAC validation remain pending ([record](docs/WINDOWS_CAPTURE_VALIDATION.md)). The published 1.0.0 ZIP remains an offline-analysis build.
+- Optional Windows live capture helper using UAC authorization and a private Named Pipe. Requires an Npcap-enabled build and installed driver; native IPC and SDK compile/link checks pass. A first run with a real driver and real UAC prompts captured, authorized and exported correctly, but such a build does not start when `wpcap.dll` is not on the DLL search path ([record](docs/WINDOWS_CAPTURE_VALIDATION.md)). The published 1.0.0 ZIP remains an offline-analysis build.
 
 ### Fixed
 - Preserve empty BPF filters when launching the Windows helper, use overlapped reads correctly, report failed authorization promptly, and drain the worker stream before a clean EOF. Native pipe regressions run on Windows without requiring an installed driver.

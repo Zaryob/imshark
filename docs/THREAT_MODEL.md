@@ -208,8 +208,8 @@ chose (T); a remote host sending traffic crafted to crash the viewer (D).
 Design (see [CAPTURE_PRIVILEGES.md](CAPTURE_PRIVILEGES.md) for the authoritative description): the GUI and the dissectors
 never run with elevated privileges. On Linux/macOS, a separate helper may open the interface with administrator rights and drops those
 rights before it touches any user file. The optional Windows helper uses UAC and retains its elevated token while
-streaming Npcap packets through a private Named Pipe; [native IPC tests](WINDOWS_CAPTURE_VALIDATION.md) pass, while
-real-driver capture and interactive UAC validation remain pending. Packets cross from the helper to the unprivileged GUI, which parses them like any
+streaming Npcap packets through a private Named Pipe; [native IPC tests](WINDOWS_CAPTURE_VALIDATION.md) pass, and a first
+run with a real driver and real UAC prompts is recorded there with its open defects. Packets cross from the helper to the unprivileged GUI, which parses them like any
 other untrusted data. Inputs sent to the helper (interface name, snap length, promiscuous flag, filter text) are treated as
 untrusted by the helper.
 
