@@ -148,11 +148,11 @@ guest, and Microsoft's OpenCL, OpenGL and Vulkan Compatibility Pack, after item 
 
 Problems, to be filed as issues as [RELEASING.md](RELEASING.md#9-windows-clean-machine-checklist) asks:
 
-1. No window and no message when OpenGL 3.2 is not available. Fixed later by the Direct3D 11 fallback below.
-2. On the second start at 1024×768 the title bar is above the screen.
-3. A console window opens with the GUI.
-4. The file dialog shows `?` for `ğ` and `ı` in folder names.
-5. The file dialog starts with the `.pcapng` filter, which hides `.pcap` files.
+1. No window and no message when OpenGL 3.2 is not available. Fixed by the Direct3D 11 fallback below.
+2. On the second start at 1024×768 the title bar is above the screen. Fixed, see below.
+3. A console window opens with the GUI. Fixed, see below.
+4. The file dialog shows `?` for `ğ` and `ı` in folder names. Fixed, see below.
+5. The file dialog starts with the `.pcapng` filter, which hides `.pcap` files. Fixed, see below.
 
 ### Direct3D 11 fallback
 
@@ -175,3 +175,19 @@ An earlier version of the branch used a blit-model swap chain and showed a blank
 flip model fixed that.
 
 Not covered: x86_64, a real graphics card, Windows 10, high-DPI and multi-monitor setups.
+
+### Fixes for problems 2 to 5
+
+Checked on the same machine on 16 November 2026 with the Windows package of commit `0e7c09c`
+([run 43770686518](https://github.com/Zaryob/imshark/actions/runs/43770686518), SHA-256
+`a877f5316a7f71ba7cc11f72f16071cf872afd5eaa84c0ac242252f654a94b4b`):
+
+| Problem | Result |
+|---|---|
+| 2, title bar | First start at the default size, closed normally, then started twice more: the window came back at 0,0 with the title bar on screen both times. |
+| 3, console window | `imshark.exe` is now a GUI program. Started from Explorer, no console window opened. `--version` still printed to a redirected file and to a PowerShell pipe, and an invalid option still printed its error with exit code 1. |
+| 4, `ğ` and `ı` | `Müziğim` and `Videolarım` are shown correctly in the file dialog. The missing letters come from Segoe UI. |
+| 5, file filter | The Open dialog starts with "Capture files", and `sample.pcap` is listed. |
+
+![Open dialog with Turkish folder names and the Capture files filter](images/windows-capture/11-open-dialog-fixed.png)
+
