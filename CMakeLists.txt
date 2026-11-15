@@ -180,7 +180,12 @@ string(REGEX REPLACE "(..)" "0x\\1," IMSHARK_LOGO_LIGHT_BYTES "${_logo_light_hex
 string(REGEX REPLACE "(..)" "0x\\1," IMSHARK_ICON_BYTES "${_icon_hex}")
 configure_file(src/brand_assets.h.in "${CMAKE_BINARY_DIR}/generated/brand_assets.h" @ONLY)
 
-add_executable(imshark src/main.cpp)
+add_executable(imshark src/main.cpp src/render_backend.cpp)
+if(WIN32)
+    # Direct3D 11 fallback for machines without an OpenGL 3.2 driver (src/render_backend.h)
+    target_sources(imshark PRIVATE src/render_backend_d3d11.cpp)
+    target_link_libraries(imshark PRIVATE d3d11 dxgi d3dcompiler)
+endif()
 find_package(Stb REQUIRED)
 target_include_directories(imshark PRIVATE ${Stb_INCLUDE_DIR})
 target_include_directories(imshark PRIVATE "${CMAKE_BINARY_DIR}/generated")

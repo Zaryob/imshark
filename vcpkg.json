@@ -16,6 +16,13 @@
         "opengl3-binding"
       ]
     },
+    {
+      "name": "imgui",
+      "features": [
+        "dx11-binding"
+      ],
+      "platform": "windows"
+    },
     "imguifiledialog",
     "opengl",
     {
