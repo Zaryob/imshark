@@ -124,7 +124,7 @@ Run of the [Windows clean machine checklist](RELEASING.md#9-windows-clean-machin
 | Package | [`imshark-1.0.0-windows-x86_64.zip`](https://github.com/Zaryob/imshark/releases/tag/v1.0.0), SHA-256 `5e53514f1f87e568a776a60a295db0d033dabaf3b27b403ab147a75e86a75ccd` |
 | Windows | Windows 11 Home 26H2, build 26300.9457, Arm64, Turkish (tr-TR), installed 11 November 2026 by VirtualBox unattended setup |
 | Machine | VirtualBox 7.2.22 r175245 virtual machine on an Apple Silicon Mac (macOS 27.2): 5 virtual CPUs, 8 GB, EFI, VBoxSVGA with the Guest Additions 7.2.22 WDDM driver, 1024×768, 3D acceleration off unless stated |
-| Tested by | Claude (AI assistant) on Suleyman Poyraz's machine. Commands ran through VirtualBox guest control. The GUI steps used synthetic mouse and keyboard input in the desktop session and were read from screenshots taken inside the guest. |
+| Tested by | Scripted run on Suleyman Poyraz's machine. Commands ran through VirtualBox guest control. The GUI steps used synthetic mouse and keyboard input in the desktop session and were read from screenshots taken inside the guest. |
 
 State before the test: no Visual Studio, vcpkg or ImShark; no `vcruntime140*.dll` or `msvcp140.dll` in `System32`, `SysWOW64` or `SysArm32`; the installed programs were Microsoft Edge, Edge Update, WebView2 Runtime, OneDrive and the VirtualBox Guest Additions.
 
