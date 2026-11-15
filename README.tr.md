@@ -42,6 +42,17 @@ Son sürümü [GitHub Releases](https://github.com/Zaryob/imshark/releases/lates
 
 Güncel kaynak sürümü ve son yayımlanan sürüm **1.0.0**. Sürümler SemVer ve [1.x uyumluluk sözü](docs/COMPATIBILITY.md) üzerinden ilerler; yayın iş akışı `vMAJOR.MINOR.PATCH` tag'iyle tetiklenir. `v0.9.0` etiketi Windows (MSVC) test derlemesi yüzünden paket üretmedi; `v0.9.1` Linux GUI kontrolünde Docker Hub kesintilerine takıldı; ilk yayımlanan sürüm [`v0.9.2`](https://github.com/Zaryob/imshark/releases/tag/v0.9.2)'dir. Kalan yayın kontrolleri [yayın backlog'unda](https://github.com/Zaryob/imshark/issues/2) izleniyor; yerel test sonuçları [portföy doğrulama kaydında](docs/PORTFOLIO_VALIDATION.md).
 
+### Homebrew (macOS)
+
+macOS 15 veya üzeri çalışan Apple Silicon Mac'lerde sürüm [Zaryob tap deposundan](https://github.com/Zaryob/tapir) kurulabilir:
+
+```sh
+brew tap zaryob/tapir https://github.com/Zaryob/tapir.git
+brew install --cask zaryob/tapir/imshark
+```
+
+Yukarıda anlatılan ilk açılış izni yine gerekir. Güncelleme ve kaldırma için [Homebrew rehberine](docs/HOMEBREW.md) bakın.
+
 ## Hızlı başlangıç
 
 Dear ImGui **[1.92.9b](https://github.com/ocornut/imgui/releases/tag/v1.92.9b)** ve GLFW/OpenGL3 backend’leri vcpkg üzerinden kurulur.
@@ -84,6 +95,7 @@ tls.decrypted
 
 | İhtiyacınız | Belge |
 |---|---|
+| Homebrew ile kurulum ve güncelleme | [Homebrew rehberi](docs/HOMEBREW.md) (İngilizce) |
 | Platform ön koşulları, vcpkg, test ve Docker doğrulaması | [Derleme rehberi](docs/BUILDING.md) |
 | Çalıştırılan kontroller ve paket doğrulama kanıtı | [Doğrulama kaydı](docs/VALIDATION.md) |
 | Arayüz, filtreler, akışlar ve canlı yakalama | [Kullanım rehberi](docs/USER_GUIDE.md) |

@@ -42,6 +42,17 @@ Download the latest release from [GitHub Releases](https://github.com/Zaryob/ims
 
 The current source version and latest published release are **1.0.0**. Versions follow SemVer and the [1.x compatibility promise](docs/COMPATIBILITY.md); the release workflow is triggered by a `vMAJOR.MINOR.PATCH` tag. The `v0.9.0` tag produced no packages because of a Windows (MSVC) test build failure; `v0.9.1` stopped on Docker Hub outages in the Linux GUI check; [`v0.9.2`](https://github.com/Zaryob/imshark/releases/tag/v0.9.2) is the first published release. Remaining release checks are tracked in the [release backlog](https://github.com/Zaryob/imshark/issues/2); local test results are in the [portfolio validation record](docs/PORTFOLIO_VALIDATION.md).
 
+### Homebrew (macOS)
+
+On Apple Silicon Macs with macOS 15 or later the release can be installed from the [Zaryob tap](https://github.com/Zaryob/tapir):
+
+```sh
+brew tap zaryob/tapir https://github.com/Zaryob/tapir.git
+brew install --cask zaryob/tapir/imshark
+```
+
+The first-launch approval described above is still needed. Updating and removing are covered in the [Homebrew guide](docs/HOMEBREW.md).
+
 ## Quick start
 
 Dear ImGui **[1.92.9b](https://github.com/ocornut/imgui/releases/tag/v1.92.9b)** and its GLFW/OpenGL3 backends are installed through vcpkg.
@@ -84,6 +95,7 @@ tls.decrypted
 
 | You need | Document |
 |---|---|
+| Install or update with Homebrew | [Homebrew guide](docs/HOMEBREW.md) |
 | Platform prerequisites, vcpkg, tests and Docker validation | [Build guide](docs/BUILDING.md) |
 | Checks that were run and package validation evidence | [Validation record](docs/VALIDATION.md) |
 | Interface, filters, streams and live capture | [User guide](docs/USER_GUIDE.md) |

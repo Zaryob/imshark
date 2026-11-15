@@ -121,7 +121,7 @@ Do these from the published release page, not from your build directory.
 4. Linux: `./imshark-X.Y.Z-linux-x86_64.AppImage --version`, `sudo apt install ./imshark-X.Y.Z-linux-x86_64.deb` followed by `imshark --version`, and extract the tarball to check that `share/imshark/licenses` exists.
 5. Windows: run the [clean machine checklist](#9-windows-clean-machine-checklist).
 6. Open `tests/data/sample.pcap` (it is in the source tree) in at least one package and check that the packet list, detail tree and hex view fill.
-7. The README download link points to `releases/latest`; confirm it resolves to the new release. If the README names the version anywhere, update it in a follow-up pull request.
+7. The README download link points to `releases/latest`; confirm it resolves to the new release. If the README names the version anywhere, update it in a follow-up pull request. Then update the ImShark cask in [Zaryob/tapir](https://github.com/Zaryob/tapir) with the version and SHA-256 of the new DMG and validate it as the [tap README](https://github.com/Zaryob/tapir#maintaining-packages) describes.
 8. Add a new `Unreleased` section to `CHANGELOG.md` if you did not do so in step 3.
 
 ## 9. Windows clean machine checklist
