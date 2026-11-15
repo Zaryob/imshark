@@ -1,9 +1,8 @@
 # Windows capture validation
 
-This record keeps two things apart: the automated native Windows IPC evidence of 20 October 2026, and the
-[run with a real Npcap driver and real UAC prompts](#real-npcap-and-interactive-uac-run--15-november-2026) of
-15 November 2026. The second run found defects; what is still open is listed at the end. The published 1.0.0 ZIP is
-still an offline-analysis build.
+Two sets of results: native IPC tests run in CI on 20 October 2026, and a run with the Npcap driver and real UAC
+prompts on [15 November 2026](#driver-and-uac-run-15-november-2026). The published 1.0.0 ZIP is an offline-analysis
+build and is not covered here.
 
 ## Native IPC checks — 20 October 2026
 
@@ -79,139 +78,109 @@ Npcap-enabled backend's compilation and linkage; CTest runs the offline IPC exec
 The tested source commit above precedes the final documentation and setup-guidance wording changes; the latter were
 also compiled in the local macOS application and do not change the tested IPC logic.
 
-At the time of these checks no run with a real driver existed. Neither an SDK link check nor the native IPC result above
-is evidence for the driver, desktop and package scenarios; those are covered by the run below.
+These checks used no driver and no real UAC prompt.
 
-## Real Npcap and interactive UAC run — 15 November 2026
+## Driver and UAC run, 15 November 2026
 
-The [Windows live capture checklist](RELEASING.md#10-windows-live-capture-checklist) was run with an installed Npcap
-driver and real UAC prompts. Capturing real traffic, authorization through UAC and export work. The run also found
-defects, listed under [Findings](#findings); the checklist items they affect stay open.
-
-### Source and environment
+Checklist: [Windows live capture checklist](RELEASING.md#10-windows-live-capture-checklist).
 
 | | |
 |---|---|
-| Date | 15 November 2026 |
-| Source | The capture code of `9fbbc8c7282d`, with the IPv6 option fix and the packaging change of finding 1 on top |
-| Package | `imshark-1.0.0-win64.zip`, 4 980 570 bytes, SHA-256 `5a7915ff82769581e7687586cc00e90ccbd580ed739cfe8e3c0938c0ad6d97d0`, configured with `IMSHARK_LIVE_CAPTURE=ON` |
-| Build | [Actions run 43706414125](https://github.com/Zaryob/imshark/actions/runs/43706414125): GitHub `windows-2025`, x86_64, MSVC 19.51.36260.0, Npcap SDK 1.16 (hash pinned) |
-| Test machine | Windows 11 Home Arm64, build 26300.9457, Turkish, in VirtualBox 7.2.22 on Apple Silicon. The x86_64 program runs under x64 emulation. Red Hat VirtIO Ethernet adapter behind NAT (10.0.2.15). Microsoft's OpenGL compatibility pack is installed. |
-| Driver | Npcap 1.90 from npcap.com (installer SHA-256 `682b57e1c05ef375931975c9d6ded40888f4bfdf9f4b11571e654f962f1199b6`, signed by Nmap Software LLC), loopback support on |
-| Npcap options | Installed three ways during the run: default (not restricted to Administrators, WinPcap API-compatible mode on); restricted to Administrators; WinPcap API-compatible mode off |
-| Account | Member of Administrators with standard UAC; ImShark was always started unelevated |
+| Package | `imshark-1.0.0-win64.zip` with `IMSHARK_LIVE_CAPTURE=ON`, from [Actions run 43706414125](https://github.com/Zaryob/imshark/actions/runs/43706414125) (windows-2025, MSVC 19.51.36260.0, Npcap SDK 1.16); SHA-256 `5a7915ff82769581e7687586cc00e90ccbd580ed739cfe8e3c0938c0ad6d97d0` |
+| Source | `9fbbc8c7282d` plus the IPv6 option fix and the packaging fix in problem 1 |
+| Windows | Windows 11 Home, build 26300.9457, Arm64, Turkish, in VirtualBox 7.2.22. The x86_64 build runs under x64 emulation. |
+| Network | VirtIO Ethernet adapter behind NAT, 10.0.2.15 |
+| Npcap | 1.90 (installer SHA-256 `682b57e1c05ef375931975c9d6ded40888f4bfdf9f4b11571e654f962f1199b6`), loopback support on. Tried with the default options, restricted to Administrators, and without WinPcap API-compatible mode. |
+| Account | Administrator with UAC; ImShark started unelevated |
 
-This is not an x86_64 machine, so the run does not replace one on real x86_64 hardware.
-
-The steps were scripted: synthetic mouse and keyboard input inside the guest, UAC prompts answered through the virtual
-keyboard, results read from screenshots and from the process, pipe and file lists of the guest. The exported files were
-copied out and compared with an independent pcap/pcapng parser on another machine.
+This was not an x86_64 machine, so the checklist still has to be run on one. Exported files were also read with a
+second pcap/pcapng parser.
 
 ### Results
 
-| Checklist item | Result |
+| Item | Result |
 |---|---|
-| Record source, Windows version, architecture, compiler, SDK and driver versions, admin-only setting | Done: table above |
-| Launch from a path with spaces and non-ASCII characters; DLL discovery | **Partly failed.** Starts from `C:\ImShark Test\Canlı Yakalama\…\bin` when Npcap is in WinPcap API-compatible mode: it loads `System32\wpcap.dll`, which Npcap forwards to `wpcap_x64.dll` on Arm64. With that mode off the program does not start (finding 2). |
-| Enumerate interfaces; capture known traffic directly | **Passed.** Ethernet and loopback are listed. Four pings and one HTTP request were sent; the display filter `icmp` shows exactly the 8 echo packets. 917 packets, 0 dropped, one process, not elevated. |
-| Restricted access: the permission error offers **Authorize and capture**; accept UAC | **Partly passed.** On loopback: the error dialog offers it, UAC is accepted, the 6 packets of three pings arrive through the helper and its pipe, and the GUI stays unelevated. The Ethernet adapter cannot be reached this way (finding 5). |
-| Reject UAC | **Passed.** "Administrator elevation failed: Authorization cancelled by the user" within 2 seconds, no wait for the pipe timeout. |
-| Cancel while awaiting authorization or pipe connection | **Partly checked.** Escape on the UAC prompt gives the same prompt error and leaves no helper process and no pipe. The Cancel button of ImShark's own waiting window cannot be reached while the UAC secure desktop is shown, so it was not exercised. Cancelling during pipe connection was not exercised. |
-| Stop an idle capture and a busy one; restart repeatedly | **Passed for direct capture.** Stopping during 20 pings froze the counter at 2565 packets; an idle loopback capture stopped at once; four restarts each began at 0 packets with one process. With the helper: one stop, after which helper and pipe were gone within 3 seconds. Repeated restarts with the helper were not run. |
-| Valid BPF filter and short snap length; invalid filter | **Passed.** Filter `icmp` and snap length 64 (the field raises a typed 60 to its minimum): 600-byte pings and an HTTP request gave 6 packets, all ICMP, 64 of 642 bytes captured. `tcp port abc` is marked invalid while typing, and Start answers "Invalid capture filter: unknown port 'abc'". |
-| Export to pcap and pcapng, reopen both, compare | **Passed, after working around finding 4.** For a 2565-packet and a 6-packet capture both formats hold the same packet count, captured and original lengths, microsecond timestamps and bytes. ImShark reopens the four files with the same counts. |
-| Close the GUI during capture: worker exit, temporary files, unsaved-capture prompt | **Passed.** Closing asks about the unsaved packets (Export Packets, Discard, Cancel). Cancel keeps capturing. Discard exits and removes the session's temporary folder; with the helper running it also ends the helper and removes the pipe. Choosing Export Packets stops the capture first. |
-| Repeat without an installed driver; default offline build | **Failed for the live capture build:** it does not start (finding 2). The default build without live capture does not import `wpcap.dll`; the published 1.0.0 package ran on this machine before Npcap was installed. |
-| Add dated results and logs | This section |
+| Path with spaces and non-ASCII characters; DLL loading | Partly failed. Started from `C:\ImShark Test\Canlı Yakalama\…` with Npcap's default options. Without WinPcap API-compatible mode it did not start (problem 2). |
+| Interface list and direct capture | Passed. Ethernet and loopback were listed. With four pings and an HTTP request running, the `icmp` display filter showed the 8 echo packets; 917 packets, none dropped. |
+| Restricted access: Authorize and capture, accept UAC | Partly passed. On loopback, the 6 packets of three pings came through the helper and the GUI stayed unelevated. The Ethernet adapter could not be used this way (problem 5). |
+| Reject UAC | Passed. "Authorization cancelled by the user" within 2 seconds. |
+| Cancel during authorization or pipe connection | Partly done. Escape at the UAC prompt gave the same error and left no helper or pipe. ImShark's own Cancel button and cancelling during the pipe connection were not tried. |
+| Stop and restart | Passed for direct capture: stopping during traffic froze the count at 2565, an idle capture stopped at once, four restarts began at 0. Through the helper only one stop was tried; helper and pipe were gone within 3 seconds. |
+| BPF filter and snap length | Passed. `icmp` with snap length 64 gave 6 ICMP packets of 642 bytes with 64 captured. `tcp port abc` was flagged while typing and Start reported "unknown port 'abc'". The field raises values below 64 to 64. |
+| Export to pcap and pcapng | Passed, after enlarging the file dialog (problem 4). For a 2565-packet and a 6-packet capture both formats had the same counts, lengths, timestamps and bytes, and reopened with the same counts. |
+| Closing during a capture | Passed. The unsaved-capture prompt appears. Cancel keeps capturing; Discard exits, ends the helper and removes the pipe and the session's temporary folder. |
+| No driver installed | Failed: the live capture build did not start (problem 2). The offline 1.0.0 package does not need Npcap. |
 
-![Display filter icmp during a direct capture: the eight echo packets of four pings](images/windows-capture/02-direct-capture-icmp.png)
+![The icmp display filter during a direct capture](images/windows-capture/02-direct-capture-icmp.png)
 
-![Six loopback packets captured through the authorized helper](images/windows-capture/08-authorized-capture-loopback.png)
+![Loopback packets captured through the helper](images/windows-capture/08-authorized-capture-loopback.png)
 
 ![Unsaved-capture prompt when the window is closed during a capture](images/windows-capture/04-unsaved-capture-prompt.png)
 
-### Findings
+### Problems found
 
-1. **A live capture build could not be packaged.** `cpack` stopped with "Could not resolve runtime dependencies:
-   wpcap.dll" ([run 43705032668](https://github.com/Zaryob/imshark/actions/runs/43705032668)): the install rule collects
-   every DLL the executable imports, and Npcap is not on the build machine. Fixed in the commit before this record by
-   leaving `wpcap.dll` and `Packet.dll` out of that search; Npcap may not be redistributed anyway.
-2. **A live capture build does not start unless `wpcap.dll` is on the normal DLL search path.** `wpcap.dll` is an
-   ordinary import (no delay loading) and the program does not add `System32\Npcap` to the search path. Without Npcap,
-   and with Npcap installed without WinPcap API-compatible mode, Windows shows its system error dialog (on this Turkish
-   system "wpcap.dll bulunamadı", that is, wpcap.dll was not found) and `imshark.exe --version` exits with `0xC0000135`. Such a build cannot even open a capture file on
-   a machine without Npcap. **Fixed**, see [the follow-up](#fixes-checked-the-same-day).
+1. Packaging failed: `cpack` could not resolve `wpcap.dll`
+   ([run 43705032668](https://github.com/Zaryob/imshark/actions/runs/43705032668)). Npcap may not be redistributed, so
+   `wpcap.dll` and `Packet.dll` are now left out of the DLL collection. Fixed.
+2. The live capture build did not start when `wpcap.dll` was not on the DLL search path, that is without Npcap or with
+   Npcap installed without WinPcap API-compatible mode. Windows reported that `wpcap.dll` was not found and
+   `--version` exited with `0xC0000135`. Fixed, see below.
 
-   ![System error on start when wpcap.dll is not found](images/windows-capture/01-no-npcap-wpcap-missing.png)
-3. **The tests of a live capture build cannot run on a machine without Npcap**, for the same reason: test discovery of
-   `imshark_tests.exe` ends with `0xc0000135` (run 43706414125). CI therefore cannot test this configuration. **Fixed**, see [the follow-up](#fixes-checked-the-same-day).
-4. **The file dialog of Export Packets opens about 30 pixels wide on first use.** It has to be enlarged by dragging its
-   corner before a name can be typed. `Display("ExportDlgKey")` in `src/ui/export_dialog.cpp` passes no minimum size,
-   unlike the Open dialog. The same call without a size is in `follow_window.cpp` and `preferences.cpp`; those dialogs
-   were not opened in this run. This is not specific to Windows or to live capture. **Fixed**, see [the follow-up](#fixes-checked-the-same-day).
+   ![System error when wpcap.dll is not found](images/windows-capture/01-no-npcap-wpcap-missing.png)
+3. For the same reason the tests of that build could not run in CI
+   ([run 43706414125](https://github.com/Zaryob/imshark/actions/runs/43706414125)). Fixed.
+4. The Export Packets file dialog opened about 30 pixels wide the first time. The Save Stream and TLS key log dialogs
+   used the same code. Fixed.
 
-   ![Export file dialog shown as a small box in the middle of the window](images/windows-capture/03-export-dialog-tiny.png)
-5. **With Npcap restricted to Administrators, Npcap asks for elevation itself, and ImShark's own authorization cannot
-   reach a real adapter.** Opening Capture > Interfaces makes Npcap show a UAC prompt for its "helper program for
-   Admin-only Mode". If that is answered Yes, the Ethernet adapter is listed and captures directly, with no further
-   prompt. If it is answered No, only the loopback adapter is listed for the rest of the session, so **Authorize and
-   capture** can only be used on loopback. The documentation describes ImShark's UAC helper as the route for this
-   case; in practice Npcap's own prompt is. Not fixed.
+   ![Export file dialog as a small box](images/windows-capture/03-export-dialog-tiny.png)
+5. With Npcap restricted to Administrators, Npcap shows its own UAC prompt when the interface list is read. Accepting
+   it lists the Ethernet adapter, and capture works with no further prompt. Declining it leaves only loopback for the
+   rest of the session, so **Authorize and capture** cannot reach the real adapter. Open.
 
-   ![UAC prompt of Npcap's own helper](images/windows-capture/05-npcap-admin-only-prompt.png)
+   ![Npcap's own UAC prompt](images/windows-capture/05-npcap-admin-only-prompt.png)
 
    ![Permission error with Authorize and capture](images/windows-capture/06-permission-error-authorize.png)
-6. **The Windows permission error names the macOS and Linux requirements** ("capturing needs access to /dev/bpf*
-   (macOS) or CAP_NET_RAW (Linux)"), followed by Npcap's own text. **Fixed**: the Windows text now says that Npcap lets only administrators capture.
-7. **ImShark's UAC prompt says "Unknown publisher"**, because the executable is not signed.
+6. On Windows the permission error described the macOS and Linux requirements. Fixed.
+7. The UAC prompt for `imshark.exe` shows an unknown publisher because the executable is not signed. Open.
 
-   ![UAC prompt for imshark.exe with an unknown publisher](images/windows-capture/07-imshark-uac-prompt.png)
+   ![UAC prompt for imshark.exe](images/windows-capture/07-imshark-uac-prompt.png)
 
-Smaller observations:
+Other notes:
 
-- An exported pcap file states a snap length of 262144 in its header and the pcapng interface block states 0, also for
-  a capture taken with snap length 64.
-- On the welcome screen **Start live capture...** opens the interface dialog the first time and starts at once on the
-  last used interface afterwards.
-- A session's temporary folder (`%TEMP%\imshark_…`) is removed on a normal exit. The folder of a process that was
-  killed stays, and nothing removes it later.
+- Exported files record a snap length of 262144 (pcap) or 0 (pcapng), also for a capture made with 64.
+- After the first use, **Start live capture...** on the welcome screen starts on the last interface without showing the
+  dialog.
+- The temporary folder of a killed process is not removed later.
 - A console window opens next to the GUI when it is started from Explorer.
 
-### Fixes checked the same day
+### After the fixes
 
-Findings 2, 3, 4 and 6 were fixed and checked in the same virtual machine:
+Problems 2, 3, 4 and 6 were fixed the same day and checked on the same machine with the package from
+[run 43737763420](https://github.com/Zaryob/imshark/actions/runs/43737763420) (SHA-256
+`f3b9aaf6983f21905576385a356a21be34280cb94c82b99b07efe0e52988d1c5`):
 
-- `wpcap.dll` is now delay loaded. Before the first libpcap call, the GUI and the capture helper load it by full path
-  from `System32\Npcap`, then from the system directory, never from the program's own directory.
-- Every file chooser opens at the size of the Open dialog; a test measures the export chooser on its first frame (it
-  measured 32 by 39 pixels before).
-- The Windows permission error describes the Npcap restriction.
+- `wpcap.dll` is delay loaded, from `System32\Npcap` or the system directory by full path.
+- All file dialogs open at the size of the Open dialog.
+- The Windows permission error refers to Npcap.
 
-The package came from [Actions run 43737763420](https://github.com/Zaryob/imshark/actions/runs/43737763420)
-(`imshark-1.0.0-win64.zip`, 4 983 425 bytes, SHA-256 `f3b9aaf6983f21905576385a356a21be34280cb94c82b99b07efe0e52988d1c5`).
-The final commit adds only test changes to it.
-
-| Npcap state | Result |
+| Npcap | Result |
 |---|---|
-| Default install (WinPcap API-compatible mode on) | Starts, no Npcap DLL loaded at start. The first capture loads `System32\Npcap\wpcap.dll`; three pings give 6 packets. The export chooser opens full size. |
-| WinPcap API-compatible mode off (no `wpcap.dll` in `System32`) | Starts and captures the same 6 packets, loading Npcap from `System32\Npcap`. The build before the fix did not start in this state. |
-| Not installed | `--version` exits 0. A capture file opens (16 packets). The interface dialog and **Start** say "Npcap is not installed. Install it from https://npcap.com and try again". |
+| Default options | Starts without loading Npcap; the first capture loads it from `System32\Npcap`. Three pings gave 6 packets. The export dialog opens at full size. |
+| Without WinPcap API-compatible mode | Starts and captures the same 6 packets. The earlier build did not start here. |
+| Not installed | `--version` exits with 0 and a capture file opens. The interface dialog and Start report "Npcap is not installed". |
 
-On a CI machine without Npcap the tests of the live capture build run again
-([run 43740843862](https://github.com/Zaryob/imshark/actions/runs/43740843862)): 1480 tests, all passed or skipped. The
-three tests that need libpcap's interface list and filter compiler skip with the reason that Npcap is not installed.
+In CI the tests of the live capture build run again without Npcap
+([run 43740843862](https://github.com/Zaryob/imshark/actions/runs/43740843862)); the three tests that need libpcap are
+skipped there.
 
-![Export file chooser at its new size](images/windows-capture/09-export-dialog-fixed.png)
+![Export dialog at its new size](images/windows-capture/09-export-dialog-fixed.png)
 
 ![Interface dialog without Npcap](images/windows-capture/10-no-npcap-message.png)
 
-### Still open
+### Open items
 
-- The whole checklist on a real x86_64 Windows machine.
-- Finding 5 (admin-only Npcap) and finding 7 (unsigned executable).
-- The permission error text of finding 6 was changed but not seen on screen.
-- Repeated restarts with the helper, cancelling during pipe connection, and the Cancel button of ImShark's waiting
-  window.
-- The [clean-machine ZIP checklist](RELEASING.md#9-windows-clean-machine-checklist) on x86_64.
-
-A failed or unexecuted item remains open in the checklist.
+- Run the checklist on x86_64 hardware.
+- Problems 5 and 7.
+- The new permission error text has not been seen on screen yet.
+- Repeated restarts through the helper, ImShark's own Cancel button during authorization, and cancelling during the
+  pipe connection.

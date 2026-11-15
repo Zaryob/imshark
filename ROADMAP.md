@@ -31,7 +31,7 @@ Her başlık bağımsız bir çalışma olarak ele alınmalıdır. Protokol adı
 
 ## Yayın doğrulaması
 
-- [ ] Windows'ta temiz makinede dosya açma, dışa aktarma ve paket çalıştırma testi; isteğe bağlı Npcap yolunu gerçek aygıtla doğrula. Test prosedürü [RELEASING.md](docs/RELEASING.md#9-windows-clean-machine-checklist) içindedir (İngilizce). İlk deneme 15 Kasım 2026'da ARM64 sanal makinede (x64 öykünmesi) yapıldı: OpenGL sürücüsü olmadan pencere açılmadı; [sonuç](docs/VALIDATION.md#windows-clean-machine-checklist-imshark-100). Madde, x86_64 makinede tekrarlanana kadar açık kalır.
+- [ ] Windows'ta temiz makinede dosya açma, dışa aktarma ve paket çalıştırma testi; isteğe bağlı Npcap yolunu gerçek aygıtla doğrula. Test prosedürü [RELEASING.md](docs/RELEASING.md#9-windows-clean-machine-checklist) içindedir (İngilizce). İlk deneme 15 Kasım 2026'da ARM64 sanal makinede yapıldı; OpenGL sürücüsü olmadığı için pencere açılmadı ([sonuç](docs/VALIDATION.md#windows-clean-machine-checklist-imshark-100)). x86_64 makinede tekrarlanmalı.
 - [ ] macOS Developer ID imzası ve noter onayı; Linux/Windows paketlerinin bağımlılık ve lisanslarını temiz makinelerde denetle.
 - [x] Etiket tetiklemeli release iş akışının gerçek çalışmasını ve üretilen AppImage/DMG/ZIP paketlerini doğrula ([v0.9.2](https://github.com/Zaryob/imshark/releases/tag/v0.9.2): bütün platform kontrolleri geçti, SHA256SUMS ve DMG içindeki uygulama sürümü doğrulandı).
 
@@ -48,7 +48,7 @@ Her başlık bağımsız bir çalışma olarak ele alınmalıdır. Protokol adı
 | gzip açma sınırı ve güvenli geçici dosyalar | tamamlandı | [#9](https://github.com/Zaryob/imshark/pull/9) |
 | Arka planda görüntüleme filtresi ve nanosaniye hassasiyetiyle dışa aktarma | tamamlandı | [#11](https://github.com/Zaryob/imshark/pull/11) |
 | CHANGELOG, RELEASING, USER_GUIDE güncellemesi ve yayımlanmış paketlerin lisans denetimi | tamamlandı ([#14](https://github.com/Zaryob/imshark/pull/14)) | [CHANGELOG.md](CHANGELOG.md), [RELEASING.md](docs/RELEASING.md), [VALIDATION.md](docs/VALIDATION.md#third-party-licence-notices-in-the-published-packages) |
-| Windows temiz makine testi | açık; 1.0'da yapılmadı. 15 Kasım 2026'da ARM64 sanal makinede denendi ve pencere OpenGL sürücüsü olmadan açılmadı; x86_64 makinede tekrarlanmalı | [kontrol listesi](docs/RELEASING.md#9-windows-clean-machine-checklist), [sonuç](docs/VALIDATION.md#windows-clean-machine-checklist-imshark-100) |
+| Windows temiz makine testi | açık; 15 Kasım 2026'da ARM64 sanal makinede denendi, x86_64 makinede tekrarlanmalı | [kontrol listesi](docs/RELEASING.md#9-windows-clean-machine-checklist), [sonuç](docs/VALIDATION.md#windows-clean-machine-checklist-imshark-100) |
 | macOS ad hoc imza | bilinçli karar: 1.0 için Developer ID imzası ve noter onayı yok; kullanıcılar Gatekeeper'da "Open Anyway" adımını izler | [RELEASING.md](docs/RELEASING.md#7-macos-signing) |
 | Düzenli ifadelerin sınırlı PCRE2 ile değerlendirilmesi (fuzzing'in bulduğu ReDoS) | tamamlandı | [#15](https://github.com/Zaryob/imshark/pull/15) |
 
@@ -68,6 +68,6 @@ Bunlar 1.0'ı engellemez; sıralama bağlayıcı değildir.
 - [ ] macOS Intel paketi.
 - [x] Windows kaynak koduna UAC ve Named Pipe üzerinden yetkili yakalama yardımcısı ekle (Npcap ile isteğe bağlı derleme; yayımlanmış ZIP çevrimdışıdır).
 - [x] Windows Named Pipe ve süreç senaryolarını yerel Windows API'leriyle sınayan otomatik kontroller; Npcap SDK ile derleme/bağlama kontrolü ([doğrulama kaydı](docs/WINDOWS_CAPTURE_VALIDATION.md)).
-- [ ] Windows yardımcısının gerçek Npcap aygıtıyla UAC kabul/iptal, başlat/durdur/yeniden başlat ve dışa aktarma senaryolarını doğrula ([kontrol listesi](docs/RELEASING.md#10-windows-live-capture-checklist)). İlk çalıştırma 15 Kasım 2026'da ARM64 sanal makinede yapıldı: gerçek yakalama, UAC kabul/ret ve dışa aktarma geçti; `wpcap.dll` bulunamadığında programın açılmaması ve dışa aktarma penceresinin boyutu gibi hatalar bulundu ve aynı gün giderildi; yalnızca yöneticilere açık Npcap kurulumundaki davranış açık kaldı ([kayıt](docs/WINDOWS_CAPTURE_VALIDATION.md#real-npcap-and-interactive-uac-run--15-november-2026)). x86_64 makinede tekrarlanana kadar açık kalır.
+- [ ] Windows yardımcısının gerçek Npcap aygıtıyla UAC kabul/iptal, başlat/durdur/yeniden başlat ve dışa aktarma senaryolarını doğrula ([kontrol listesi](docs/RELEASING.md#10-windows-live-capture-checklist)). İlk çalıştırma 15 Kasım 2026'da ARM64 sanal makinede yapıldı; bulunan hatalar giderildi, yalnızca yöneticilere açık Npcap kurulumundaki sorun sürüyor ([kayıt](docs/WINDOWS_CAPTURE_VALIDATION.md#driver-and-uac-run-15-november-2026)). x86_64 makinede tekrarlanana kadar açık kalır.
 
 Tam Wireshark eşdeğerliği, bütün SampleCaptures koleksiyonunu eksiksiz çözme ve medya çözümü şu anki hedefler arasında değildir. Yeni protokol sayısından önce mevcut çıktının doğruluğu gelir.

@@ -9,16 +9,16 @@ Packages for **0.9.2** and **1.0.0** were published on GitHub Releases. The 0.9.
 ## [Unreleased]
 
 ### Added
-- Optional Windows live capture helper using UAC authorization and a private Named Pipe. Requires an Npcap-enabled build and installed driver; native IPC and SDK compile/link checks pass. A first run with a real driver and real UAC prompts captured, authorized and exported correctly ([record](docs/WINDOWS_CAPTURE_VALIDATION.md)). The published 1.0.0 ZIP remains an offline-analysis build.
-- Windows: Direct3D 11 fallback when the machine has no OpenGL 3.2 driver, first on the graphics card and then on WARP, the software rasterizer that ships with Windows, so the window also opens without 3D acceleration. The environment variable `IMSHARK_RENDERER` (`opengl`, `d3d11`, `software`) forces one backend.
-- CI uploads the Windows ZIP of a branch so the clean machine checklist can run before a release is tagged.
+- Optional Windows live capture through Npcap, with a UAC-elevated helper and a private Named Pipe. It needs a build with live capture enabled and the Npcap driver ([validation](docs/WINDOWS_CAPTURE_VALIDATION.md)). The published 1.0.0 ZIP has no live capture.
+- Windows: Direct3D 11 fallback when OpenGL 3.2 is not available, on the graphics card or in software (WARP). `IMSHARK_RENDERER` (`opengl`, `d3d11`, `software`) selects one.
+- CI keeps the Windows ZIP of each run, so a branch can be tested on Windows before a release.
 
 ### Fixed
 - Preserve empty BPF filters when launching the Windows helper, use overlapped reads correctly, report failed authorization promptly, and drain the worker stream before a clean EOF. Native pipe regressions run on Windows without requiring an installed driver.
 - An IPv6 Hop-by-Hop or Destination Options header whose last option declares more bytes than the header has left no longer makes the Jumbo Payload, Router Alert, Tunnel Encapsulation Limit or Home Address value be read past the header and, at the end of a frame, past the packet buffer (found by the weekly `fuzz_packet_sequence` run).
-- A Windows build with live capture starts, and opens capture files, on a machine without Npcap or with Npcap installed without WinPcap API-compatible mode: Npcap is loaded on first use from its own directory, and a capture attempt without it says that Npcap is not installed. Such a build previously stopped with "wpcap.dll was not found". Its permission error now describes the Npcap restriction instead of the macOS and Linux requirements.
-- The file choosers of Export Packets, Save Stream and the TLS key log setting open at a usable size. They appeared about 30 pixels wide the first time they were used.
-- Windows: the 1.0.0 package exited with code 1 and showed nothing on a machine without an OpenGL 3.2 driver. When no graphics backend can start, a message box now says why.
+- A Windows build with live capture starts without Npcap and loads it from Npcap's own folder when capturing. Without Npcap it says so instead of failing to start. The Windows permission error now refers to Npcap.
+- The Export Packets, Save Stream and TLS key log file dialogs open at a usable size instead of about 30 pixels wide.
+- Windows: without an OpenGL 3.2 driver the 1.0.0 package closed without showing a window. It now falls back to Direct3D 11 and shows a message if no renderer starts.
 
 ## [1.0.0] - 2026-10-10
 

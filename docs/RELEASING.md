@@ -147,7 +147,7 @@ Record failures as issues. A missing DLL, a crash on start or an unreadable file
 
 This is separate from the offline ZIP checklist above. The current source implements UAC and Named Pipe capture;
 the published 1.0.0 ZIP and default Windows CI do not enable Npcap. Passing portable parser/argument tests does not
-validate this native path. Native IPC and SDK compile/link results are in [WINDOWS_CAPTURE_VALIDATION.md](WINDOWS_CAPTURE_VALIDATION.md); the first run with a real Npcap driver and real UAC prompts (15 November 2026, Arm64 virtual machine) is recorded there too, with the defects it found.
+validate this native path. Native IPC and SDK link results, and a first run with the Npcap driver and real UAC prompts (15 November 2026, Arm64 virtual machine), are in [WINDOWS_CAPTURE_VALIDATION.md](WINDOWS_CAPTURE_VALIDATION.md).
 
 Build with `IMSHARK_LIVE_CAPTURE=ON` and `NPCAP_SDK_DIR` as described in [BUILDING.md](BUILDING.md#live-capture-privileges).
 Use an installed Npcap driver and a normal-user desktop session. See the [Npcap users' guide](https://npcap.com/guide/npcap-users-guide.html)

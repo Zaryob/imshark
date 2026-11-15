@@ -215,10 +215,9 @@ Support/imshark/` on macOS, `$XDG_CONFIG_HOME/imshark/` (or `~/.config/imshark/`
 They hold the recent files and filter history, theme, toolbar visibility, window size and position, time format, colorize
 switch, coloring rules, the list height, the TLS key log path and the last live capture choices. A missing or damaged file gives the defaults; delete it to reset.
 
-On Windows ImShark draws with OpenGL 3.2 and falls back to Direct3D 11 when the machine has no OpenGL 3.2 driver, which
-happens in some virtual machines, over remote desktop and with x64 emulation on Arm. Without 3D acceleration it uses the
-software renderer that is part of Windows. To force one, set the environment variable `IMSHARK_RENDERER` to `opengl`,
-`d3d11` or `software` before starting ImShark. If none of them starts, a message box says why.
+On Windows ImShark uses OpenGL 3.2 and switches to Direct3D 11 when no OpenGL 3.2 driver is available, as in some
+virtual machines and remote desktop sessions. Without 3D acceleration it renders in software. Set `IMSHARK_RENDERER` to
+`opengl`, `d3d11` or `software` to choose one. If none starts, a message box explains why.
 
 ## Keyboard shortcuts
 
