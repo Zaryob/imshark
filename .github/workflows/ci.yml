@@ -63,6 +63,19 @@ jobs:
         run: cmake --build --preset ${{ matrix.preset }} --parallel 4
       - name: Test
         run: ctest --preset ${{ matrix.preset }} --parallel 4 --output-on-failure
+      # The Windows ZIP of a branch, so the clean machine checklist (docs/RELEASING.md) can run before a tag exists.
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        run: cpack -C Release
+        working-directory: build
+      - name: Upload the Windows package
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@v7
+        with:
+          name: imshark-windows-x86_64
+          path: build/*.zip
+          if-no-files-found: error
+          retention-days: 14
 
   fuzz:
     name: fuzz / libFuzzer + ASan + UBSan

@@ -8,17 +8,23 @@
 
 #include <GLFW/glfw3.h>
 
-// Windows only declares OpenGL 1.1 in its <GL/gl.h>; the value is fixed by the OpenGL 1.2 specification.
-#ifndef GL_CLAMP_TO_EDGE
-#define GL_CLAMP_TO_EDGE 0x812F
-#endif
 #include <imgui.h>
 #include <imgui_impl_glfw.h>
-#include <imgui_impl_opengl3.h>
+
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 #include <capture/capture_worker.h>
 #include <filter/fields.h>
 
+#include "render_backend.h"
 #include "ui/theme.h"
 #include "ui/ui.h"
 #include "version.h"
@@ -30,7 +36,7 @@
 #include <stb_image.h>
 
 namespace {
-    GLuint loadTextureFromMemory(const unsigned char *data, size_t size) {
+    ImTextureID loadTextureFromMemory(RenderBackend &backend, const unsigned char *data, size_t size) {
         int width = 0, height = 0, channels = 0;
         unsigned char *pixels = stbi_load_from_memory(data, static_cast<int>(size),
                                                      &width, &height, &channels, STBI_rgb_alpha);
@@ -38,19 +44,17 @@ namespace {
             std::cerr << "Cannot decode the embedded logo: " << stbi_failure_reason() << std::endl;
             return 0;
         }
-        GLint previousTexture = 0;
-        glGetIntegerv(GL_TEXTURE_BINDING_2D, &previousTexture);
-        GLuint texture = 0;
-        glGenTextures(1, &texture);
-        glBindTexture(GL_TEXTURE_2D, texture);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
-        glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(previousTexture));
+        const ImTextureID texture = backend.createTexture(pixels, width, height);
         stbi_image_free(pixels);
         return texture;
+    }
+
+    // A program started by double-click has no console: without this the user would see nothing at all.
+    void reportStartupFailure(const std::string &message) {
+        std::cerr << message << std::endl;
+#ifdef _WIN32
+        MessageBoxA(nullptr, message.c_str(), "ImShark", MB_OK | MB_ICONERROR);
+#endif
     }
 
     void setWindowIcon(GLFWwindow *window) {
@@ -129,10 +133,6 @@ int main(int argc, char **argv) {
         std::cerr << "Failed to initialize GLFW" << std::endl;
         return EXIT_FAILURE;
     }
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
-    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 2);
-    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE); // 3.2+ only
-    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 
     // Size and position of the last session, moved into the work area of the monitor they were on
     constexpr int kMinWidth = 640, kMinHeight = 400;
@@ -167,17 +167,25 @@ int main(int argc, char **argv) {
         }
     }
 
-    GLFWwindow *window = glfwCreateWindow(windowWidth, windowHeight, "ImShark", nullptr, nullptr);
+    // OpenGL 3.2, or on Windows Direct3D 11 when the machine has no OpenGL driver (render_backend.h)
+    RenderWindow renderWindow = createRenderWindow(windowWidth, windowHeight, "ImShark");
+    GLFWwindow *window = renderWindow.window;
     if (window == nullptr) {
         glfwTerminate();
-        std::cerr << "Failed to create GLFW window" << std::endl;
+        reportStartupFailure("ImShark cannot open its window: " + renderWindow.error + ".\n\n"
+#ifdef _WIN32
+                             "It needs OpenGL 3.2 or Direct3D 11. Update the graphics driver, or turn on 3D acceleration "
+                             "if this is a virtual machine."
+#else
+                             "It needs a desktop session with OpenGL 3.2."
+#endif
+        );
         return EXIT_FAILURE;
     }
+    RenderBackend &backend = *renderWindow.backend;
     setWindowIcon(window);
     if (placeWindow) glfwSetWindowPos(window, windowX, windowY);
     glfwSetWindowSizeLimits(window, kMinWidth, kMinHeight, GLFW_DONT_CARE, GLFW_DONT_CARE);
-    glfwMakeContextCurrent(window);
-    glfwSwapInterval(1); // Enable vsync
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -197,24 +205,18 @@ int main(int argc, char **argv) {
         ImGui::GetIO().Fonts->AddFontDefaultVector(&fontConfig);
     }
 
-    if (!ImGui_ImplGlfw_InitForOpenGL(window, true)) {
-        std::cerr << "Failed to initialize the ImGui GLFW backend" << std::endl;
+    if (!backend.initImGui(window)) {
         ImGui::DestroyContext();
+        const std::string backendName = backend.name();
+        renderWindow.backend.reset(); // before the window it draws into
         glfwDestroyWindow(window);
         glfwTerminate();
-        return EXIT_FAILURE;
-    }
-    if (!ImGui_ImplOpenGL3_Init("#version 150")) {
-        std::cerr << "Failed to initialize the ImGui OpenGL backend" << std::endl;
-        ImGui_ImplGlfw_Shutdown();
-        ImGui::DestroyContext();
-        glfwDestroyWindow(window);
-        glfwTerminate();
+        reportStartupFailure("ImShark cannot start its " + backendName + " renderer.");
         return EXIT_FAILURE;
     }
 
-    const GLuint logoForLightMode = loadTextureFromMemory(brand::kLogoPng, sizeof(brand::kLogoPng));
-    const GLuint logoForDarkMode = loadTextureFromMemory(brand::kLogoLightPng, sizeof(brand::kLogoLightPng));
+    const ImTextureID logoForLightMode = loadTextureFromMemory(backend, brand::kLogoPng, sizeof(brand::kLogoPng));
+    const ImTextureID logoForDarkMode = loadTextureFromMemory(backend, brand::kLogoLightPng, sizeof(brand::kLogoLightPng));
     ui::AppState state;
     ui::initSettings(state, ui::defaultSettingsPath());
     ui::applyTheme(state.settings.darkTheme);
@@ -236,7 +238,7 @@ int main(int argc, char **argv) {
     while (!state.quitRequested) {
         glfwPollEvents();
 
-        ImGui_ImplOpenGL3_NewFrame();
+        backend.newFrame();
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
@@ -248,22 +250,15 @@ int main(int argc, char **argv) {
             glfwSetWindowTitle(window, windowTitle.c_str());
         }
         ui::drawMenuAndDialogs(state);
-        const GLuint currentLogoTexture = state.settings.darkTheme ? logoForDarkMode : logoForLightMode;
-        ui::drawMainWindow(state, ImTextureRef(static_cast<ImTextureID>(currentLogoTexture)));
+        const ImTextureID currentLogoTexture = state.settings.darkTheme ? logoForDarkMode : logoForLightMode;
+        ui::drawMainWindow(state, ImTextureRef(currentLogoTexture));
         ui::drawStatusBar(state);
         ui::drawLoadErrorPopup(state);
         ui::drawLoadProgressPopup(state);
         ui::saveSettingsIfDirty(state);
 
         ImGui::Render();
-        int display_w, display_h;
-        glfwGetFramebufferSize(window, &display_w, &display_h);
-        glViewport(0, 0, display_w, display_h);
-        glClearColor(0.45f, 0.55f, 0.60f, 1.00f);
-        glClear(GL_COLOR_BUFFER_BIT);
-        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-
-        glfwSwapBuffers(window);
+        backend.present(window, ImGui::GetDrawData());
         // A minimized window may not be throttled by vsync; keep background capture/load jobs responsive at 10 Hz.
         if (glfwGetWindowAttrib(window, GLFW_ICONIFIED)) glfwWaitEventsTimeout(0.1);
     }
@@ -285,11 +280,9 @@ int main(int argc, char **argv) {
     }
     ui::saveSettingsIfDirty(state);
 
-    if (logoForLightMode) glDeleteTextures(1, &logoForLightMode);
-    if (logoForDarkMode) glDeleteTextures(1, &logoForDarkMode);
-    ImGui_ImplOpenGL3_Shutdown();
-    ImGui_ImplGlfw_Shutdown();
+    backend.shutdownImGui(); // also frees the logo textures
     ImGui::DestroyContext();
+    renderWindow.backend.reset(); // before the window it draws into
     glfwDestroyWindow(window);
     glfwTerminate();
 
