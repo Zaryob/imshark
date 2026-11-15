@@ -31,7 +31,7 @@ Her başlık bağımsız bir çalışma olarak ele alınmalıdır. Protokol adı
 
 ## Yayın doğrulaması
 
-- [ ] Windows'ta temiz makinede dosya açma, dışa aktarma ve paket çalıştırma testi; isteğe bağlı Npcap yolunu gerçek aygıtla doğrula. Test prosedürü [RELEASING.md](docs/RELEASING.md#9-windows-clean-machine-checklist) içindedir (İngilizce); sonuç henüz kaydedilmedi.
+- [ ] Windows'ta temiz makinede dosya açma, dışa aktarma ve paket çalıştırma testi; isteğe bağlı Npcap yolunu gerçek aygıtla doğrula. Test prosedürü [RELEASING.md](docs/RELEASING.md#9-windows-clean-machine-checklist) içindedir (İngilizce). İlk deneme 15 Kasım 2026'da ARM64 sanal makinede (x64 öykünmesi) yapıldı: OpenGL sürücüsü olmadan pencere açılmadı; [sonuç](docs/VALIDATION.md#windows-clean-machine-checklist-imshark-100). Madde, x86_64 makinede tekrarlanana kadar açık kalır.
 - [ ] macOS Developer ID imzası ve noter onayı; Linux/Windows paketlerinin bağımlılık ve lisanslarını temiz makinelerde denetle.
 - [x] Etiket tetiklemeli release iş akışının gerçek çalışmasını ve üretilen AppImage/DMG/ZIP paketlerini doğrula ([v0.9.2](https://github.com/Zaryob/imshark/releases/tag/v0.9.2): bütün platform kontrolleri geçti, SHA256SUMS ve DMG içindeki uygulama sürümü doğrulandı).
 
@@ -48,7 +48,7 @@ Her başlık bağımsız bir çalışma olarak ele alınmalıdır. Protokol adı
 | gzip açma sınırı ve güvenli geçici dosyalar | tamamlandı | [#9](https://github.com/Zaryob/imshark/pull/9) |
 | Arka planda görüntüleme filtresi ve nanosaniye hassasiyetiyle dışa aktarma | tamamlandı | [#11](https://github.com/Zaryob/imshark/pull/11) |
 | CHANGELOG, RELEASING, USER_GUIDE güncellemesi ve yayımlanmış paketlerin lisans denetimi | tamamlandı ([#14](https://github.com/Zaryob/imshark/pull/14)) | [CHANGELOG.md](CHANGELOG.md), [RELEASING.md](docs/RELEASING.md), [VALIDATION.md](docs/VALIDATION.md#third-party-licence-notices-in-the-published-packages) |
-| Windows temiz makine testi | açık; 1.0'da yapılmadı, insan gerektirir | [kontrol listesi](docs/RELEASING.md#9-windows-clean-machine-checklist) |
+| Windows temiz makine testi | açık; 1.0'da yapılmadı. 15 Kasım 2026'da ARM64 sanal makinede denendi ve pencere OpenGL sürücüsü olmadan açılmadı; x86_64 makinede tekrarlanmalı | [kontrol listesi](docs/RELEASING.md#9-windows-clean-machine-checklist), [sonuç](docs/VALIDATION.md#windows-clean-machine-checklist-imshark-100) |
 | macOS ad hoc imza | bilinçli karar: 1.0 için Developer ID imzası ve noter onayı yok; kullanıcılar Gatekeeper'da "Open Anyway" adımını izler | [RELEASING.md](docs/RELEASING.md#7-macos-signing) |
 | Düzenli ifadelerin sınırlı PCRE2 ile değerlendirilmesi (fuzzing'in bulduğu ReDoS) | tamamlandı | [#15](https://github.com/Zaryob/imshark/pull/15) |
 

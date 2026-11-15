@@ -114,3 +114,62 @@ Findings:
 ### Fix applied after the audit
 
 The install rule in `CMakeLists.txt` now skips the `gtest` notice and the `vcpkg-*` build-script ports. Verified with `cmake --preset debug`, `cmake --build --preset debug` and `cmake --install build-debug --prefix <scratch>` on macOS arm64 (Debug, ASan/UBSan): `imshark.app/Contents/Resources/licenses` holds exactly `egl-registry`, `glfw3`, `imgui`, `imguifiledialog`, `libpcap`, `opengl-registry`, `openssl` and `stb`, `codesign --verify --deep --strict` passes and the installed binary runs `--version`. Before the change the same install also shipped `gtest`, `vcpkg-cmake`, `vcpkg-cmake-config` and `vcpkg-cmake-get-vars`, and `stb.txt` was already present. The Linux extras (zlib, bzip2, liblzma, libxml2, libxslt, xcb helpers) come from the Linux vcpkg dependency closure and could not be rebuilt here; check the Linux `licenses` directory of the next release candidate and decide whether to prune them.
+
+## Windows clean machine checklist, ImShark 1.0.0
+
+Run of the [Windows clean machine checklist](RELEASING.md#9-windows-clean-machine-checklist) on 15 November 2026. **The checklist asks for an x86_64 machine; this run used an Arm64 virtual machine, where the x86_64 package runs under Windows' x64 emulation. It does not close the 1.0 gate item** and has to be repeated on x86_64.
+
+| | |
+|---|---|
+| Package | [`imshark-1.0.0-windows-x86_64.zip`](https://github.com/Zaryob/imshark/releases/tag/v1.0.0), SHA-256 `5e53514f1f87e568a776a60a295db0d033dabaf3b27b403ab147a75e86a75ccd` |
+| Windows | Windows 11 Home 26H2, build 26300.9457, Arm64, Turkish (tr-TR), installed 11 November 2026 by VirtualBox unattended setup |
+| Machine | VirtualBox 7.2.22 r175245 virtual machine on an Apple Silicon Mac (macOS 27.2): 5 virtual CPUs, 8 GB, EFI, VBoxSVGA with the Guest Additions 7.2.22 WDDM driver, 1024×768, 3D acceleration off unless stated |
+| Tested by | Claude (AI assistant) on Suleyman Poyraz's machine. Commands ran through VirtualBox guest control. The GUI steps used synthetic mouse and keyboard input in the desktop session and were read from screenshots taken inside the guest. |
+
+State before the test: no Visual Studio, vcpkg or ImShark; no `vcruntime140*.dll` or `msvcp140.dll` in `System32`, `SysWOW64` or `SysArm32`; the installed programs were Microsoft Edge, Edge Update, WebView2 Runtime, OneDrive and the VirtualBox Guest Additions.
+
+Two things were added to the machine during the run, so it was no longer untouched for the items after them:
+
+- The Red Hat VirtIO network driver (`NetKVM`, virtio-win 0.1.302). VirtualBox's default USB network adapter never started in this guest (device error 10), and Windows on Arm has no built-in driver for the other adapter types. Added before item 1.
+- Microsoft's *OpenCL, OpenGL and Vulkan Compatibility Pack* (`Microsoft.D3DMappingLayers` 1.2608.3.0, from the Microsoft Store). Added after item 4 failed, to run items 4 to 8.
+
+| # | Checklist item | Result | What was seen |
+|---|---|---|---|
+| 1 | Download with a browser; digest matches | passed | Edge downloaded the ZIP without a warning. `Get-FileHash` gave `5e53514f…75ccd`, equal to the line in `SHA256SUMS.txt`. `SHA256SUMS.txt` itself was fetched with `Invoke-WebRequest`, because Edge shows text files instead of saving them. |
+| 2 | Extract to a path with a space and a non-ASCII character | passed | Extracted with the Explorer ZIP handler to `C:\ImShark Test\İndirilenler\imshark`: 23 files, 11,541,290 bytes. The Mark of the Web (`ZoneId=3`) was carried over to `imshark.exe`. |
+| 3 | `bin\imshark.exe --version` | passed | Printed `imshark 1.0.0 (v1.0.0)`, exit code 0, no missing DLL. The system directories had no Visual C++ runtime, so the DLLs in the package's `bin` folder were the ones used. |
+| 4 | Double-click: window, logo, welcome screen, icons; SmartScreen | **failed as shipped**; passed with the OpenGL pack | As shipped the program exited at once with code 1 and showed nothing. Its error output was `GLFW error 65542: WGL: The driver does not appear to support OpenGL`. This guest has no OpenGL driver that an x64 program can load; turning VirtualBox 3D acceleration on did not change it. With the compatibility pack installed the window opened (`openglon12.dll` loaded) with the logo, the welcome screen and the ImShark icon on the title bar and the taskbar. A console window opened next to it. SmartScreen: no warning while online. Offline it showed "SmartScreen can't be reached right now", publisher "Unknown publisher", application `imshark.exe`, with **Run** and **Don't run**. |
+| 5 | Open `sample.pcap` through **File > Open** and by drag and drop | passed (with the OpenGL pack) | Both loaded 16 packets; the title became `sample.pcap (16 packets) - ImShark`. Selecting packet 10 filled the details tree and the hex view. `imshark.exe <path>` opened the file too. |
+| 6 | Apply `tcp`, clear it, switch themes | passed (with the OpenGL pack) | `tcp` left packets 7 to 12 and 16; the clear button brought back all 16. **View > Light Theme** and **Dark Theme** both applied. |
+| 7 | Close and reopen: size, position, recent files | **partly failed** (with the OpenGL pack) | Recent files were remembered in **File > Open Recent** and on the welcome screen. A window moved to 120,40 at 860×640 came back in the same place. But after the first run, which opens at the default size on this 1024×768 screen, the second start put the window at 0,0 by its client area: the title bar was above the top of the screen and could not be reached with the mouse. |
+| 8 | Start live capture shows the expected guidance | passed (with the OpenGL pack) | The **Capture** entries and the toolbar buttons are disabled. The tooltip says "Live capture is not available in this build (built without libpcap / Npcap; configure with IMSHARK_LIVE_CAPTURE=ON)". |
+| 9 | Licence notices under `share\imshark\licenses` | passed | 10 files, 21,518 bytes: `egl-registry`, `glfw3`, `imgui`, `imguifiledialog`, `opengl-registry`, `opengl`, `openssl`, `pcre2`, `pcre2-LICENCE.md`, `stb`; plus `share\imshark\LICENSE`. |
+| 10 | Delete the extracted folder; nothing else left behind | passed | After deleting the folder and the downloads, the only ImShark file left was `%APPDATA%\imshark\settings.ini` (241 bytes). Nothing named `imshark` was found elsewhere in the profile, in `C:\ProgramData`, in `%TEMP%` or under `HKCU\Software`. Traces that Windows keeps on its own (for example Recent shortcuts) were not searched. |
+| 11 | Record the result | done | This section. |
+
+After the run the settings file, the helper files of the test and the scheduled task that drove the desktop session were removed. The VirtIO driver and the OpenGL pack stayed installed. The VirtualBox snapshot `pre-imshark-check` holds the machine as it was before the test.
+
+Findings to file as issues ([RELEASING.md](RELEASING.md#9-windows-clean-machine-checklist) says failures are recorded as issues):
+
+1. **No window without an OpenGL 3.2 driver, and no message.** The 1.0.0 package exits with code 1 silently. A user who double-clicks it sees nothing. A fix is on the branch `feature/windows-d3d11-fallback` (see below).
+2. **Title bar off screen on the second start** when the saved window is as large as the work area (seen at 1024×768). The saved position is that of the client area, and the restore step moves it to the top of the work area without leaving room for the title bar.
+3. **A console window opens with the GUI** when `imshark.exe` is started from Explorer.
+4. **The file dialog shows `?` for the Turkish letters `ğ` and `ı`** in folder names (`Müzi?im`, `Videolar?m`); `ü` is shown. Opening files under `İndirilenler` worked.
+5. **The file dialog starts with the `.pcapng` type**, so a `.pcap` file is hidden until the type box is changed.
+
+### Follow-up build with a Direct3D 11 fallback
+
+The branch `feature/windows-d3d11-fallback` ([pull request 16](https://github.com/Zaryob/imshark/pull/16)) adds a Direct3D 11 backend that is used when OpenGL 3.2 is missing: first on the graphics card, then on WARP, the software rasterizer that ships with Windows. Its Windows ZIP came from [CI run 43684670123](https://github.com/Zaryob/imshark/actions/runs/43684670123), which built the renderer code of that pull request as commit `c4fa8b5`, before the branch was rebased (`imshark-1.0.0-win64.zip`, SHA-256 `dea61f2e0079551d58f250a471cf619adb0311fa20e4fe34f683f190895a27d4`) and was tested in the same virtual machine, before the OpenGL pack was installed unless stated:
+
+| Case | Result |
+|---|---|
+| 3D acceleration off, no OpenGL | The window opened. Error output: `OpenGL 3.2 is not available; trying Direct3D 11`, then `Using Direct3D 11, flip model, 1028x720`. `d3d10warp.dll` was loaded, so the frames were drawn in software. |
+| 3D acceleration on, no OpenGL | The window opened: `Using Direct3D 11 (software), flip model`. |
+| `IMSHARK_RENDERER=software` | The window opened on WARP. |
+| `IMSHARK_RENDERER=opengl` | A message box: "ImShark cannot open its window: OpenGL 3.2 is not available." with advice, instead of a silent exit. |
+| GUI items 5 to 8, 3D acceleration off | **File > Open**, drag and drop, selecting a packet, the `tcp` filter and its clearing, both themes, the live capture tooltip, resizing, and size, position and recent files after reopening all worked. |
+| After the OpenGL pack was installed | The build chose OpenGL again (`openglon12.dll` loaded, no fallback message). |
+
+The first build of the branch (its first commit) used the older blit-model swap chain. With 3D acceleration off its window stayed blank white, although it drew correctly with 3D acceleration on. Its second commit switched to the flip model, which fixed it.
+
+Not covered: an x86_64 machine, a real graphics card, Windows 10, and high-DPI or multi-monitor setups.
