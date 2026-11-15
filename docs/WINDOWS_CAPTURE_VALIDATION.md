@@ -140,15 +140,15 @@ copied out and compared with an independent pcap/pcapng parser on another machin
    ordinary import (no delay loading) and the program does not add `System32\Npcap` to the search path. Without Npcap,
    and with Npcap installed without WinPcap API-compatible mode, Windows shows its system error dialog (on this Turkish
    system "wpcap.dll bulunamadı", that is, wpcap.dll was not found) and `imshark.exe --version` exits with `0xC0000135`. Such a build cannot even open a capture file on
-   a machine without Npcap. Not fixed.
+   a machine without Npcap. **Fixed**, see [the follow-up](#fixes-checked-the-same-day).
 
    ![System error on start when wpcap.dll is not found](images/windows-capture/01-no-npcap-wpcap-missing.png)
 3. **The tests of a live capture build cannot run on a machine without Npcap**, for the same reason: test discovery of
-   `imshark_tests.exe` ends with `0xc0000135` (run 43706414125). CI therefore cannot test this configuration. Not fixed.
+   `imshark_tests.exe` ends with `0xc0000135` (run 43706414125). CI therefore cannot test this configuration. **Fixed**, see [the follow-up](#fixes-checked-the-same-day).
 4. **The file dialog of Export Packets opens about 30 pixels wide on first use.** It has to be enlarged by dragging its
    corner before a name can be typed. `Display("ExportDlgKey")` in `src/ui/export_dialog.cpp` passes no minimum size,
    unlike the Open dialog. The same call without a size is in `follow_window.cpp` and `preferences.cpp`; those dialogs
-   were not opened in this run. This is not specific to Windows or to live capture. Not fixed.
+   were not opened in this run. This is not specific to Windows or to live capture. **Fixed**, see [the follow-up](#fixes-checked-the-same-day).
 
    ![Export file dialog shown as a small box in the middle of the window](images/windows-capture/03-export-dialog-tiny.png)
 5. **With Npcap restricted to Administrators, Npcap asks for elevation itself, and ImShark's own authorization cannot
@@ -162,7 +162,7 @@ copied out and compared with an independent pcap/pcapng parser on another machin
 
    ![Permission error with Authorize and capture](images/windows-capture/06-permission-error-authorize.png)
 6. **The Windows permission error names the macOS and Linux requirements** ("capturing needs access to /dev/bpf*
-   (macOS) or CAP_NET_RAW (Linux)"), followed by Npcap's own text. Not fixed.
+   (macOS) or CAP_NET_RAW (Linux)"), followed by Npcap's own text. **Fixed**: the Windows text now says that Npcap lets only administrators capture.
 7. **ImShark's UAC prompt says "Unknown publisher"**, because the executable is not signed.
 
    ![UAC prompt for imshark.exe with an unknown publisher](images/windows-capture/07-imshark-uac-prompt.png)
@@ -177,10 +177,39 @@ Smaller observations:
   killed stays, and nothing removes it later.
 - A console window opens next to the GUI when it is started from Explorer.
 
+### Fixes checked the same day
+
+Findings 2, 3, 4 and 6 were fixed and checked in the same virtual machine:
+
+- `wpcap.dll` is now delay loaded. Before the first libpcap call, the GUI and the capture helper load it by full path
+  from `System32\Npcap`, then from the system directory, never from the program's own directory.
+- Every file chooser opens at the size of the Open dialog; a test measures the export chooser on its first frame (it
+  measured 32 by 39 pixels before).
+- The Windows permission error describes the Npcap restriction.
+
+The package came from [Actions run 43737763420](https://github.com/Zaryob/imshark/actions/runs/43737763420)
+(`imshark-1.0.0-win64.zip`, 4 983 425 bytes, SHA-256 `f3b9aaf6983f21905576385a356a21be34280cb94c82b99b07efe0e52988d1c5`).
+The final commit adds only test changes to it.
+
+| Npcap state | Result |
+|---|---|
+| Default install (WinPcap API-compatible mode on) | Starts, no Npcap DLL loaded at start. The first capture loads `System32\Npcap\wpcap.dll`; three pings give 6 packets. The export chooser opens full size. |
+| WinPcap API-compatible mode off (no `wpcap.dll` in `System32`) | Starts and captures the same 6 packets, loading Npcap from `System32\Npcap`. The build before the fix did not start in this state. |
+| Not installed | `--version` exits 0. A capture file opens (16 packets). The interface dialog and **Start** say "Npcap is not installed. Install it from https://npcap.com and try again". |
+
+On a CI machine without Npcap the tests of the live capture build run again
+([run 43740843862](https://github.com/Zaryob/imshark/actions/runs/43740843862)): 1480 tests, all passed or skipped. The
+three tests that need libpcap's interface list and filter compiler skip with the reason that Npcap is not installed.
+
+![Export file chooser at its new size](images/windows-capture/09-export-dialog-fixed.png)
+
+![Interface dialog without Npcap](images/windows-capture/10-no-npcap-message.png)
+
 ### Still open
 
 - The whole checklist on a real x86_64 Windows machine.
-- Findings 2 to 6.
+- Finding 5 (admin-only Npcap) and finding 7 (unsigned executable).
+- The permission error text of finding 6 was changed but not seen on screen.
 - Repeated restarts with the helper, cancelling during pipe connection, and the Cancel button of ImShark's waiting
   window.
 - The [clean-machine ZIP checklist](RELEASING.md#9-windows-clean-machine-checklist) on x86_64.
