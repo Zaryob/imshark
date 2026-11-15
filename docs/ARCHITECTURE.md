@@ -29,9 +29,9 @@ Yakalama dosyası / canlı yakalama
 | Hedef | Sorumluluk |
 |---|---|
 | `imshark_core` | Statik, UI bağımsız okuyucu, ayrıştırıcı, filtre, istatistik, akış, dışa aktarma ve canlı yakalama kütüphanesi |
-| `imshark_imgui` | vcpkg'den gelen Dear ImGui, GLFW/OpenGL3 backend'leri ve ImGuiFileDialog bağlantıları |
+| `imshark_imgui` | vcpkg'den gelen Dear ImGui, GLFW/OpenGL3 backend'leri (Windows'ta ayrıca Direct3D 11 backend'i) ve ImGuiFileDialog bağlantıları |
 | `imshark_ui` | `src/ui/`: uygulama durumu ve pencere açmadan test edilebilen arayüz bileşenleri |
-| `imshark` | `src/main.cpp`: GLFW/OpenGL başlatma, ana döngü ve kapanış |
+| `imshark` | `src/main.cpp`, `src/render_backend*.cpp`: GLFW penceresi, OpenGL 3.2 (Windows'ta OpenGL yoksa Direct3D 11, o da yoksa yazılım tabanlı WARP), ana döngü ve kapanış |
 | `imshark_tests` | Çekirdek ve arayüz için GoogleTest testleri |
 | `imshark_dump` | Başsız JSON alan dökümü; tshark karşılaştırmasının ImShark tarafı |
 | `bench_driver` | İsteğe bağlı yükleme/filtre performans ölçümü |

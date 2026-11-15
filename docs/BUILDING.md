@@ -4,7 +4,7 @@ ImShark uses C++20, CMake 3.21 or newer, Ninja and vcpkg manifest mode. Set `VCP
 
 ## Platform prerequisites
 
-vcpkg builds the C/C++ libraries: Dear ImGui with the GLFW/OpenGL3 backends, ImGuiFileDialog, GLFW, GoogleTest, OpenSSL and libpcap on supported platforms, and provides stb for embedded PNG images. The operating system still supplies the compiler, window-system development headers and graphics driver.
+vcpkg builds the C/C++ libraries: Dear ImGui with the GLFW/OpenGL3 backends (and the Direct3D 11 backend on Windows), ImGuiFileDialog, GLFW, GoogleTest, OpenSSL and libpcap on supported platforms, and provides stb for embedded PNG images. The operating system still supplies the compiler, window-system development headers and graphics driver.
 
 ### macOS
 
@@ -112,7 +112,7 @@ An enabled dependency must be available; configure should fail instead of silent
 .\build\imshark.exe --version
 ```
 
-`--version` works without a display server. Running the full application requires a working graphics context. `imshark_dump` is a separate headless tool.
+`--version` works without a display server. Running the full application requires a working graphics context: OpenGL 3.2, or on Windows Direct3D 11 as a fallback. The fallback tries the graphics card first and then WARP, the software rasterizer that ships with Windows, so the window also opens without 3D acceleration (virtual machines, remote desktops, x64 emulation on Arm). Set the environment variable `IMSHARK_RENDERER` to `opengl`, `d3d11` or `software` to force one backend; the code is in `src/render_backend*.cpp`. `imshark_dump` is a separate headless tool.
 
 ### Live capture privileges
 
