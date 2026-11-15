@@ -348,6 +348,14 @@ TEST_F(UiInteract, FileOpenMenuItemOpensTheFileDialog) {
     EXPECT_TRUE(ImGuiFileDialog::Instance()->IsOpened("ChooseFileDlgKey"));
 }
 
+TEST_F(UiInteract, CaptureFileDialogShowsEveryCaptureTypeAtFirst) {
+    ui::AppState state;
+    ui::openCaptureDialog();
+    frame(state);
+    // One filter for all capture types: with ".pcapng" first, .pcap files were hidden until the filter was changed.
+    EXPECT_EQ(ImGuiFileDialog::Instance()->GetCurrentFilter(), "Capture files");
+}
+
 TEST_F(UiInteract, CtrlOOpensTheFileDialog) {
     ui::AppState state;
     frames(state);

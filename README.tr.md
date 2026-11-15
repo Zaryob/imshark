@@ -78,7 +78,7 @@ ctest --preset default
 .\build\imshark.exe tests/data/sample.pcap
 ```
 
-`imshark --help` komut satırı seçeneklerini gösterir; `--version` ekran sunucusu olmadan çalışır.
+`imshark --help` komut satırı seçeneklerini gösterir; `--version` ekran sunucusu olmadan çalışır. Windows'ta `imshark.exe` bir GUI programıdır: PowerShell'de çıktıyı beklemek için `imshark.exe --version | Out-Host` kullanın.
 
 Dosya seçici için **File > Open** (Ctrl+O; macOS'ta Cmd+O) kullanın veya bir dosyayı pencereye bırakın. Örnek dosyayı `python3 tools/make_sample_pcap.py` ile yeniden üretebilirsiniz.
 

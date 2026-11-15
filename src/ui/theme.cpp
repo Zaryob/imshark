@@ -1,8 +1,14 @@
 #include "theme.h"
 
 #include <algorithm>
+#include <cstdlib>
+#include <filesystem>
+#include <system_error>
+#include <vector>
 
 #include <imgui.h>
+
+#include <core.h>
 
 #include "color_rules.h"
 
@@ -17,6 +23,39 @@ namespace {
         return dark ? rgb(0x34B3CF, alpha) : rgb(0x0E7490, alpha);
     }
 } // namespace
+
+std::string ui::fallbackFontPath() {
+    std::vector<std::string> candidates;
+#if defined(_WIN32)
+    const char *windir = std::getenv("WINDIR");
+    const std::string fonts = std::string(windir && *windir ? windir : "C:\\Windows") + "\\Fonts\\";
+    candidates = {fonts + "segoeui.ttf", fonts + "tahoma.ttf", fonts + "arial.ttf"};
+#elif defined(__APPLE__)
+    candidates = {"/System/Library/Fonts/Supplemental/Arial.ttf", "/Library/Fonts/Arial Unicode.ttf",
+                  "/System/Library/Fonts/Supplemental/Verdana.ttf"};
+#else
+    candidates = {"/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/TTF/DejaVuSans.ttf",
+                  "/usr/share/fonts/dejavu/DejaVuSans.ttf", "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+                  "/usr/share/fonts/noto/NotoSans-Regular.ttf", "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf"};
+#endif
+    for (const auto &path: candidates) {
+        std::error_code ec;
+        if (std::filesystem::is_regular_file(core::pathFromUtf8(path), ec)) return path;
+    }
+    return {};
+}
+
+void ui::loadFonts(float sizePixels) {
+    ImFontAtlas *atlas = ImGui::GetIO().Fonts;
+    ImFontConfig config;
+    config.SizePixels = sizePixels;
+    atlas->AddFontDefaultVector(&config);
+    const std::string fallback = fallbackFontPath();
+    if (fallback.empty()) return;
+    ImFontConfig merge;
+    merge.MergeMode = true; // used only for characters the embedded font does not have
+    atlas->AddFontFromFileTTF(fallback.c_str(), sizePixels, &merge);
+}
 
 void ui::setDpiScale(float scale) { gDpiScale = std::max(0.5f, std::min(scale, 4.0f)); }
 

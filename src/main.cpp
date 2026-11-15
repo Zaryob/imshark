@@ -73,6 +73,20 @@ namespace {
 #endif
     }
 
+#ifdef _WIN32
+    // imshark.exe is a GUI program, so Explorer opens no console window for it. Started from a terminal, --help, --version
+    // and error messages go to that terminal; output redirected to a file or a pipe is left as it is.
+    void attachParentConsole() {
+        const auto usable = [](HANDLE h) { return h != nullptr && h != INVALID_HANDLE_VALUE; };
+        const bool haveOut = usable(GetStdHandle(STD_OUTPUT_HANDLE));
+        const bool haveErr = usable(GetStdHandle(STD_ERROR_HANDLE));
+        if ((haveOut && haveErr) || !AttachConsole(ATTACH_PARENT_PROCESS)) return;
+        FILE *stream = nullptr;
+        if (!haveOut) freopen_s(&stream, "CONOUT$", "w", stdout);
+        if (!haveErr) freopen_s(&stream, "CONOUT$", "w", stderr);
+    }
+#endif
+
     std::string captureWindowTitle(const ui::AppState &state) {
         if (state.displayName.empty()) return "ImShark";
         std::string name = state.displayName;
@@ -96,6 +110,9 @@ namespace {
 } // namespace
 
 int main(int argc, char **argv) {
+#ifdef _WIN32
+    attachParentConsole();
+#endif
     // The privileged capture worker (started by the GUI through pkexec / osascript) must not initialise anything of the
     // window system or the UI: it opens the device, drops its privileges and streams packets (docs/CAPTURE_PRIVILEGES.md).
     if (argc > 1 && std::string_view(argv[1]) == "--capture-worker") {
@@ -137,9 +154,10 @@ int main(int argc, char **argv) {
     // Size and position of the last session, moved into the work area of the monitor they were on
     constexpr int kMinWidth = 640, kMinHeight = 400;
     int windowWidth = 1280, windowHeight = 720, windowX = 0, windowY = 0;
-    bool placeWindow = false;
+    bool placeWindow = false, restoreGeometry = false;
+    const ui::Settings saved = ui::loadSettings(ui::defaultSettingsPath());
+    ui::WindowRect workArea;
     {
-        const ui::Settings saved = ui::loadSettings(ui::defaultSettingsPath());
         int count = 0;
         GLFWmonitor **monitors = glfwGetMonitors(&count);
         GLFWmonitor *best = glfwGetPrimaryMonitor();
@@ -155,10 +173,10 @@ int main(int argc, char **argv) {
             }
         }
         if (best) {
-            ui::WindowRect area;
-            glfwGetMonitorWorkarea(best, &area.x, &area.y, &area.w, &area.h);
+            glfwGetMonitorWorkarea(best, &workArea.x, &workArea.y, &workArea.w, &workArea.h);
             ui::WindowRect rect;
-            if (ui::restoreWindowRect(saved, area, kMinWidth, kMinHeight, rect, placeWindow)) {
+            if (ui::restoreWindowRect(saved, workArea, kMinWidth, kMinHeight, rect, placeWindow)) {
+                restoreGeometry = true;
                 windowWidth = rect.w;
                 windowHeight = rect.h;
                 windowX = rect.x;
@@ -184,6 +202,18 @@ int main(int argc, char **argv) {
     }
     RenderBackend &backend = *renderWindow.backend;
     setWindowIcon(window);
+    if (restoreGeometry) {
+        // The saved geometry is that of the client area. Now that the frame is known, fit it below the title bar: a window
+        // as tall as the work area would otherwise come back with its title bar above the top of the screen.
+        int left = 0, top = 0, right = 0, bottom = 0;
+        glfwGetWindowFrameSize(window, &left, &top, &right, &bottom);
+        ui::WindowRect rect;
+        if (ui::restoreWindowRect(saved, ui::clientWorkArea(workArea, left, top, right, bottom), kMinWidth, kMinHeight, rect, placeWindow)) {
+            if (rect.w != windowWidth || rect.h != windowHeight) glfwSetWindowSize(window, rect.w, rect.h);
+            windowX = rect.x;
+            windowY = rect.y;
+        }
+    }
     if (placeWindow) glfwSetWindowPos(window, windowX, windowY);
     glfwSetWindowSizeLimits(window, kMinWidth, kMinHeight, GLFW_DONT_CARE, GLFW_DONT_CARE);
 
@@ -200,9 +230,7 @@ int main(int argc, char **argv) {
         glfwGetFramebufferSize(window, &framebufferWidth, &unused);
         const float framebufferScale = logicalWidth > 0 ? static_cast<float>(framebufferWidth) / logicalWidth : 1.0f;
         ui::setDpiScale(framebufferScale > 0.0f ? contentScaleX / framebufferScale : 1.0f);
-        ImFontConfig fontConfig;
-        fontConfig.SizePixels = 14.0f;
-        ImGui::GetIO().Fonts->AddFontDefaultVector(&fontConfig);
+        ui::loadFonts(14.0f);
     }
 
     if (!backend.initImGui(window)) {

@@ -130,7 +130,7 @@ The automated checks run on a GitHub runner with the build tools installed. Befo
 
 - [ ] Download `imshark-X.Y.Z-windows-x86_64.zip` and `SHA256SUMS.txt` with a browser; the digest from `Get-FileHash` matches.
 - [ ] Extract the ZIP to a path that contains a space and a non-ASCII character, for example `C:\Users\Test User\İndirilenler\imshark`.
-- [ ] `bin\imshark.exe --version` prints `imshark X.Y.Z` and does not report a missing DLL (a missing `VCRUNTIME140.dll` or `MSVCP140.dll` means the Visual C++ runtime was not bundled; this blocks the release).
+- [ ] `bin\imshark.exe --version | Out-Host` (PowerShell) prints `imshark X.Y.Z` and does not report a missing DLL (a missing `VCRUNTIME140.dll` or `MSVCP140.dll` means the Visual C++ runtime was not bundled; this blocks the release).
 - [ ] Double-click `bin\imshark.exe`: the window opens, shows the logo and welcome screen, and the window and taskbar carry the ImShark icon. Windows SmartScreen may warn about an unrecognised publisher because the binary is unsigned; record what it shows.
 - [ ] Open `sample.pcap` through **File > Open** and by dragging it onto the window. The packet list, details and hex view fill.
 - [ ] Apply a display filter such as `tcp`, clear it, and switch between dark and light themes.

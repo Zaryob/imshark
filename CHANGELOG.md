@@ -19,6 +19,10 @@ Packages for **0.9.2** and **1.0.0** were published on GitHub Releases. The 0.9.
 - A Windows build with live capture starts without Npcap and loads it from Npcap's own folder when capturing. Without Npcap it says so instead of failing to start. The Windows permission error now refers to Npcap.
 - The Export Packets, Save Stream and TLS key log file dialogs open at a usable size instead of about 30 pixels wide.
 - Windows: without an OpenGL 3.2 driver the 1.0.0 package closed without showing a window. It now falls back to Direct3D 11 and shows a message if no renderer starts.
+- Windows: no console window opens next to the GUI. `--help`, `--version` and error messages still reach a terminal the program was started from.
+- A window restored as tall as the screen keeps its title bar on screen instead of starting above the top edge.
+- Letters the built-in font lacks, such as the Turkish ğ and ı, are drawn from a system font instead of as `?`.
+- The Open dialog starts with one filter for all capture types, so `.pcap` files are no longer hidden behind `.pcapng`.
 
 ## [1.0.0] - 2026-10-10
 

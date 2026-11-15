@@ -40,7 +40,8 @@ void ui::openCaptureDialog() {
     IGFD::FileDialogConfig config;
     config.path = ".";
     config.flags = ImGuiFileDialogFlags_Modal;
-    ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", "Open capture file", ".pcapng,.pcap,.cap,.snoop,.erf,.iptrace,.gz,.*", config);
+    ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", "Open capture file",
+                                            "Capture files{.pcapng,.pcap,.cap,.snoop,.erf,.iptrace,.gz},.*", config);
 }
 
 void ui::applyTheme(bool dark) {

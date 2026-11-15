@@ -55,6 +55,11 @@ namespace ui {
     /// valid size was saved (the caller keeps its default).
     bool restoreWindowRect(const Settings &settings, const WindowRect &workArea, int minW, int minH, WindowRect &out, bool &hasPos);
 
+    /// The part of `workArea` that the client area of a window may use when the window system draws a frame of the given
+    /// widths around it (the title bar is the top one). Saved geometry is that of the client area, so restoring it into
+    /// this rectangle keeps the title bar on screen.
+    WindowRect clientWorkArea(const WindowRect &workArea, int frameLeft, int frameTop, int frameRight, int frameBottom);
+
     /// Per-user location of the settings file (platform config directory).
     std::string defaultSettingsPath();
 

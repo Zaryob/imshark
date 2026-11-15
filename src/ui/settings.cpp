@@ -276,6 +276,15 @@ void ui::addFilterHistory(Settings &settings, const std::string &filterText) {
     if (h.size() > Settings::kMaxFilterHistory) h.resize(Settings::kMaxFilterHistory);
 }
 
+ui::WindowRect ui::clientWorkArea(const WindowRect &workArea, int frameLeft, int frameTop, int frameRight, int frameBottom) {
+    WindowRect area;
+    area.x = workArea.x + std::max(0, frameLeft);
+    area.y = workArea.y + std::max(0, frameTop);
+    area.w = std::max(1, workArea.w - std::max(0, frameLeft) - std::max(0, frameRight));
+    area.h = std::max(1, workArea.h - std::max(0, frameTop) - std::max(0, frameBottom));
+    return area;
+}
+
 bool ui::restoreWindowRect(const Settings &settings, const WindowRect &workArea, int minW, int minH, WindowRect &out, bool &hasPos) {
     hasPos = false;
     if (settings.windowWidth <= 0 || settings.windowHeight <= 0 || workArea.w <= 0 || workArea.h <= 0) return false;

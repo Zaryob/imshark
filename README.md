@@ -78,7 +78,7 @@ Open the sample capture:
 .\build\imshark.exe tests/data/sample.pcap
 ```
 
-`imshark --help` lists the command-line options; `--version` works without a display server.
+`imshark --help` lists the command-line options; `--version` works without a display server. On Windows `imshark.exe` is a GUI program: in PowerShell use `imshark.exe --version | Out-Host` so that the prompt waits for the output.
 
 Use **File > Open** (Ctrl+O; Cmd+O on macOS) for the file picker, or drop a file on the window. `python3 tools/make_sample_pcap.py` regenerates the sample file.
 

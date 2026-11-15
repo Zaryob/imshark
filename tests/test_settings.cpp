@@ -241,6 +241,39 @@ TEST(Settings, RestoredWindowIsClampedToTheWorkArea) {
     EXPECT_EQ(out.x, 0);
 }
 
+TEST(Settings, RestoredWindowKeepsItsTitleBarOnScreen) {
+    // A 1024x768 screen with a 48 pixel taskbar, and a window saved as large as the work area at its top left corner.
+    // Saved geometry is the client area; the frame adds 31 pixels of title bar on top and 8 on the other sides.
+    const ui::WindowRect area{0, 0, 1024, 720};
+    ui::Settings s;
+    s.windowWidth = 1024;
+    s.windowHeight = 720;
+    s.hasWindowPos = true;
+    s.windowX = 0;
+    s.windowY = 0;
+    const ui::WindowRect client = ui::clientWorkArea(area, 8, 31, 8, 8);
+    EXPECT_EQ(client.x, 8);
+    EXPECT_EQ(client.y, 31);
+    EXPECT_EQ(client.w, 1008);
+    EXPECT_EQ(client.h, 681);
+
+    ui::WindowRect out;
+    bool hasPos = false;
+    ASSERT_TRUE(ui::restoreWindowRect(s, client, 640, 400, out, hasPos));
+    EXPECT_TRUE(hasPos);
+    EXPECT_GE(out.y - 31, area.y) << "the title bar starts inside the work area";
+    EXPECT_LE(out.y + out.h + 8, area.y + area.h);
+    EXPECT_GE(out.x - 8, area.x);
+    EXPECT_LE(out.x + out.w + 8, area.x + area.w);
+
+    // Without a frame (or with one the window system does not report) nothing changes.
+    const ui::WindowRect same = ui::clientWorkArea(area, 0, 0, 0, 0);
+    EXPECT_EQ(same.x, area.x);
+    EXPECT_EQ(same.y, area.y);
+    EXPECT_EQ(same.w, area.w);
+    EXPECT_EQ(same.h, area.h);
+}
+
 namespace {
     std::string readAll(const std::filesystem::path &p) {
         std::ifstream f(p, std::ios::binary);
