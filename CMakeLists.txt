@@ -238,7 +238,8 @@ if(WIN32)
     install(TARGETS imshark
         RUNTIME_DEPENDENCIES
             DIRECTORIES "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/bin"
-            PRE_EXCLUDE_REGEXES "api-ms-.*" "ext-ms-.*"
+            # Npcap is installed on the target machine and may not be redistributed: never look for or ship its DLLs.
+            PRE_EXCLUDE_REGEXES "api-ms-.*" "ext-ms-.*" "^[Ww][Pp][Cc][Aa][Pp]\\.[Dd][Ll][Ll]$" "^[Pp][Aa][Cc][Kk][Ee][Tt]\\.[Dd][Ll][Ll]$"
             POST_EXCLUDE_REGEXES ".*[Ww][Ii][Nn][Dd][Oo][Ww][Ss][/\\\\][Ss][Yy][Ss][Tt][Ee][Mm]32.*"
         RUNTIME DESTINATION bin)
     include(InstallRequiredSystemLibraries)
