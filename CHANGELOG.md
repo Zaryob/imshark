@@ -4,12 +4,14 @@ All notable changes to ImShark are documented in this file.
 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project follows [Semantic Versioning](https://semver.org/). Detailed per-release notes, including the download table, live in [docs/releases/](docs/releases/). Procedure: [docs/RELEASING.md](docs/RELEASING.md).
 
-Packages for **0.9.2** and **1.0.0** were published on GitHub Releases. The 0.9.0 and 0.9.1 tags produced no packages; the entries below say why.
+Packages for **0.9.2**, **1.0.0** and **1.0.1** are published on GitHub Releases. The 0.9.0 and 0.9.1 tags produced no packages; the entries below say why.
 
-## [Unreleased]
+## [1.0.1] - 2026-11-16
+
+Windows fixes. [Release notes](docs/releases/v1.0.1.md).
 
 ### Added
-- Optional Windows live capture through Npcap, with a UAC-elevated helper and a private Named Pipe. It needs a build with live capture enabled and the Npcap driver ([validation](docs/WINDOWS_CAPTURE_VALIDATION.md)). The published 1.0.0 ZIP has no live capture.
+- Optional Windows live capture through Npcap, with a UAC-elevated helper and a private Named Pipe. It needs a build with live capture enabled and the Npcap driver ([validation](docs/WINDOWS_CAPTURE_VALIDATION.md)). The published ZIP is still built without it.
 - Windows: Direct3D 11 fallback when OpenGL 3.2 is not available, on the graphics card or in software (WARP). `IMSHARK_RENDERER` (`opengl`, `d3d11`, `software`) selects one.
 - CI keeps the Windows ZIP of each run, so a branch can be tested on Windows before a release.
 
@@ -97,4 +99,5 @@ No packages: the Windows test build failed. Its changes shipped in 0.9.2.
 - Capture exports can no longer overwrite their input; clipboard selections are bounded; capture-loading and settings errors are reported cleanly.
 - Portable NFS timestamps, GCC diagnostics, MSVC packet initialization, SCTP test payload lifetime.
 
+[1.0.1]: https://github.com/Zaryob/imshark/releases/tag/v1.0.1
 [0.9.2]: https://github.com/Zaryob/imshark/releases/tag/v0.9.2

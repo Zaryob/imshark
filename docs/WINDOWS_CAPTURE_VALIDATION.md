@@ -1,7 +1,7 @@
 # Windows capture validation
 
 Two sets of results: native IPC tests run in CI on 20 October 2026, and a run with the Npcap driver and real UAC
-prompts on [15 November 2026](#driver-and-uac-run-15-november-2026). The published 1.0.0 ZIP is an offline-analysis
+prompts on [15 November 2026](#driver-and-uac-run-15-november-2026). The published Windows ZIP is an offline-analysis
 build and is not covered here.
 
 ## Native IPC checks — 20 October 2026
