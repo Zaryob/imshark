@@ -38,7 +38,7 @@ jobs:
       - name: Run native IPC scenarios repeatedly
         shell: pwsh
         run: ctest --test-dir build-windows-capture --output-on-failure --repeat until-fail:10
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: windows-capture-validation
@@ -63,7 +63,7 @@ jobs:
       - name: Run capture and documentation regressions without Npcap
         shell: pwsh
         run: ctest --test-dir build --output-on-failure -R '^(CaptureWorkerArgs\.|WorkerLaunch\.|LiveCapture\.|Docs\.|windows_capture_native_ipc)' --parallel 1
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: windows-offline-regressions
